@@ -145,7 +145,10 @@ export function Page({
   const tabbed = titled.length > 1;
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const active = titled.find((section) => section.id === selected)?.id ?? titled[0]?.id;
-  const shown = tabbed ? visible.filter((section) => !section.title || section.id === active) : visible;
+  // Untitled sections before the first tab (a diagram, say) stay above the tabs.
+  const firstTab = visible.findIndex((section) => section.title);
+  const lead = tabbed ? visible.slice(0, firstTab) : [];
+  const shown = tabbed ? visible.slice(firstTab).filter((section) => !section.title || section.id === active) : visible;
   return (
     <div className="mx-auto w-full max-w-[1200px] px-8 py-6">
       <header className="flex flex-col gap-3 pb-5">
@@ -154,6 +157,11 @@ export function Page({
         {summary && <p className="max-w-[70ch] text-base leading-relaxed text-kumo-strong">{summary}</p>}
         {facts && facts.length > 0 && <Facts rows={facts} />}
       </header>
+      {lead.map((section) => (
+        <section key={section.id} id={section.id} className="mb-6">
+          {section.content}
+        </section>
+      ))}
       {tabbed && (
         <div className="mb-5">
           <Tabs

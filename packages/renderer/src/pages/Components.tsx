@@ -1,4 +1,5 @@
 import { Table } from "@cloudflare/kumo";
+import { ComponentGraph } from "../diagrams/SystemGraph";
 import { flowsOfComponent, href, limitsAbout, type Component } from "../model";
 import { Anchors, Empty, IdRefs, Link, Page, Share, useIndex } from "../ui";
 import { LimitRows } from "./Limits";
@@ -12,6 +13,9 @@ export function ComponentsPage() {
       title="Components"
       summary="The code in this repository, by unit: what each part does, which actors it runs in, and what it depends on."
       sections={[
+        ...(components.some((component) => component.dependsOn?.length)
+          ? [{ id: "graph", title: "", content: <ComponentGraph index={index} height={420} /> }]
+          : []),
         {
           id: "components",
           title: "",

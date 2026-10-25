@@ -1,7 +1,7 @@
 import { Badge, Table } from "@cloudflare/kumo";
-import { locationLabel } from "../diagrams/SystemGraph";
+import { connections, locationLabel, SystemGraph } from "../diagrams/SystemGraph";
 import { actorLines, claimsAbout, componentsOf, href, limitsAbout, protocolsOf, roleIn, type Actor, type ActorKind, type FlowRole } from "../model";
-import { Anchors, Empty, IdRefs, Link, Page, ProvenanceBadge, provenanceDescription, Share, useIndex } from "../ui";
+import { Anchors, Empty, IdRef, IdRefs, Link, Page, ProvenanceBadge, provenanceDescription, Share, useIndex } from "../ui";
 import { ClaimRows } from "./Claims";
 import { LimitRows } from "./Limits";
 
@@ -21,6 +21,7 @@ export function ActorsPage() {
       title="Actors"
       summary="Who and what takes part in the system at runtime: the people and programs that use it, the processes it runs, and the services it calls. First-party actors run code from this repository, in components."
       sections={[
+        { id: "graph", title: "", content: <SystemGraph index={index} /> },
         {
           id: "first-party",
           title: "In this repository",
@@ -91,6 +92,7 @@ export function ActorsPage() {
             </Table>
           ),
         },
+        { id: "interactions", title: "Interactions", count: connections(index).length, content: <Interactions /> },
       ]}
     />
   );
@@ -251,5 +253,37 @@ export function ActorPage({ id }: { id: string }) {
         { id: "anchors", title: "Anchors", count: actor.anchors.length, content: <Anchors anchors={actor.anchors} /> },
       ]}
     />
+  );
+}
+
+/** Pairs of actors that interact, and the flows in which they do. */
+function Interactions() {
+  const index = useIndex();
+  const edges = connections(index).sort((a, b) => b.flows.length - a.flows.length);
+  return (
+    <Table layout="auto">
+      <Table.Header>
+        <Table.Row>
+          <Table.Head>Actor</Table.Head>
+          <Table.Head>Actor</Table.Head>
+          <Table.Head>Flows</Table.Head>
+        </Table.Row>
+      </Table.Header>
+      <Table.Body>
+        {edges.map((edge) => (
+          <Table.Row key={`${edge.from}-${edge.to}`}>
+            <Table.Cell className="align-top whitespace-nowrap">
+              <IdRef kind="actor" id={edge.from} />
+            </Table.Cell>
+            <Table.Cell className="align-top whitespace-nowrap">
+              <IdRef kind="actor" id={edge.to} />
+            </Table.Cell>
+            <Table.Cell className="align-top text-sm">
+              {edge.flows.length ? <IdRefs kind="flow" ids={edge.flows} /> : <span className="text-kumo-subtle">talk; no flow shows how yet</span>}
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </Table.Body>
+    </Table>
   );
 }

@@ -23,7 +23,6 @@ import { FlowPage, FlowsPage } from "./pages/Flows";
 import { InvariantPage, InvariantsPage } from "./pages/Invariants";
 import { LimitPage, LimitsPage } from "./pages/Limits";
 import { ProtocolPage, ProtocolsPage } from "./pages/Protocols";
-import { OverviewPage } from "./pages/Overview";
 import { useRoute, type Route } from "./router";
 import { initialMode, setMode, type Mode } from "./theme";
 import { IndexProvider, Page, relativeTime, useIndex } from "./ui";
@@ -50,7 +49,7 @@ function Content({ route }: { route: Route }) {
   const index = useIndex();
   switch (route.page) {
     case "overview":
-      return <OverviewPage />;
+      return <ActorsPage />;
     case "index":
       if (route.kind === "actor") return <ActorsPage />;
       if (route.kind === "component") return <ComponentsPage />;
@@ -169,8 +168,8 @@ const SECTIONS: { kind: Kind; label: string; icon: typeof HouseIcon }[] = [
   { kind: "limit", label: "Limits", icon: GaugeIcon },
 ];
 
-function sectionOf(route: Route): Kind | "overview" | null {
-  if (route.page === "overview") return "overview";
+function sectionOf(route: Route): Kind | null {
+  if (route.page === "overview") return "actor";
   if (route.page === "index" || route.page === "detail") return route.kind === "machine" ? "state" : route.kind;
   return null;
 }
@@ -205,13 +204,6 @@ function Navigation({ route }: { route: Route }) {
   return (
     <Sidebar>
       <Sidebar.Content>
-        <Sidebar.Group>
-          <Sidebar.Menu>
-            <Sidebar.MenuButton icon={HouseIcon} href="#/" active={current === "overview"}>
-              Overview
-            </Sidebar.MenuButton>
-          </Sidebar.Menu>
-        </Sidebar.Group>
         <Sidebar.Group>
           <Sidebar.GroupLabel>Inventory</Sidebar.GroupLabel>
           <Sidebar.Menu>
