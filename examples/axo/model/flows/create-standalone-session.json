@@ -1,0 +1,30 @@
+{
+  "summary": "Create a Workspace-less terminal session rooted at $HOME.",
+  "trigger": "axo.session.create, axo.remote.session.create, or invariant repair",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "insert Session row named 'Session N'"
+    },
+    {
+      "actor": "axod",
+      "action": "insert shell row and spawn the configured shell in a PTY sized for the current viewport",
+      "target": "shell",
+      "properties": [
+        "while holding the catalog mutex"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "on spawn failure, archive shell and Session (reason spawn_failed)"
+    },
+    {
+      "actor": "axod",
+      "action": "publish session.snapshot"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#create_session",
+    "crates/axo-server/src/session.rs#create_shell"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "subject": "events.next batch",
+  "value": "≤256 events",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-protocol/src/rpc.rs:85#MAX_EVENTS_PER_POLL"
+  ]
+}

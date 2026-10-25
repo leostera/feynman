@@ -1,0 +1,32 @@
+{
+  "summary": "The Mac app ensures axod is registered with launchd and running the same build as the app.",
+  "trigger": "app launch or explicit user action",
+  "steps": [
+    {
+      "actor": "axo-mac",
+      "action": "resolve registration decision from SMAppService status and recorded intent",
+      "properties": [
+        "registers only once automatically; user-disabled is respected"
+      ]
+    },
+    {
+      "actor": "axo-mac",
+      "action": "register the bundled daemon as a per-user LaunchAgent",
+      "target": "launchd"
+    },
+    {
+      "actor": "axo-mac",
+      "action": "call axo.daemon.health",
+      "target": "axod"
+    },
+    {
+      "actor": "axo-mac",
+      "action": "compare daemon build number to app build number; on mismatch ask launchd to restart the service from the current bundle"
+    }
+  ],
+  "anchors": [
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift",
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/RegistrationDecision.swift",
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/RestartMethod.swift"
+  ]
+}

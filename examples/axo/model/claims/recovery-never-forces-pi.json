@@ -1,0 +1,15 @@
+{
+  "statement": "Automatic Pi recovery never forcibly stops a running Pi; only an explicit user restart may signal it.",
+  "status": "supported",
+  "evidence": [
+    "crates/axo-pi/src/takeover.rs#TakeoverPolicy",
+    "crates/axo-server/src/session.rs#register_rpc_methods",
+    "docs/axod-recovery-hardening.md"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "actors/pi",
+    "flows/pi-recovery"
+  ]
+}

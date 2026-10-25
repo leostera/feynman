@@ -1,8 +1,8 @@
 import { Table } from "@cloudflare/kumo";
 import type { ReactNode } from "react";
-import { claimsAbout, href, type Index, type Kind } from "../model";
-import { Anchors, Chips, Empty, IdRef, IdRefs, Link, Page, useIndex } from "../ui";
-import { ClaimRows } from "./Actors";
+import { claimsAbout, href, type Anchor, type Index, type Kind } from "../model";
+import { Anchors, Chips, Empty, IdRef, Link, Page, useIndex } from "../ui";
+import { ClaimRows } from "./Claims";
 
 /** Index and detail pages for the simpler element kinds. */
 
@@ -12,7 +12,7 @@ interface Column<T> {
   className?: string;
 }
 
-interface KindSpec<T extends { id: string; anchors: string[] }> {
+interface KindSpec<T extends { id: string; anchors: Anchor[] }> {
   title: string;
   summary: string;
   items: (index: Index) => T[];
@@ -22,10 +22,6 @@ interface KindSpec<T extends { id: string; anchors: string[] }> {
   sections?: (item: T, index: Index) => { id: string; title: string; count?: number; content: ReactNode }[];
 }
 
-function usedInFlows(index: Index, test: (step: Index["model"]["flows"][number]["steps"][number]) => boolean): string[] {
-  return index.model.flows.filter((flow) => flow.steps.some(test)).map((flow) => flow.id);
-}
-
 const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
   state: {
     title: "State",
@@ -33,11 +29,11 @@ const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
     items: (index) => index.model.state,
     describe: (item) => item.summary,
     columns: [
-      { title: "Owner", render: (item) => <IdRef id={item.owner} />, className: "whitespace-nowrap" },
+      { title: "Owner", render: (item) => <IdRef kind="actor" id={item.owner} />, className: "whitespace-nowrap" },
       { title: "Lifetime", render: (item) => item.lifetime },
     ],
     facts: (item) => [
-      ["Owner", <IdRef id={item.owner} />],
+      ["Owner", <IdRef kind="actor" id={item.owner} />],
       ["Lifetime", item.lifetime],
     ],
   },
@@ -65,51 +61,6 @@ const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
       },
     ],
   },
-  invariant: {
-    title: "Invariants",
-    summary: "Properties that must always hold, how each is enforced, and what breaks if it does not.",
-    items: (index) => index.model.invariants,
-    describe: (item) => item.statement,
-    columns: [{ title: "Enforced by", render: (item) => <Chips items={item.enforcedBy} /> }],
-    facts: (item) => [
-      ["Enforced by", <Chips items={item.enforcedBy} />],
-      ...(item.consequence ? ([["If it breaks", item.consequence]] as [string, ReactNode][]) : []),
-    ],
-  },
-  boundary: {
-    title: "Boundaries",
-    summary: "Where untrusted or weakly structured data is parsed into trusted values.",
-    items: (index) => index.model.boundaries ?? [],
-    describe: (item) => item.summary,
-    columns: [
-      {
-        title: "Effects after parse",
-        render: (item) => (item.effectsAfterParse === undefined ? "—" : item.effectsAfterParse ? "Yes" : "No"),
-      },
-    ],
-    facts: (item) => [
-      ["Parses into", item.parsesInto ?? "—"],
-      ["Effects only after parsing", item.effectsAfterParse === undefined ? "Not stated" : item.effectsAfterParse ? "Yes" : "No"],
-    ],
-    sections: (item, index) => {
-      const flows = usedInFlows(index, (step) => step.boundary === item.id);
-      return [{ id: "flows", title: "Crossed in", count: flows.length, content: flows.length ? <IdRefs ids={flows} /> : <Empty>Not referenced by a flow step.</Empty> }];
-    },
-  },
-  contract: {
-    title: "Contracts",
-    summary: "External behaviour that must stay stable: APIs, protocols, persisted formats, and compatibility layers.",
-    items: (index) => index.model.contracts ?? [],
-    describe: (item) => item.summary,
-    columns: [],
-  },
-  observability: {
-    title: "Observability",
-    summary: "Logs, traces, and metrics that make flows followable.",
-    items: (index) => index.model.observability ?? [],
-    describe: (item) => item.summary,
-    columns: [{ title: "Confidence", render: (item) => item.confidence ?? "—" }],
-  },
 };
 
 export function hasElementPages(kind: Kind): boolean {
@@ -127,8 +78,7 @@ export function ElementIndexPage({ kind }: { kind: Kind }) {
       sections={[
         {
           id: "all",
-          title: `All ${spec.title.toLowerCase()}`,
-          count: items.length,
+          title: "",
           content:
             items.length === 0 ? (
               <Empty>None recorded.</Empty>
@@ -171,7 +121,7 @@ export function ElementPage({ kind, id }: { kind: Kind; id: string }) {
   const spec = SPECS[kind]!;
   const item = spec.items(index).find((candidate) => candidate.id === id);
   if (!item) return null;
-  const claims = claimsAbout(index, id);
+  const claims = claimsAbout(index, { kind, id });
   return (
     <Page
       title={item.id}

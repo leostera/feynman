@@ -1,0 +1,60 @@
+{
+  "summary": "axod's private relay configuration file. The host credential itself is kept in the macOS Keychain.",
+  "style": "file",
+  "transport": "JSON file relay.json in the server directory (≤16 KiB)",
+  "server": "axod",
+  "clients": [],
+  "messages": [
+    {
+      "name": "relay.json",
+      "kind": "record",
+      "fields": [
+        {
+          "name": "relayUrl",
+          "type": "url"
+        },
+        {
+          "name": "hostLabel",
+          "type": "string"
+        },
+        {
+          "name": "hostKind",
+          "type": "string"
+        },
+        {
+          "name": "accountId",
+          "type": "string",
+          "required": false,
+          "note": "routing ID from pairing"
+        },
+        {
+          "name": "credentialId",
+          "type": "string",
+          "required": false,
+          "note": "public ID of the Keychain credential"
+        },
+        {
+          "name": "pendingCredentialId",
+          "type": "string",
+          "required": false,
+          "note": "during a link in progress"
+        },
+        {
+          "name": "pendingHostGeneration",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "access",
+          "type": "LoopbackAccess",
+          "required": false,
+          "note": "development loopback only"
+        }
+      ]
+    }
+  ],
+  "anchors": [
+    "crates/axo-relay/src/relay.rs#settings",
+    "crates/axo-relay/src/credential.rs"
+  ]
+}

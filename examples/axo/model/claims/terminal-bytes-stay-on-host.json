@@ -1,0 +1,17 @@
+{
+  "statement": "Terminal bytes never cross the host boundary.",
+  "status": "contradicted",
+  "note": "RFD0014 (Proposal) states this, but the relay subscribes with streams and forwards terminal.output to the account Durable Object so the browser Workbench can show remote terminals. RFD0013's narrower statement, that terminal bytes are not persisted in account storage, was not contradicted in this pass.",
+  "evidence": [
+    "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md",
+    "crates/axo-server/src/session.rs#subscribe_remote_events",
+    "crates/axo-relay/src/relay.rs#host_notification",
+    "packages/axo-web-app/src/remote-terminal-app.tsx"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "actors/account-do",
+    "flows/relay-connection"
+  ]
+}

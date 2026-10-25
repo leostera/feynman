@@ -4,7 +4,7 @@ import { Swimlane } from "../diagrams/Swimlane";
 import { claimsAbout, flowParticipants, href, type Flow } from "../model";
 import { usePreference } from "../router";
 import { Anchors, Empty, IdRef, IdRefs, Link, Page, useIndex } from "../ui";
-import { ClaimRows } from "./Actors";
+import { ClaimRows } from "./Claims";
 
 export function FlowsPage() {
   const index = useIndex();
@@ -35,7 +35,7 @@ export function FlowsPage() {
                     </Table.Cell>
                     <Table.Cell className="max-w-[48ch] align-top text-kumo-strong">{flow.summary}</Table.Cell>
                     <Table.Cell className="max-w-[28ch] align-top text-sm">
-                      <IdRefs ids={flowParticipants(flow)} />
+                      <IdRefs kind="actor" ids={flowParticipants(flow)} />
                     </Table.Cell>
                     <Table.Cell className="text-right align-top tabular-nums">{flow.steps.length}</Table.Cell>
                   </Table.Row>
@@ -58,7 +58,7 @@ export function FlowPage({ id }: { id: string }) {
   if (!flow) return null;
   const callers = index.usedBy.get(flow.id) ?? [];
   const calls = [...new Set(flow.steps.map((step) => step.ref).filter((ref): ref is string => ref !== undefined))];
-  const claims = claimsAbout(index, id);
+  const claims = claimsAbout(index, { kind: "flow", id });
 
   return (
     <Page
@@ -66,7 +66,7 @@ export function FlowPage({ id }: { id: string }) {
       summary={flow.summary}
       facts={[
         ["Trigger", flow.trigger],
-        ["Actors", <IdRefs ids={flowParticipants(flow)} />],
+        ["Actors", <IdRefs kind="actor" ids={flowParticipants(flow)} />],
       ]}
       sections={[
         {
@@ -103,13 +103,13 @@ export function FlowPage({ id }: { id: string }) {
                 {calls.length > 0 && (
                   <>
                     <span className="text-kumo-subtle">Calls</span>
-                    <IdRefs ids={calls} />
+                    <IdRefs kind="flow" ids={calls} />
                   </>
                 )}
                 {callers.length > 0 && (
                   <>
                     <span className="text-kumo-subtle">Called by</span>
-                    <IdRefs ids={callers} />
+                    <IdRefs kind="flow" ids={callers} />
                   </>
                 )}
               </div>
@@ -136,27 +136,27 @@ function StepList({ flow }: { flow: Flow }) {
           <div className="flex flex-col gap-1.5">
             <div className="text-sm text-kumo-default">
               <span className="font-medium">
-                <IdRef id={step.actor} />
+                <IdRef kind="actor" id={step.actor} />
               </span>
               {step.target && (
                 <>
                   <span className="text-kumo-subtle"> → </span>
-                  <IdRef id={step.target} />
+                  <IdRef kind="actor" id={step.target} />
                 </>
               )}
               <span className="text-kumo-subtle">: </span>
               {step.action}
             </div>
-            {(step.ref || step.boundary || step.properties?.length) && (
+            {(step.ref || step.protocol || step.properties?.length) && (
               <div className="flex flex-wrap gap-1">
                 {step.ref && (
                   <Badge variant="purple">
-                    calls <IdRef id={step.ref} />
+                    calls <IdRef kind="flow" id={step.ref} />
                   </Badge>
                 )}
-                {step.boundary && (
+                {step.protocol && (
                   <Badge variant="orange">
-                    crosses <IdRef id={step.boundary} />
+                    speaks <IdRef kind="protocol" id={step.protocol} />
                   </Badge>
                 )}
                 {step.properties?.map((property) => (

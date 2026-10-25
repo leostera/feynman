@@ -1,9 +1,9 @@
 import { Table, Tabs } from "@cloudflare/kumo";
-import { interactions, SystemGraph } from "../diagrams/SystemGraph";
-import { claimId, href, type Kind } from "../model";
+import { connections, SystemGraph } from "../diagrams/SystemGraph";
+import { href } from "../model";
 import { usePreference } from "../router";
 import { IdRef, IdRefs, Link, Page, STATUS_ORDER, useIndex } from "../ui";
-import { ClaimRows } from "./Actors";
+import { ClaimRows } from "./Claims";
 
 export function OverviewPage() {
   const index = useIndex();
@@ -11,20 +11,17 @@ export function OverviewPage() {
   const firstParty = model.actors.filter((actor) => actor.provenance === "first-party");
   const external = model.actors.filter((actor) => actor.provenance !== "first-party");
   const attention = model.claims
-    .map((claim, i) => ({ id: claimId(i), claim }))
-    .filter(({ claim }) => claim.status !== "supported")
-    .sort((a, b) => STATUS_ORDER.indexOf(a.claim.status) - STATUS_ORDER.indexOf(b.claim.status));
+    .filter((claim) => claim.status !== "supported")
+    .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
 
   const inventory: [string, string, number, string][] = [
     ["Actors", href("actor"), model.actors.length, `${firstParty.length} in this repository, ${external.length} external`],
     ["Flows", href("flow"), model.flows.length, "Paths from a trigger to its effects"],
-    ["State", href("state"), model.state.length, `${model.stateMachines?.length ?? 0} state machines`],
-    ["Invariants", href("invariant"), model.invariants.length, "Properties that must always hold"],
-    ["Boundaries", href("boundary"), model.boundaries?.length ?? 0, "Where data becomes trusted"],
-    ["Contracts", href("contract"), model.contracts?.length ?? 0, "External behaviour that must stay stable"],
-    ["Observability", href("observability"), model.observability?.length ?? 0, "How flows can be followed"],
-    ["Measurements", "#/measurements", model.measurements?.length ?? 0, "Limits, timeouts, and rates"],
-    ["Claims", href("claim" as Kind), model.claims.length, `${attention.length} need attention`],
+    ["Protocols", href("protocol"), model.protocols.length, "Shapes data must have to cross in, out, or rest"],
+    ["State", href("state"), model.state.length, `${model.stateMachines.length} state machines`],
+    ["Invariants", href("invariant"), model.invariants.length, "What the system makes sure always holds"],
+    ["Claims", href("claim"), model.claims.length, `${attention.length} need attention`],
+    ["Limits", href("limit"), model.limits.length, "Sizes, counts, timeouts, and rates"],
   ];
 
   return (
@@ -75,7 +72,7 @@ export function OverviewPage() {
 function SystemView() {
   const index = useIndex();
   const [view, setView] = usePreference<"graph" | "table">("systemView", "graph");
-  const edges = interactions(index).sort((a, b) => b.flows.length - a.flows.length);
+  const edges = connections(index).sort((a, b) => b.flows.length - a.flows.length);
   return (
     <div className="flex flex-col gap-4">
       <Tabs
@@ -93,8 +90,8 @@ function SystemView() {
         <Table layout="auto">
           <Table.Header>
             <Table.Row>
-              <Table.Head>From</Table.Head>
-              <Table.Head>To</Table.Head>
+              <Table.Head>Actor</Table.Head>
+              <Table.Head>Actor</Table.Head>
               <Table.Head>Flows</Table.Head>
             </Table.Row>
           </Table.Header>
@@ -102,13 +99,13 @@ function SystemView() {
             {edges.map((edge) => (
               <Table.Row key={`${edge.from}-${edge.to}`}>
                 <Table.Cell className="align-top whitespace-nowrap">
-                  <IdRef id={edge.from} />
+                  <IdRef kind="actor" id={edge.from} />
                 </Table.Cell>
                 <Table.Cell className="align-top whitespace-nowrap">
-                  <IdRef id={edge.to} />
+                  <IdRef kind="actor" id={edge.to} />
                 </Table.Cell>
                 <Table.Cell className="align-top text-sm">
-                  <IdRefs ids={edge.flows} />
+                  <IdRefs kind="flow" ids={edge.flows} />
                 </Table.Cell>
               </Table.Row>
             ))}

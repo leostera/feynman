@@ -1,0 +1,43 @@
+{
+  "summary": "A client attaches to a pane: it receives replay, then live output, plus the PTY descriptor for input and resize.",
+  "trigger": "axod terminal-attach --shell-id (spawned per Ghostty surface by the Mac app)",
+  "steps": [
+    {
+      "actor": "axo-mac",
+      "action": "connect to attach socket, send shell ID (3 s request timeout)",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "acquire an attachment permit (max 256); otherwise reject DaemonBusy"
+    },
+    {
+      "actor": "axod",
+      "action": "subscribe to the pane's output pump atomically with reading its replay history (≤8 MiB)"
+    },
+    {
+      "actor": "axod",
+      "action": "send replay length, PTY master fd via SCM_RIGHTS, replay, then live output",
+      "properties": [
+        "replay write timeout 2 s",
+        "live write timeout 10 s",
+        "socket send buffer 256 KiB"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "publish shell.activity attached on first attachment, detached on last"
+    },
+    {
+      "actor": "axod",
+      "action": "disconnect a client that falls 8 MiB behind; it must reattach and replay"
+    }
+  ],
+  "anchors": [
+    "crates/axo-pty/src/attach.rs",
+    "crates/axo-pty/src/output.rs",
+    "crates/axo-server/src/session.rs#start_attachment_listener",
+    "crates/axo-server/src/session.rs#attach_shell",
+    "crates/axod/src/main.rs"
+  ]
+}

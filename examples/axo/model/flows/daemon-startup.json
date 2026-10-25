@@ -1,0 +1,65 @@
+{
+  "summary": "axod opens its catalog, restores what was open, repairs session invariants, then starts accepting attachments and reaping exits.",
+  "trigger": "launchd starts axod",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "open SQLite catalog (WAL, synchronous=FULL, foreign keys) and migrate schema to user_version 7 in one transaction"
+    },
+    {
+      "actor": "axod",
+      "action": "load or create host ID, agent.command, shell.command and last client viewport"
+    },
+    {
+      "actor": "axod",
+      "action": "generate a new host generation (per boot)"
+    },
+    {
+      "actor": "axod",
+      "action": "create the private pi-sessions directory (0700); remove abandoned Pi bridge sockets"
+    },
+    {
+      "actor": "axod",
+      "action": "restore Workspace directory access from stored security-scoped bookmarks"
+    },
+    {
+      "actor": "axod",
+      "action": "restore open sessions: respawn terminal panes; mark Pi panes unavailable",
+      "properties": [
+        "terminal output history is not restored"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "recover each unavailable Pi pane",
+      "ref": "pi-recovery",
+      "properties": [
+        "policy: preserve existing process"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "create a session in every open Workspace that has none",
+      "ref": "create-workspace-session"
+    },
+    {
+      "actor": "axod",
+      "action": "create a standalone home session if none is open"
+    },
+    {
+      "actor": "axod",
+      "action": "listen on the attach socket (0600)"
+    },
+    {
+      "actor": "axod",
+      "action": "start the reaper thread",
+      "ref": "shell-exit-reaping"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#SessionManager::open",
+    "crates/axo-server/src/session.rs#restore_open_sessions",
+    "crates/axo-server/src/session.rs#initialize_database",
+    "crates/axo-server/src/lib.rs#serve_ipc"
+  ]
+}

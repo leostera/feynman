@@ -1,0 +1,13 @@
+{
+  "statement": "New panes start at the latest client's viewport size, even across restarts.",
+  "status": "supported",
+  "evidence": [
+    "crates/axo-protocol/src/viewport.rs",
+    "crates/axod/tests/rpc.rs#new_panes_start_at_the_latest_clients_viewport_across_restarts"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "flows/split-pane"
+  ]
+}

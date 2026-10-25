@@ -1,0 +1,12 @@
+{
+  "subject": "terminal input per call",
+  "value": "1 to 49,152 bytes",
+  "kind": "size",
+  "epistemic": "stated",
+  "about": [
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:1552#write_terminal_input"
+  ]
+}

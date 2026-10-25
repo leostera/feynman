@@ -1,17 +1,18 @@
-import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
+// @ts-expect-error: plain ESM shared with the command-line tools.
+import { loadModel } from "../tools/model.mjs";
 
-/** Inlines the model named by FEYNMAN_MODEL into index.html. */
+/** Bundles the model directory named by FEYNMAN_MODEL and inlines it into index.html. */
 function embedModel(): Plugin {
   return {
     name: "feynman-embed-model",
     transformIndexHtml(html) {
       const path = process.env.FEYNMAN_MODEL;
-      if (!path) throw new Error("FEYNMAN_MODEL must name a model.json");
-      const model = JSON.stringify(JSON.parse(readFileSync(path, "utf8")));
+      if (!path) throw new Error("FEYNMAN_MODEL must name a model directory");
+      const model = JSON.stringify(loadModel(path));
       // Keep the JSON from closing its <script> element early.
       return html.replace("__FEYNMAN_MODEL__", () => model.replaceAll("</", "<\\/"));
     },

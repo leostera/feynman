@@ -1,0 +1,20 @@
+{
+  "summary": "Session status shown in sidebars.",
+  "states": [
+    "starting",
+    "ready",
+    "working",
+    "needsAttention",
+    "unavailable"
+  ],
+  "transitions": [
+    "Pi agent.start → working",
+    "Pi agent.settled → ready",
+    "UI prompt open → needsAttention",
+    "Pi exit → unavailable"
+  ],
+  "anchors": [
+    "crates/axo-protocol/src/model.rs#SessionStatus",
+    "crates/axo-pi/src/activity.rs"
+  ]
+}

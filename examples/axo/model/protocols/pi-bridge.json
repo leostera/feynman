@@ -1,0 +1,152 @@
+{
+  "summary": "Control and event channel between axod and the pi-axo extension inside each Pi.",
+  "style": "ndjson",
+  "transport": "per-session Unix-domain socket, served by pi-axo",
+  "server": "pi-axo",
+  "clients": [
+    "axod"
+  ],
+  "framing": "Newline-delimited JSON records, ≤8 MiB each. Every record has a `type`.",
+  "version": "1 (protocolVersion on authenticate, authenticated and hello)",
+  "messages": [
+    {
+      "name": "authenticate",
+      "kind": "record",
+      "from": "axod",
+      "fields": [
+        {
+          "name": "protocolVersion",
+          "type": "1"
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "note": "the session's bridge token, rotated on recovery"
+        }
+      ]
+    },
+    {
+      "name": "command",
+      "kind": "record",
+      "from": "axod",
+      "summary": "Used by transcript takeover.",
+      "fields": [
+        {
+          "name": "requestId",
+          "type": "string"
+        },
+        {
+          "name": "axoSessionId",
+          "type": "string"
+        },
+        {
+          "name": "action",
+          "type": "{ kind: \"shutdown\" | \"shutdownIfIdle\" }"
+        }
+      ]
+    },
+    {
+      "name": "authenticated",
+      "kind": "record",
+      "from": "pi-axo",
+      "fields": [
+        {
+          "name": "protocolVersion",
+          "type": "1"
+        }
+      ]
+    },
+    {
+      "name": "hello",
+      "kind": "record",
+      "from": "pi-axo",
+      "fields": [
+        {
+          "name": "protocolVersion",
+          "type": "1"
+        },
+        {
+          "name": "identity",
+          "type": "{ axoSessionId, axoPaneId, piSessionId, sessionFile?, cwd, processId }",
+          "note": "every field must match the pane axod launched"
+        }
+      ]
+    },
+    {
+      "name": "event",
+      "kind": "record",
+      "from": "pi-axo",
+      "fields": [
+        {
+          "name": "streamId",
+          "type": "string"
+        },
+        {
+          "name": "sequence",
+          "type": "u64",
+          "note": "strictly increasing, ≤2^53−1"
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "note": "≤128 bytes: message.*, turn.*, agent.*, tool.*, session.info, ui.prompt.*, session.resume.requested"
+        },
+        {
+          "name": "data",
+          "type": "JSON",
+          "required": false,
+          "note": "≤60,000 bytes"
+        }
+      ]
+    },
+    {
+      "name": "commandResult",
+      "kind": "record",
+      "from": "pi-axo",
+      "fields": [
+        {
+          "name": "requestId",
+          "type": "string"
+        },
+        {
+          "name": "result",
+          "type": "{ accepted, reason? }",
+          "note": "reason exactly when rejected: invalid | busy | idle | stale | unavailable"
+        }
+      ]
+    },
+    {
+      "name": "protocolError",
+      "kind": "record",
+      "from": "pi-axo",
+      "fields": [
+        {
+          "name": "message",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "parsing": [
+    {
+      "summary": "Records are parsed into typed variants; the connection state machine rejects identity mismatches, out-of-order sequences, and oversize names or data, and drops the connection.",
+      "anchors": [
+        "crates/axo-pi/src/bridge.rs",
+        "crates/axo-pi/src/protocol.rs",
+        "crates/axo-pi/src/connection.rs"
+      ]
+    },
+    {
+      "summary": "A resume path from Pi is canonicalized and confined to the pi-sessions directory before lookup.",
+      "anchors": [
+        "crates/axo-server/src/session.rs#resume_archived_pi_session"
+      ]
+    }
+  ],
+  "anchors": [
+    "crates/axo-pi/src/protocol.rs",
+    "crates/axo-pi/src/connection.rs",
+    "packages/pi-axo/src/protocol.ts",
+    "packages/pi-axo/src/bridge-server.ts"
+  ]
+}

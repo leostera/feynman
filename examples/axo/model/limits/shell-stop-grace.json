@@ -1,0 +1,12 @@
+{
+  "subject": "shell stop grace",
+  "value": "500 ms",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/shell"
+  ],
+  "anchors": [
+    "crates/axo-pty/src/process.rs:235#SHELL_STOP_GRACE"
+  ]
+}

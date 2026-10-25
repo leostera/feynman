@@ -1,0 +1,12 @@
+{
+  "subject": "browser clients per host",
+  "value": "8",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "actors/account-do"
+  ],
+  "anchors": [
+    "packages/axo-api/src/contracts.ts:23#LIMITS.clientsPerMachine"
+  ]
+}

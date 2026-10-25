@@ -1,10 +1,8 @@
 import { Badge, Button, Sidebar, Tabs } from "@cloudflare/kumo";
 import {
   ArrowsSplitIcon,
-  CubeIcon,
+  BracketsCurlyIcon,
   DatabaseIcon,
-  EyeIcon,
-  FileTextIcon,
   GaugeIcon,
   GitCommitIcon,
   HouseIcon,
@@ -15,11 +13,14 @@ import {
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 import { useEffect, useState, type ReactNode } from "react";
-import { href, type Index, type Kind } from "./model";
+import { exists, href, type Index, type Kind } from "./model";
 import { ActorPage, ActorsPage } from "./pages/Actors";
-import { ClaimPage, ClaimsPage, MeasurementsPage } from "./pages/Claims";
+import { ClaimPage, ClaimsPage } from "./pages/Claims";
 import { ElementIndexPage, ElementPage, hasElementPages } from "./pages/Elements";
 import { FlowPage, FlowsPage } from "./pages/Flows";
+import { InvariantPage, InvariantsPage } from "./pages/Invariants";
+import { LimitPage, LimitsPage } from "./pages/Limits";
+import { ProtocolPage, ProtocolsPage } from "./pages/Protocols";
 import { OverviewPage } from "./pages/Overview";
 import { useRoute, type Route } from "./router";
 import { initialMode, setMode, type Mode } from "./theme";
@@ -54,20 +55,23 @@ function Content({ route }: { route: Route }) {
   switch (route.page) {
     case "overview":
       return <OverviewPage />;
-    case "measurements":
-      return <MeasurementsPage />;
     case "index":
       if (route.kind === "actor") return <ActorsPage />;
       if (route.kind === "flow") return <FlowsPage />;
+      if (route.kind === "protocol") return <ProtocolsPage />;
+      if (route.kind === "invariant") return <InvariantsPage />;
       if (route.kind === "claim") return <ClaimsPage />;
+      if (route.kind === "limit") return <LimitsPage />;
       if (hasElementPages(route.kind)) return <ElementIndexPage kind={route.kind} />;
       return <NotFound />;
     case "detail": {
-      const exists = route.kind === "claim" ? index.claims.has(route.id) : index.kindOf.get(route.id) === route.kind;
-      if (!exists) return <NotFound />;
+      if (!exists(index, route)) return <NotFound />;
       if (route.kind === "actor") return <ActorPage id={route.id} />;
       if (route.kind === "flow") return <FlowPage id={route.id} />;
+      if (route.kind === "protocol") return <ProtocolPage id={route.id} />;
+      if (route.kind === "invariant") return <InvariantPage id={route.id} />;
       if (route.kind === "claim") return <ClaimPage id={route.id} />;
+      if (route.kind === "limit") return <LimitPage id={route.id} />;
       return <ElementPage kind={route.kind} id={route.id} />;
     }
     case "missing":
@@ -156,21 +160,18 @@ function ModeToggle() {
 
 // Left navigation: the inventory's structure.
 
-const SECTIONS: { kind: Kind | "measurements"; label: string; icon: typeof HouseIcon }[] = [
+const SECTIONS: { kind: Kind; label: string; icon: typeof HouseIcon }[] = [
   { kind: "actor", label: "Actors", icon: UsersThreeIcon },
   { kind: "flow", label: "Flows", icon: ArrowsSplitIcon },
+  { kind: "protocol", label: "Protocols", icon: BracketsCurlyIcon },
   { kind: "state", label: "State", icon: DatabaseIcon },
   { kind: "invariant", label: "Invariants", icon: ShieldCheckIcon },
-  { kind: "boundary", label: "Boundaries", icon: CubeIcon },
-  { kind: "contract", label: "Contracts", icon: FileTextIcon },
-  { kind: "observability", label: "Observability", icon: EyeIcon },
-  { kind: "measurements", label: "Measurements", icon: GaugeIcon },
   { kind: "claim", label: "Claims", icon: ScalesIcon },
+  { kind: "limit", label: "Limits", icon: GaugeIcon },
 ];
 
-function sectionOf(route: Route): Kind | "measurements" | "overview" | null {
+function sectionOf(route: Route): Kind | "overview" | null {
   if (route.page === "overview") return "overview";
-  if (route.page === "measurements") return "measurements";
   if (route.page === "index" || route.page === "detail") return route.kind === "machine" ? "state" : route.kind;
   return null;
 }
@@ -178,28 +179,24 @@ function sectionOf(route: Route): Kind | "measurements" | "overview" | null {
 function Navigation({ route }: { route: Route }) {
   const { model } = useIndex();
   const current = sectionOf(route);
-  const count = (kind: Kind | "measurements"): number => {
+  const count = (kind: Kind): number => {
     switch (kind) {
       case "actor":
         return model.actors.length;
       case "flow":
         return model.flows.length;
+      case "protocol":
+        return model.protocols.length;
       case "state":
-        return model.state.length + (model.stateMachines?.length ?? 0);
+        return model.state.length + model.stateMachines.length;
+      case "machine":
+        return model.stateMachines.length;
       case "invariant":
         return model.invariants.length;
-      case "boundary":
-        return model.boundaries?.length ?? 0;
-      case "contract":
-        return model.contracts?.length ?? 0;
-      case "observability":
-        return model.observability?.length ?? 0;
-      case "measurements":
-        return model.measurements?.length ?? 0;
       case "claim":
         return model.claims.length;
-      case "machine":
-        return model.stateMachines?.length ?? 0;
+      case "limit":
+        return model.limits.length;
     }
   };
   const activeFlow = route.page === "detail" && route.kind === "flow" ? route.id : null;
@@ -221,7 +218,7 @@ function Navigation({ route }: { route: Route }) {
               <Sidebar.MenuButton
                 key={section.kind}
                 icon={section.icon}
-                href={section.kind === "measurements" ? "#/measurements" : href(section.kind)}
+                href={href(section.kind)}
                 active={current === section.kind}
               >
                 <span className="flex w-full items-center justify-between">

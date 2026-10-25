@@ -1,0 +1,10 @@
+{
+  "owner": "pi",
+  "summary": "Pi's canonical JSONL conversation at ~/.axo/server/pi-sessions/<workspace>/<session-uuid>.jsonl, with a sibling .lock file held by flock while Pi runs.",
+  "lifetime": "disk",
+  "anchors": [
+    "crates/axo-server/src/session.rs#create_workspace_session",
+    "crates/axo-pi/src/lock.rs",
+    "crates/axo-pi/src/history.rs"
+  ]
+}

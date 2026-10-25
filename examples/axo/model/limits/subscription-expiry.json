@@ -1,0 +1,13 @@
+{
+  "subject": "idle subscription expiry",
+  "value": "60 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:44#SUBSCRIPTION_IDLE_EXPIRY"
+  ]
+}

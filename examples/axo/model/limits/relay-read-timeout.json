@@ -1,0 +1,13 @@
+{
+  "subject": "relay socket read timeout",
+  "value": "20 ms",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "flows/relay-connection"
+  ],
+  "anchors": [
+    "crates/axo-relay/src/relay.rs:30#SOCKET_READ_TIMEOUT"
+  ]
+}

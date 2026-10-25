@@ -1,0 +1,55 @@
+{
+  "summary": "axod follows the running Pi over its bridge socket, turning Pi events into catalog state and relayable events.",
+  "trigger": "Pi pane started or recovered",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "connect to the Pi's bridge socket, retrying every 100 ms while the pane is current"
+    },
+    {
+      "actor": "axod",
+      "action": "authenticate with the session's bridge token",
+      "target": "pi-axo"
+    },
+    {
+      "actor": "pi-axo",
+      "action": "reply with identity: Pi session ID, exact file path, Axo session and pane IDs, process ID",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "bind only if every identity field matches the launched pane; otherwise reject the connection",
+      "protocol": "pi-bridge"
+    },
+    {
+      "actor": "axod",
+      "action": "persist Pi session ID"
+    },
+    {
+      "actor": "pi-axo",
+      "action": "stream events with strictly increasing sequence (≤60,000 bytes of data each)",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "update activity: working on agent.start, idle on agent.settled, needs-attention while UI prompts are open"
+    },
+    {
+      "actor": "axod",
+      "action": "write Pi-chosen title and emoji to the Session row"
+    },
+    {
+      "actor": "axod",
+      "action": "publish pi.event (opaque payload) and session.snapshot when state changed"
+    }
+  ],
+  "anchors": [
+    "crates/axo-pi/src/worker.rs",
+    "crates/axo-pi/src/connection.rs",
+    "crates/axo-pi/src/activity.rs",
+    "crates/axo-server/src/session.rs#start_pi_bridge_worker",
+    "crates/axo-server/src/session.rs#observe_pi_event",
+    "packages/pi-axo/src/extension.ts",
+    "packages/pi-axo/src/title.ts"
+  ]
+}

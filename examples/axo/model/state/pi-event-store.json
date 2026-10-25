@@ -1,0 +1,8 @@
+{
+  "owner": "session-history-do",
+  "summary": "Server-side copy of structured Pi events per (account, host, session). A projection; not the canonical transcript.",
+  "lifetime": "durable",
+  "anchors": [
+    "packages/axo-api-worker/src/session-history.ts"
+  ]
+}

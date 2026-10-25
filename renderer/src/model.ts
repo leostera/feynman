@@ -1,4 +1,4 @@
-// Types mirror skills/modelling/schema.json.
+// Types mirror skills/modelling/schema/*.json, as bundled by tools/model.mjs.
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -26,23 +26,16 @@ export interface Meta {
 
 export type Provenance = "first-party" | "third-party" | "ambient";
 
+export type Location = "local" | "browser" | "remote" | "cloud";
+
 export interface Actor {
   id: string;
   provenance: Provenance;
+  runsOn: { location: Location; provider?: string; platform?: string };
   summary: string;
   footprint?: { paths: string[]; files?: number; lines?: number };
-  transports?: string[];
   anchors: Anchor[];
   confidence?: Confidence;
-}
-
-export interface MessageSet {
-  actor: string;
-  transport: string;
-  summary?: string;
-  accepts?: string[];
-  emits?: string[];
-  anchors: Anchor[];
 }
 
 export interface Step {
@@ -50,7 +43,7 @@ export interface Step {
   action: string;
   target?: string;
   ref?: string;
-  boundary?: string;
+  protocol?: string;
   properties?: string[];
 }
 
@@ -61,6 +54,40 @@ export interface Flow {
   steps: Step[];
   anchors: Anchor[];
   confidence?: Confidence;
+}
+
+export interface Field {
+  name: string;
+  type: string;
+  required?: boolean;
+  note?: string;
+}
+
+export type MessageKind = "call" | "record" | "event" | "route" | "table";
+
+export interface Message {
+  name: string;
+  kind: MessageKind;
+  from?: string;
+  summary?: string;
+  fields?: Field[];
+  returns?: Field[];
+}
+
+export interface Protocol {
+  id: string;
+  summary: string;
+  style: string;
+  transport: string;
+  server?: string;
+  clients?: string[];
+  framing?: string;
+  version?: string;
+  messages: Message[];
+  parsing?: { summary: string; anchors: Anchor[] }[];
+  definitions?: Anchor[];
+  compatibility?: string;
+  anchors: Anchor[];
 }
 
 export interface State {
@@ -79,106 +106,108 @@ export interface StateMachine {
   anchors: Anchor[];
 }
 
-export interface Boundary {
-  id: string;
-  summary: string;
-  parsesInto?: string;
-  effectsAfterParse?: boolean;
-  anchors: Anchor[];
+export type Enforcement = "compile-time" | "runtime" | "test-time" | "documented";
+
+export interface Frame {
+  symbol: string;
+  anchor: Anchor;
+  note?: string;
 }
 
 export interface Invariant {
   id: string;
   statement: string;
-  enforcedBy: string[];
+  enforcement: Enforcement[];
   consequence?: string;
+  enforcedAt: { trigger: string; frames: Frame[] }[];
+  tests?: Anchor[];
   anchors: Anchor[];
 }
 
-export interface Contract {
+export interface Limit {
   id: string;
-  summary?: string;
-  anchors: Anchor[];
-}
-
-export interface Observability {
-  id: string;
-  summary?: string;
-  flows?: string[];
-  confidence?: Confidence;
-  anchors: Anchor[];
-}
-
-export interface Measurement {
   subject: string;
   value: string | number;
   kind: string;
+  epistemic?: "stated" | "measured";
+  about?: string[];
   anchors: Anchor[];
 }
 
 export type ClaimStatus = "supported" | "partially-supported" | "contradicted" | "unverified";
 
 export interface Claim {
+  id: string;
   statement: string;
   status: ClaimStatus;
   epistemic: "stated" | "inferred" | "measured";
   note?: string;
   evidence: Anchor[];
+  /** Element paths, e.g. `flows/pi-recovery`. */
   about?: string[];
 }
 
+/** The bundled model: every collection sorted by id (see tools/model.mjs). */
 export interface Model {
   meta: Meta;
   actors: Actor[];
-  messages: MessageSet[];
   flows: Flow[];
+  protocols: Protocol[];
   state: State[];
-  stateMachines?: StateMachine[];
-  boundaries?: Boundary[];
+  stateMachines: StateMachine[];
   invariants: Invariant[];
-  contracts?: Contract[];
-  observability?: Observability[];
-  measurements?: Measurement[];
   claims: Claim[];
+  limits: Limit[];
 }
 
 /** Element kinds that have their own page. */
-export type Kind = "actor" | "flow" | "state" | "machine" | "boundary" | "invariant" | "contract" | "observability" | "claim";
+export type Kind = "actor" | "flow" | "protocol" | "state" | "machine" | "invariant" | "claim" | "limit";
 
-/** URL segment for each kind's index and detail pages. */
+/** URL segment for each kind's pages; also the model directory each kind is stored in. */
 export const SEGMENT: Record<Kind, string> = {
   actor: "actors",
   flow: "flows",
+  protocol: "protocols",
   state: "state",
-  machine: "machines",
-  boundary: "boundaries",
+  machine: "state-machines",
   invariant: "invariants",
-  contract: "contracts",
-  observability: "observability",
   claim: "claims",
+  limit: "limits",
 };
+
+const KIND_BY_SEGMENT = new Map(Object.entries(SEGMENT).map(([kind, segment]) => [segment, kind as Kind]));
+
+export function kindOfSegment(segment: string): Kind | undefined {
+  return KIND_BY_SEGMENT.get(segment);
+}
 
 export function href(kind: Kind, id?: string): string {
   return id === undefined ? `#/${SEGMENT[kind]}` : `#/${SEGMENT[kind]}/${encodeURIComponent(id)}`;
 }
 
-export function claimId(index: number): string {
-  return `${index + 1}`;
+/** A typed reference to one element. */
+export interface Ref {
+  kind: Kind;
+  id: string;
+}
+
+/** Parse an element path such as `flows/pi-recovery`. */
+export function parsePath(path: string): Ref | null {
+  const [segment, id] = path.split("/");
+  const kind = kindOfSegment(segment);
+  return kind && id ? { kind, id } : null;
 }
 
 export interface Index {
   model: Model;
   actors: Map<string, Actor>;
   flows: Map<string, Flow>;
+  protocols: Map<string, Protocol>;
   state: Map<string, State>;
   machines: Map<string, StateMachine>;
-  boundaries: Map<string, Boundary>;
   invariants: Map<string, Invariant>;
-  contracts: Map<string, Contract>;
-  observability: Map<string, Observability>;
   claims: Map<string, Claim>;
-  /** The kind of element an id refers to, for resolving step refs. */
-  kindOf: Map<string, Kind>;
+  limits: Map<string, Limit>;
   /** Flows that delegate to a flow through a step ref. */
   usedBy: Map<string, string[]>;
 }
@@ -192,27 +221,14 @@ export function buildIndex(model: Model): Index {
     model,
     actors: byId(model.actors),
     flows: byId(model.flows),
+    protocols: byId(model.protocols),
     state: byId(model.state),
     machines: byId(model.stateMachines),
-    boundaries: byId(model.boundaries),
     invariants: byId(model.invariants),
-    contracts: byId(model.contracts),
-    observability: byId(model.observability),
-    claims: new Map(model.claims.map((claim, i) => [claimId(i), claim])),
-    kindOf: new Map(),
+    claims: byId(model.claims),
+    limits: byId(model.limits),
     usedBy: new Map(),
   };
-  const kinds: [Kind, Map<string, unknown>][] = [
-    ["actor", index.actors],
-    ["flow", index.flows],
-    ["state", index.state],
-    ["machine", index.machines],
-    ["boundary", index.boundaries],
-    ["invariant", index.invariants],
-    ["contract", index.contracts],
-    ["observability", index.observability],
-  ];
-  for (const [kind, items] of kinds) for (const id of items.keys()) index.kindOf.set(id, kind);
   for (const flow of model.flows) {
     for (const step of flow.steps) {
       if (!step.ref) continue;
@@ -222,6 +238,20 @@ export function buildIndex(model: Model): Index {
     }
   }
   return index;
+}
+
+export function exists(index: Index, { kind, id }: Ref): boolean {
+  const maps: Record<Kind, Map<string, unknown>> = {
+    actor: index.actors,
+    flow: index.flows,
+    protocol: index.protocols,
+    state: index.state,
+    machine: index.machines,
+    invariant: index.invariants,
+    claim: index.claims,
+    limit: index.limits,
+  };
+  return maps[kind].has(id);
 }
 
 export function loadModel(): Model {
@@ -240,10 +270,26 @@ export function roleIn(flow: Flow, actor: string): FlowRole | null {
   return null;
 }
 
-export function claimsAbout(index: Index, id: string): { id: string; claim: Claim }[] {
-  return index.model.claims
-    .map((claim, i) => ({ id: claimId(i), claim }))
-    .filter(({ claim }) => claim.about?.includes(id));
+/** Claims whose `about` names this element. */
+export function claimsAbout(index: Index, { kind, id }: Ref): Claim[] {
+  const path = `${SEGMENT[kind]}/${id}`;
+  return index.model.claims.filter((claim) => claim.about?.includes(path));
+}
+
+/** Limits whose `about` names this element. */
+export function limitsAbout(index: Index, { kind, id }: Ref): Limit[] {
+  const path = `${SEGMENT[kind]}/${id}`;
+  return index.model.limits.filter((limit) => limit.about?.includes(path));
+}
+
+/** Protocols an actor serves or uses. */
+export function protocolsOf(index: Index, actor: string): { protocol: Protocol; role: "serves" | "uses" }[] {
+  const result: { protocol: Protocol; role: "serves" | "uses" }[] = [];
+  for (const protocol of index.model.protocols) {
+    if (protocol.server === actor) result.push({ protocol, role: "serves" });
+    else if (protocol.clients?.includes(actor) || protocol.messages.some((m) => m.from === actor)) result.push({ protocol, role: "uses" });
+  }
+  return result;
 }
 
 /** Actors in the order they first take part in a flow. */

@@ -1,0 +1,62 @@
+{
+  "summary": "Link a Mac to an account with a one-time 8-character code; the host gets its own revocable credential.",
+  "trigger": "user chooses Link a Mac on the web, then Link this Mac in Settings → Remote Access",
+  "steps": [
+    {
+      "actor": "account-do",
+      "action": "create pairing code (Crockford Base32, XXXX-YYYY, 10 min, ≤20 issued per minute) and store its verifier",
+      "properties": [
+        "transaction"
+      ]
+    },
+    {
+      "actor": "pairing-index-do",
+      "action": "index code → account"
+    },
+    {
+      "actor": "axo-mac",
+      "action": "accept typed/pasted code or axo://pair/<code>; call axo.relay.link",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "validate code, generate a 32-byte host credential, store it in Keychain, persist credential ID and host generation in relay.json",
+      "target": "macos-keychain"
+    },
+    {
+      "actor": "axod",
+      "action": "POST redemption with host metadata and credential verifier over TLS (10 s timeout)",
+      "target": "api-worker"
+    },
+    {
+      "actor": "api-worker",
+      "action": "rate limit redemptions (120/min, 8/min per source)",
+      "target": "pairing-index-do"
+    },
+    {
+      "actor": "account-do",
+      "action": "atomically consume the code and upsert host membership (≤16 active hosts)",
+      "properties": [
+        "transaction",
+        "repeating an identical redemption is idempotent"
+      ]
+    },
+    {
+      "actor": "account-do",
+      "action": "if this replaced a host's credential, close that host's existing relay"
+    },
+    {
+      "actor": "axod",
+      "action": "connect the relay",
+      "ref": "relay-connection"
+    }
+  ],
+  "anchors": [
+    "packages/axo-api-worker/src/auth/pairing.ts",
+    "packages/axo-api-worker/src/auth/pairing-directory.ts",
+    "packages/axo-api-worker/src/auth/account-manager.ts#redeemPairing",
+    "crates/axo-relay/src/pairing.rs",
+    "crates/axo-relay/src/credential.rs",
+    "apple/AxoMac/Sources/AxoMac/Settings/RemoteAccessSettingsView.swift"
+  ]
+}

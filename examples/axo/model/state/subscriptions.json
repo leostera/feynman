@@ -1,0 +1,9 @@
+{
+  "owner": "axod",
+  "summary": "Registry of local subscriptions and their bounded queues.",
+  "lifetime": "process; idle subscriptions expire after 60 s",
+  "anchors": [
+    "crates/axo-server/src/session.rs#subscribe",
+    "crates/axo-ipc/src/event_queue.rs"
+  ]
+}

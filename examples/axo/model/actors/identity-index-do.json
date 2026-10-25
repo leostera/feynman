@@ -1,0 +1,19 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "cloud",
+    "provider": "Cloudflare",
+    "platform": "Durable Objects"
+  },
+  "summary": "Maps an OAuth (issuer, subject) to an immutable Axo account ID.",
+  "footprint": {
+    "paths": [
+      "packages/axo-api-worker/src/auth/account.ts"
+    ],
+    "files": 1,
+    "lines": 26
+  },
+  "anchors": [
+    "packages/axo-api-worker/src/auth/account.ts"
+  ]
+}

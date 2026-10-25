@@ -1,0 +1,35 @@
+{
+  "summary": "Add a terminal pane to a Session and persist the new layout.",
+  "trigger": "user split in the Mac app or browser",
+  "steps": [
+    {
+      "actor": "axo-mac",
+      "action": "call axo.shell.create",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "insert shell row and spawn shell in a PTY pre-sized from the stored viewport",
+      "ref": "create-standalone-session"
+    },
+    {
+      "actor": "axo-mac",
+      "action": "call axo.session.layout.set with the new split tree",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "validate layout (binary tree, ≤64 depth, ≤255 nodes, leaves are this Session's open panes) and persist it"
+    },
+    {
+      "actor": "axod",
+      "action": "resize unattached panes to fit the layout; publish session.snapshot"
+    }
+  ],
+  "anchors": [
+    "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift#split",
+    "crates/axo-server/src/session.rs#set_layout",
+    "crates/axo-protocol/src/layout.rs",
+    "crates/axo-protocol/src/viewport.rs"
+  ]
+}

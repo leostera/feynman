@@ -1,0 +1,12 @@
+{
+  "subject": "PTY read buffer",
+  "value": "64 KiB",
+  "kind": "size",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod"
+  ],
+  "anchors": [
+    "crates/axo-pty/src/output.rs:28#READ_BUFFER_BYTES"
+  ]
+}

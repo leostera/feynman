@@ -1,0 +1,35 @@
+{
+  "statement": "A shell never blocks on a full PTY buffer because a client is slow or absent; slow clients are disconnected at 8 MiB backlog.",
+  "enforcement": [
+    "runtime",
+    "test-time"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "a pane is spawned",
+      "frames": [
+        {
+          "symbol": "spawn",
+          "anchor": "crates/axo-pty/src/process.rs#spawn"
+        },
+        {
+          "symbol": "TerminalOutput::start",
+          "anchor": "crates/axo-pty/src/output.rs#TerminalOutput::start",
+          "note": "pump thread per pane"
+        },
+        {
+          "symbol": "TerminalOutput::record",
+          "anchor": "crates/axo-pty/src/output.rs#TerminalOutput::record",
+          "note": "bounded per-subscriber backlog; disconnect at 8 MiB"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "crates/axod/tests/rpc.rs#terminal_attachments_share_output_and_shells_never_stall_unattached"
+  ],
+  "anchors": [
+    "crates/axo-pty/src/output.rs",
+    "crates/axod/tests/rpc.rs#terminal_attachments_share_output_and_shells_never_stall_unattached"
+  ]
+}

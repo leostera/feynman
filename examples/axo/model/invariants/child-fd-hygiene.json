@@ -1,0 +1,27 @@
+{
+  "statement": "Every spawned child is a session leader on its PTY and inherits only its PTY and explicitly listed descriptors.",
+  "enforcement": [
+    "runtime",
+    "documented"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "any child is spawned",
+      "frames": [
+        {
+          "symbol": "spawn",
+          "anchor": "crates/axo-pty/src/process.rs#spawn",
+          "note": "session leader on its PTY"
+        },
+        {
+          "symbol": "set_cloexec",
+          "anchor": "crates/axo-pty/src/process.rs#set_cloexec",
+          "note": "every axod descriptor is close-on-exec"
+        }
+      ]
+    }
+  ],
+  "anchors": [
+    "crates/axo-pty/src/process.rs"
+  ]
+}

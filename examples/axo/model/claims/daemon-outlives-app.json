@@ -1,0 +1,14 @@
+{
+  "statement": "The daemon keeps running when the menu-bar app quits, and is restarted when its build differs from the app's.",
+  "status": "supported",
+  "evidence": [
+    "README.md",
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift#checkBuildAndRestartIfNeeded"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axo-mac",
+    "actors/launchd",
+    "flows/daemon-registration"
+  ]
+}

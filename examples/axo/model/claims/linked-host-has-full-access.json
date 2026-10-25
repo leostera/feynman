@@ -1,0 +1,13 @@
+{
+  "statement": "A linked host can call the full current protocol; there are no per-method or per-session capability restrictions in v1.",
+  "status": "supported",
+  "evidence": [
+    "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md",
+    "packages/axo-api-worker/src/axo-host-relay.ts#hostRemoteMethods"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/account-do",
+    "flows/remote-command"
+  ]
+}

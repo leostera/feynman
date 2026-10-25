@@ -1,6 +1,6 @@
 import { Badge, TableOfContents, Text } from "@cloudflare/kumo";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { anchorUrl, href, resolveAnchor, spanLabel, type Anchor, type ClaimStatus, type Index, type Provenance } from "./model";
+import { anchorUrl, exists, href, parsePath, resolveAnchor, spanLabel, type Anchor, type ClaimStatus, type Index, type Kind, type Provenance } from "./model";
 
 const IndexContext = createContext<Index | null>(null);
 export const IndexProvider = IndexContext.Provider;
@@ -59,20 +59,57 @@ export function Link({ to, children, className = "" }: { to: string; children: R
   );
 }
 
-/** Link to any model element by id, resolving its kind. Unknown ids render as text. */
-export function IdRef({ id }: { id: string }) {
+/** Link to a model element of a known kind. Unknown ids render as text. */
+export function IdRef({ kind, id }: { kind: Kind; id: string }) {
   const index = useIndex();
-  const kind = index.kindOf.get(id);
-  return kind ? <Link to={href(kind, id)}>{id}</Link> : <span>{id}</span>;
+  return exists(index, { kind, id }) ? <Link to={href(kind, id)}>{id}</Link> : <span>{id}</span>;
 }
 
-export function IdRefs({ ids }: { ids: string[] }) {
+export function IdRefs({ kind, ids }: { kind: Kind; ids: string[] }) {
   return (
     <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
       {ids.map((id) => (
-        <IdRef key={id} id={id} />
+        <IdRef key={id} kind={kind} id={id} />
       ))}
     </span>
+  );
+}
+
+/** Link to an element named by path (`flows/pi-recovery`), labelled by its id. */
+export function PathRef({ path }: { path: string }) {
+  const ref = parsePath(path);
+  return ref ? <IdRef kind={ref.kind} id={ref.id} /> : <span>{path}</span>;
+}
+
+export function PathRefs({ paths }: { paths: string[] }) {
+  return (
+    <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+      {paths.map((path) => (
+        <PathRef key={path} path={path} />
+      ))}
+    </span>
+  );
+}
+
+/** A single anchor as an inline source link. */
+export function AnchorLink({ anchor, children }: { anchor: Anchor; children?: ReactNode }) {
+  const index = useIndex();
+  const url = anchorUrl(index.model.meta.source, anchor);
+  const { file, span } = resolveAnchor(anchor);
+  const lines = spanLabel(span);
+  const label = children ?? (
+    <>
+      {file}
+      {lines && <span className="text-kumo-subtle">:{lines}</span>}
+    </>
+  );
+  const title = lines ? `${file}:${lines}` : file;
+  return url ? (
+    <a href={url} target="_blank" rel="noreferrer" title={title} className="underline-offset-2 hover:text-kumo-link hover:underline">
+      {label}
+    </a>
+  ) : (
+    <span title={title}>{label}</span>
   );
 }
 
@@ -103,7 +140,8 @@ export function Page({
   sections: PageSection[];
 }) {
   const visible = sections.filter((section) => section.content !== null);
-  const active = useActiveSection(visible.map((section) => section.id));
+  const outline = visible.filter((section) => section.title);
+  const active = useActiveSection(outline.map((section) => section.id));
   return (
     <div className="mx-auto flex w-full max-w-[1200px] gap-10 px-8 py-8">
       <article className="min-w-0 flex-1 rounded-xl bg-kumo-base px-8 py-7 shadow-sm ring ring-kumo-hairline">
@@ -116,23 +154,25 @@ export function Page({
         <div className="flex flex-col">
           {visible.map((section) => (
             <section key={section.id} id={section.id} className="scroll-mt-6 border-b border-kumo-hairline py-6 last:border-b-0 last:pb-0">
-              <h2 className="mb-4 flex items-baseline gap-2 text-base font-semibold text-kumo-default">
-                {section.title}
-                {section.count !== undefined && (
-                  <span className="text-sm font-normal text-kumo-subtle tabular-nums">{section.count}</span>
-                )}
-              </h2>
+              {section.title && (
+                <h2 className="mb-4 flex items-baseline gap-2 text-base font-semibold text-kumo-default">
+                  {section.title}
+                  {section.count !== undefined && (
+                    <span className="text-sm font-normal text-kumo-subtle tabular-nums">{section.count}</span>
+                  )}
+                </h2>
+              )}
               {section.content}
             </section>
           ))}
         </div>
       </article>
-      {visible.length > 1 && (
+      {outline.length > 1 && (
         <aside className="sticky top-8 hidden w-52 shrink-0 self-start xl:block">
           <TableOfContents>
             <TableOfContents.Title>On this page</TableOfContents.Title>
             <TableOfContents.List>
-              {visible.map((section) => (
+              {outline.map((section) => (
                 <TableOfContents.Item
                   key={section.id}
                   active={active === section.id}

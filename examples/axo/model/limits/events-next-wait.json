@@ -1,0 +1,12 @@
+{
+  "subject": "events.next wait",
+  "value": "≤20 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-protocol/src/rpc.rs:83#MAX_EVENTS_TIMEOUT_MS"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "provenance": "ambient",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS"
+  },
+  "summary": "macOS service manager. Owns axod's process lifetime once registered through SMAppService.",
+  "anchors": [
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/RegistrationDecision.swift",
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/RestartMethod.swift"
+  ]
+}

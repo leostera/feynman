@@ -1,0 +1,30 @@
+{
+  "statement": "Holding the transcript flock proves no Pi for that Session is alive; only acquire() can produce a WriterLock.",
+  "enforcement": [
+    "compile-time",
+    "runtime",
+    "test-time"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "any Pi launch or recovery",
+      "frames": [
+        {
+          "symbol": "WriterLock::acquire",
+          "anchor": "crates/axo-pi/src/lock.rs#WriterLock::acquire",
+          "note": "only constructor of WriterLock"
+        },
+        {
+          "symbol": "flock_exclusive",
+          "anchor": "crates/axo-pi/src/lock.rs#flock_exclusive"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "crates/axo-pi/src/lock.rs#liveness_follows_the_writer_lock_without_creating_it"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/lock.rs"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS LaunchAgent"
+  },
+  "summary": "Per-user daemon. Authoritative owner of Workspaces, Sessions and Panes, their PTYs and Pi processes, the SQLite catalog, and the local JSON-RPC API. Keeps running when the app quits.",
+  "footprint": {
+    "paths": [
+      "crates/axod",
+      "crates/axo-server",
+      "crates/axo-pty",
+      "crates/axo-pi",
+      "crates/axo-ipc",
+      "crates/axo-relay",
+      "crates/axo-protocol",
+      "crates/axod-loadtest"
+    ],
+    "files": 67,
+    "lines": 21735
+  },
+  "anchors": [
+    "crates/axod/src/main.rs",
+    "crates/axo-server/src/lib.rs",
+    "crates/axo-server/src/session.rs"
+  ]
+}

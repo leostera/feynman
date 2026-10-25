@@ -1,0 +1,12 @@
+{
+  "subject": "calls per relay batch",
+  "value": "8",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "protocols/relay-host"
+  ],
+  "anchors": [
+    "packages/axo-api/src/contracts.ts:19#LIMITS.batchCalls"
+  ]
+}

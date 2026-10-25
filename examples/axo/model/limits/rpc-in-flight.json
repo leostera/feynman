@@ -1,0 +1,12 @@
+{
+  "subject": "RPC requests in flight per connection",
+  "value": "64",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-ipc/src/server.rs:26"
+  ]
+}

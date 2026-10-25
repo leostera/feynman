@@ -1,0 +1,180 @@
+{
+  "summary": "The tables axod persists in its SQLite catalog. Rows are archived with a reason rather than deleted.",
+  "style": "database",
+  "transport": "SQLite file ~/.axo/server/axo.db (0600; WAL, synchronous=FULL)",
+  "server": "axod",
+  "clients": [],
+  "version": "user_version 7",
+  "messages": [
+    {
+      "name": "workspaces",
+      "kind": "table",
+      "fields": [
+        {
+          "name": "workspace_id",
+          "type": "TEXT PK",
+          "note": "uuid"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "directory_path",
+          "type": "TEXT"
+        },
+        {
+          "name": "directory_bookmark",
+          "type": "TEXT",
+          "note": "security-scoped bookmark, optional"
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "note": "open | archived"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "archived_at",
+          "type": "INTEGER"
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "kind": "table",
+      "fields": [
+        {
+          "name": "id",
+          "type": "INTEGER PK"
+        },
+        {
+          "name": "initial_pwd",
+          "type": "TEXT"
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "note": "open | archived"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "archived_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "termination_reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "layout_json",
+          "type": "TEXT"
+        },
+        {
+          "name": "workspace_id",
+          "type": "TEXT FK",
+          "note": "null for standalone sessions"
+        },
+        {
+          "name": "session_uuid",
+          "type": "TEXT"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "manual_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "emoji",
+          "type": "TEXT"
+        },
+        {
+          "name": "pi_session_file",
+          "type": "TEXT"
+        },
+        {
+          "name": "pi_session_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "pi_bridge_socket_path",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "shells",
+      "kind": "table",
+      "fields": [
+        {
+          "name": "id",
+          "type": "INTEGER PK"
+        },
+        {
+          "name": "session_id",
+          "type": "INTEGER FK"
+        },
+        {
+          "name": "initial_pwd",
+          "type": "TEXT"
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "note": "open | archived"
+        },
+        {
+          "name": "created_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "archived_at",
+          "type": "INTEGER"
+        },
+        {
+          "name": "termination_reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "note": "pi | terminal"
+        },
+        {
+          "name": "pane_id",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "daemon_metadata",
+      "kind": "table",
+      "fields": [
+        {
+          "name": "key",
+          "type": "TEXT PK",
+          "note": "host ID, agent.command, shell.command, viewport, bridge tokens"
+        },
+        {
+          "name": "value",
+          "type": "TEXT"
+        }
+      ]
+    }
+  ],
+  "compatibility": "Migrated in place inside one transaction: legacy sessions table renamed, layout and workspace columns added.",
+  "anchors": [
+    "crates/axo-server/src/session.rs#create_tables",
+    "crates/axo-server/src/session.rs#initialize_database",
+    "crates/axo-server/src/session.rs#ensure_workspace_columns"
+  ]
+}

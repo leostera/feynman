@@ -1,0 +1,12 @@
+{
+  "subject": "terminal input write",
+  "value": "5 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:53#TERMINAL_INPUT_WRITE_TIMEOUT"
+  ]
+}

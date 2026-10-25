@@ -1,27 +1,25 @@
 import { Badge, Table, Tabs } from "@cloudflare/kumo";
 import { useState } from "react";
-import { claimId, type ClaimStatus } from "../model";
-import { Anchors, Empty, IdRefs, Page, STATUS_ORDER, StatusBadge, statusLabel, useIndex } from "../ui";
-import { ClaimRows } from "./Actors";
+import { href, type Claim, type ClaimStatus } from "../model";
+import { Anchors, Empty, Link, Page, PathRef, PathRefs, STATUS_ORDER, StatusBadge, statusLabel, useIndex } from "../ui";
 
 export function ClaimsPage() {
   const index = useIndex();
-  const claims = index.model.claims.map((claim, i) => ({ id: claimId(i), claim }));
+  const claims = index.model.claims;
   const [filter, setFilter] = useState<ClaimStatus | "all">("all");
   const shown = claims
-    .filter(({ claim }) => filter === "all" || claim.status === filter)
-    .sort((a, b) => STATUS_ORDER.indexOf(a.claim.status) - STATUS_ORDER.indexOf(b.claim.status));
-  const count = (status: ClaimStatus) => claims.filter(({ claim }) => claim.status === status).length;
+    .filter((claim) => filter === "all" || claim.status === filter)
+    .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+  const count = (status: ClaimStatus) => claims.filter((claim) => claim.status === status).length;
 
   return (
     <Page
       title="Claims"
-      summary="Statements about the system and how the evidence relates to them. Contradicted and unverified claims come first."
+      summary="What we believe the system does, and how the evidence relates to it. Contradicted and unverified claims come first."
       sections={[
         {
           id: "claims",
-          title: filter === "all" ? "All claims" : statusLabel(filter),
-          count: shown.length,
+          title: "",
           content: (
             <div className="flex flex-col gap-4">
               <Tabs
@@ -58,7 +56,7 @@ export function ClaimPage({ id }: { id: string }) {
           <Badge variant="outline">{claim.epistemic}</Badge>
         </>
       }
-      facts={claim.about ? [["About", <IdRefs ids={claim.about} />]] : undefined}
+      facts={claim.about ? [["About", <PathRefs paths={claim.about} />]] : undefined}
       sections={[
         { id: "note", title: "Note", content: claim.note ? <p className="max-w-[70ch] text-kumo-strong">{claim.note}</p> : null },
         {
@@ -72,44 +70,39 @@ export function ClaimPage({ id }: { id: string }) {
   );
 }
 
-export function MeasurementsPage() {
-  const index = useIndex();
-  const measurements = index.model.measurements ?? [];
-  const kinds = [...new Set(measurements.map((m) => m.kind))];
+export function ClaimRows({ claims }: { claims: Claim[] }) {
   return (
-    <Page
-      title="Measurements"
-      summary="Limits, sizes, timeouts, intervals, and rates stated in code, tests, or benchmarks."
-      sections={kinds.map((kind) => {
-        const rows = measurements.filter((m) => m.kind === kind);
-        return {
-          id: kind,
-          title: kind[0].toUpperCase() + kind.slice(1),
-          count: rows.length,
-          content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Subject</Table.Head>
-                  <Table.Head>Value</Table.Head>
-                  <Table.Head>Source</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {rows.map((m) => (
-                  <Table.Row key={m.subject}>
-                    <Table.Cell className="align-top text-kumo-default">{m.subject}</Table.Cell>
-                    <Table.Cell className="align-top font-mono text-sm whitespace-nowrap tabular-nums">{String(m.value)}</Table.Cell>
-                    <Table.Cell className="align-top">
-                      <Anchors anchors={m.anchors} />
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ),
-        };
-      })}
-    />
+    <Table layout="auto">
+      <Table.Header>
+        <Table.Row>
+          <Table.Head>Status</Table.Head>
+          <Table.Head>Claim</Table.Head>
+          <Table.Head>About</Table.Head>
+        </Table.Row>
+      </Table.Header>
+      <Table.Body>
+        {claims.map((claim) => (
+          <Table.Row key={claim.id}>
+            <Table.Cell className="align-top whitespace-nowrap">
+              <StatusBadge status={claim.status} />
+            </Table.Cell>
+            <Table.Cell className="max-w-[64ch] align-top">
+              <Link to={href("claim", claim.id)} className="text-kumo-default!">
+                {claim.statement}
+              </Link>
+            </Table.Cell>
+            <Table.Cell className="align-top text-sm">
+              {claim.about && (
+                <span className="flex flex-col gap-0.5">
+                  {claim.about.map((path) => (
+                    <PathRef key={path} path={path} />
+                  ))}
+                </span>
+              )}
+            </Table.Cell>
+          </Table.Row>
+        ))}
+      </Table.Body>
+    </Table>
   );
 }

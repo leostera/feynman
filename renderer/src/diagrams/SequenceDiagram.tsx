@@ -31,7 +31,7 @@ export function SequenceDiagram({ flow }: { flow: Flow }) {
           {participants.map((actor) => (
             <div key={actor} className="flex justify-center" style={{ width: COLUMN }}>
               <div className="rounded-md bg-kumo-base px-3 py-1.5 text-sm font-medium shadow-xs ring ring-kumo-line">
-                <IdRef id={actor} />
+                <IdRef kind="actor" id={actor} />
               </div>
             </div>
           ))}
@@ -98,16 +98,16 @@ function StepLabel({ step, number, className = "" }: { step: Step; number: numbe
         <span className="mr-1 font-mono text-kumo-subtle">{number}.</span>
         {step.action}
       </span>
-      {(step.ref || step.boundary || step.properties?.length) && (
+      {(step.ref || step.protocol || step.properties?.length) && (
         <span className="flex flex-wrap justify-center gap-1">
           {step.ref && (
             <Badge variant="purple">
-              ↳ <IdRef id={step.ref} />
+              ↳ <IdRef kind="flow" id={step.ref} />
             </Badge>
           )}
-          {step.boundary && (
+          {step.protocol && (
             <Badge variant="orange">
-              ⇥ <IdRef id={step.boundary} />
+              ⇄ <IdRef kind="protocol" id={step.protocol} />
             </Badge>
           )}
           {step.properties?.map((property) => (

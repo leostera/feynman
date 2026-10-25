@@ -1,0 +1,13 @@
+{
+  "statement": "Project paths stay on the host; remote snapshots omit Pi panes and paths.",
+  "status": "supported",
+  "evidence": [
+    "crates/axo-protocol/src/model.rs#RemoteSessionSnapshot::from_record",
+    "crates/axo-relay/src/relay.rs"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "flows/relay-connection"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "system": "axo",
+  "summary": "An agentic terminal harness: a native macOS app and a browser Workbench are clients of a per-user Rust daemon (axod) that owns PTYs, Pi agent processes and the session catalog; a Cloudflare Worker relays remote clients to linked hosts.",
+  "source": {
+    "repository": "../axo",
+    "commit": "66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+    "footprint": {
+      "files": 374,
+      "lines": 68323,
+      "excludes": [
+        "vendor/",
+        "third_party/",
+        ".agents/",
+        "*.lock",
+        "package-lock.json",
+        "*.lock.json"
+      ]
+    },
+    "committedAt": "2026-10-25T01:08:44Z",
+    "url": "https://github.com/leostera/axo",
+    "commitUrl": "https://github.com/leostera/axo/commit/66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+    "fileUrl": "https://github.com/leostera/axo/blob/66d8d86b7e90fc1478d56cf948a993a16692f0e7/{path}",
+    "main": {
+      "ref": "main",
+      "commit": "ca8692df9728b5e1cf031b212812485bca2f6ab2",
+      "ahead": 0,
+      "behind": 4,
+      "checkedAt": "2026-10-25T02:43:38.228Z"
+    }
+  },
+  "extractedBy": "agent",
+  "extraction": "bootstrap",
+  "coverage": "First pass. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only.",
+  "extractedAt": "2026-10-25T01:37:00Z"
+}

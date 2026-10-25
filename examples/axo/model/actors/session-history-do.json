@@ -1,0 +1,19 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "cloud",
+    "provider": "Cloudflare",
+    "platform": "Durable Objects"
+  },
+  "summary": "AxoSessionDO, one per (account, host, session). Durable server-side copy of structured Pi events.",
+  "footprint": {
+    "paths": [
+      "packages/axo-api-worker/src/session-history.ts"
+    ],
+    "files": 1,
+    "lines": 190
+  },
+  "anchors": [
+    "packages/axo-api-worker/src/session-history.ts"
+  ]
+}

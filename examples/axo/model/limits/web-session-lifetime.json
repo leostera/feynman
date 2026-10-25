@@ -1,0 +1,12 @@
+{
+  "subject": "web session lifetime",
+  "value": "30 days",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/api-worker"
+  ],
+  "anchors": [
+    "packages/axo-api-worker/src/auth/cloudflare.ts:13#SESSION_LIFETIME_SECONDS"
+  ]
+}

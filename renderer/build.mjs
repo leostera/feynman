@@ -1,11 +1,11 @@
-// Usage: bun run build <model.json> <out.html>
+// Usage: bun run build <model-dir> <out.html>
 import { copyFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { build } from "vite";
 
 const [modelArg, outArg] = process.argv.slice(2);
 if (!modelArg || !outArg) {
-  console.error("usage: build <model.json> <out.html>");
+  console.error("usage: build <model-dir> <out.html>");
   process.exit(2);
 }
 const caller = process.env.INIT_CWD ?? process.cwd();

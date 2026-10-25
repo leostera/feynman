@@ -1,0 +1,13 @@
+{
+  "subject": "queued events per subscription",
+  "value": "128",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "protocols/local-rpc"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:43#MAX_QUEUED_EVENTS_PER_SUBSCRIPTION"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "statement": "Open tabs and shells are restored after a daemon restart, but terminal screen contents are not.",
+  "status": "supported",
+  "evidence": [
+    "crates/axo-server/src/session.rs#restore_open_sessions",
+    "crates/axod/tests/rpc.rs#daemon_starts_with_and_restores_a_default_pty_session_after_restart",
+    "README.md"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "flows/daemon-startup"
+  ]
+}

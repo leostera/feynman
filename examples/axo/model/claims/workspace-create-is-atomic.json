@@ -1,0 +1,16 @@
+{
+  "statement": "Creating a Workspace and its first Session is one logical operation.",
+  "status": "partially-supported",
+  "note": "RFD0014 describes it as one logical operation. In code it is several separate writes with a compensating archive on failure, not a database transaction; a crash between writes would leave a Workspace without a Session, which startup repair then fills.",
+  "evidence": [
+    "crates/axo-server/src/session.rs#create_workspace",
+    "crates/axo-server/src/session.rs#create_workspace_session",
+    "crates/axo-server/src/session.rs#ensure_open_workspace_sessions",
+    "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md"
+  ],
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "flows/create-workspace"
+  ]
+}

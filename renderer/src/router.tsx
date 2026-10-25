@@ -1,22 +1,18 @@
 import { useEffect, useState } from "react";
-import { SEGMENT, type Kind } from "./model";
+import { kindOfSegment, type Kind } from "./model";
 
 /** What the current URL fragment points at. */
 export type Route =
   | { page: "overview" }
   | { page: "index"; kind: Kind }
-  | { page: "measurements" }
   | { page: "detail"; kind: Kind; id: string }
   | { page: "missing"; path: string };
-
-const KIND_BY_SEGMENT = new Map(Object.entries(SEGMENT).map(([kind, segment]) => [segment, kind as Kind]));
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   if (path === "") return { page: "overview" };
   const [segment, ...rest] = path.split("/");
-  if (segment === "measurements" && rest.length === 0) return { page: "measurements" };
-  const kind = KIND_BY_SEGMENT.get(segment);
+  const kind = kindOfSegment(segment);
   if (!kind) return { page: "missing", path };
   if (rest.length === 0) return { page: "index", kind };
   return { page: "detail", kind, id: decodeURIComponent(rest.join("/")) };

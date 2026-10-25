@@ -1,0 +1,14 @@
+{
+  "statement": "The relay forwards at most one local event per loop iteration, and each iteration may wait up to 20 ms for an incoming frame, so with a quiet cloud side forwarding is bounded near 50 events per second; bursts of terminal output will lag the 128-event queue and fall back to snapshot resync.",
+  "status": "unverified",
+  "epistemic": "inferred",
+  "evidence": [
+    "crates/axo-relay/src/relay.rs#relay_session",
+    "crates/axo-relay/src/relay.rs#SOCKET_READ_TIMEOUT",
+    "crates/axo-server/src/session.rs#MAX_QUEUED_EVENTS_PER_SUBSCRIPTION"
+  ],
+  "about": [
+    "actors/axod",
+    "flows/relay-connection"
+  ]
+}

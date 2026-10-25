@@ -1,0 +1,85 @@
+{
+  "statement": "At least one standalone (Workspace-less) Session rooted at $HOME is open.",
+  "enforcement": [
+    "runtime",
+    "test-time"
+  ],
+  "consequence": "The app would have no default terminal to show.",
+  "enforcedAt": [
+    {
+      "trigger": "daemon start",
+      "frames": [
+        {
+          "symbol": "main",
+          "anchor": "crates/axod/src/main.rs#main"
+        },
+        {
+          "symbol": "serve_ipc",
+          "anchor": "crates/axo-server/src/lib.rs#serve_ipc"
+        },
+        {
+          "symbol": "SessionManager::open",
+          "anchor": "crates/axo-server/src/session.rs#SessionManager::open"
+        },
+        {
+          "symbol": "ensure_home_session",
+          "anchor": "crates/axo-server/src/session.rs#ensure_home_session",
+          "note": "creates one if none is open"
+        },
+        {
+          "symbol": "create_session",
+          "anchor": "crates/axo-server/src/session.rs#create_session"
+        }
+      ]
+    },
+    {
+      "trigger": "axo.session.close",
+      "frames": [
+        {
+          "symbol": "register_rpc_methods",
+          "anchor": "crates/axo-server/src/session.rs#register_rpc_methods",
+          "note": "axo.session.close"
+        },
+        {
+          "symbol": "close_session_and_publish",
+          "anchor": "crates/axo-server/src/session.rs#close_session_and_publish"
+        },
+        {
+          "symbol": "close_session",
+          "anchor": "crates/axo-server/src/session.rs#close_session",
+          "note": "last standalone session: create the replacement first"
+        },
+        {
+          "symbol": "create_session",
+          "anchor": "crates/axo-server/src/session.rs#create_session"
+        }
+      ]
+    },
+    {
+      "trigger": "a shell exits",
+      "frames": [
+        {
+          "symbol": "start_reaper",
+          "anchor": "crates/axo-server/src/session.rs#start_reaper",
+          "note": "thread, every 100 ms"
+        },
+        {
+          "symbol": "reap_exited_sessions",
+          "anchor": "crates/axo-server/src/session.rs#reap_exited_sessions"
+        },
+        {
+          "symbol": "ensure_home_session",
+          "anchor": "crates/axo-server/src/session.rs#ensure_home_session"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "crates/axod/tests/rpc.rs#keeps_one_standalone_session_open_while_workspaces_exist"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#ensure_home_session",
+    "crates/axo-server/src/session.rs#close_session",
+    "crates/axod/tests/rpc.rs#keeps_one_standalone_session_open_while_workspaces_exist"
+  ]
+}

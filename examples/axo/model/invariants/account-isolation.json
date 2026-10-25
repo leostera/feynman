@@ -1,0 +1,35 @@
+{
+  "statement": "Authorization derives from validated credentials and account ownership, never from a caller-selected role, host ID or email. Account routes never fall back to legacy principals.",
+  "enforcement": [
+    "runtime",
+    "test-time"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "account API request",
+      "frames": [
+        {
+          "symbol": "router",
+          "anchor": "packages/axo-api-worker/src/http/router.ts"
+        },
+        {
+          "symbol": "requireAxoAccount",
+          "anchor": "packages/axo-api-worker/src/auth/cloudflare.ts#requireAxoAccount",
+          "note": "session cookie → account ID"
+        },
+        {
+          "symbol": "AxoAccountManager",
+          "anchor": "packages/axo-api-worker/src/auth/account-manager.ts",
+          "note": "one Durable Object per account"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "packages/axo-api-worker/tests/auth.test.ts"
+  ],
+  "anchors": [
+    "packages/axo-api-worker/src/auth/account-manager.ts",
+    "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md"
+  ]
+}

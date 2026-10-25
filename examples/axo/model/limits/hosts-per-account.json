@@ -1,0 +1,12 @@
+{
+  "subject": "hosts per account",
+  "value": "16",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "actors/account-do"
+  ],
+  "anchors": [
+    "packages/axo-api/src/contracts.ts:20#LIMITS.machines"
+  ]
+}

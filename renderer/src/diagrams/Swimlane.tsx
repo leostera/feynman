@@ -18,7 +18,7 @@ export function Swimlane({ flow }: { flow: Flow }) {
               className="sticky left-0 z-10 flex items-center rounded-l-md bg-kumo-elevated px-3 text-sm font-medium ring ring-kumo-hairline"
               style={{ gridRow: lane + 1, gridColumn: 1 }}
             >
-              <IdRef id={actor} />
+              <IdRef kind="actor" id={actor} />
             </div>
             <div
               aria-hidden
@@ -43,12 +43,12 @@ export function Swimlane({ flow }: { flow: Flow }) {
               </span>
               {target && (
                 <span className="text-kumo-subtle">
-                  → <IdRef id={target} />
+                  → <IdRef kind="actor" id={target} />
                 </span>
               )}
               {step.ref && (
                 <span className="text-kumo-subtle">
-                  ↳ <IdRef id={step.ref} />
+                  ↳ <IdRef kind="flow" id={step.ref} />
                 </span>
               )}
             </div>

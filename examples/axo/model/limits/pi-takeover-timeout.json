@@ -1,0 +1,12 @@
+{
+  "subject": "Pi transcript takeover",
+  "value": "10 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "flows/pi-recovery"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/takeover.rs:17#TAKEOVER_TIMEOUT"
+  ]
+}

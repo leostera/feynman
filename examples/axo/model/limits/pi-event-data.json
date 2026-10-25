@@ -1,0 +1,12 @@
+{
+  "subject": "Pi event data",
+  "value": "60,000 bytes",
+  "kind": "size",
+  "epistemic": "stated",
+  "about": [
+    "protocols/pi-bridge"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/connection.rs:17#MAX_EVENT_DATA_BYTES"
+  ]
+}

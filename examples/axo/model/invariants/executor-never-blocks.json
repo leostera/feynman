@@ -1,0 +1,35 @@
+{
+  "statement": "The RPC executor never blocks: synchronous handlers run on the blocking pool, long-polls are futures.",
+  "enforcement": [
+    "runtime",
+    "test-time"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "every RPC request",
+      "frames": [
+        {
+          "symbol": "serve",
+          "anchor": "crates/axo-ipc/src/server.rs#serve"
+        },
+        {
+          "symbol": "serve_connection",
+          "anchor": "crates/axo-ipc/src/server.rs#serve_connection",
+          "note": "one task per connection and per request"
+        },
+        {
+          "symbol": "add_blocking_method",
+          "anchor": "crates/axo-ipc/src/server.rs#add_blocking_method",
+          "note": "synchronous handlers on the blocking pool"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "crates/axod/tests/rpc.rs#long_polls_never_delay_unrelated_requests"
+  ],
+  "anchors": [
+    "crates/axo-ipc/src/server.rs",
+    "crates/axod/tests/rpc.rs#long_polls_never_delay_unrelated_requests"
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "summary": "Restart an unavailable Pi pane against its exact existing conversation, taking the transcript over from any Pi still holding it.",
+  "trigger": "daemon startup, axo.session.pi.restart.auto.v1 (app auto-restart), or axo.session.pi.restart.force.v2 (explicit user restart)",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "under the catalog mutex: check pane is unavailable and not already recovering; reserve a recovery ID"
+    },
+    {
+      "actor": "axod",
+      "action": "require the Pi session file to be owned by exactly one Session row"
+    },
+    {
+      "actor": "axod",
+      "action": "outside the mutex: verify the history file exists and is Axo-owned (device/inode identity)"
+    },
+    {
+      "actor": "axod",
+      "action": "take over the transcript writer lock (flock)",
+      "properties": [
+        "auto: ask Pi to shut down if idle, never force",
+        "force: escalate to signals aimed only at the verified Pi process group",
+        "takeover timeout 10 s"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "verify the history file did not change while waiting"
+    },
+    {
+      "actor": "axod",
+      "action": "briefly re-take the mutex: confirm reservation is current, rotate the bridge token"
+    },
+    {
+      "actor": "axod",
+      "action": "spawn Pi outside the mutex, inheriting the writer lock"
+    },
+    {
+      "actor": "axod",
+      "action": "commit only if the reservation is still current; otherwise stop the new child outside the mutex"
+    },
+    {
+      "actor": "axod",
+      "action": "start the Pi bridge worker, publish session.snapshot",
+      "ref": "pi-bridge"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#restart_unavailable_pi",
+    "crates/axo-server/src/session.rs#commit_pi_recovery",
+    "crates/axo-pi/src/takeover.rs",
+    "crates/axo-pi/src/lock.rs",
+    "crates/axo-pi/src/history.rs",
+    "docs/axod-recovery-hardening.md",
+    "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift#restartPiSession"
+  ]
+}

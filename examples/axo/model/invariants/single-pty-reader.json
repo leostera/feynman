@@ -1,0 +1,49 @@
+{
+  "statement": "Only the output pump reads a PTY master; attached clients get the descriptor for input, resize and termios only.",
+  "enforcement": [
+    "documented"
+  ],
+  "consequence": "A client reading the fd would steal output from other clients and history.",
+  "enforcedAt": [
+    {
+      "trigger": "a pane is spawned",
+      "frames": [
+        {
+          "symbol": "create_shell",
+          "anchor": "crates/axo-server/src/session.rs#create_shell"
+        },
+        {
+          "symbol": "spawn",
+          "anchor": "crates/axo-pty/src/process.rs#spawn"
+        },
+        {
+          "symbol": "TerminalOutput::start",
+          "anchor": "crates/axo-pty/src/output.rs#TerminalOutput::start",
+          "note": "the pump becomes the only reader"
+        }
+      ]
+    },
+    {
+      "trigger": "a client attaches",
+      "frames": [
+        {
+          "symbol": "start_attachment_listener",
+          "anchor": "crates/axo-server/src/session.rs#start_attachment_listener"
+        },
+        {
+          "symbol": "handle_attachment",
+          "anchor": "crates/axo-server/src/session.rs#handle_attachment"
+        },
+        {
+          "symbol": "write_acceptance",
+          "anchor": "crates/axo-pty/src/attach.rs#write_acceptance",
+          "note": "hands over the descriptor for input, resize and termios only"
+        }
+      ]
+    }
+  ],
+  "anchors": [
+    "crates/axo-pty/src/output.rs",
+    "crates/axo-pty/src/attach.rs"
+  ]
+}

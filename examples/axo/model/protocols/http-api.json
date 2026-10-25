@@ -1,0 +1,97 @@
+{
+  "summary": "Public HTTP routes of the Axo Worker at axo.leostera.dev.",
+  "style": "http",
+  "transport": "HTTPS",
+  "server": "api-worker",
+  "clients": [
+    "web-app",
+    "axod"
+  ],
+  "messages": [
+    {
+      "name": "GET /api/auth/cloudflare/start",
+      "kind": "route",
+      "summary": "Starts OAuth: sealed state + PKCE cookie, redirect to Cloudflare."
+    },
+    {
+      "name": "GET /api/auth/cloudflare/callback",
+      "kind": "route",
+      "summary": "Verifies state, exchanges the code, maps the subject to an account, sets the session cookie."
+    },
+    {
+      "name": "GET /api/auth/me",
+      "kind": "route",
+      "summary": "The signed-in account, if any."
+    },
+    {
+      "name": "POST /api/auth/logout",
+      "kind": "route",
+      "summary": "Revokes the Axo web session."
+    },
+    {
+      "name": "POST /api/v1/account/host-pairings",
+      "kind": "route",
+      "summary": "Creates a pairing code (10 min; ≤20 per minute)."
+    },
+    {
+      "name": "POST /api/v1/host-pairings/redeem",
+      "kind": "route",
+      "summary": "axod redeems a code with its credential verifier (≤4 KiB body; rate limited)."
+    },
+    {
+      "name": "GET /api/v1/account/hosts",
+      "kind": "route",
+      "summary": "The account's hosts (≤16)."
+    },
+    {
+      "name": "GET /api/v1/account/hosts/:host/sessions",
+      "kind": "route",
+      "summary": "A host's last published sessions."
+    },
+    {
+      "name": "GET /api/v1/account/hosts/:host/sessions/:session/events",
+      "kind": "route",
+      "summary": "Pages of stored Pi events (1 to 50 per page)."
+    },
+    {
+      "name": "POST /api/v1/account/hosts/:host/revoke",
+      "kind": "route",
+      "summary": "Unlinks a host and closes its relay."
+    },
+    {
+      "name": "GET /api/v1/account/hosts/:host/client",
+      "kind": "route",
+      "summary": "WebSocket upgrade for a browser client (relay-host)."
+    },
+    {
+      "name": "GET /api/v1/accounts/:account/hosts/:host/daemon",
+      "kind": "route",
+      "summary": "WebSocket upgrade for a linked axod (relay-host)."
+    }
+  ],
+  "parsing": [
+    {
+      "summary": "OAuth callback checks state, PKCE verifier, the fixed callback URI and an allowlisted return destination; identity is the verified subject, never email.",
+      "anchors": [
+        "packages/axo-api-worker/src/auth/cloudflare.ts",
+        "packages/axo-api-worker/src/auth/provider.ts"
+      ]
+    },
+    {
+      "summary": "Bodies are size-limited and parsed with zod before use; mutating cookie routes check the exact Origin.",
+      "anchors": [
+        "packages/axo-api-worker/src/http/body.ts",
+        "packages/axo-api-worker/src/http/router.ts"
+      ]
+    }
+  ],
+  "definitions": [
+    "schemas/axo.leostera.dev/v1/pairing.schema.json"
+  ],
+  "compatibility": "Legacy /v1/* routes (synthetic edge principals, the unassigned private-fleet directory) coexist with account-scoped /api/v1/*. No removal condition is stated in code.",
+  "anchors": [
+    "packages/axo-api-worker/src/http/router.ts",
+    "packages/axo-api-worker/src/access.ts",
+    "packages/axo-api-worker/src/axo-host-directory.ts"
+  ]
+}

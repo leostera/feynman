@@ -1,0 +1,13 @@
+{
+  "subject": "pairing redemptions",
+  "value": "120 per minute; 8 per source",
+  "kind": "rate",
+  "epistemic": "stated",
+  "about": [
+    "protocols/http-api"
+  ],
+  "anchors": [
+    "packages/axo-api-worker/src/auth/pairing.ts:12#MAX_REDEMPTIONS_PER_MINUTE",
+    "packages/axo-api-worker/src/auth/pairing.ts:13#MAX_REDEMPTIONS_PER_SOURCE_PER_MINUTE"
+  ]
+}

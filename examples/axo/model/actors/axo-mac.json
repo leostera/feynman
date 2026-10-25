@@ -1,0 +1,20 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS app"
+  },
+  "summary": "SwiftUI macOS app. Registers axod as a LaunchAgent, renders panes with libghostty surfaces, and drives the catalog through local RPC. Holds no authoritative session state.",
+  "footprint": {
+    "paths": [
+      "apple"
+    ],
+    "files": 133,
+    "lines": 18335
+  },
+  "anchors": [
+    "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift",
+    "apple/AxoRPC/Sources/AxoRPC/UnixSocketRPC.swift",
+    "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift"
+  ]
+}

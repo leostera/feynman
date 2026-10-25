@@ -1,0 +1,13 @@
+{
+  "subject": "relay frame",
+  "value": "65,536 bytes",
+  "kind": "size",
+  "epistemic": "stated",
+  "about": [
+    "protocols/relay-host"
+  ],
+  "anchors": [
+    "crates/axo-relay/src/relay.rs:29#MAX_FRAME_BYTES",
+    "packages/axo-api/src/contracts.ts:18#LIMITS.frameBytes"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "summary": "Bridge connection authenticates, then binds to the exact pane, then carries one increasing event stream. Anything else rejects the connection.",
+  "states": [
+    "authenticating",
+    "binding",
+    "streaming",
+    "rejected"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/connection.rs#Phase"
+  ]
+}

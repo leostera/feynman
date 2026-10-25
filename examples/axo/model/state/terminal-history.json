@@ -1,0 +1,9 @@
+{
+  "owner": "axod",
+  "summary": "Per-pane in-memory replay buffer of VT output, up to 8 MiB. If exceeded, replay is skipped rather than partial.",
+  "lifetime": "process; lost on daemon restart",
+  "anchors": [
+    "crates/axo-pty/src/output.rs#TerminalOutputHistory",
+    "README.md"
+  ]
+}

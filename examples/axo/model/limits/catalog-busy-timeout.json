@@ -1,0 +1,12 @@
+{
+  "subject": "SQLite busy timeout",
+  "value": "3 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "protocols/catalog-schema"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:642"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "summary": "Create a Session inside a Workspace with one Pi pane bound to a fresh, exact conversation file.",
+  "trigger": "axo.workspace.session.create, axo.remote.workspace.session.create, or invariant repair",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "read the open Workspace's directory"
+    },
+    {
+      "actor": "axod",
+      "action": "allocate session UUID, pane UUID, Pi session file path (pi-sessions/<workspace>/<uuid>.jsonl) and bridge socket path"
+    },
+    {
+      "actor": "axod",
+      "action": "insert Session row, insert Pi shell row, write single-pane layout",
+      "properties": [
+        "three separate statements, not one transaction"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "spawn Pi in a PTY with --session <path> and the extension environment",
+      "target": "pi",
+      "properties": [
+        "happens while holding the catalog mutex"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "on spawn failure, archive the Session (reason pi_spawn_failed)"
+    },
+    {
+      "actor": "pi-axo",
+      "action": "start pi-axo bridge server once Pi's actual session file matches the configured path"
+    },
+    {
+      "actor": "axod",
+      "action": "start the Pi bridge worker and publish session.snapshot",
+      "ref": "pi-bridge"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#create_workspace_session",
+    "crates/axo-server/src/session.rs#create_session_in_workspace",
+    "crates/axo-pi/src/launch.rs",
+    "packages/pi-axo/src/extension.ts"
+  ]
+}

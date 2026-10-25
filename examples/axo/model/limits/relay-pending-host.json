@@ -1,0 +1,12 @@
+{
+  "subject": "pending relay calls per host",
+  "value": "128",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "protocols/relay-host"
+  ],
+  "anchors": [
+    "packages/axo-api/src/contracts.ts:22#LIMITS.pendingPerMachine"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "subject": "concurrent terminal attachments",
+  "value": "256",
+  "kind": "count",
+  "epistemic": "stated",
+  "about": [
+    "actors/axod",
+    "protocols/pty-attach"
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs:47#MAX_CONCURRENT_TERMINAL_ATTACHMENTS"
+  ]
+}

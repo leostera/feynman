@@ -1,0 +1,34 @@
+{
+  "statement": "Publishers never block; a full subscriber queue is replaced by a single lagged marker rather than presenting a silent gap.",
+  "enforcement": [
+    "runtime",
+    "test-time"
+  ],
+  "enforcedAt": [
+    {
+      "trigger": "any event is published",
+      "frames": [
+        {
+          "symbol": "EventBus::publish",
+          "anchor": "crates/axo-server/src/session.rs#EventBus::publish"
+        },
+        {
+          "symbol": "EventQueue::push",
+          "anchor": "crates/axo-ipc/src/event_queue.rs#EventQueue::push",
+          "note": "full queue: mark lagged, never block"
+        },
+        {
+          "symbol": "EventQueue::take",
+          "anchor": "crates/axo-ipc/src/event_queue.rs#EventQueue::take",
+          "note": "returns the lag marker alone"
+        }
+      ]
+    }
+  ],
+  "tests": [
+    "crates/axo-ipc/src/event_queue.rs#full_queue_reports_lag_once_and_discards_the_gapped_backlog"
+  ],
+  "anchors": [
+    "crates/axo-ipc/src/event_queue.rs"
+  ]
+}

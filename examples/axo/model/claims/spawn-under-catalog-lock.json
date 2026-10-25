@@ -1,0 +1,14 @@
+{
+  "statement": "Process spawning and PTY input writes happen while holding the single catalog mutex, so a slow spawn or a blocked PTY write (up to 5 s) stalls every other catalog operation.",
+  "status": "unverified",
+  "epistemic": "inferred",
+  "evidence": [
+    "crates/axo-server/src/session.rs#create_workspace_session",
+    "crates/axo-server/src/session.rs#create_shell",
+    "crates/axo-server/src/session.rs#write_terminal_input",
+    "crates/axo-server/src/session.rs#lock_state"
+  ],
+  "about": [
+    "actors/axod"
+  ]
+}

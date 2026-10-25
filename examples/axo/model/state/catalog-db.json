@@ -1,0 +1,9 @@
+{
+  "owner": "axod",
+  "summary": "SQLite at ~/.axo/server/axo.db (0600): workspaces, sessions, shells, daemon_metadata (host ID, configured commands, viewport, bridge tokens). Rows are archived with a reason, not deleted.",
+  "lifetime": "disk, persists across restarts",
+  "anchors": [
+    "crates/axo-server/src/session.rs#create_tables",
+    "crates/axo-server/src/session.rs#initialize_database"
+  ]
+}

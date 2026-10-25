@@ -1,0 +1,37 @@
+{
+  "summary": "Pi's /resume switches to another conversation; axod reopens the Session that owns it and closes the requester.",
+  "trigger": "pi-axo session.resume.requested (from session_before_switch)",
+  "steps": [
+    {
+      "actor": "pi-axo",
+      "action": "request resume with the target session file",
+      "target": "axod"
+    },
+    {
+      "actor": "axod",
+      "action": "validate path (non-empty, ≤4096 bytes, no NUL), canonicalize, require it inside pi-sessions and a regular file",
+      "protocol": "pi-bridge"
+    },
+    {
+      "actor": "axod",
+      "action": "reject if the requesting pane is stale"
+    },
+    {
+      "actor": "axod",
+      "action": "reopen the archived owning Session and its Workspace in one transaction; spawn its panes"
+    },
+    {
+      "actor": "axod",
+      "action": "in one catalog transition: require target Pi pane available, close requester Session"
+    },
+    {
+      "actor": "axod",
+      "action": "publish session.removed, session.focus (pending focus lives 10 s), session.snapshot"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#resume_archived_pi_session",
+    "crates/axo-server/src/session.rs#complete_pi_resume",
+    "packages/pi-axo/src/extension.ts"
+  ]
+}

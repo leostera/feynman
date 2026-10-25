@@ -1,0 +1,12 @@
+{
+  "subject": "Pi stop grace",
+  "value": "3 s",
+  "kind": "timeout",
+  "epistemic": "stated",
+  "about": [
+    "actors/pi"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/launch.rs:17#STOP_GRACE"
+  ]
+}

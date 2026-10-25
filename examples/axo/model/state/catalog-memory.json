@@ -1,0 +1,9 @@
+{
+  "owner": "axod",
+  "summary": "SessionState behind one mutex: running panes (child, PTY master, output pump, last input sequence), unavailable Pi panes and recovery reservations, Pi activity, configured commands, viewport. Also guards the database connection.",
+  "lifetime": "process",
+  "anchors": [
+    "crates/axo-server/src/session.rs#SessionState",
+    "crates/axo-server/src/session.rs#lock_state"
+  ]
+}

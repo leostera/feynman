@@ -1,0 +1,38 @@
+{
+  "summary": "Every 100 ms, detect exited children and update the catalog.",
+  "trigger": "reaper tick (100 ms)",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "try_wait every running child under the catalog mutex",
+      "properties": [
+        "a child whose wait fails is not assumed exited, to avoid signalling a reused PID"
+      ]
+    },
+    {
+      "actor": "axod",
+      "action": "exited Pi pane: mark it unavailable; Session stays open"
+    },
+    {
+      "actor": "axod",
+      "action": "exited terminal pane: archive shell and prune layout in one transaction"
+    },
+    {
+      "actor": "axod",
+      "action": "Session with no remaining panes: archive it (reason shell_exited)"
+    },
+    {
+      "actor": "axod",
+      "action": "publish shell.activity exited, session.removed, session.snapshot"
+    },
+    {
+      "actor": "axod",
+      "action": "repair invariants: Workspace sessions and the home session"
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#start_reaper",
+    "crates/axo-server/src/session.rs#reap_exited_sessions",
+    "crates/axo-server/src/session.rs#archive_shell_and_prune_layout"
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "summary": "axod keeps an authenticated outbound WebSocket to its account so remote clients can see and drive its sessions.",
+  "trigger": "relay configured/linked, daemon start, or axo.relay.connect",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "open WSS with the host credential (5 s connect timeout, ≤5 redirects)",
+      "target": "account-do"
+    },
+    {
+      "actor": "account-do",
+      "action": "authorize: account matches, host not revoked, credential verifier matches"
+    },
+    {
+      "actor": "axod",
+      "action": "register host with remote session snapshots (Pi panes and paths removed)"
+    },
+    {
+      "actor": "axod",
+      "action": "subscribe to local events including streams"
+    },
+    {
+      "actor": "axod",
+      "action": "loop: heartbeat every 10 s; forward at most one local event; read one incoming frame with a 20 ms read timeout",
+      "properties": [
+        "one event per loop iteration"
+      ]
+    },
+    {
+      "actor": "account-do",
+      "action": "renew route lease (30 s) on register and heartbeat"
+    },
+    {
+      "actor": "axod",
+      "action": "on subscription.lagged, resend current snapshots"
+    },
+    {
+      "actor": "axod",
+      "action": "on error, reconnect with backoff up to 30 s"
+    }
+  ],
+  "anchors": [
+    "crates/axo-relay/src/relay.rs#relay_session",
+    "crates/axo-relay/src/relay.rs#host_notification",
+    "packages/axo-api-worker/src/axo-host-relay.ts",
+    "crates/axo-server/src/session.rs#subscribe_remote_events"
+  ]
+}

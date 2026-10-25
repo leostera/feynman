@@ -1,0 +1,9 @@
+{
+  "owner": "axod",
+  "summary": "relay.json (≤16 KiB): relay URL, account routing ID, credential ID, pairing-time host generation. The credential itself lives in Keychain.",
+  "lifetime": "disk",
+  "anchors": [
+    "crates/axo-relay/src/relay.rs#settings",
+    "crates/axo-relay/src/credential.rs"
+  ]
+}

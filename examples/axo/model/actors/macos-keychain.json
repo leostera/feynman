@@ -1,0 +1,11 @@
+{
+  "provenance": "ambient",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS"
+  },
+  "summary": "Stores the host credential used by axod's relay connection.",
+  "anchors": [
+    "crates/axo-relay/src/credential.rs"
+  ]
+}

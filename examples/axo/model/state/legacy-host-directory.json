@@ -1,0 +1,9 @@
+{
+  "owner": "api-worker",
+  "summary": "AxoHostDirectory for legacy/unassigned (private-fleet) hosts on /v1 routes.",
+  "lifetime": "durable",
+  "anchors": [
+    "packages/axo-api-worker/src/axo-host-directory.ts",
+    "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md"
+  ]
+}

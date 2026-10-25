@@ -1,0 +1,26 @@
+{
+  "summary": "Write input bytes to a pane over RPC (used by remote clients) with exactly-once, in-order semantics per pane.",
+  "trigger": "axo.terminal.input or axo.remote.terminal.input {sessionId, shellId, sequence, data}",
+  "steps": [
+    {
+      "actor": "axod",
+      "action": "decode base64; require 1 to 49,152 bytes",
+      "protocol": "local-rpc"
+    },
+    {
+      "actor": "axod",
+      "action": "acknowledge and ignore a repeated sequence; reject a gap"
+    },
+    {
+      "actor": "axod",
+      "action": "write to the PTY master with a 5 s timeout",
+      "properties": [
+        "while holding the catalog mutex"
+      ]
+    }
+  ],
+  "anchors": [
+    "crates/axo-server/src/session.rs#write_terminal_input",
+    "crates/axo-protocol/src/rpc.rs#TerminalInput"
+  ]
+}

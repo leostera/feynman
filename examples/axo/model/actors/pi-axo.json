@@ -1,0 +1,21 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "inside Pi"
+  },
+  "summary": "First-party Pi extension loaded inside each Pi process. Verifies Pi's session file, serves the per-session bridge socket, forwards structured events to axod, and answers its shutdown commands.",
+  "footprint": {
+    "paths": [
+      "packages/pi-axo"
+    ],
+    "files": 15,
+    "lines": 4014
+  },
+  "anchors": [
+    "packages/pi-axo/src/extension.ts",
+    "packages/pi-axo/src/bridge-server.ts",
+    "packages/pi-axo/src/protocol.ts",
+    "packages/pi-axo/src/title.ts"
+  ]
+}
