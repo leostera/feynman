@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Element, Model } from "@feynman/model";
-import { actorGaps, depthGaps, nextGroup, owns } from "../src/phases.ts";
+import { actorGaps, depthGaps, isTestFile, nextGroup, owns } from "../src/phases.ts";
 
 /** A model whose first-party actors each run one component, named after the actor, covering `paths`. */
 const model = (parts: Partial<Model> & { actors: (Element & { paths?: string[] })[] }): Model => {
@@ -61,4 +61,18 @@ test("depth gaps: one-actor flows, unexplained connections, actors in no flow, s
     "api ↔ user talk, but no flow step or protocol shows how",
     "invariants/limit: trace the call path from a request to the check (enforcedAt.frames)",
   ]);
+});
+
+test("tests are recognised by the usual conventions", () => {
+  for (const file of ["test/a.ts", "src/__tests__/a.tsx", "pkg/tests/x.rs", "a.test.ts", "a.spec.js", "pkg/thing_test.go", "tests/test_api.py"]) expect(isTestFile(file)).toBe(true);
+  for (const file of ["src/testing.ts", "src/contest.ts", "latest/a.ts"]) expect(isTestFile(file)).toBe(false);
+});
+
+test("the model is thin while no invariant, claim, or limit cites the tests", () => {
+  const m = model({ actors: [actor("api", ["api/"], ["user"]), actor("user", null)], flows: [{ id: "call", steps: [{ actor: "user", action: "calls", target: "api" }] }] });
+  expect(depthGaps(m, ["api/a.ts", "api/a.test.ts"])).toEqual([
+    "1 test files check behaviour, but no invariant, claim, or limit cites one: record what they check (invariant tests, claim evidence)",
+  ]);
+  const cited = { ...m, invariants: [{ id: "bounded", enforcement: ["test-time"], enforcedAt: [], tests: ["api/a.test.ts"] }] } as Model;
+  expect(depthGaps(cited, ["api/a.ts", "api/a.test.ts"])).toEqual([]);
 });

@@ -218,7 +218,7 @@ export class Extraction {
       }
     }
     const group = phase >= 2 ? nextGroup(model, report.missing, fileSizes(ws.repository, report.missing)) : null;
-    const gaps = phase === 1 ? actorGaps(model) : phase === 3 ? depthGaps(model) : [];
+    const gaps = phase === 1 ? actorGaps(model) : phase === 3 ? depthGaps(model, report.required) : [];
     return { phase, report, problems, gaps, group, entered };
   }
 

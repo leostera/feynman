@@ -14,12 +14,12 @@ export const TOOLS = {
     name: "feynman_skip",
     label: "Feynman: skip",
     description:
-      "Set aside files that are not part of how the system behaves, so they need not be read in full: files about developing it (tests, CI, build and release scripts, workspace setup, project websites, contributor docs), copies of third-party code, and generated output. A directory ending in `/` covers everything under it. Everything else is recorded automatically once you have read it in full.",
+      "Set aside files that are not part of how the system behaves, so they need not be read in full: files about developing it (CI, build and release scripts, workspace setup, project websites, contributor docs; not tests, which check behaviour and are read), copies of third-party code, and generated output. A directory ending in `/` covers everything under it. Everything else is recorded automatically once you have read it in full.",
     snippet: "Set aside development, vendored, or generated files for the Feynman model",
     params: {
       paths: "Repository-relative files, or directories ending in `/`",
       outcome:
-        "development: how the system is developed, tested, built, or published, not how it behaves. vendored: a copy of someone else's code. generated: output of a tool in or outside this repository.",
+        "development: how the system is developed, built, or published, not how it behaves (tests are not development). vendored: a copy of someone else's code. generated: output of a tool in or outside this repository.",
       note: "What it is for or where it comes from, e.g. `publishes the npm packages`, `lockfile written by bun install`, `copy of xterm.js 5.3`",
     },
     outcomes: SKIP_OUTCOMES,

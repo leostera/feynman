@@ -37,7 +37,8 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
 const SCOPE = [
   "",
   "Scope: the model explains how the system behaves for the people and programs that use it, as it runs: what its actors do, how they talk, what they keep and enforce. It does not explain how the system is developed. Before anything else, decide what the system is: what ships, and what runs when it is used.",
-  "Files about developing the system are not part of it: tests, CI, build, release, and publishing scripts, workspace and tooling setup, project websites, and docs for contributors. Set them aside with feynman_skip as development, saying what each is for, without reading them in full; they never become actors, components, flows, or protocols. Code that runs when the system is used is part of it, even inside a build or scripts directory. Tests may still be cited as evidence for invariants.",
+  "Files about developing the system are not part of it: CI, build, release, and publishing scripts, workspace and tooling setup, project websites, and docs for contributors. Set them aside with feynman_skip as development, saying what each is for, without reading them in full; they never become actors, components, flows, or protocols. Code that runs when the system is used is part of it, even inside a build or scripts directory.",
+  "Tests are not development: they state and check what the system promises. Read them in full, with the code they exercise, and turn what they check into invariants (with the tests that cover each), claims (with tests as evidence), and limits.",
 ].join("\n");
 
 const PHASE_1 = [
@@ -52,15 +53,15 @@ const PHASE_1 = [
 const PHASE_2 = [
   "Phase 2: flows. Work through the system one group of connected actors at a time. For each group, read the listed files in full (continue truncated reads with offsets), then write the flows that run through these actors.",
   "A flow is a behaviour of the system, a job it does for an actor: what triggers it, step by step which actor does what to which other actor (over which protocol, by which component), and the outcome. Loading a plugin or installing dependencies is how the system starts or is built, not something it does.",
-  "Add the protocols, state, invariants, and limits you meet on the way; precision comes in phase 3. Fix the actor map whenever the code disagrees with it. Stop when the group is done, and I will give you the next one.",
+  "Read these components' tests too, wherever they live: they tell you what behaviour is promised and checked. Add the protocols, state, invariants, claims, and limits you meet on the way; precision comes in phase 3. Fix the actor map whenever the code disagrees with it. Stop when the group is done, and I will give you the next one.",
 ].join("\n");
 
 const PHASE_3 = [
   "Phase 3: depth. Every file has been read. Go back over the model as a whole and make it precise, re-reading code wherever you need to:",
   "  - flows: every step names its actor and target, and cross-actor steps their protocol; failures, retries, and recovery are flows too;",
   "  - protocols: messages with their fields and returns, framing, versioning, and compatibility;",
-  "  - invariants: how each is enforced, the call path from trigger to check (enforcedAt), and the tests that cover it;",
-  "  - claims: what docs, comments, and names promise, with evidence and whether the code bears it out;",
+  "  - invariants: how each is enforced, the call path from trigger to check (enforcedAt), and the tests that cover it; a behaviour the tests check is an invariant even when only the tests enforce it (test-time);",
+  "  - claims: what docs, comments, names, and tests promise, with evidence and whether the code bears it out;",
   "  - limits: sizes, timeouts, rates, and capacities, and where they are set;",
   "  - state machines, for state with a distinct lifecycle.",
   "Stop when the model explains how the system works; I will point out what is still thin.",
@@ -77,7 +78,7 @@ function describeGroup(group: Group | null): string[] {
   const talk = group.actors.length === 1 ? "talks" : "talk";
   const head = group.actors.length
     ? `Next group: ${group.actors.join(", ")}${group.neighbours.length ? `, which ${talk} to ${group.neighbours.join(", ")}` : ""}; components ${group.components.join(", ")}. Read ${files} (~${kb} KB):`
-    : `Last group: files outside every component's footprint (~${kb} KB). Set aside the ones about developing the system as development; read the rest, which belong to a component or configure how the system runs:`;
+    : `Last group: files outside every component's footprint (~${kb} KB). Set aside the ones about developing the system as development; read the rest (tests included), which belong to a component, check its behaviour, or configure how it runs:`;
   return [head, ...list(group.files, 80), ...(group.remaining ? [`(${group.remaining} more unread file${group.remaining === 1 ? "" : "s"} in later groups.)`] : [])];
 }
 

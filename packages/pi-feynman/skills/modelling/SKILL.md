@@ -33,12 +33,14 @@ The model sits between two extremes:
 7. **How the system behaves, not how it is developed.** The model explains what
    the system does for the people and programs that use it, as it runs. Decide
    first what the system is: what ships, and what runs when it is used. Files
-   about developing it (tests, CI, build, release, and publishing scripts,
+   about developing it (CI, build, release, and publishing scripts,
    workspace and tooling setup, project websites, contributor docs) are set
    aside as `development` without being read in full, and never become actors,
    components, flows, or protocols. Code that runs when the system is used is
-   part of it wherever it lives, even in a build or scripts directory. Tests may
-   still be cited as evidence for invariants.
+   part of it wherever it lives, even in a build or scripts directory. Tests are
+   not development: they state and check what the system promises, so they are
+   read in full and become invariants (with the tests that cover them), claims
+   (with tests as evidence), and limits.
 
 ## Granularity
 
@@ -156,8 +158,9 @@ repository does not ignore, except paths excluded in `.feynman/config.json`.
 
 The model is thin while a flow involves a single actor, two actors talk with no
 flow or protocol showing how, a first-party actor takes part in no flow, a
-protocol does not name its server and clients or lists no messages, or a
-runtime-enforced invariant has a call path of one frame.
+protocol does not name its server and clients or lists no messages, a
+runtime-enforced invariant has a call path of one frame, or the repository has
+tests that no invariant, claim, or limit cites.
 
 Development files and trees are recorded with outcome `development` and a note
 saying what they are for. Vendored copies of third-party code may be recorded as

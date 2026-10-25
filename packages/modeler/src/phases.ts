@@ -10,7 +10,7 @@
 //
 // Everything here is a pure function of the model and the unread files, so the
 // current group and the remaining gaps are recomputed whenever the agent stops.
-import type { Element, Model } from "@feynman/model";
+import { anchoredFiles, type Element, type Model } from "@feynman/model";
 
 export type Phase = 1 | 2 | 3;
 
@@ -131,9 +131,24 @@ export function unowned(model: Model, files: string[]): string[] {
   return files.filter((file) => !owns(paths, file));
 }
 
-/** Where the model is still thin; phase 3 ends when this is empty. */
-export function depthGaps(model: Model): string[] {
+/** Test files, by the usual conventions: test directories and `.test.`/`.spec.`/`_test.` names. */
+export function isTestFile(file: string): boolean {
+  return /(^|\/)(tests?|specs?|__tests__|testing)\//i.test(file) || /[._-](test|spec)s?\.[a-z0-9]+$/i.test(file) || /(^|\/)test_[^/]+$/i.test(file);
+}
+
+/**
+ * Where the model is still thin; phase 3 ends when this is empty. `files` are the
+ * files the extraction covers, to tell whether the tests among them were used.
+ */
+export function depthGaps(model: Model, files: string[] = []): string[] {
   const gaps: string[] = [];
+  const tests = files.filter(isTestFile);
+  if (tests.length) {
+    const cited = new Set([...anchoredFiles(model.invariants), ...anchoredFiles(model.claims), ...anchoredFiles(model.limits)]);
+    if (!tests.some((file) => cited.has(file))) {
+      gaps.push(`${tests.length} test files check behaviour, but no invariant, claim, or limit cites one: record what they check (invariant tests, claim evidence)`);
+    }
+  }
   const graph = connections(model);
   const inFlows = new Set<string>();
   const shown = new Set<string>();
