@@ -1,0 +1,27 @@
+{
+  "name": "@feynman/cli",
+  "version": "0.1.0",
+  "description": "feynman: check, run, build, serve, and diff Feynman specs.",
+  "type": "module",
+  "bin": {
+    "feynman": "./bin/feynman.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@feynman/check": "workspace:*",
+    "@feynman/code": "workspace:*",
+    "@feynman/spec": "workspace:*",
+    "@feynman/view": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "*",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -16,6 +16,24 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/cli": {
+      "name": "@feynman/cli",
+      "version": "0.1.0",
+      "bin": {
+        "feynman": "./bin/feynman.ts",
+      },
+      "dependencies": {
+        "@feynman/check": "workspace:*",
+        "@feynman/code": "workspace:*",
+        "@feynman/spec": "workspace:*",
+        "@feynman/view": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "*",
+        "@types/node": "^24.0.0",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/code": {
       "name": "@feynman/code",
       "version": "0.1.0",
@@ -102,6 +120,28 @@
       "devDependencies": {
         "@types/bun": "*",
         "typescript": "^7.0.2",
+      },
+    },
+    "packages/view": {
+      "name": "@feynman/view",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cloudflare/kumo": "^2.15.0",
+        "@feynman/check": "workspace:*",
+        "@feynman/spec": "workspace:*",
+        "@phosphor-icons/react": "^2.1.10",
+        "elkjs": "^0.11.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "devDependencies": {
+        "@tailwindcss/vite": "^4.3.3",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "@vitejs/plugin-react": "^6.1.2",
+        "tailwindcss": "^4.3.3",
+        "typescript": "^7.0.2",
+        "vite": "^8.3.5",
       },
     },
     "sites/feynman.leostera.dev": {
@@ -221,6 +261,8 @@
 
     "@feynman/check": ["@feynman/check@workspace:packages/check"],
 
+    "@feynman/cli": ["@feynman/cli@workspace:packages/cli"],
+
     "@feynman/code": ["@feynman/code@workspace:packages/code"],
 
     "@feynman/model": ["@feynman/model@workspace:packages/model"],
@@ -234,6 +276,8 @@
     "@feynman/site": ["@feynman/site@workspace:sites/feynman.leostera.dev"],
 
     "@feynman/spec": ["@feynman/spec@workspace:packages/spec"],
+
+    "@feynman/view": ["@feynman/view@workspace:packages/view"],
 
     "@floating-ui/core": ["@floating-ui/core@1.8.0", "", { "dependencies": { "@floating-ui/utils": "^0.2.12" } }, "sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ=="],
 
@@ -570,6 +614,8 @@
     "ecdsa-sig-formatter": ["ecdsa-sig-formatter@1.0.11", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ=="],
 
     "echarts": ["echarts@6.1.0", "", { "dependencies": { "tslib": "2.3.0", "zrender": "6.1.0" } }, "sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA=="],
+
+    "elkjs": ["elkjs@0.11.1", "", {}, "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg=="],
 
     "enhanced-resolve": ["enhanced-resolve@5.26.0", "", { "dependencies": { "graceful-fs": "^4.2.4", "tapable": "^2.3.3" } }, "sha512-9vhedylFonb2YGogzUKX6+Ja72gOJbN1QHAqdrvqLwhdl/QWbKopzoUC9EbQNVsAns/bx/4uyqalrQAoy1IByw=="],
 

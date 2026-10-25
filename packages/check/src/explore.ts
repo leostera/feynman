@@ -178,12 +178,12 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
   };
 }
 
-/** Singletons, plus the configured number of every other actor, labelled A, B, C… */
+/** Singletons, plus the configured number of every other actor, labelled by actor: "Mac", or "Mac A", "Mac B"… */
 export function initialWorld(spec: Spec, bounds: Pick<Bounds, "instances">): World {
   let world = startWorld(spec).at(-1)?.world ?? { clock: 0, seq: 0, fresh: {}, rng: 1, instances: [], pending: [] };
   for (const actor of spec.actors.filter((a) => !a.singleton)) {
     const count = bounds.instances[actor.name] ?? 1;
-    for (let n = 0; n < count; n++) world = spawn(spec, world, actor.name, String.fromCharCode(65 + n)).world;
+    for (let n = 0; n < count; n++) world = spawn(spec, world, actor.name, count === 1 ? actor.name : `${actor.name} ${String.fromCharCode(65 + n)}`).world;
   }
   return world;
 }
