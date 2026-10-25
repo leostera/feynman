@@ -37,7 +37,7 @@ import {
   WifiHighIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
-import type { Icon, Mood } from "@feynman/spec";
+import type { Icon, Mood, Spec, World } from "@feynman/spec";
 
 export const ICONS: Record<Icon, PhosphorIcon> = {
   person: UserIcon,
@@ -113,3 +113,36 @@ export function toneColor(tone: string | undefined): string {
       return "var(--color-kumo-brand)";
   }
 }
+
+/** Colours that tell instances apart: Alice blue, Bob purple. Singletons stay neutral. */
+const PALETTE = [
+  "var(--color-kumo-badge-blue)",
+  "var(--color-kumo-badge-purple)",
+  "var(--color-kumo-badge-teal)",
+  "var(--color-kumo-badge-orange)",
+  "var(--color-kumo-badge-green)",
+];
+
+export function instanceColors(spec: Spec, world: World): Map<string, string> {
+  const colors = new Map<string, string>();
+  let n = 0;
+  for (const instance of world.instances) {
+    if (spec.actors.find((a) => a.name === instance.actor)?.singleton) continue;
+    colors.set(instance.id, PALETTE[n++ % PALETTE.length]);
+  }
+  return colors;
+}
+
+/** The colour of an instance named by id or label, if it has one. */
+export function colorOf(colors: Map<string, string>, world: World, ref: string | undefined): string | undefined {
+  if (!ref) return undefined;
+  const instance = world.instances.find((i) => i.id === ref || i.label === ref);
+  return instance && colors.get(instance.id);
+}
+
+export const TONES = [
+  { tone: "request", label: "request" },
+  { tone: "reply", label: "reply" },
+  { tone: "refused", label: "refused" },
+  { tone: "stream", label: "stream" },
+] as const;

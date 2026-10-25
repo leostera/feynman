@@ -56,6 +56,8 @@ export interface InputInfo {
   /** For `choice`. */
   values?: string[];
   examples?: (world: WorldView) => unknown[];
+  /** A token kind that can be dropped on the node to fill this input. */
+  accepts?: string;
 }
 
 export interface ActionInfo extends StepInfo {

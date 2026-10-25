@@ -43,7 +43,9 @@ export function current(session: Session): World {
 /** Apply one operation; the engine records spec bugs on the event rather than throwing. */
 export function apply(spec: Spec, session: Session, op: Op): Session {
   const now = current(session);
-  const world = op.at !== undefined && op.at > now.clock ? { ...now, clock: op.at } : now;
+  // Whole milliseconds: time spent watching moves the clock, but never by fractions.
+  const at = op.at === undefined ? undefined : Math.round(op.at);
+  const world = at !== undefined && at > now.clock ? { ...now, clock: at } : now;
   const step = run(spec, world, op);
   return { ...session, steps: [...session.steps, step], ops: session.ops ? [...session.ops, op] : null };
 }

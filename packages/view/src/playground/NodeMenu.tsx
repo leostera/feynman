@@ -9,6 +9,13 @@ import { messageName } from "../format";
 import type { Op } from "../session";
 import { Sources, StateTree, useExplorer } from "../ui";
 
+/** An action waiting for its inputs; `inputs` are already filled in, such as by a drop. */
+export interface Asking {
+  instance: string;
+  action: string;
+  inputs?: Record<string, unknown>;
+}
+
 export interface MenuHandlers {
   onRun: (op: Op) => void;
   /** Ask for an action's inputs before running it. */
@@ -85,22 +92,22 @@ function examplesOf(spec: Spec, world: World, action: ActionInfo): Record<string
   );
 }
 
-export function InputsDialog({ target, world, onClose, onRun }: { target: { instance: string; action: string } | null; world: World; onClose: () => void; onRun: (op: Op) => void }) {
+export function InputsDialog({ target, world, onClose, onRun }: { target: Asking | null; world: World; onClose: () => void; onRun: (op: Op) => void }) {
   const { spec } = useExplorer();
   const instance = target && world.instances.find((i) => i.id === target.instance);
   const action = instance && spec.actors.find((a) => a.name === instance.actor)!.actions[target!.action];
   return (
     <Dialog.Root open={Boolean(action)} onOpenChange={(open) => !open && onClose()}>
       <Dialog className="w-[26rem] p-6">
-        {action && instance && <InputsForm key={`${instance.id}.${action.key}`} action={action} label={instance.label} examples={examplesOf(spec, world, action)} onCancel={onClose} onSubmit={(inputs) => (onRun({ op: "act", instance: instance.id, key: action.key, inputs }), onClose())} />}
+        {action && instance && <InputsForm key={`${instance.id}.${action.key}`} action={action} label={instance.label} given={target!.inputs ?? {}} examples={examplesOf(spec, world, action)} onCancel={onClose} onSubmit={(inputs) => (onRun({ op: "act", instance: instance.id, key: action.key, inputs }), onClose())} />}
       </Dialog>
     </Dialog.Root>
   );
 }
 
-function InputsForm({ action, label, examples, onCancel, onSubmit }: { action: ActionInfo; label: string; examples: Record<string, unknown[]>; onCancel: () => void; onSubmit: (inputs: Record<string, unknown>) => void }) {
+function InputsForm({ action, label, given, examples, onCancel, onSubmit }: { action: ActionInfo; label: string; given: Record<string, unknown>; examples: Record<string, unknown[]>; onCancel: () => void; onSubmit: (inputs: Record<string, unknown>) => void }) {
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(Object.entries(action.inputs).map(([name, input]) => [name, String(examples[name]?.[0] ?? (input.type === "number" ? 0 : ""))])),
+    Object.fromEntries(Object.entries(action.inputs).map(([name, input]) => [name, String(given[name] ?? examples[name]?.[0] ?? (input.type === "number" ? 0 : ""))])),
   );
   const parse = (name: string, raw: string): unknown => {
     const type = action.inputs[name].type;

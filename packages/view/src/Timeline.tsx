@@ -1,6 +1,6 @@
-// The timeline: the event log of a playground session. Hovering an event shows the world
-// as it was then; clicking rolls the session back to it. The focused event's detail sits
-// at the bottom, with its code.
+// The timeline: the event log of a playground session. Hovering an event peeks at the world
+// as it was then; clicking travels back to it, without forgetting what came after until
+// something else is done there. The focused event's detail sits at the bottom, with its code.
 import { Badge, cn } from "@cloudflare/kumo";
 import { useEffect, useRef } from "react";
 import type { Event } from "@feynman/spec";
@@ -12,13 +12,16 @@ import { EventDetail, useExplorer } from "./ui";
 export function Timeline({
   session,
   preview,
+  cursor,
   onPreview,
-  onRollback,
+  onPick,
 }: {
   session: Session;
   preview: number | null;
+  /** The moment travelled back to; later events are greyed out. */
+  cursor: number | null;
   onPreview: (index: number | null) => void;
-  onRollback: (count: number) => void;
+  onPick: (index: number) => void;
 }) {
   const { spec } = useExplorer();
   const list = useRef<HTMLDivElement>(null);
@@ -26,7 +29,10 @@ export function Timeline({
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
   }, [session.steps.length]);
-  const focusIndex = preview ?? session.steps.length - 1;
+  useEffect(() => {
+    if (cursor !== null) list.current?.querySelector(`[data-step="${cursor}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [cursor]);
+  const focusIndex = preview ?? cursor ?? session.steps.length - 1;
   const focused = focusIndex >= 0 ? session.steps[focusIndex] : null;
   return (
     <aside className="flex w-[22rem] shrink-0 flex-col border-l border-kumo-hairline bg-kumo-base">
@@ -39,7 +45,8 @@ export function Timeline({
           active={focusIndex === -1}
           previewed={preview === -1}
           onEnter={() => onPreview(-1)}
-          onClick={() => onRollback(0)}
+          onClick={() => onPick(-1)}
+          step={-1}
           time="0.00s"
           title={session.origin === "Fresh start" ? "The start" : `Start of “${session.origin}”`}
           subtitle={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
@@ -50,7 +57,9 @@ export function Timeline({
             active={focusIndex === index}
             previewed={preview === index}
             onEnter={() => onPreview(index)}
-            onClick={() => onRollback(index + 1)}
+            onClick={() => onPick(index)}
+            step={index}
+            later={cursor !== null && index > cursor}
             time={clock(event.at)}
             title={bubbleText(spec, event, world)}
             subtitle={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
@@ -80,7 +89,11 @@ function Row({
   kind,
   bad,
   fault,
+  step,
+  later,
 }: {
+  step: number;
+  later?: boolean;
   active: boolean;
   previewed: boolean;
   onEnter: () => void;
@@ -98,8 +111,9 @@ function Row({
       onMouseEnter={onEnter}
       onFocus={onEnter}
       onClick={onClick}
-      title="Go back to this moment"
-      className={cn("mx-2 flex w-[calc(100%-1rem)] items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-kumo-tint", active && "bg-kumo-tint ring-1 ring-kumo-line", previewed && "bg-kumo-tint")}
+      data-step={step}
+      title="Travel back to this moment"
+      className={cn(later && "opacity-45", "mx-2 flex w-[calc(100%-1rem)] items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-kumo-tint", active && "bg-kumo-tint ring-1 ring-kumo-line", previewed && "bg-kumo-tint")}
     >
       <span className="w-11 shrink-0 pt-px text-right font-mono text-[10.5px] font-semibold text-kumo-subtle">{time}</span>
       <span className="min-w-0 flex-1">

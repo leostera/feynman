@@ -1,14 +1,16 @@
 // How a world looks: each instance's icon, status, mood and rows, and the live links between
 // instances, from the actors' `look` and `links`. A presentation function that throws shows
 // nothing rather than breaking the view.
-import type { Icon, Link, Mood, Row } from "./dsl.ts";
-import type { Spec, World } from "./spec.ts";
+import type { Icon, Link, Mood, Row, Token } from "./dsl.ts";
+import type { ActionInfo, Spec, World } from "./spec.ts";
+import { worldView } from "./engine.ts";
 
 export interface Appearance {
   icon: Icon | null;
   status: string | null;
   mood: Mood | null;
   rows: Row[];
+  tokens: Token[];
 }
 
 export interface LiveLink extends Link {
@@ -29,14 +31,48 @@ function attempt<T>(f: (() => T) | undefined, fallback: T): T {
 export function appearance(spec: Spec, world: World, id: string): Appearance {
   const instance = world.instances.find((i) => i.id === id);
   const actor = instance && spec.actors.find((a) => a.name === instance.actor);
-  if (!instance || !actor) return { icon: null, status: null, mood: null, rows: [] };
+  if (!instance || !actor) return { icon: null, status: null, mood: null, rows: [], tokens: [] };
   const { look } = actor;
   return {
     icon: look.icon ?? null,
     status: attempt(look.status && (() => look.status!(instance.state as never)), null),
     mood: attempt(look.mood && (() => look.mood!(instance.state as never)), null),
     rows: attempt(look.rows && (() => look.rows!(instance.state as never)), []),
+    tokens: attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), []),
   };
+}
+
+/** What dropping `token` on instance `id` would do: each enabled action with an input accepting it. */
+export interface Drop {
+  action: ActionInfo;
+  inputs: Record<string, unknown>;
+  /** Whether other inputs still need a person to fill them in. */
+  complete: boolean;
+}
+
+export function dropsFor(spec: Spec, world: World, id: string, token: Token): Drop[] {
+  const instance = world.instances.find((i) => i.id === id);
+  const actor = instance && spec.actors.find((a) => a.name === instance.actor);
+  if (!instance || !actor) return [];
+  const view = worldView(spec, world);
+  const out: Drop[] = [];
+  for (const action of Object.values(actor.actions)) {
+    const slot = Object.entries(action.inputs).find(([, input]) => input.accepts === token.kind);
+    if (!slot) continue;
+    if (action.when && !attempt(() => action.when!(instance.state), false)) continue;
+    const inputs: Record<string, unknown> = {};
+    let complete = true;
+    for (const [name, input] of Object.entries(action.inputs)) {
+      if (name === slot[0]) inputs[name] = token.value;
+      else {
+        const first = attempt(() => input.examples?.(view as never)[0], undefined);
+        if (first === undefined) complete = false;
+        else inputs[name] = first;
+      }
+    }
+    out.push({ action, inputs, complete });
+  }
+  return out;
 }
 
 /** Whether any actor declares links; views fall back to the static topology when none does. */
