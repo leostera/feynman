@@ -31,16 +31,16 @@ export function App({ index }: { index: Index }) {
   const route = useRoute();
   return (
     <IndexProvider value={index}>
-      <div className="flex h-full flex-col">
+      <Sidebar.Provider defaultOpen collapsible="icon" contained className="flex h-full flex-col">
         <TopBar />
-        <Sidebar.Provider defaultOpen collapsible="none" contained className="min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1">
           <Navigation route={route} />
           <main id="main" className="min-w-0 flex-1 overflow-y-auto bg-kumo-base">
             {/* Keyed by route, so each page starts on its first tab. */}
             <Content key={JSON.stringify(route)} route={route} />
           </main>
-        </Sidebar.Provider>
-      </div>
+        </div>
+      </Sidebar.Provider>
     </IndexProvider>
   );
 }
@@ -100,6 +100,7 @@ function TopBar() {
   const { source } = model.meta;
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-kumo-hairline bg-kumo-base px-4">
+      <Sidebar.Trigger aria-label="Toggle navigation" />
       <a href="#/" className="text-sm font-semibold text-kumo-default" title={model.meta.system}>
         {source.url ? source.url.replace(/^https:\/\//, "") : model.meta.system}
       </a>
@@ -183,39 +184,18 @@ function sectionOf(route: Route): Kind | null {
 
 function Navigation({ route }: { route: Route }) {
   const index = useIndex();
-  const { model } = index;
   const current = sectionOf(route);
   // The State section lists state machines too.
   const count = (kind: Kind) => countOf(index, kind) + (kind === "state" ? countOf(index, "machine") : 0);
-  const activeFlow = route.page === "detail" && route.kind === "flow" ? route.id : null;
-
   return (
     <Sidebar>
       <Sidebar.Content>
         <Sidebar.Group>
-          <Sidebar.GroupLabel>Inventory</Sidebar.GroupLabel>
           <Sidebar.Menu>
             {SECTIONS.map((section) => (
-              <Sidebar.MenuButton
-                key={section.kind}
-                icon={section.icon}
-                href={href(section.kind)}
-                active={current === section.kind}
-              >
-                <span className="flex w-full items-center justify-between">
-                  {section.label}
-                  <span className="text-xs text-kumo-subtle tabular-nums">{count(section.kind)}</span>
-                </span>
-              </Sidebar.MenuButton>
-            ))}
-          </Sidebar.Menu>
-        </Sidebar.Group>
-        <Sidebar.Group>
-          <Sidebar.GroupLabel>Flows</Sidebar.GroupLabel>
-          <Sidebar.Menu>
-            {model.flows.map((flow) => (
-              <Sidebar.MenuButton key={flow.id} size="sm" href={href("flow", flow.id)} active={activeFlow === flow.id}>
-                {flow.id}
+              <Sidebar.MenuButton key={section.kind} icon={section.icon} href={href(section.kind)} active={current === section.kind} tooltip={section.label}>
+                {section.label}
+                <Sidebar.MenuBadge className="ml-auto">{count(section.kind)}</Sidebar.MenuBadge>
               </Sidebar.MenuButton>
             ))}
           </Sidebar.Menu>
