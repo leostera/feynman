@@ -11,6 +11,7 @@ import {
   PlugsConnectedIcon,
   SealCheckIcon,
   ShieldCheckIcon,
+  PackageIcon,
   UsersThreeIcon,
   type Icon,
 } from "@phosphor-icons/react";
@@ -23,7 +24,8 @@ interface Explainer {
 }
 
 const ELEMENTS: { icon: Icon; name: string; text: string }[] = [
-  { icon: UsersThreeIcon, name: "Actors", text: "The components that make up the system, where each one runs, and the people and services around it." },
+  { icon: UsersThreeIcon, name: "Actors", text: "Who and what takes part at runtime: the people who use the system, the processes it runs, and the services it calls." },
+  { icon: PackageIcon, name: "Components", text: "The code in the repository, by package or module: which actors it runs in and what it depends on." },
   { icon: ArrowsLeftRightIcon, name: "Flows", text: "What happens when something happens: step by step, which actor does what to which other actor." },
   { icon: PlugsConnectedIcon, name: "Protocols", text: "How actors talk: the messages, their fields and replies, framing, and versioning." },
   { icon: HardDrivesIcon, name: "State", text: "What the system remembers, who owns it, how long it lives, and the lifecycles it moves through." },

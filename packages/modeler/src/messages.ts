@@ -21,13 +21,9 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
   return [
     `Extract the Feynman model of this repository, following the modelling skill. This is ${scope}.`,
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
+    "It runs in three phases (actors, flows, depth), and I will tell you when each is done.",
     "",
-    "The extraction runs in three phases, and I will tell you when each one is done:",
-    "  1. Actors: who and what takes part in the system, and the components inside them.",
-    "  2. Flows: groups of connected actors, one at a time, reading their code in full.",
-    "  3. Depth: flows, protocols, invariants, claims, and limits, made precise.",
     SCOPE,
-    "Files you read in full are recorded automatically. Use feynman_skip to set aside development, vendored, and generated files, and feynman_status to see where you are.",
     ...outdated(report),
     "",
     phase === 1 ? PHASE_1 : phase === 2 ? phase2(group) : PHASE_3,
@@ -35,35 +31,33 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
 }
 
 const SCOPE = [
-  "",
-  "Scope: the model explains how the system behaves for the people and programs that use it, as it runs: what its actors do, how they talk, what they keep and enforce. It does not explain how the system is developed. Before anything else, decide what the system is: what ships, and what runs when it is used.",
-  "Files about developing the system are not part of it: CI, build, release, and publishing scripts, workspace and tooling setup, project websites, and docs for contributors. Set them aside with feynman_skip as development, saying what each is for, without reading them in full; they never become actors, components, flows, or protocols. Code that runs when the system is used is part of it, even inside a build or scripts directory.",
-  "Tests are not development: they state and check what the system promises. Read them in full, with the code they exercise, and turn what they check into invariants (with the tests that cover each), claims (with tests as evidence), and limits.",
+  "Scope: model how the system behaves as it runs, for the people and programs that use it; not how it is developed. First decide what ships and what runs when it is used.",
+  "- Development files (CI, build, release and publishing scripts, tooling, project websites, contributor docs): set aside with feynman_skip as development, saying what each is for. They never become elements. Code that runs when the system is used is in scope wherever it lives.",
+  "- Tests are in scope: read them, and record what they check as invariants (with their tests), claims (with tests as evidence), and limits.",
+  "- Files you read in full are recorded automatically. Skip vendored and generated files too, with their origin; feynman_status shows where you are.",
 ].join("\n");
 
 const PHASE_1 = [
-  "Phase 1: actors. Survey the whole repository before reading anything in depth: list the tree, read manifests, READMEs, entrypoints, and configuration, and skim widely; partial reads are fine now. Set aside the development files as you find them.",
-  "Then write meta.json (what the system is and does) and the actors: things with a runtime identity that take part in its behaviour. Start from whoever uses the system (a person, or another program such as a client), then follow what it talks to:",
-  "  - people (kind person) and programs or services that use the system or that it calls;",
-  "  - the processes this repository ships (first-party), such as a CLI, a server, a browser page, or a plugin running inside a host program (the host is its own actor).",
-  "Packages, modules, and libraries are not actors. Write them as components: each with footprint.paths covering its code, the actors it runs in, and the components it depends on. Every first-party actor needs at least one component.",
-  "In each actor's talksTo, list the actors it communicates with. Don't write flows yet. Stop when the map covers the whole system.",
+  "Phase 1: actors. Survey the whole repository shallowly: the tree, manifests, READMEs, entrypoints, configuration. Partial reads are fine now.",
+  "Write meta.json (what the system is and does), then the actors, things with a runtime identity, starting from whoever uses the system:",
+  "  - people (kind person), and programs or services that use the system or that it calls;",
+  "  - the processes this repository ships (first-party): a CLI, a server, a browser page, a plugin (its host is a separate actor).",
+  "Packages and modules are components, not actors: each with footprint.paths, the actors it runs in, and what it dependsOn. Every first-party actor needs one.",
+  "Fill each actor's talksTo. No flows yet; stop when the map covers the whole system.",
 ].join("\n");
 
 const PHASE_2 = [
-  "Phase 2: flows. Work through the system one group of connected actors at a time. For each group, read the listed files in full (continue truncated reads with offsets), then write the flows that run through these actors.",
-  "A flow is a behaviour of the system, a job it does for an actor: what triggers it, step by step which actor does what to which other actor (over which protocol, by which component), and the outcome. Loading a plugin or installing dependencies is how the system starts or is built, not something it does.",
-  "Read these components' tests too, wherever they live: they tell you what behaviour is promised and checked. Add the protocols, state, invariants, claims, and limits you meet on the way; precision comes in phase 3. Fix the actor map whenever the code disagrees with it. Stop when the group is done, and I will give you the next one.",
+  "Phase 2: flows. For each group of connected actors, read the listed files in full (continue truncated reads with offsets), including tests, then write the flows that run through them.",
+  "A flow is a job the system does for an actor: a trigger, steps saying which actor does what to which (with component and protocol), and an outcome. Starting up or being built is not a flow.",
+  "Add the protocols, state, invariants, claims, and limits you meet; fix the actor map when the code disagrees. Stop when the group is done, and I will give you the next one.",
 ].join("\n");
 
 const PHASE_3 = [
-  "Phase 3: depth. Every file has been read. Go back over the model as a whole and make it precise, re-reading code wherever you need to:",
-  "  - flows: every step names its actor and target, and cross-actor steps their protocol; failures, retries, and recovery are flows too;",
-  "  - protocols: messages with their fields and returns, framing, versioning, and compatibility;",
-  "  - invariants: how each is enforced, the call path from trigger to check (enforcedAt), and the tests that cover it; a behaviour the tests check is an invariant even when only the tests enforce it (test-time);",
-  "  - claims: what docs, comments, names, and tests promise, with evidence and whether the code bears it out;",
-  "  - limits: sizes, timeouts, rates, and capacities, and where they are set;",
-  "  - state machines, for state with a distinct lifecycle.",
+  "Phase 3: depth. Every file is covered. Go over the model as a whole and make it precise, re-reading code where needed:",
+  "  - flows: every step's actor and target, cross-actor steps' protocol; failure, retry, and recovery flows;",
+  "  - protocols: messages with fields and results, framing, versioning, compatibility;",
+  "  - invariants: enforcement, the call path from trigger to check (enforcedAt), the tests that cover them;",
+  "  - claims with evidence and whether the code bears them out; limits and where they are set; state machines.",
   "Stop when the model explains how the system works; I will point out what is still thin.",
 ].join("\n");
 
@@ -104,15 +98,20 @@ export interface Situation {
 }
 
 /** What the agent is told when it stops; `nudge` asks it to continue. */
-export function continuation({ phase, report, problems, gaps, group, entered }: Situation, nudge = true): string {
-  const out = [`Feynman, phase ${phase} of 3: ${describeCoverage(report)}.`];
-  if (entered) {
-    out.push("", phase === 2 ? phase2(group) : phase === 3 ? PHASE_3 : PHASE_1);
-    if (phase === 3 && gaps.length) out.push("", "To begin with, the model is thin here:", ...list(gaps));
-  }
-  else if (phase === 1 && gaps.length) out.push("", `The actor map is not done${nudge ? "; continue" : ""}:`, ...list(gaps));
-  else if (phase === 2 || (phase === 3 && group)) out.push("", ...describeGroup(group));
-  else if (phase === 3 && gaps.length) out.push("", `The model is still thin here${nudge ? "; continue" : ""}:`, ...list(gaps));
+export function continuation(situation: Situation, nudge = true): string {
+  const { phase, report, problems } = situation;
+  const out = [`Feynman, phase ${phase} of 3: ${describeCoverage(report)}.`, ...progress(situation, nudge)];
   if (problems.length) out.push("", `The model has ${problems.length} problem(s)${nudge ? "; fix them" : ""}:`, ...list(problems, 20));
   return out.join("\n");
+}
+
+/** A new phase's instructions; otherwise what remains in the current one. */
+function progress({ phase, gaps, group, entered }: Situation, nudge: boolean): string[] {
+  const more = nudge ? "; continue" : "";
+  if (entered && phase === 3) return ["", PHASE_3, ...(gaps.length ? ["", "To begin with, the model is thin here:", ...list(gaps)] : [])];
+  if (entered) return ["", phase === 2 ? phase2(group) : PHASE_1];
+  if (phase === 1) return gaps.length ? ["", `The actor map is not done${more}:`, ...list(gaps)] : [];
+  // Files edited after they were read come back as a group in phase 3 too.
+  if (group) return ["", ...describeGroup(group)];
+  return phase === 3 && gaps.length ? ["", `The model is still thin here${more}:`, ...list(gaps)] : [];
 }

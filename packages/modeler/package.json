@@ -2,7 +2,7 @@
   "name": "@feynman/modeler",
   "private": true,
   "type": "module",
-  "description": "Drives one agent through extracting a Feynman model until every file is reviewed and the model is valid. Independent of any agent runtime.",
+  "description": "Drives one agent through extracting a Feynman model until every file is covered and the model is valid. Independent of any agent runtime.",
   "exports": {
     ".": "./src/index.ts"
   },

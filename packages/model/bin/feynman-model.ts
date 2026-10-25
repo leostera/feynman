@@ -48,7 +48,7 @@ switch (command) {
     if (report.unknown.length) console.log(`ledgers name ${report.unknown.length} paths not in the snapshot, e.g. ${report.unknown.slice(0, 3).join(", ")}`);
     for (const problem of report.problems) console.log(problem);
     if (report.missing.length) {
-      console.log("unreviewed:");
+      console.log("uncovered:");
       for (const [group, n] of groupMissing(report.missing)) console.log(`  ${String(n).padStart(4)}  ${group}`);
       process.exit(1);
     }

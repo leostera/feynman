@@ -5,290 +5,129 @@ description: Extract and maintain a behavioural model of a software system (acto
 
 # Modelling
 
-Status: draft. Update this skill as the design evolves.
-
-## Purpose
-
-Agents change code faster than humans can review it. Reading every line is not
-useful, but understanding how the system's **behaviour** changes is. The model is
-the thing we read, and compare before and after a change, to understand that.
-
-The model sits between two extremes:
-- too abstract: "data in, money out";
-- too concrete: the code itself.
+The model explains how a system **behaves**, so people can understand it, and how
+a change affects it, without reading the code. It sits between "data in, money
+out" and the code itself.
 
 ## Principles
 
-1. **Never hand-written.** Agents extract and maintain the model.
-2. **Anchored to files.** Each element lists the files (and symbols where useful)
-   that relate to it, so an agent can find them again even after code moves.
-   Do not use stable IDs; file anchors are enough.
-3. **Accurate, not reproducible.** Repeated extractions may differ, and that is
-   fine. What matters is that the model is accurate and helps a reader understand
-   the system.
-4. **Descriptive, not prescriptive.** Say what the system does, not whether it is good.
-5. **Semantic level.** Model semantic actions, not control flow (see Granularity).
-6. **Extraction only.** This skill covers building and updating the model.
-   Rendering and presentation are separate concerns.
-7. **How the system behaves, not how it is developed.** The model explains what
-   the system does for the people and programs that use it, as it runs. Decide
-   first what the system is: what ships, and what runs when it is used. Files
-   about developing it (CI, build, release, and publishing scripts,
-   workspace and tooling setup, project websites, contributor docs) are set
-   aside as `development` without being read in full, and never become actors,
-   components, flows, or protocols. Code that runs when the system is used is
-   part of it wherever it lives, even in a build or scripts directory. Tests are
-   not development: they state and check what the system promises, so they are
-   read in full and become invariants (with the tests that cover them), claims
-   (with tests as evidence), and limits.
-
-## Granularity
-
-Ignore functions, helpers, and control flow (`if`, loops, string building). Capture
-the **semantic actions** that happen and their properties, for example:
-- runs a database transaction over these actions;
-- sends an email; calls an external API; spawns a process;
-- reads/writes this data from the database or disk;
-- publishes/consumes a message; acquires a lock; caches a value.
-
-How an action is implemented does not matter. That it happens, in what order, and
-with what guarantees (transactional, idempotent, retried, bounded) does.
+1. **Extracted, never hand-written.** Agents build and maintain it from the code.
+2. **Anchored to files.** Each element names the files (and symbols or lines) it
+   comes from, so it can be found again after code moves. No stable ids.
+3. **Accurate, not reproducible.** Two extractions may differ; both must be true.
+4. **Descriptive.** Say what the system does, not whether it is good.
+5. **Semantic actions, not control flow.** "Runs a transaction", "sends an email",
+   "spawns a process", "writes this file", "acquires a lock": what happens, in what
+   order, with what guarantees (transactional, idempotent, retried, bounded).
+   Ignore functions, helpers, branches, and loops.
+6. **Behaviour, not development.** First decide what the system is: what ships,
+   and what runs when it is used. Files about developing it (CI, build, release
+   and publishing scripts, tooling, project websites, contributor docs) are set
+   aside as `development` and never become elements. Code that runs when the
+   system is used is part of it, wherever it lives. **Tests are behaviour**: read
+   them, and turn what they check into invariants, claims, and limits.
 
 ## What to extract
 
-- **Actors**: things with a runtime identity that take part in the system's
-  behaviour. Start from whoever uses the system, a person or another program (a
-  client calling an API, a proxy's upstream callers), and follow what it talks
-  to: the processes the system runs (a CLI, a daemon, a server, a browser page),
-  and the programs and services those call. Give each a `kind` (`person`,
-  `program`, or `service`) and a **provenance**:
-  - `first-party`: its code is in this repository;
-  - `third-party`: external software or a service the system depends on;
-  - `ambient`: provided by the platform or environment (OS services, the user's shell).
-
-  When in-repo code runs inside an external program (a plugin or extension), model
-  it as its own first-party actor next to the third-party host. Record where every
-  actor runs in `runsOn`: `local` (the user's machine), `browser`, `remote`
-  (servers the system operates), or `cloud` (managed services), with the
-  `provider` and `platform` when known. List in `talksTo` the actors it
-  communicates with. Machines and operating systems are where actors run, not
-  actors, unless the system talks to them as such.
-- **Components**: the units of first-party code (packages, modules, libraries)
-  and the actors they run in. A package is not an actor, however central: a
-  model library used by a CLI and a plugin is one component running in two
-  actors. Each component lists its repository paths in `footprint.paths`, the
-  `actors` it runs in, and the components it `dependsOn`. Every first-party actor
-  has at least one component.
-- **Flows**: the behaviours of the system, the jobs it does for its actors: from
-  a trigger (an actor doing something), through semantic actions across actors,
-  to an outcome. "Build a model", "render it", "accept an upload" are flows;
-  loading a plugin or installing dependencies is how the system starts or is
-  built, not something it does. Flows are the main unit of explanation. A step
-  names its actor and target, the component doing the work when that helps, and
-  the protocol it speaks.
-- **Protocols**: the shapes data must have to enter, leave, or rest inside the
-  system: RPC and HTTP APIs, socket protocols, event streams, files the system
-  reads or writes, and database schemas. Record enough to draw the shape without
-  reading code: each message (call, record, event, route, or table) with its
-  fields, types, and bounds, and each call's result. Also record transport,
-  framing, version, who serves and who uses it, where untrusted input is parsed
-  into trusted values (`parsing`), machine-readable definitions in the repository
-  (`definitions`), and how old and new shapes coexist (`compatibility`). Find them
-  in typed request/response structs, schema files, route tables, and SQL.
-- **State**: data each actor owns, where it lives (memory, disk, database), its
-  lifetime, and its single source of truth. Note duplicated state that may drift.
-- **State machines**: domain states and legal transitions, often visible as enums
-  or variants.
-- **Invariants**: properties the system makes sure always hold. Record:
-  - `enforcement`: `compile-time` (types make violations unrepresentable),
-    `runtime` (code checks or restores it), `test-time` (tests exercise it), or
-    `documented` (only comments or docs state it);
-  - `enforcedAt`: for each trigger that can establish or break it (startup, an
-    RPC method, a timer, a child exiting), the call path from the entry point to
-    the code that enforces it, outermost frame first. Follow the real calls; skip
-    frames that only forward arguments;
-  - the tests that exercise it, and the consequence of breaking it.
-- **Claims**: statements believed about the system (for example, "terminal bytes
-  never leave the host"), with the evidence, how it was established, and the
-  elements it is `about`. Invariants are what the code enforces; claims are what
-  we believe, including beliefs the code contradicts.
-- **Limits**: bounds the system imposes: sizes, counts, timeouts, intervals,
-  rates. One file per bound, anchored to the constant or check that sets it
-  (with its line), and `about` the actors, protocols, or flows it applies to.
+- **Actors** have a runtime identity: people, the processes this repository ships
+  (a CLI, a daemon, a server, a browser page, a plugin), and the programs and
+  services they call. Start from whoever uses the system and follow what it talks
+  to (`talksTo`). Each has a `kind` (`person`, `program`, `service`), a
+  `provenance` (`first-party`: code in this repository; `third-party`; `ambient`:
+  the platform, such as the OS or the user's shell), and `runsOn` (`local`,
+  `browser`, `remote`, `cloud`, with provider and platform when known). A plugin is
+  its own first-party actor beside its third-party host. Machines are where actors
+  run, not actors.
+- **Components** are units of first-party code (packages, modules, libraries),
+  never actors. Each lists its `footprint.paths`, the `actors` it runs in, and the
+  components it `dependsOn`. Every first-party actor has at least one.
+- **Flows** are the jobs the system does for its actors: a trigger, semantic steps
+  from actor to `target` (with the `component` doing the work and the `protocol`
+  spoken), and an `outcome`. "Build a model" and "accept an upload" are flows;
+  loading a plugin or installing dependencies is not. Failure, retry, and recovery
+  paths are flows too. Flows are the main unit of explanation.
+- **Protocols** are the shapes data has entering, leaving, or resting in the
+  system: APIs, socket protocols, event streams, files, database schemas. Enough
+  to draw them without the code: each message (call, record, event, route, table)
+  with fields, types, bounds, and results; transport, framing, version; `server`
+  and `clients`; where untrusted input is parsed (`parsing`); schema files
+  (`definitions`); how shapes coexist across versions (`compatibility`).
+- **State** is data an actor owns: where it lives, its lifetime, its source of
+  truth, and copies that may drift. **State machines** are domain states and
+  legal transitions.
+- **Invariants** are what the system makes sure always holds: `enforcement`
+  (`compile-time`, `runtime`, `test-time`, `documented`); `enforcedAt`, the call
+  path from each trigger to the check, outermost frame first, skipping frames that
+  only forward; the `tests` that exercise it; the consequence of breaking it.
+- **Claims** are what we believe about the system ("terminal bytes never leave the
+  host"), with evidence and the elements they are `about`, including beliefs the
+  code contradicts.
+- **Limits** are bounds: sizes, counts, timeouts, intervals, rates. One per bound,
+  anchored to the line that sets it, `about` what it applies to.
 
 ## Process
 
-The model describes the system as a whole, so build it from the outside in:
-first the actors, then the flows between connected actors, then the precise
-details. Every file the extraction is responsible for must still pass through
-context at some point, because reading only the files that look important is how
-models miss behaviour (a patch to a dependency, a script that installs a service,
-a config that changes a limit). Files read in full are recorded in coverage
-ledgers (see Storage); the extraction is not done until every file is read or
-skipped as vendored or generated, the model is valid, and it is no longer thin.
+One agent extracts the whole model in one session: the developer's, through
+`/feynman-extract` or `/feynman-explain`. Never hand it to a subagent or a
+background process; following the code across files is what the model records.
 
-One agent does the whole extraction in one session, following the code across
-files the way it would to understand the system, rather than reviewing files one
-at a time in isolation. Connections between files are much of what the model
-records. Run it in the session where the system is being developed (with
-`/feynman-extract`), so the model and the work share one context. Never hand the
-extraction to a separate agent, subagent, or background process.
+Every file the extraction covers passes through context, because reading only
+what looks important is how models miss behaviour. Files read in full are
+recorded automatically; the rest are set aside with `feynman_skip` as
+`development`, `vendored`, or `generated`, with a note. Patches and build rules
+around vendored code are first-party and read.
 
-### Bootstrap (first snapshot)
+The extension drives three phases and says what each still lacks:
 
-Responsible for: **every file git tracks at the commit**, that is, every file the
-repository does not ignore, except paths excluded in `.feynman/config.json`.
+1. **Actors.** Survey everything shallowly, then write `meta.json`, the actors,
+   `talksTo`, and the components with footprints.
+2. **Flows.** Read groups of connected actors in full, one at a time, and write
+   the flows through them, with what you meet on the way. Fix the actor map when
+   the code disagrees.
+3. **Depth.** Make every element precise.
 
-1. **Actors.** Survey the whole repository before reading anything in depth:
-   the tree, manifests, READMEs, entrypoints, configuration; skim widely. Write
-   `meta.json`, the actors starting from the system's users, who talks to whom
-   (`talksTo`), and the components inside first-party actors with footprints
-   covering their code. This map is done when the system is summarised, someone
-   or something uses it, every actor is connected, and every first-party actor
-   has a component.
-2. **Flows.** Work through groups of connected actors one at a time, reading
-   their components' code in full, and write the behaviours that run through
-   them, step by step from actor to actor. Add protocols, state, invariants, and limits met on the
-   way, and correct the actor map when the code disagrees. Files outside every
-   footprint come last.
-3. **Depth.** With everything read, revise the model as a whole: every flow step
-   with its actor, target, and protocol; failure and recovery flows; protocol
-   messages with fields and returns; invariants with their call paths and tests;
-   claims with evidence; limits with where they are set; state machines.
-
-The model is thin while a flow involves a single actor, two actors talk with no
-flow or protocol showing how, a first-party actor takes part in no flow, a
-protocol does not name its server and clients or lists no messages, a
-runtime-enforced invariant has a call path of one frame, or the repository has
-tests that no invariant, claim, or limit cites.
-
-Development files and trees are recorded with outcome `development` and a note
-saying what they are for. Vendored copies of third-party code may be recorded as
-a whole directory with outcome `vendored`, once you have confirmed that is what they are and noted the
-origin. Lockfiles and other tool output are `generated`, with their source named.
-Patches, wrappers, and build rules around them are first-party and are read.
-
-### Update (diff snapshot)
-
-Responsible for: **every file added, modified, or renamed** between the previously
-modelled commit and the new one, and **every element derived from a changed file**.
-Each element records `sources`, the content hash (git blob id) of every file it
-anchors, so elements whose files changed are known exactly, even when history was
-rewritten.
-
-1. Make sure the first snapshot exists: `.feynman/model/` with a `meta.json` whose
-   commit is an ancestor of the new commit. If not, bootstrap instead.
-2. Set `meta.extraction` to `update`, `meta.source.base.commit` to the previously
-   modelled commit, and `meta.source.commit` to the new one. Remove the ledgers
-   for the old commit (history keeps them).
-3. List the changed files (coverage `--missing`) and get an overview of the
-   model (`index`).
-4. Read the changed files group by group (phase 2, limited to them) and
-   re-examine the outdated elements listed for them; **edit** them, and add or
-   remove elements as needed. Do not regenerate the whole model. For deleted or
-   moved files, update the anchors that pointed at them.
-5. Revise for depth (phase 3), then measure, validate, and run coverage.
+A bootstrap covers every file in the snapshot. An update covers the files changed
+since the modelled commit plus the files of every element whose `sources` changed;
+re-examine those elements and **edit** them, rather than regenerating the model.
+With uncommitted changes, the model describes the working tree.
 
 ## Storage
 
-The model is a directory, `.feynman/model/` in the target repository, with one
-file per element so that no agent has to hold the whole model at once:
-
 ```
-.feynman/model/
-  meta.json
-  actors/<id>.json      components/<id>.json   flows/<id>.json
-  protocols/<id>.json
-  state/<id>.json       state-machines/<id>.json
-  invariants/<id>.json  claims/<id>.json       limits/<id>.json
-  coverage/<batch>.json
+.feynman/
+  config.json           optional: { "exclude": ["examples/"] }, git pathspecs outside the system
+  model/
+    meta.json
+    actors/<id>.json      components/<id>.json   flows/<id>.json   protocols/<id>.json
+    state/<id>.json       state-machines/<id>.json
+    invariants/<id>.json  claims/<id>.json       limits/<id>.json
+    coverage/<batch>.json written by the extension, never by hand
 ```
 
-An element's id is its file name (a readable kebab-case slug) and is not repeated
-inside the file. `sources` is written by tools (`measure`), never by hand: the git
-blob id of each file the element anchors, as the file is on disk (committed or not). Ids are unique within a kind, need not be stable, and renaming
-one means moving its file. Fields that name a specific kind use a bare id
-(`actor`, `target`, `owner`, `server`, `clients`, `from`, `talksTo`, a
-component's `actors` name actors; `component` and `dependsOn` name components;
-`ref` names a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
-path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`.
-
-`.feynman/config.json` (optional, next to the model directory) configures how the
-repository is modelled. `exclude` lists git pathspecs that are not part of the
-system being modelled, such as generated examples or fixtures checked in for other
-purposes:
-
-```json
-{ "exclude": ["examples/"] }
-```
-
-Excluded files are never required for coverage and are not counted in code
-footprints. Exclude only what is genuinely outside the system; it is a statement
-about scope, not a way to finish faster.
-
-Coverage ledgers record what each extraction pass covered, at which commit: one
-file per batch, listing every file with its outcome: `read` (read in full,
-recorded automatically), `development` (with a note saying what it is for),
-`vendored`, or `generated` (with a note naming the origin). Older ledgers may say `modelled` or `no-behaviour`. Ledgers are not
-rendered.
-
-Each file must validate against its schema in `packages/model/schema/` of the
-Feynman repository (JSON Schema 2020-12; shared definitions in `common.json`). Together they are the
-contract that rendering relies on.
-
-Anchors are repository-relative paths, narrowed by symbol, by span, or both:
-- shorthand strings: `path`, `path#symbol`, `path:10-42`, `path:10:5-42:2`;
-- objects: `{ "file": "path", "symbol": "name", "span": { "start": { "line": 10, "column": 5 }, "end": { "line": 42 } } }`.
-
-Lines and columns are 1-based and inclusive, at the modelled commit. Prefer a
-symbol when one exists, and add a span when the behaviour is a few lines inside
-a larger body (a guard, a SQL statement, a lock scope).
-
-When the vocabulary changes, update the schemas and this skill together.
+- An element's id is its kebab-case file name, not repeated inside the file.
+- Each file validates against its JSON Schema in `packages/model/schema/` of the
+  Feynman repository; rendering relies on them. Change schemas and this skill
+  together.
+- References use bare ids where the kind is fixed (`actor`, `target`, `owner`,
+  `server`, `clients`, `from`, `talksTo`, a component's `actors`; `component`,
+  `dependsOn`; `ref` for a flow; `protocol`), and `about` uses paths such as
+  `flows/pi-recovery`.
+- Anchors are repository-relative: `path`, `path#symbol`, `path:10-42`,
+  `path:10:5-42:2`, or `{ "file", "symbol", "span": { "start": { "line", "column" }, "end": … } }`.
+  Lines are 1-based and inclusive. Prefer a symbol; add a span for a few lines
+  inside a larger body (a guard, a SQL statement, a lock scope).
+- `sources` (content hashes) and footprint counts are written by `measure`, never
+  by hand.
+- Exclude only what is outside the system, never to finish faster.
 
 ## Tools
 
-Mechanical facts come from tools, not from the agent.
+In Pi: `feynman_extract` starts or resumes, `feynman_skip` sets files aside,
+`feynman_status` shows where things stand; `/feynman-stop` and `/feynman-render`.
 
-### In Pi, with the `pi-feynman` package (an adapter over `@feynman/modeler`)
+Command line, in the Feynman repository (`bun run model <command>`):
 
-- `feynman_extract` starts or resumes an extraction at HEAD: a bootstrap when
-  there is no model, otherwise an update from the modelled commit (it sets
-  `meta.source.base`, and drops ledgers for the old commit). With uncommitted
-  changes, the model describes the working tree (`meta.source.worktree`): HEAD
-  plus those changes, untracked files included. Reads then record the content
-  hash of what was read, and a file edited afterwards counts as unread again.
-- Files read in full with `read` (continuing truncated output with offsets) are
-  recorded automatically; searching or listing does not count. Ledgers cannot be
-  written any other way.
-- `feynman_skip` sets aside development, vendored, or generated files or trees,
-  with a note saying what they are for or where they come from, so they need
-  not be read.
-- `feynman_status` shows the phase, coverage, the current group or what the
-  model lacks, and model problems.
-- Whenever the agent stops, the extension checks where the extraction stands,
-  moves to the next phase when the current one is done, and asks the agent to
-  continue (with the next group of actors in phase 2) until every file is read,
-  the model is valid, and it is no longer thin; then it measures the model.
-  `/feynman-explain` does the same, then renders the model and opens it. `/feynman-stop`
-  stops this; `/feynman-render` renders the model to `.feynman/index.html`.
-
-### From the command line
-
-`node packages/model/bin/feynman-model.ts <command>` in the Feynman repository
-(or `bun run model <command>`):
-
-- `index <model-dir> [<kind>…]` prints one line per element, for finding what
-  exists without loading every file.
-- `coverage <repository> <model-dir> [--missing]` computes the files this
-  extraction is responsible for (all tracked files for a bootstrap, the changed
-  files for an update; never `.feynman/` itself), compares them with the ledgers
-  for the modelled commit, and fails while any are unreviewed. `--missing` lists
-  them one per line.
-- `check <model-dir> [<repository>]` validates every file against its schema and
-  checks cross-references. With a repository, it checks that every anchor exists
-  at the modelled commit and that spans fall inside their files.
-- `measure <repository> <model-dir> [--main <ref>]` fills source links (`url`,
-  `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
-  main, file and line counts for the repository and each component's footprint, and
-  every element's `sources`.
+- `index <model-dir> [<kind>…]`: one line per element.
+- `coverage <repository> <model-dir> [--missing]`: files still uncovered.
+- `check <model-dir> [<repository>]`: schemas, references, and anchors.
+- `measure <repository> <model-dir> [--main <ref>]`: links, dates, footprints, `sources`.

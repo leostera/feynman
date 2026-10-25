@@ -3,14 +3,14 @@ import { kindOfSegment, type Kind } from "./model";
 
 /** What the current URL fragment points at. */
 export type Route =
-  | { page: "overview" }
   | { page: "index"; kind: Kind }
   | { page: "detail"; kind: Kind; id: string }
   | { page: "missing"; path: string };
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
-  if (path === "") return { page: "overview" };
+  // The home page is the actors index.
+  if (path === "") return { page: "index", kind: "actor" };
   const [segment, ...rest] = path.split("/");
   const kind = kindOfSegment(segment);
   if (!kind) return { page: "missing", path };

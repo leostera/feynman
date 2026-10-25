@@ -67,7 +67,6 @@ const DETAIL_PAGES: Partial<Record<Kind, ComponentType<{ id: string }>>> = {
 
 function Content({ route }: { route: Route }) {
   const index = useIndex();
-  if (route.page === "overview") return <ActorsPage />;
   if (route.page === "index") {
     const Index = INDEX_PAGES[route.kind];
     if (Index) return <Index />;
@@ -86,7 +85,7 @@ function NotFound() {
       title="Not in this model"
       summary={
         <>
-          Nothing in the model matches this address. <a className="text-kumo-link hover:underline" href="#/">Go to the overview</a>.
+          Nothing in the model matches this address. <a className="text-kumo-link hover:underline" href="#/">Go to the actors</a>.
         </>
       }
       sections={[]}
@@ -178,7 +177,6 @@ const SECTIONS: { kind: Kind; label: string; icon: typeof HouseIcon }[] = [
 ];
 
 function sectionOf(route: Route): Kind | null {
-  if (route.page === "overview") return "actor";
   if (route.page === "index" || route.page === "detail") return route.kind === "machine" ? "state" : route.kind;
   return null;
 }
