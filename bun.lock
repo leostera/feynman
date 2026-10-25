@@ -73,6 +73,14 @@
         "vite-plugin-singlefile": "^2.3.4",
       },
     },
+    "packages/spec": {
+      "name": "@feynman/spec",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "*",
+        "typescript": "^7.0.2",
+      },
+    },
     "sites/feynman.leostera.dev": {
       "name": "@feynman/site",
       "dependencies": {
@@ -197,6 +205,8 @@
     "@feynman/renderer": ["@feynman/renderer@workspace:packages/renderer"],
 
     "@feynman/site": ["@feynman/site@workspace:sites/feynman.leostera.dev"],
+
+    "@feynman/spec": ["@feynman/spec@workspace:packages/spec"],
 
     "@floating-ui/core": ["@floating-ui/core@1.8.0", "", { "dependencies": { "@floating-ui/utils": "^0.2.12" } }, "sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ=="],
 

@@ -1,0 +1,17 @@
+{
+  "name": "@feynman/spec",
+  "version": "0.1.0",
+  "description": "Describe how part of a system behaves: actors, messages, actions, transitions, invariants, and scenarios, run by a deterministic engine.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "*",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}
