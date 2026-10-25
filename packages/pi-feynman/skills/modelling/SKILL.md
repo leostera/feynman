@@ -99,9 +99,12 @@ a script that installs a service, a config that changes a limit). Record what yo
 reviewed in coverage ledgers (see Storage), and do not finish until coverage
 passes and the model is valid.
 
-One agent does the whole extraction, following the code across files the way it
-would to understand the system, rather than reviewing files one at a time in
-isolation. Connections between files are much of what the model records.
+One agent does the whole extraction in one session, following the code across
+files the way it would to understand the system, rather than reviewing files one
+at a time in isolation. Connections between files are much of what the model
+records. Run it in the session where the system is being developed (with
+`/feynman-extract`), so the model and the work share one context. Never hand the
+extraction to a separate agent, subagent, or background process.
 
 ### Bootstrap (first snapshot)
 
