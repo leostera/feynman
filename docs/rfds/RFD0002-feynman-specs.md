@@ -1,7 +1,7 @@
 # RFD0002 - Feynman specs: describe a system, then play, check, and diff it
 
 - Feature Name: `feynman-specs`
-- Status: Draft
+- Status: Accepted
 - Author: `leostera`
 - Start Date: `2026-10-25`
 - Updated: `2026-10-25`
