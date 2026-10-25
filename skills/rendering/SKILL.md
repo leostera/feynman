@@ -46,12 +46,23 @@ from an overview down to the files behind any element.
 ## Process
 
 1. Validate the model against `skills/modelling/schema.json`.
-2. Build the renderer in `renderer/` and inline the model:
-   `npm --prefix renderer run build -- <model.json> <out.html>`.
-3. Open the output and check every view renders and links resolve.
+2. Render it (paths are relative to `renderer/`):
+   `bun run render ../examples/axo/model.json ../examples/axo/index.html`.
+3. Check the output visually, for example with headless Chrome:
+   `chrome --headless=new --screenshot=out.png --window-size=1440,1400 "file://<out.html>#flow:<id>"`.
+   Every card is addressable by fragment (`#overview:system`, `#flow:<id>`,
+   `#index:claims`, comma-separated to open several).
 
 ## Implementation
 
-`renderer/` is a Vite + React + Kumo app bundled into a single HTML file. The
-model is embedded as `<script type="application/json" id="feynman-model">`. The
-renderer relies only on the schema, never on a particular system.
+`renderer/` is a Vite + React + Kumo app (bun workspace) bundled into a single HTML
+file with `vite-plugin-singlefile`. The model is embedded as
+`<script type="application/json" id="feynman-model">`. The renderer relies only on
+the schema, never on a particular system.
+
+- `src/model.ts`: schema types and the cross-reference index.
+- `src/navigation.tsx`: the story river (open cards, URL fragment) and reader preferences.
+- `src/cards.tsx`: one card per element kind, plus index cards.
+- `src/diagrams/`: sequence diagram, swimlane, and system graph (ECharts).
+
+Committed files must not contain organisation-specific registry or service URLs.

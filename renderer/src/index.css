@@ -1,0 +1,10 @@
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@source "./**/*.{ts,tsx}";
+@import "@cloudflare/kumo/styles";
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+}

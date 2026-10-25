@@ -1,0 +1,9 @@
+{
+  "name": "feynman",
+  "private": true,
+  "workspaces": ["renderer"],
+  "scripts": {
+    "render": "bun run --cwd renderer build",
+    "typecheck": "bun run --cwd renderer typecheck"
+  }
+}

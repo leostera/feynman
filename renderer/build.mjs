@@ -1,0 +1,18 @@
+// Usage: bun run build <model.json> <out.html>
+import { copyFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { build } from "vite";
+
+const [modelArg, outArg] = process.argv.slice(2);
+if (!modelArg || !outArg) {
+  console.error("usage: build <model.json> <out.html>");
+  process.exit(2);
+}
+const caller = process.env.INIT_CWD ?? process.cwd();
+process.env.FEYNMAN_MODEL = resolve(caller, modelArg);
+const out = resolve(caller, outArg);
+
+await build({ root: import.meta.dirname, logLevel: "warn" });
+mkdirSync(dirname(out), { recursive: true });
+copyFileSync(resolve(import.meta.dirname, "dist/index.html"), out);
+console.log(`wrote ${out}`);

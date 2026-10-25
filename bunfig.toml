@@ -1,0 +1,3 @@
+[install.scopes]
+# @cloudflare/kumo is published to the public npm registry.
+"@cloudflare" = "https://registry.npmjs.org/"
