@@ -5,10 +5,10 @@
 //   feynman-model coverage <repository> <model-dir> [--missing]
 //   feynman-model measure  <repository> <model-dir> [--main <ref>]
 //   feynman-model index    <model-dir> [<kind>…]
-import { checkModel, computeCoverage, CoverageError, describeCoverage, groupMissing, indexModel, KINDS, loadModel, measureModel } from "../src/index.mjs";
+import { checkModel, computeCoverage, CoverageError, describeCoverage, groupMissing, indexModel, KINDS, loadModel, measureModel } from "../src/index.ts";
 
 const [command, ...args] = process.argv.slice(2);
-const usage = () => {
+const usage = (): never => {
   console.error("usage: feynman-model check|coverage|measure|index …");
   process.exit(2);
 };
@@ -30,12 +30,12 @@ switch (command) {
   case "coverage": {
     const [repository, modelDir, flag] = args;
     if (!repository || !modelDir) usage();
-    let report;
+    let report: ReturnType<typeof computeCoverage>;
     try {
       report = computeCoverage(repository, modelDir);
     } catch (error) {
       if (!(error instanceof CoverageError)) throw error;
-      console.error(error.message);
+      console.error((error as Error).message);
       process.exit(1);
     }
     if (flag === "--missing") {

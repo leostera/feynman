@@ -5,52 +5,66 @@
 //   update:    every file added, modified, or renamed between meta.source.base and
 //              meta.source.commit (the base must be an ancestor of the commit), plus
 //              every file an element was derived from whose content hash no longer
-//              matches (see sources.mjs). Those elements are reported as outdated.
+//              matches (see sources.ts). Those elements are reported as outdated.
 //
 // Reviewed files come from the ledgers in <model-dir>/coverage/*.json whose
 // `commit` is the modelled commit.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { git, lines, tryGit, trackedFiles } from "./git.mjs";
-import { excludePathspecs, readConfig } from "./config.mjs";
-import { loadModel, readCoverage } from "./model.mjs";
-import { outdatedElements } from "./sources.mjs";
+import { git, lines, tryGit, trackedFiles } from "./git.ts";
+import { excludePathspecs, readConfig } from "./config.ts";
+import { loadModel, readCoverage, type Ledger, type LedgerEntry } from "./model.ts";
+import { outdatedElements, type OutdatedElement } from "./sources.ts";
 
 export class CoverageError extends Error {}
 
 /** Where a repository keeps its model; never itself required for coverage. */
 export const MODEL_ROOT = ".feynman/";
 
-/**
- * Files under `exclude` in `.feynman/config.json` are never required.
- *
- * @returns {{ mode: "bootstrap" | "update", commit: string, base?: string, required: string[],
- *   missing: string[], deleted: string[], stale: string[], unknown: string[], exclude: string[],
- *   outdated: { kind: string, id: string, files: string[] }[], problems: string[] }}
- */
-export function computeCoverage(repository, modelDir) {
+export interface CoverageReport {
+  mode: "bootstrap" | "update";
+  commit: string;
+  /** Update only: the previously modelled commit. */
+  base?: string;
+  required: string[];
+  missing: string[];
+  deleted: string[];
+  /** Ledgers for other commits, ignored. */
+  stale: string[];
+  /** Ledger paths that are not files at the commit. */
+  unknown: string[];
+  /** Pathspecs excluded by .feynman/config.json. */
+  exclude: string[];
+  /** Update only: elements whose source files changed since they were derived. */
+  outdated: OutdatedElement[];
+  problems: string[];
+}
+
+/** Files under `exclude` in `.feynman/config.json` are never required. */
+export function computeCoverage(repository: string, modelDir: string): CoverageReport {
   if (!existsSync(join(modelDir, "meta.json"))) throw new CoverageError(`${modelDir}: no model. Bootstrap one first.`);
   const { meta } = loadModel(modelDir);
   const { exclude } = readConfig(modelDir);
   const commit = tryGit(repository, "rev-parse", meta.source?.commit ?? "");
   if (!commit) throw new CoverageError(`meta.source.commit ${meta.source?.commit} is not a commit in ${repository}`);
 
-  let mode = "bootstrap";
-  let base;
-  let required;
-  const deleted = [];
-  let outdated = [];
+  let mode: CoverageReport["mode"] = "bootstrap";
+  let base: string | undefined;
+  let required: string[];
+  const deleted: string[] = [];
+  let outdated: OutdatedElement[] = [];
   if (meta.extraction === "update") {
     mode = "update";
     const baseRef = meta.source.base?.commit;
     if (!baseRef) throw new CoverageError("update without meta.source.base.commit: name the previously modelled commit.");
-    base = tryGit(repository, "rev-parse", baseRef);
-    if (!base || tryGit(repository, "merge-base", "--is-ancestor", base, commit) === null) {
+    base = tryGit(repository, "rev-parse", baseRef) ?? undefined;
+    const resolved = base;
+    if (!resolved || tryGit(repository, "merge-base", "--is-ancestor", resolved, commit) === null) {
       throw new CoverageError(`base ${baseRef} is not an ancestor of ${commit.slice(0, 7)}.`);
     }
     required = [];
     const pathspecs = exclude.length ? ["--", ...excludePathspecs(exclude)] : [];
-    for (const row of lines(git(repository, "diff", "--name-status", "--no-renames", base, commit, ...pathspecs))) {
+    for (const row of lines(git(repository, "diff", "--name-status", "--no-renames", resolved, commit, ...pathspecs))) {
       const [status, path] = row.split("\t");
       if (status === "D") deleted.push(path);
       else required.push(path);
@@ -71,10 +85,10 @@ export function computeCoverage(repository, modelDir) {
   // The model describes the repository; it is not part of what it describes.
   required = required.filter((path) => !path.startsWith(MODEL_ROOT));
 
-  const files = new Set();
-  const trees = [];
-  const stale = [];
-  const problems = [];
+  const files = new Set<string>();
+  const trees: string[] = [];
+  const stale: string[] = [];
+  const problems: string[] = [];
   for (const { batch, value } of readCoverage(modelDir)) {
     if (value.commit !== commit) {
       stale.push(batch);
@@ -86,7 +100,7 @@ export function computeCoverage(repository, modelDir) {
       else problems.push(`coverage/${batch}: ${entry.path} is a directory; only vendored or generated trees may be listed whole`);
     }
   }
-  const covered = (path) => files.has(path) || trees.some((tree) => path.startsWith(tree));
+  const covered = (path: string) => files.has(path) || trees.some((tree) => path.startsWith(tree));
   const known = new Set(trackedFiles(repository, commit, exclude));
   return {
     mode,
@@ -104,8 +118,8 @@ export function computeCoverage(repository, modelDir) {
 }
 
 /** Missing paths grouped by their first two segments, largest group first. */
-export function groupMissing(missing) {
-  const groups = new Map();
+export function groupMissing(missing: string[]): [string, number][] {
+  const groups = new Map<string, number>();
   for (const path of missing) {
     const key = path.split("/").slice(0, 2).join("/");
     groups.set(key, (groups.get(key) ?? 0) + 1);
@@ -114,9 +128,9 @@ export function groupMissing(missing) {
 }
 
 /** One line: "bootstrap at 66d8d86: 514 of 956 files reviewed". */
-export function describeCoverage(report) {
+export function describeCoverage(report: CoverageReport): string {
   const where =
-    report.mode === "update" ? `update ${report.base.slice(0, 7)}..${report.commit.slice(0, 7)}` : `bootstrap at ${report.commit.slice(0, 7)}`;
+    report.mode === "update" ? `update ${report.base!.slice(0, 7)}..${report.commit.slice(0, 7)}` : `bootstrap at ${report.commit.slice(0, 7)}`;
   const excluding = report.exclude?.length ? ` (excluding ${report.exclude.join(", ")})` : "";
   return `${where}: ${report.required.length - report.missing.length} of ${report.required.length} files reviewed${excluding}`;
 }
@@ -125,11 +139,11 @@ export function describeCoverage(report) {
  * Add entries to the ledger `coverage/<batch>.json` for `commit`, replacing earlier
  * entries for the same paths. Creates the ledger when needed.
  */
-export function recordReviewed(modelDir, batch, commit, summary, entries) {
+export function recordReviewed(modelDir: string, batch: string, commit: string, summary: string, entries: LedgerEntry[]): Ledger {
   const dir = join(modelDir, "coverage");
   const path = join(dir, `${batch}.json`);
   mkdirSync(dir, { recursive: true });
-  const ledger = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : { commit, summary, files: [] };
+  const ledger: Ledger = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : { commit, summary, files: [] };
   if (ledger.commit !== commit) throw new CoverageError(`coverage/${batch}.json is for ${ledger.commit.slice(0, 7)}, not ${commit.slice(0, 7)}`);
   if (summary) ledger.summary = summary;
   const byPath = new Map(ledger.files.map((entry) => [entry.path, entry]));

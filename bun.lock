@@ -8,11 +8,16 @@
     "packages/model": {
       "name": "@feynman/model",
       "bin": {
-        "feynman-model": "./bin/feynman-model.mjs",
+        "feynman-model": "./bin/feynman-model.ts",
       },
       "dependencies": {
         "ajv": "^8.20.0",
         "ajv-formats": "^3.0.1",
+      },
+      "devDependencies": {
+        "@types/bun": "*",
+        "@types/node": "^24.0.0",
+        "typescript": "^7.0.2",
       },
     },
     "packages/modeler": {

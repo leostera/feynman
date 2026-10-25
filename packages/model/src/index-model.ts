@@ -1,11 +1,11 @@
 // A one-line-per-element overview of a model, so an agent can see what exists
 // without loading every file.
-import { KINDS, loadModel } from "./model.mjs";
+import { KINDS, loadModel } from "./model.ts";
 
-export function indexModel(modelDir, only = []) {
+export function indexModel(modelDir: string, only: string[] = []): string {
   const model = loadModel(modelDir);
   const oneLine = (text = "") => (text.length > 120 ? `${text.slice(0, 117)}…` : text).replace(/\s+/g, " ");
-  const describe = (e) => e.summary ?? e.statement ?? (e.subject && `${e.subject}: ${e.value}`) ?? "";
+  const describe = (e: Record<string, any>): string => e.summary ?? e.statement ?? (e.subject && `${e.subject}: ${e.value}`) ?? "";
   const out = [`${model.meta.system} @ ${String(model.meta.source?.commit).slice(0, 7)}: ${oneLine(model.meta.summary)}`];
   for (const kind of KINDS) {
     if (only.length && !only.includes(kind.dir) && !only.includes(kind.key)) continue;

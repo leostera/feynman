@@ -4,20 +4,20 @@
 //
 // Agents decide which paths belong to an actor (`actors/<id>.json` → `footprint.paths`);
 // this only counts. Counts are taken at the model's commit, not the working tree.
-import { readConfig } from "./config.mjs";
-import { git, tryGit } from "./git.mjs";
-import { KINDS, loadModel, writeElement, writeMeta } from "./model.mjs";
-import { stampSources } from "./sources.mjs";
+import { readConfig } from "./config.ts";
+import { git, tryGit } from "./git.ts";
+import { KINDS, loadModel, writeElement, writeMeta } from "./model.ts";
+import { stampSources } from "./sources.ts";
 
 // Paths never counted, unless the model lists its own `meta.source.footprint.excludes`.
 // Paths excluded in `.feynman/config.json` are never counted either.
 const DEFAULT_EXCLUDES = ["vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
 
 /** Measure the model in place; returns a one-line summary. */
-export function measureModel(repository, modelDir, mainRef = "main") {
+export function measureModel(repository: string, modelDir: string, mainRef = "main"): string {
   const model = loadModel(modelDir);
   const source = model.meta.source;
-  const excludes = [...new Set([...(source.footprint?.excludes ?? DEFAULT_EXCLUDES), ...readConfig(modelDir).exclude])];
+  const excludes: string[] = [...new Set<string>([...(source.footprint?.excludes ?? DEFAULT_EXCLUDES), ...readConfig(modelDir).exclude])];
   const pathspecExcludes = excludes.map((pattern) => `:!${pattern}`);
   const commit = git(repository, "rev-parse", source.commit);
   source.commit = commit;
@@ -37,7 +37,7 @@ export function measureModel(repository, modelDir, mainRef = "main") {
   }
 
   /** Text files and lines under `paths` at the model's commit. */
-  const count = (paths) => {
+  const count = (paths: string[]) => {
     // `git grep -c ''` prints `<commit>:<path>:<lines>` for every non-binary file.
     const out = tryGit(repository, "grep", "-I", "-c", "", commit, "--", ...paths, ...pathspecExcludes) ?? "";
     let files = 0;
@@ -52,7 +52,7 @@ export function measureModel(repository, modelDir, mainRef = "main") {
   };
 
   source.footprint = { ...count(["."]), excludes };
-  const actorKind = KINDS.find((kind) => kind.key === "actors");
+  const actorKind = KINDS.find((kind) => kind.key === "actors")!;
   for (const actor of model.actors) {
     if (!actor.footprint?.paths?.length) continue;
     Object.assign(actor.footprint, count(actor.footprint.paths));
@@ -67,7 +67,7 @@ export function measureModel(repository, modelDir, mainRef = "main") {
 }
 
 /** A browsable https URL for common git remotes, or null. */
-function webUrl(remote) {
+function webUrl(remote: string | null): string | null {
   if (!remote) return null;
   const ssh = remote.match(/^git@([^:]+):(.+?)(\.git)?$/);
   if (ssh) return `https://${ssh[1]}/${ssh[2]}`;

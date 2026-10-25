@@ -10,13 +10,21 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { git, lines } from "./git.mjs";
-import { anchoredFiles } from "./anchors.mjs";
-import { KINDS, loadModel, writeElement } from "./model.mjs";
+import { git, lines } from "./git.ts";
+import { anchoredFiles } from "./anchors.ts";
+import { KINDS, loadModel, writeElement } from "./model.ts";
+
+export interface OutdatedElement {
+  /** Model directory of the kind, e.g. "flows". */
+  kind: string;
+  id: string;
+  /** Sources whose content changed or that no longer exist. */
+  files: string[];
+}
 
 /** Blob id of every file at `commit`. */
-export function blobIds(repository, commit) {
-  const blobs = new Map();
+export function blobIds(repository: string, commit: string): Map<string, string> {
+  const blobs = new Map<string, string>();
   for (const row of lines(git(repository, "-c", "core.quotePath=false", "ls-tree", "-r", "--full-tree", commit))) {
     const tab = row.indexOf("\t");
     const [, type, id] = row.slice(0, tab).split(" ");
@@ -29,7 +37,7 @@ export function blobIds(repository, commit) {
  * Blob id of each existing file in `paths` as it is on disk now (tracked or not),
  * with git's clean filters applied, exactly as `git add` would hash it.
  */
-export function workingTreeBlobIds(repository, paths) {
+export function workingTreeBlobIds(repository: string, paths: string[]): Map<string, string> {
   const files = [...new Set(paths)].filter((path) => {
     const full = join(repository, path);
     return existsSync(full) && statSync(full).isFile();
@@ -42,7 +50,7 @@ export function workingTreeBlobIds(repository, paths) {
 }
 
 /** Blob ids for `paths` at `target`: a commit, or the working tree when `target` is null. */
-function blobsAt(repository, target, paths) {
+function blobsAt(repository: string, target: string | null, paths: string[]): Map<string, string> {
   return target === null ? workingTreeBlobIds(repository, paths) : blobIds(repository, target);
 }
 
@@ -50,15 +58,15 @@ function blobsAt(repository, target, paths) {
  * Record `sources` on every element: the hash of each file it anchors, as on disk
  * now (the contents the agent examined). Returns how many elements changed.
  */
-export function stampSources(repository, modelDir) {
+export function stampSources(repository: string, modelDir: string): number {
   const model = loadModel(modelDir);
   const elements = KINDS.flatMap((kind) => model[kind.key]);
   const blobs = workingTreeBlobIds(repository, elements.flatMap((element) => [...anchoredFiles(element)]));
   let changed = 0;
   for (const kind of KINDS) {
     for (const element of model[kind.key]) {
-      const sources = {};
-      for (const file of [...anchoredFiles(element)].sort()) if (blobs.has(file)) sources[file] = blobs.get(file);
+      const sources: Record<string, string> = {};
+      for (const file of [...anchoredFiles(element)].sort()) if (blobs.has(file)) sources[file] = blobs.get(file)!;
       if (JSON.stringify(sources) === JSON.stringify(element.sources ?? {})) continue;
       writeElement(modelDir, kind, { ...element, sources });
       changed += 1;
@@ -72,14 +80,14 @@ export function stampSources(repository, modelDir) {
  * when null): `{ kind, id, files }`, where `files` are the changed or removed sources.
  * Elements without sources are skipped.
  */
-export function outdatedElements(repository, modelDir, target = null) {
+export function outdatedElements(repository: string, modelDir: string, target: string | null = null): OutdatedElement[] {
   const model = loadModel(modelDir);
   const recorded = KINDS.flatMap((kind) => model[kind.key]).flatMap((element) => Object.keys(element.sources ?? {}));
   const blobs = blobsAt(repository, target, recorded);
-  const outdated = [];
+  const outdated: OutdatedElement[] = [];
   for (const kind of KINDS) {
     for (const element of model[kind.key]) {
-      const files = Object.entries(element.sources ?? {})
+      const files = Object.entries((element.sources ?? {}) as Record<string, string>)
         .filter(([file, id]) => blobs.get(file) !== id)
         .map(([file]) => file);
       if (files.length) outdated.push({ kind: kind.dir, id: element.id, files });

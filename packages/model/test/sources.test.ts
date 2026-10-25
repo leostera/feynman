@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { computeCoverage, measureModel, outdatedElements } from "../src/index.mjs";
+import { computeCoverage, measureModel, outdatedElements } from "../src/index.ts";
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "feynman-sources-"));

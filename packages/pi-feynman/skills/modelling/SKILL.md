@@ -222,7 +222,7 @@ Mechanical facts come from tools, not from the agent.
 
 ### From the command line
 
-`node packages/model/bin/feynman-model.mjs <command>` in the Feynman repository
+`node packages/model/bin/feynman-model.ts <command>` in the Feynman repository
 (or `bun run model <command>`):
 
 - `index <model-dir> [<kind>…]` prints one line per element, for finding what

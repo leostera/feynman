@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { computeCoverage, describeCoverage, measureModel } from "../src/index.mjs";
+import { computeCoverage, describeCoverage, measureModel } from "../src/index.ts";
 
 /** A committed git repository with `files`, and a bootstrap model at HEAD. */
 function repository(files: Record<string, string>, config?: object) {
