@@ -1,9 +1,11 @@
 import { Badge, Tabs } from "@cloudflare/kumo";
+import { useState } from "react";
 import { SequenceDiagram } from "../diagrams/SequenceDiagram";
 import { Swimlane } from "../diagrams/Swimlane";
-import { claimsAbout, flowParticipants, type Flow } from "../model";
+import { claimsAbout, flowParticipants, type Flow, type Step } from "../model";
 import { usePreference } from "../router";
-import { Anchors, CELL, Empty, idColumn, IdRef, IdRefs, Page, Rows, useIndex } from "../ui";
+import { AnchorLink, Anchors, CELL, Empty, idColumn, IdRef, IdRefs, Page, Rows, useIndex } from "../ui";
+import { CallTree } from "../diagrams/CallTree";
 import { ClaimRows } from "./Claims";
 
 export function FlowsPage() {
@@ -114,53 +116,72 @@ export function FlowPage({ id }: { id: string }) {
   );
 }
 
-function StepList({ flow }: { flow: Flow }) {
+/** A flow's steps, each with where it happens in code and the call stack under it. */
+export function StepList({ flow }: { flow: Flow }) {
   return (
     <ol className="flex flex-col divide-y divide-kumo-hairline">
       {flow.steps.map((step, i) => (
-        <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 py-2.5">
-          <span className="text-sm text-kumo-subtle tabular-nums">{i + 1}</span>
-          <div className="flex flex-col gap-1.5">
-            <div className="text-sm text-kumo-default">
-              <span className="font-medium">
-                <IdRef kind="actor" id={step.actor} />
-              </span>
-              {step.target && (
-                <>
-                  <span className="text-kumo-subtle"> → </span>
-                  <IdRef kind="actor" id={step.target} />
-                </>
-              )}
-              <span className="text-kumo-subtle">: </span>
-              {step.action}
-            </div>
-            {(step.ref || step.protocol || step.component || step.properties?.length) && (
-              <div className="flex flex-wrap gap-1">
-                {step.component && (
-                  <Badge variant="neutral">
-                    in <IdRef kind="component" id={step.component} />
-                  </Badge>
-                )}
-                {step.ref && (
-                  <Badge variant="purple">
-                    calls <IdRef kind="flow" id={step.ref} />
-                  </Badge>
-                )}
-                {step.protocol && (
-                  <Badge variant="orange">
-                    speaks <IdRef kind="protocol" id={step.protocol} />
-                  </Badge>
-                )}
-                {step.properties?.map((property) => (
-                  <Badge key={property} variant="neutral">
-                    {property}
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-        </li>
+        <StepItem key={i} step={step} number={i + 1} />
       ))}
     </ol>
+  );
+}
+
+function StepItem({ step, number }: { step: Step; number: number }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="grid grid-cols-[2rem_1fr] gap-2 py-2.5">
+      <span className="text-sm text-kumo-subtle tabular-nums">{number}</span>
+      <div className="flex flex-col gap-1.5">
+        <div className="text-sm text-kumo-default">
+          <span className="font-medium">
+            <IdRef kind="actor" id={step.actor} />
+          </span>
+          {step.target && (
+            <>
+              <span className="text-kumo-subtle"> → </span>
+              <IdRef kind="actor" id={step.target} />
+            </>
+          )}
+          <span className="text-kumo-subtle">: </span>
+          {step.action}
+        </div>
+        {(step.ref || step.protocol || step.component || step.properties?.length || step.anchor) && (
+          <div className="flex flex-wrap items-center gap-1 [&_a]:text-current">
+            {step.component && (
+              <Badge variant="neutral">
+                in <IdRef kind="component" id={step.component} />
+              </Badge>
+            )}
+            {step.ref && (
+              <Badge variant="purple">
+                calls <IdRef kind="flow" id={step.ref} />
+              </Badge>
+            )}
+            {step.protocol && (
+              <Badge variant="orange">
+                speaks <IdRef kind="protocol" id={step.protocol} />
+              </Badge>
+            )}
+            {step.properties?.map((property) => (
+              <Badge key={property} variant="neutral">
+                {property}
+              </Badge>
+            ))}
+            {step.anchor && (
+              <span className="font-mono text-xs text-kumo-subtle">
+                <AnchorLink anchor={step.anchor} />
+              </span>
+            )}
+            {step.calls && (
+              <button type="button" onClick={() => setOpen(!open)} className="text-xs text-kumo-link hover:underline">
+                {open ? "Hide" : "Show"} call stack
+              </button>
+            )}
+          </div>
+        )}
+        {open && step.calls && <CallTree root={step.calls} />}
+      </div>
+    </li>
   );
 }

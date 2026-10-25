@@ -6,6 +6,7 @@ import {
   GaugeIcon,
   GitCommitIcon,
   HouseIcon,
+  MapTrifoldIcon,
   MoonIcon,
   PackageIcon,
   ScalesIcon,
@@ -21,6 +22,7 @@ import { ComponentPage, ComponentsPage } from "./pages/Components";
 import { ElementIndexPage, ElementPage, hasElementPages } from "./pages/Elements";
 import { FlowPage, FlowsPage } from "./pages/Flows";
 import { InvariantPage, InvariantsPage } from "./pages/Invariants";
+import { JourneyPage, JourneysPage } from "./pages/Journeys";
 import { LimitPage, LimitsPage } from "./pages/Limits";
 import { ProtocolPage, ProtocolsPage } from "./pages/Protocols";
 import { useRoute, type Route } from "./router";
@@ -47,6 +49,7 @@ export function App({ index }: { index: Index }) {
 
 /** Kinds with their own pages; the others (state, state machines) use the generic element pages. */
 const INDEX_PAGES: Partial<Record<Kind, ComponentType>> = {
+  journey: JourneysPage,
   actor: ActorsPage,
   component: ComponentsPage,
   flow: FlowsPage,
@@ -56,6 +59,7 @@ const INDEX_PAGES: Partial<Record<Kind, ComponentType>> = {
   limit: LimitsPage,
 };
 const DETAIL_PAGES: Partial<Record<Kind, ComponentType<{ id: string }>>> = {
+  journey: JourneyPage,
   actor: ActorPage,
   component: ComponentPage,
   flow: FlowPage,
@@ -85,7 +89,7 @@ function NotFound() {
       title="Not in this model"
       summary={
         <>
-          Nothing in the model matches this address. <a className="text-kumo-link hover:underline" href="#/">Go to the actors</a>.
+          Nothing in the model matches this address. <a className="text-kumo-link hover:underline" href="#/">Go to the start</a>.
         </>
       }
       sections={[]}
@@ -167,6 +171,7 @@ function ModeToggle() {
 // Left navigation: the inventory's structure.
 
 const SECTIONS: { kind: Kind; label: string; icon: typeof HouseIcon }[] = [
+  { kind: "journey", label: "How it works", icon: MapTrifoldIcon },
   { kind: "actor", label: "Actors", icon: UsersThreeIcon },
   { kind: "component", label: "Components", icon: PackageIcon },
   { kind: "flow", label: "Flows", icon: ArrowsSplitIcon },
@@ -192,7 +197,7 @@ function Navigation({ route }: { route: Route }) {
       <Sidebar.Content>
         <Sidebar.Group>
           <Sidebar.Menu>
-            {SECTIONS.map((section) => (
+            {SECTIONS.filter((section) => section.kind !== "journey" || count("journey") > 0).map((section) => (
               <Sidebar.MenuButton key={section.kind} icon={section.icon} href={href(section.kind)} active={current === section.kind} tooltip={section.label}>
                 {section.label}
                 <Sidebar.MenuBadge className="ml-auto">{count(section.kind)}</Sidebar.MenuBadge>

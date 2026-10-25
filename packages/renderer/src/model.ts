@@ -2,6 +2,7 @@
 // routes to element pages and an index for looking elements up.
 import type {
   Actor,
+  Journey,
   Claim,
   Component,
   Flow,
@@ -17,10 +18,11 @@ export type * from "@feynman/model/types";
 export { anchorUrl, resolveAnchor, spanLabel } from "@feynman/model/anchors";
 
 /** Element kinds that have their own page. */
-export type Kind = "actor" | "component" | "flow" | "protocol" | "state" | "machine" | "invariant" | "claim" | "limit";
+export type Kind = "journey" | "actor" | "component" | "flow" | "protocol" | "state" | "machine" | "invariant" | "claim" | "limit";
 
 /** URL segment for each kind's pages; also the model directory each kind is stored in. */
 export const SEGMENT: Record<Kind, string> = {
+  journey: "journeys",
   actor: "actors",
   component: "components",
   flow: "flows",
@@ -57,6 +59,7 @@ export function parsePath(path: string): Ref | null {
 
 export interface Index {
   model: Model;
+  journeys: Map<string, Journey>;
   actors: Map<string, Actor>;
   components: Map<string, Component>;
   flows: Map<string, Flow>;
@@ -77,6 +80,7 @@ function byId<T extends { id: string }>(items: T[] | undefined): Map<string, T> 
 export function buildIndex(model: Model): Index {
   const index: Index = {
     model,
+    journeys: byId(model.journeys),
     actors: byId(model.actors),
     components: byId(model.components),
     flows: byId(model.flows),
@@ -101,6 +105,7 @@ export function buildIndex(model: Model): Index {
 
 /** The index map holding each kind's elements. */
 const MAP: Record<Kind, Exclude<keyof Index, "model" | "usedBy">> = {
+  journey: "journeys",
   actor: "actors",
   component: "components",
   flow: "flows",

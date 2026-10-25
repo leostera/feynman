@@ -32,7 +32,7 @@ interface Entry {
   step: number;
   file: string;
   symbol: string;
-  /** Repository paths to index: the step component's footprint, or the entry file's directory. */
+  /** Repository paths to index: the code of the step's actor, and the entry file's directory. */
   scope: string[];
 }
 
@@ -62,14 +62,14 @@ export function measureCalls(repository: string, model: Model): { trees: Map<str
 }
 
 function entries(model: Model): Entry[] {
-  const footprints = new Map(model.components.map((component) => [component.id, component.footprint?.paths ?? []]));
+  // A step runs in its actor: index the code of every component running there, and the entry's own directory.
+  const code = (actor: string) => model.components.filter((component) => component.actors?.includes(actor)).flatMap((component) => component.footprint?.paths ?? []);
   return model.flows.flatMap((flow) =>
     flow.steps.flatMap((step, index): Entry[] => {
       if (!step.anchor) return [];
       const { file, symbol } = resolveAnchor(step.anchor);
       if (!symbol) return [];
-      const footprint = step.component ? footprints.get(step.component) ?? [] : [];
-      return [{ flow: flow.id, step: index, file, symbol, scope: footprint.length ? footprint : [dirname(file)] }];
+      return [{ flow: flow.id, step: index, file, symbol, scope: [...new Set([...code(step.actor), `${dirname(file)}/`])].sort() }];
     }),
   );
 }

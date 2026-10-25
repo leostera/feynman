@@ -95,12 +95,13 @@ export function PathRefs({ paths }: { paths: string[] }) {
 export function AnchorLink({ anchor, children }: { anchor: Anchor; children?: ReactNode }) {
   const index = useIndex();
   const url = anchorUrl(index.model.meta.source, anchor);
-  const { file, span } = resolveAnchor(anchor);
+  const { file, span, symbol } = resolveAnchor(anchor);
   const lines = spanLabel(span);
   const label = children ?? (
     <>
       {file}
       {lines && <span className="text-kumo-subtle">:{lines}</span>}
+      {symbol && <span className="text-kumo-default">#{symbol}</span>}
     </>
   );
   const title = lines ? `${file}:${lines}` : file;

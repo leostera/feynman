@@ -9,8 +9,8 @@ export type Route =
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
-  // The home page is the actors index.
-  if (path === "") return { page: "index", kind: "actor" };
+  // The home page is the journeys index (the actors, for models without journeys).
+  if (path === "") return { page: "index", kind: "journey" };
   const [segment, ...rest] = path.split("/");
   const kind = kindOfSegment(segment);
   if (!kind) return { page: "missing", path };
