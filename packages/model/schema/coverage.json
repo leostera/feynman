@@ -34,17 +34,18 @@
           "path": {
             "type": "string",
             "minLength": 1,
-            "description": "A file. A directory (ending in `/`) is allowed only for `vendored` and `generated`."
+            "description": "A file, or a directory ending in `/` for development, vendored, and generated trees."
           },
           "outcome": {
             "enum": [
               "read",
-              "modelled",
-              "no-behaviour",
+              "development",
               "vendored",
-              "generated"
+              "generated",
+              "modelled",
+              "no-behaviour"
             ],
-            "description": "read: read in full in the extraction session (recorded automatically). vendored or generated: not read, with a note naming the origin. modelled and no-behaviour: recorded by earlier versions."
+            "description": "read: read in full in the extraction session (recorded automatically). development: about how the system is developed, tested, built, or published rather than how it behaves; not read in full, with a note saying why. vendored or generated: not read, with a note naming the origin. modelled and no-behaviour: recorded by earlier versions."
           },
           "note": {
             "type": "string",

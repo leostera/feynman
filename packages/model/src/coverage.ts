@@ -96,8 +96,8 @@ export function computeCoverage(repository: string, modelDir: string): CoverageR
     }
     for (const entry of value.files ?? []) {
       if (!entry.path.endsWith("/")) files.add(entry.path);
-      else if (entry.outcome === "vendored" || entry.outcome === "generated") trees.push(entry.path);
-      else problems.push(`coverage/${batch}: ${entry.path} is a directory; only vendored or generated trees may be listed whole`);
+      else if (entry.outcome === "vendored" || entry.outcome === "generated" || entry.outcome === "development") trees.push(entry.path);
+      else problems.push(`coverage/${batch}: ${entry.path} is a directory; only development, vendored, or generated trees may be listed whole`);
     }
   }
   const covered = (path: string) => files.has(path) || trees.some((tree) => path.startsWith(tree));

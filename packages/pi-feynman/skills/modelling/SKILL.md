@@ -30,11 +30,15 @@ The model sits between two extremes:
 5. **Semantic level.** Model semantic actions, not control flow (see Granularity).
 6. **Extraction only.** This skill covers building and updating the model.
    Rendering and presentation are separate concerns.
-7. **The system, not its tooling.** Model the system the repository builds, not
-   how the repository is built. Workspace setup, developer CLIs, CI, release and
-   build scripts are read like any other file, but they are not actors, flows, or
-   protocols unless they change what the system does (a build step that sets a
-   limit, a script that installs a service users depend on).
+7. **How the system behaves, not how it is developed.** The model explains what
+   the system does for the people and programs that use it, as it runs. Decide
+   first what the system is: what ships, and what runs when it is used. Files
+   about developing it (tests, CI, build, release, and publishing scripts,
+   workspace and tooling setup, project websites, contributor docs) are set
+   aside as `development` without being read in full, and never become actors,
+   components, flows, or protocols. Code that runs when the system is used is
+   part of it wherever it lives, even in a build or scripts directory. Tests may
+   still be cited as evidence for invariants.
 
 ## Granularity
 
@@ -155,8 +159,9 @@ flow or protocol showing how, a first-party actor takes part in no flow, a
 protocol does not name its server and clients or lists no messages, or a
 runtime-enforced invariant has a call path of one frame.
 
-Vendored copies of third-party code may be recorded as a whole directory with
-outcome `vendored`, once you have confirmed that is what they are and noted the
+Development files and trees are recorded with outcome `development` and a note
+saying what they are for. Vendored copies of third-party code may be recorded as
+a whole directory with outcome `vendored`, once you have confirmed that is what they are and noted the
 origin. Lockfiles and other tool output are `generated`, with their source named.
 Patches, wrappers, and build rules around them are first-party and are read.
 
@@ -220,8 +225,8 @@ about scope, not a way to finish faster.
 
 Coverage ledgers record what each extraction pass covered, at which commit: one
 file per batch, listing every file with its outcome: `read` (read in full,
-recorded automatically), `vendored`, or `generated` (with a note naming the
-origin). Older ledgers may say `modelled` or `no-behaviour`. Ledgers are not
+recorded automatically), `development` (with a note saying what it is for),
+`vendored`, or `generated` (with a note naming the origin). Older ledgers may say `modelled` or `no-behaviour`. Ledgers are not
 rendered.
 
 Each file must validate against its schema in `packages/model/schema/` of the
@@ -251,8 +256,9 @@ Mechanical facts come from tools, not from the agent.
 - Files read in full with `read` (continuing truncated output with offsets) are
   recorded automatically; searching or listing does not count. Ledgers cannot be
   written any other way.
-- `feynman_skip` records vendored or generated files or trees, with a note
-  naming their origin, so they need not be read.
+- `feynman_skip` sets aside development, vendored, or generated files or trees,
+  with a note saying what they are for or where they come from, so they need
+  not be read.
 - `feynman_status` shows the phase, coverage, the current group or what the
   model lacks, and model problems.
 - Whenever the agent stops, the extension checks where the extraction stands,

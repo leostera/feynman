@@ -100,12 +100,13 @@ test("guides the agent through actors, groups of connected actors, and depth", a
   ]);
 });
 
-test("records vendored and generated files without reading them", async () => {
-  const cwd = repository({ ...FILES, "vendor/lib.js": "/* third party */\n", "bun.lock": "{}\n" });
+test("sets aside development, vendored, and generated files without reading them", async () => {
+  const cwd = repository({ ...FILES, "vendor/lib.js": "/* third party */\n", "bun.lock": "{}\n", "scripts/publish.sh": "npm publish\n" });
   harness = await startSession(cwd);
   harness.respond([
     call("feynman_extract", {}),
     call("feynman_skip", { paths: ["vendor/", "bun.lock"], outcome: "vendored", note: "third-party code and its lockfile" }),
+    call("feynman_skip", { paths: ["scripts/"], outcome: "development", note: "publishes the packages" }),
     call("feynman_skip", { paths: ["src/server.ts"], outcome: "generated", note: "" }),
     call("feynman_stop_now", {}),
   ]);
@@ -113,9 +114,11 @@ test("records vendored and generated files without reading them", async () => {
   while (harness.pending() > 0) await new Promise((resolve) => setTimeout(resolve, 10));
   await harness.session.abort();
 
-  const [skipped, rejected] = toolResults(harness).filter((r) => r.tool === "feynman_skip");
-  expect(skipped.text).toContain("Recorded 2 path(s) as vendored");
-  expect(rejected.text).toContain("src/server.ts: name where it comes from");
+  const [vendored, development, rejected] = toolResults(harness).filter((r) => r.tool === "feynman_skip");
+  expect(vendored.text).toContain("Recorded 2 path(s) as vendored");
+  expect(development.text).toContain("Recorded 1 path(s) as development");
+  expect(development.text).toContain("3 of 6 files read"); // vendor/lib.js, bun.lock, scripts/publish.sh
+  expect(rejected.text).toContain("src/server.ts: say in note where it comes from");
 });
 
 test("blocks writing coverage ledgers directly", async () => {

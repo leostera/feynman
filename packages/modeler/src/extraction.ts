@@ -43,8 +43,8 @@ export type StopDecision =
   /** Stopped driving (no progress, or an error); tell the user `message`. */
   | { kind: "paused"; message: string };
 
-/** Outcomes the agent may record without reading: files it should not model. */
-export const SKIP_OUTCOMES = ["vendored", "generated"] as const;
+/** Outcomes the agent may record without reading: files outside the system's behaviour. */
+export const SKIP_OUTCOMES = ["development", "vendored", "generated"] as const;
 export type SkipOutcome = (typeof SKIP_OUTCOMES)[number];
 
 /** Stop driving after this many continuations without progress. */
@@ -112,7 +112,7 @@ export class Extraction {
     return kickoff(start, report, phase, group);
   }
 
-  /** Record vendored or generated files or trees (a path ending in `/`), which need not be read. */
+  /** Record development, vendored, or generated files or trees (a path ending in `/`), which need not be read. */
   skip(paths: string[], outcome: SkipOutcome, note: string): { text: string; recorded: number; rejected: string[] } {
     const ws = this.requireWorkspace();
     const { commit, required } = this.requireScope(ws);
@@ -120,7 +120,7 @@ export class Extraction {
     const rejected: string[] = [];
     for (const raw of paths) {
       const path = raw.replace(/^\.\//, "");
-      if (!note.trim()) rejected.push(`${path}: name where it comes from in note`);
+      if (!note.trim()) rejected.push(`${path}: say in note ${outcome === "development" ? "what it is for" : "where it comes from"}`);
       else if (path.endsWith("/") ? ![...required].some((file) => file.startsWith(path)) : !required.has(path)) {
         rejected.push(`${path}: not a file this extraction needs (untracked, excluded by .feynman/config.json, or unchanged)`);
       } else accepted.push({ path, outcome, note });

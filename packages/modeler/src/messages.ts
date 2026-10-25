@@ -26,18 +26,21 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
     "  2. Flows: groups of connected actors, one at a time, reading their code in full.",
     "  3. Depth: flows, protocols, invariants, claims, and limits, made precise.",
     SCOPE,
-    "Files you read in full are recorded automatically. Use feynman_skip for vendored or generated files, and feynman_status to see where you are.",
+    "Files you read in full are recorded automatically. Use feynman_skip to set aside development, vendored, and generated files, and feynman_status to see where you are.",
     ...outdated(report),
     "",
     phase === 1 ? PHASE_1 : phase === 2 ? phase2(group) : PHASE_3,
   ].join("\n");
 }
 
-const SCOPE =
-  "Model the system this repository builds, not how the repository is built: workspace setup, developer CLIs, CI, and build scripts are read like everything else, but they are not actors, flows, or protocols unless they change what the system does.";
+const SCOPE = [
+  "",
+  "Scope: the model explains how the system behaves for the people and programs that use it, as it runs: what its actors do, how they talk, what they keep and enforce. It does not explain how the system is developed. Before anything else, decide what the system is: what ships, and what runs when it is used.",
+  "Files about developing the system are not part of it: tests, CI, build, release, and publishing scripts, workspace and tooling setup, project websites, and docs for contributors. Set them aside with feynman_skip as development, saying what each is for, without reading them in full; they never become actors, components, flows, or protocols. Code that runs when the system is used is part of it, even inside a build or scripts directory. Tests may still be cited as evidence for invariants.",
+].join("\n");
 
 const PHASE_1 = [
-  "Phase 1: actors. Survey the whole repository before reading anything in depth: list the tree, read manifests, READMEs, entrypoints, and configuration, and skim widely; partial reads are fine now.",
+  "Phase 1: actors. Survey the whole repository before reading anything in depth: list the tree, read manifests, READMEs, entrypoints, and configuration, and skim widely; partial reads are fine now. Set aside the development files as you find them.",
   "Then write meta.json (what the system is and does) and the actors: things with a runtime identity that take part in its behaviour. Start from whoever uses the system (a person, or another program such as a client), then follow what it talks to:",
   "  - people (kind person) and programs or services that use the system or that it calls;",
   "  - the processes this repository ships (first-party), such as a CLI, a server, a browser page, or a plugin running inside a host program (the host is its own actor).",
@@ -73,7 +76,7 @@ function describeGroup(group: Group | null): string[] {
   const talk = group.actors.length === 1 ? "talks" : "talk";
   const head = group.actors.length
     ? `Next group: ${group.actors.join(", ")}${group.neighbours.length ? `, which ${talk} to ${group.neighbours.join(", ")}` : ""}; components ${group.components.join(", ")}. Read ${files} (~${kb} KB):`
-    : `Last group: files outside every component's footprint. Read them (~${kb} KB); they may belong to a component, or describe how the system is configured or deployed:`;
+    : `Last group: files outside every component's footprint (~${kb} KB). Set aside the ones about developing the system as development; read the rest, which belong to a component or configure how the system runs:`;
   return [head, ...list(group.files, 80), ...(group.remaining ? [`(${group.remaining} more unread file${group.remaining === 1 ? "" : "s"} in later groups.)`] : [])];
 }
 
