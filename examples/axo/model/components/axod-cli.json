@@ -1,0 +1,19 @@
+{
+  "summary": "The axod executable starts the daemon or attaches a terminal's standard input and output to a daemon-owned PTY.",
+  "actors": [
+    "axod-cli"
+  ],
+  "footprint": {
+    "paths": [
+      "crates/axod/src/main.rs"
+    ],
+    "files": 1,
+    "lines": 445
+  },
+  "anchors": [
+    "crates/axod/src/main.rs"
+  ],
+  "sources": {
+    "crates/axod/src/main.rs": "30259d1461e07a8a613ff96d3d21c768109ece6d"
+  }
+}

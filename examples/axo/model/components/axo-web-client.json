@@ -1,0 +1,36 @@
+{
+  "summary": "The browser client discovers account hosts and session metadata over credentialed HTTPS, subscribes to one host generation over the relay, renders live terminal output and agent history, and sends typed remote session/input/resize controls only while the relay is active.",
+  "actors": [
+    "axo-web-client"
+  ],
+  "footprint": {
+    "paths": [
+      "packages/axo-web-app/src",
+      "packages/axo-app/src"
+    ],
+    "files": 9,
+    "lines": 2075
+  },
+  "anchors": [
+    "packages/axo-web-app/src/remote-terminal-app.tsx",
+    "packages/axo-web-app/src/terminal-pane.tsx",
+    "packages/axo-web-app/src/cloudflare-sign-in-app.tsx",
+    "packages/axo-app/src/index.ts",
+    "packages/axo-web-app/src/main.tsx",
+    "packages/axo-web-app/src/landing-page.tsx",
+    "packages/axo-web-app/src/pi-history-pane.tsx",
+    "packages/axo-web-app/test/browser.test.mjs",
+    "packages/axo-app/test/remote-api.test.mjs"
+  ],
+  "sources": {
+    "packages/axo-app/src/index.ts": "1ba4a84960c574bb3af0572f7c2d8b6c1515caf3",
+    "packages/axo-app/test/remote-api.test.mjs": "bf5ae604d3aa60d0779e498aca4d1e5dec2fbfe8",
+    "packages/axo-web-app/src/cloudflare-sign-in-app.tsx": "01ff5155d9c69a20af139582e44934d72c5a7233",
+    "packages/axo-web-app/src/landing-page.tsx": "a3ec1dc8944737fe0dc43e1c970eb653a8274dc5",
+    "packages/axo-web-app/src/main.tsx": "61a91dfbebd556a9e1d8e04b7e84f21c3190b33a",
+    "packages/axo-web-app/src/pi-history-pane.tsx": "05f2b5242d5bfd91d8734e900b4b7a82f493f8c2",
+    "packages/axo-web-app/src/remote-terminal-app.tsx": "c31d4c55a8c2f8e8af6598f5c75d7bef3fb3efac",
+    "packages/axo-web-app/src/terminal-pane.tsx": "e6b8c657f506e108f2776b4f4c4550dbccacfd8c",
+    "packages/axo-web-app/test/browser.test.mjs": "e352c3a026c272b144a07403da79e7fc5c52fc08"
+  }
+}

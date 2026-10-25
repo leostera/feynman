@@ -1,6 +1,6 @@
 ---
 name: modelling
-description: Extract and maintain a behavioural model of a software system (actors, flows, protocols, state, invariants, claims, limits) from its code, stored as a directory of small JSON files in `.feynman/model/`. Use when building a repository's model for the first time or updating it after a change.
+description: Extract and maintain a behavioural model of a software system (actors, components, flows, protocols, state, invariants, claims, limits) from its code, stored as a directory of small JSON files in `.feynman/model/`. Use when building a repository's model for the first time or updating it after a change.
 ---
 
 # Modelling
@@ -30,6 +30,11 @@ The model sits between two extremes:
 5. **Semantic level.** Model semantic actions, not control flow (see Granularity).
 6. **Extraction only.** This skill covers building and updating the model.
    Rendering and presentation are separate concerns.
+7. **The system, not its tooling.** Model the system the repository builds, not
+   how the repository is built. Workspace setup, developer CLIs, CI, release and
+   build scripts are read like any other file, but they are not actors, flows, or
+   protocols unless they change what the system does (a build step that sets a
+   limit, a script that installs a service users depend on).
 
 ## Granularity
 
@@ -45,22 +50,36 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 
 ## What to extract
 
-- **Actors**: things that receive messages (HTTP, RPC, email, CLI, UI events, …)
-  and own state. Typically process or service boundaries. Give each a
-  **provenance**:
-  - `first-party`: implemented in this repository;
+- **Actors**: things with a runtime identity that take part in the system's
+  behaviour. Start from whoever uses the system, a person or another program (a
+  client calling an API, a proxy's upstream callers), and follow what it talks
+  to: the processes the system runs (a CLI, a daemon, a server, a browser page),
+  and the programs and services those call. Give each a `kind` (`person`,
+  `program`, or `service`) and a **provenance**:
+  - `first-party`: its code is in this repository;
   - `third-party`: external software or a service the system depends on;
   - `ambient`: provided by the platform or environment (OS services, the user's shell).
 
   When in-repo code runs inside an external program (a plugin or extension), model
-  it as its own first-party actor next to the third-party host. For first-party
-  actors, list the repository paths that implement them in `footprint.paths`,
-  without overlapping other actors. Record where every actor runs in `runsOn`:
-  `local` (the user's machine), `browser`, `remote` (servers the system operates),
-  or `cloud` (managed services), with the `provider` and `platform` when known.
-- **Flows**: named paths from a trigger, through semantic actions (possibly
-  across actors), to effects. Flows are the main unit of explanation. A step that
-  sends or parses data in a modelled protocol names it in `protocol`.
+  it as its own first-party actor next to the third-party host. Record where every
+  actor runs in `runsOn`: `local` (the user's machine), `browser`, `remote`
+  (servers the system operates), or `cloud` (managed services), with the
+  `provider` and `platform` when known. List in `talksTo` the actors it
+  communicates with. Machines and operating systems are where actors run, not
+  actors, unless the system talks to them as such.
+- **Components**: the units of first-party code (packages, modules, libraries)
+  and the actors they run in. A package is not an actor, however central: a
+  model library used by a CLI and a plugin is one component running in two
+  actors. Each component lists its repository paths in `footprint.paths`, the
+  `actors` it runs in, and the components it `dependsOn`. Every first-party actor
+  has at least one component.
+- **Flows**: the behaviours of the system, the jobs it does for its actors: from
+  a trigger (an actor doing something), through semantic actions across actors,
+  to an outcome. "Build a model", "render it", "accept an upload" are flows;
+  loading a plugin or installing dependencies is how the system starts or is
+  built, not something it does. Flows are the main unit of explanation. A step
+  names its actor and target, the component doing the work when that helps, and
+  the protocol it speaks.
 - **Protocols**: the shapes data must have to enter, leave, or rest inside the
   system: RPC and HTTP APIs, socket protocols, event streams, files the system
   reads or writes, and database schemas. Record enough to draw the shape without
@@ -116,13 +135,14 @@ repository does not ignore, except paths excluded in `.feynman/config.json`.
 
 1. **Actors.** Survey the whole repository before reading anything in depth:
    the tree, manifests, READMEs, entrypoints, configuration; skim widely. Write
-   `meta.json` and every actor: first-party components with footprints covering
-   their code, and the external people, services, platforms, and programs they
-   interact with. Each actor's `talksTo` lists the actors it communicates with.
-   This map is done when every actor is connected and the system is summarised.
+   `meta.json`, the actors starting from the system's users, who talks to whom
+   (`talksTo`), and the components inside first-party actors with footprints
+   covering their code. This map is done when the system is summarised, someone
+   or something uses it, every actor is connected, and every first-party actor
+   has a component.
 2. **Flows.** Work through groups of connected actors one at a time, reading
-   their code in full, and write the flows that run through them, step by step
-   from actor to actor. Add protocols, state, invariants, and limits met on the
+   their components' code in full, and write the behaviours that run through
+   them, step by step from actor to actor. Add protocols, state, invariants, and limits met on the
    way, and correct the actor map when the code disagrees. Files outside every
    footprint come last.
 3. **Depth.** With everything read, revise the model as a whole: every flow step
@@ -169,7 +189,8 @@ file per element so that no agent has to hold the whole model at once:
 ```
 .feynman/model/
   meta.json
-  actors/<id>.json      flows/<id>.json        protocols/<id>.json
+  actors/<id>.json      components/<id>.json   flows/<id>.json
+  protocols/<id>.json
   state/<id>.json       state-machines/<id>.json
   invariants/<id>.json  claims/<id>.json       limits/<id>.json
   coverage/<batch>.json
@@ -179,8 +200,9 @@ An element's id is its file name (a readable kebab-case slug) and is not repeate
 inside the file. `sources` is written by tools (`measure`), never by hand: the git
 blob id of each file the element anchors, as the file is on disk (committed or not). Ids are unique within a kind, need not be stable, and renaming
 one means moving its file. Fields that name a specific kind use a bare id
-(`actor`, `target`, `owner`, `server`, `clients`, `from`, `talksTo` name actors; `ref` names
-a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
+(`actor`, `target`, `owner`, `server`, `clients`, `from`, `talksTo`, a
+component's `actors` name actors; `component` and `dependsOn` name components;
+`ref` names a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
 path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`.
 
 `.feynman/config.json` (optional, next to the model directory) configures how the
@@ -256,5 +278,5 @@ Mechanical facts come from tools, not from the agent.
   at the modelled commit and that spans fall inside their files.
 - `measure <repository> <model-dir> [--main <ref>]` fills source links (`url`,
   `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
-  main, file and line counts for the repository and each actor's footprint, and
+  main, file and line counts for the repository and each component's footprint, and
   every element's `sources`.

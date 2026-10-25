@@ -1,20 +1,11 @@
 {
+  "kind": "program",
   "provenance": "first-party",
   "runsOn": {
     "location": "local",
     "platform": "macOS SwiftUI application"
   },
   "summary": "The native Axo app provides the terminal workspace, settings, session navigation and client access to axod; it registers and manages the per-user daemon but does not own shell PTYs. The daemon intentionally continues after the app quits.",
-  "footprint": {
-    "paths": [
-      "apple/AxoMac/Sources/AxoMac",
-      "apple/AxoMac/Sources/AxoMacMain",
-      "apple/AxoDaemonManager/Sources/AxoDaemonManager",
-      "apple/AxoRPC/Sources/AxoRPC"
-    ],
-    "files": 82,
-    "lines": 11207
-  },
   "anchors": [
     "apple/AxoMac/Sources/AxoMac/App/AxoApp.swift",
     "apple/AxoMac/Sources/AxoMac/App/AxoAppEnvironment.swift",

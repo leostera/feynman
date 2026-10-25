@@ -2,10 +2,14 @@ import { expect, test } from "bun:test";
 import type { Element, Model } from "@feynman/model";
 import { actorGaps, depthGaps, nextGroup, owns } from "../src/phases.ts";
 
-const model = (parts: Partial<Model>): Model =>
-  ({ meta: { summary: "x" }, actors: [], flows: [], protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], ...parts }) as Model;
-const actor = (id: string, paths: string[] | null, talksTo: string[] = []): Element =>
-  paths ? { id, provenance: "first-party", footprint: { paths }, talksTo } : { id, provenance: "external", talksTo };
+/** A model whose first-party actors each run one component, named after the actor, covering `paths`. */
+const model = (parts: Partial<Model> & { actors: (Element & { paths?: string[] })[] }): Model => {
+  const components = parts.actors.filter((a) => a.paths).map((a) => ({ id: a.id, actors: [a.id], footprint: { paths: a.paths } }));
+  const actors = parts.actors.map(({ paths: _, ...a }) => a);
+  return { meta: { summary: "x" }, flows: [], protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], components, ...parts, actors } as Model;
+};
+const actor = (id: string, paths: string[] | null, talksTo: string[] = []): Element & { paths?: string[] } =>
+  paths ? { id, kind: "program", provenance: "first-party", paths, talksTo } : { id, kind: "person", provenance: "third-party", talksTo };
 
 test("footprints own files under directories, files, and the root", () => {
   expect(owns(["src/"], "src/a.ts")).toBe(true);
@@ -15,10 +19,14 @@ test("footprints own files under directories, files, and the root", () => {
   expect(owns(["."], "anything")).toBe(true);
 });
 
-test("the actor map needs a summary, connected actors, and something outside the system", () => {
+test("the actor map needs a summary, connected actors, a user, and components in first-party actors", () => {
   expect(actorGaps(model({ meta: {}, actors: [actor("app", ["src/"])] }))).toEqual([
     "meta.json has no summary of what the system is and does",
     "a system interacts with something: add the people, services, and programs it talks to as actors",
+    "no actor uses the system: who or what starts its behaviours (a person, another program, a client)?",
+  ]);
+  expect(actorGaps(model({ actors: [actor("app", null, ["user"]), actor("user", null)].map((a, i) => (i ? a : { ...a, provenance: "first-party" })) }))).toEqual([
+    "actors/app is first-party, but no component runs in it; add components with footprints",
   ]);
   expect(actorGaps(model({ actors: [actor("app", ["src/"], ["user"]), actor("user", null)] }))).toEqual([]);
 });
@@ -29,7 +37,7 @@ test("groups gather connected actors within the budget, split large actors, and 
   const unread = [...sizes.keys()];
 
   // api is the first actor; db fits beside it, web does not.
-  expect(nextGroup(m, unread, sizes, 150)).toEqual({ actors: ["api", "db"], neighbours: ["web"], files: ["api/a.ts", "api/b.ts", "db/q.ts"], bytes: 140, remaining: 2 });
+  expect(nextGroup(m, unread, sizes, 150)).toEqual({ actors: ["api", "db"], components: ["api", "db"], neighbours: ["web"], files: ["api/a.ts", "api/b.ts", "db/q.ts"], bytes: 140, remaining: 2 });
   // An actor larger than the budget is read in parts.
   expect(nextGroup(m, unread, sizes, 60)?.files).toEqual(["api/a.ts"]);
   // web comes next, with the people who use it as context.

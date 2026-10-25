@@ -1,4 +1,5 @@
 {
+  "kind": "service",
   "provenance": "first-party",
   "runsOn": {
     "location": "cloud",
@@ -6,14 +7,6 @@
     "platform": "Workers and Durable Objects"
   },
   "summary": "The API Worker authenticates account and host clients, exposes HTTP and WebSocket routes, and coordinates remote RPC/event delivery through Durable Objects and the host directory.",
-  "footprint": {
-    "paths": [
-      "packages/axo-api-worker/src",
-      "packages/axo-api/src"
-    ],
-    "files": 33,
-    "lines": 5081
-  },
   "anchors": [
     "packages/axo-api-worker/src/index.ts",
     "packages/axo-api-worker/src/http/router.ts",

@@ -65,6 +65,7 @@ export function checkModel(modelDir: string, repository?: string): string[] {
       const at = `flows/${flow.id} step ${i + 1}`;
       ref(`${at} actor`, step.actor, "actors");
       ref(`${at} target`, step.target, "actors");
+      ref(`${at} component`, step.component, "components");
       ref(`${at} ref`, step.ref, "flows");
       ref(`${at} protocol`, step.protocol, "protocols");
     });
@@ -76,6 +77,10 @@ export function checkModel(modelDir: string, repository?: string): string[] {
   }
   for (const state of model.state) ref(`state/${state.id} owner`, state.owner, "actors");
   for (const actor of model.actors) for (const id of actor.talksTo ?? []) ref(`actors/${actor.id} talksTo`, id, "actors");
+  for (const component of model.components) {
+    for (const id of component.actors ?? []) ref(`components/${component.id} actors`, id, "actors");
+    for (const id of component.dependsOn ?? []) ref(`components/${component.id} dependsOn`, id, "components");
+  }
   const known = new Set(KINDS.flatMap((kind) => model[kind.key].map((e) => `${kind.dir}/${e.id}`)));
   for (const key of ["claims", "limits"] as const) {
     for (const element of model[key]) {
@@ -90,7 +95,7 @@ export function checkModel(modelDir: string, repository?: string): string[] {
 /** Every anchor's file must exist at the modelled commit, and any span must fall inside it. */
 function checkAnchors(model: Model, repository: string): string[] {
   const anchors: ParsedAnchor[] = modelAnchors(model);
-  for (const actor of model.actors) for (const path of actor.footprint?.paths ?? []) anchors.push({ file: path });
+  for (const component of model.components) for (const path of component.footprint?.paths ?? []) anchors.push({ file: path });
 
   const commit: string = model.meta.source?.commit ?? "HEAD";
   const lineCounts = new Map<string, number>();

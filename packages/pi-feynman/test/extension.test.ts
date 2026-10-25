@@ -9,19 +9,22 @@ const FILES = {
   "src/server.ts": ["export function handle(body: string): number {", "  if (body.length > 1024) return 413;", "  return 201;", "}", ""].join("\n"),
 };
 
-const actor = (path: string, talksTo: string[]) => ({
+const actor = (talksTo: string[]) => ({
+  kind: "program",
   provenance: "first-party",
   runsOn: { location: "local" },
-  summary: `The code in ${path}.`,
-  footprint: { paths: [path] },
+  summary: "A process.",
   talksTo,
-  anchors: [path],
+  anchors: ["src/"],
 });
+
+const component = (id: string) => ({ summary: `The ${id} code.`, actors: [id], footprint: { paths: [`src/${id}.ts`] }, anchors: [`src/${id}.ts`] });
 
 const FLOW = {
   summary: "A note is posted and stored.",
   trigger: "The user saves a note.",
   steps: [
+    { actor: "user", action: "saves a note", target: "client" },
     { actor: "client", action: "POSTs the note", target: "server" },
     { actor: "server", action: "rejects bodies over 1 KiB with 413, else answers 201", target: "client" },
   ],
@@ -45,10 +48,13 @@ test("guides the agent through actors, groups of connected actors, and depth", a
     call("feynman_extract", {}),
     // Phase 1: an actor map, but the server talks to nobody yet.
     () => write("meta.json", { ...meta(), summary: "Posts notes to a size-limited server." }),
-    write("actors/client.json", actor("src/client.ts", [])),
-    write("actors/server.json", actor("src/server.ts", [])),
+    write("actors/client.json", actor([])),
+    write("actors/server.json", actor([])),
+    write("actors/user.json", { kind: "person", provenance: "third-party", runsOn: { location: "local" }, summary: "Writes notes.", talksTo: ["client"], anchors: ["README.md"] }),
+    write("components/client.json", component("client")),
+    write("components/server.json", component("server")),
     stop("Mapped the actors."),
-    write("actors/client.json", actor("src/client.ts", ["server"])),
+    write("actors/client.json", actor(["server"])),
     stop("Connected them."),
     // Phase 2: the client and server form one group. Skimming does not count.
     call("read", { path: "src/server.ts", limit: 1 }),
@@ -74,10 +80,10 @@ test("guides the agent through actors, groups of connected actors, and depth", a
   expect(reports[0]).toContain("phase 1 of 3");
   expect(reports[0]).toContain("actors/server talks to no other actor");
   expect(reports[1]).toContain("Phase 2: flows");
-  expect(reports[1]).toContain("Next group: client, server. Read these 2 files");
+  expect(reports[1]).toContain("Next group: client, server, which talk to user; components client, server. Read these 2 files");
   expect(reports[2]).toContain("1 of 3 files read"); // the server was only skimmed
   expect(reports[2]).toContain("src/server.ts");
-  expect(reports[3]).toContain("Last group: files outside every actor's footprint");
+  expect(reports[3]).toContain("Last group: files outside every component's footprint");
   expect(reports[3]).toContain("README.md");
   expect(reports[4]).toContain("Phase 3: depth");
   expect(reports[5]).toContain("3 of 3 files read");

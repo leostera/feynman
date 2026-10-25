@@ -1,8 +1,8 @@
 // Fill the mechanical parts of a model from git: source links, commit age, position
-// relative to main, code footprints (files and lines) for actors and the repository,
+// relative to main, code footprints (files and lines) for components and the repository,
 // and each element's `sources` (content hashes of the files it anchors).
 //
-// Agents decide which paths belong to an actor (`actors/<id>.json` → `footprint.paths`);
+// Agents decide which paths belong to a component (`components/<id>.json` → `footprint.paths`);
 // this only counts. Counts are taken at the model's commit, not the working tree.
 import { readConfig } from "./config.ts";
 import { git, tryGit } from "./git.ts";
@@ -52,16 +52,16 @@ export function measureModel(repository: string, modelDir: string, mainRef = "ma
   };
 
   source.footprint = { ...count(["."]), excludes };
-  const actorKind = KINDS.find((kind) => kind.key === "actors")!;
-  for (const actor of model.actors) {
-    if (!actor.footprint?.paths?.length) continue;
-    Object.assign(actor.footprint, count(actor.footprint.paths));
-    writeElement(modelDir, actorKind, actor);
+  const componentKind = KINDS.find((kind) => kind.key === "components")!;
+  for (const component of model.components) {
+    if (!component.footprint?.paths?.length) continue;
+    Object.assign(component.footprint, count(component.footprint.paths));
+    writeElement(modelDir, componentKind, component);
   }
   writeMeta(modelDir, model.meta);
   const stamped = stampSources(repository, modelDir);
   return (
-    `measured ${model.actors.filter((actor) => actor.footprint).length} actors; repository ${source.footprint.lines} lines; sources updated on ${stamped} elements` +
+    `measured ${model.components.length} components; repository ${source.footprint.lines} lines; sources updated on ${stamped} elements` +
     (source.main ? `; ${source.main.behind} behind / ${source.main.ahead} ahead of ${mainRef}` : "")
   );
 }

@@ -5,6 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "kind",
     "provenance",
     "runsOn",
     "summary",
@@ -17,7 +18,15 @@
         "third-party",
         "ambient"
       ],
-      "description": "first-party: implemented in this repository. third-party: external software or service the system depends on. ambient: provided by the platform or environment the system runs in (OS services, the user's shell)."
+      "description": "first-party: its code is in this repository (see the components that run in it). third-party: external software or a service the system depends on. ambient: provided by the platform or environment the system runs in (OS services, the user's shell)."
+    },
+    "kind": {
+      "enum": [
+        "person",
+        "program",
+        "service"
+      ],
+      "description": "person: a human using or operating the system. program: a process on some machine (a CLI, an agent, a browser page, a daemon). service: something reached over a network that the system does not run itself, or runs as a managed deployment."
     },
     "runsOn": {
       "type": "object",
@@ -55,9 +64,6 @@
     "confidence": {
       "$ref": "urn:feynman:common#/$defs/confidence"
     },
-    "footprint": {
-      "$ref": "urn:feynman:common#/$defs/actorFootprint"
-    },
     "talksTo": {
       "type": "array",
       "uniqueItems": true,
@@ -71,16 +77,5 @@
       "$ref": "urn:feynman:common#/$defs/sources"
     }
   },
-  "if": {
-    "properties": {
-      "provenance": {
-        "const": "first-party"
-      }
-    }
-  },
-  "then": {
-    "required": [
-      "footprint"
-    ]
-  }
+  "description": "Something with a runtime identity that takes part in the system's behaviour: a person or program that uses it, a process or service it runs, or one it calls. Code units are components, not actors."
 }

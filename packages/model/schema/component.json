@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:component",
+  "title": "Component",
+  "description": "A unit of first-party code (a package, module, or library) and the actors it runs in. Components carry the code footprint; actors carry runtime identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "actors",
+    "footprint",
+    "anchors"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "What it does for the system, in a sentence or two."
+    },
+    "actors": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:feynman:common#/$defs/ref"
+      },
+      "description": "The actors whose processes this code runs in, e.g. both the CLI and the server for a shared library."
+    },
+    "dependsOn": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:feynman:common#/$defs/ref"
+      },
+      "description": "Components this one calls or imports."
+    },
+    "footprint": {
+      "$ref": "urn:feynman:common#/$defs/footprint"
+    },
+    "anchors": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
+    }
+  }
+}

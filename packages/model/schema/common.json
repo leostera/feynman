@@ -114,13 +114,29 @@
         }
       }
     },
-    "actorFootprint": {
+    "path": {
+      "type": "string",
+      "pattern": "^(actors|flows|protocols|state|state-machines|invariants|claims|limits)/[a-z0-9][a-z0-9-]*$",
+      "description": "Any element, named by its file path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`."
+    },
+    "sources": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+      },
+      "description": "Written by tools, not agents: the content hash (git blob id, as `git hash-object` computes it) of every file this element anchors, as the file was on disk when the element was derived, committed or not. When any of these files changes, the element must be re-examined."
+    },
+    "footprint": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "paths"
       ],
-      "description": "The repository code that implements a first-party actor. `paths` are chosen by the extractor; `files` and `lines` are counted by tools/measure.mjs.",
+      "description": "The repository code of a component. `paths` are chosen by the extractor; `files` and `lines` are counted by `measure`.",
       "properties": {
         "paths": {
           "type": "array",
@@ -138,22 +154,6 @@
           "minimum": 0
         }
       }
-    },
-    "path": {
-      "type": "string",
-      "pattern": "^(actors|flows|protocols|state|state-machines|invariants|claims|limits)/[a-z0-9][a-z0-9-]*$",
-      "description": "Any element, named by its file path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`."
-    },
-    "sources": {
-      "type": "object",
-      "propertyNames": {
-        "minLength": 1
-      },
-      "additionalProperties": {
-        "type": "string",
-        "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
-      },
-      "description": "Written by tools, not agents: the content hash (git blob id, as `git hash-object` computes it) of every file this element anchors, as the file was on disk when the element was derived, committed or not. When any of these files changes, the element must be re-examined."
     }
   }
 }

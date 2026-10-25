@@ -2,7 +2,7 @@
 //
 //   model/
 //     meta.json
-//     actors/<id>.json  flows/<id>.json  protocols/<id>.json  state/<id>.json
+//     actors/<id>.json  components/<id>.json  flows/<id>.json  protocols/<id>.json  state/<id>.json
 //     state-machines/<id>.json  invariants/<id>.json  claims/<id>.json  limits/<id>.json
 //
 // An element's id is its file name and is not repeated inside the file. Loading
@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 /** A collection of elements: its key in a loaded model, directory, and schema name. */
 export interface Kind {
-  key: "actors" | "flows" | "protocols" | "state" | "stateMachines" | "invariants" | "claims" | "limits";
+  key: "actors" | "components" | "flows" | "protocols" | "state" | "stateMachines" | "invariants" | "claims" | "limits";
   dir: string;
   schema: string;
 }
@@ -26,6 +26,7 @@ export type Model = { meta: Record<string, any> } & Record<Kind["key"], Element[
 /** Collections in display order: bundle key, directory, schema name. */
 export const KINDS: Kind[] = [
   { key: "actors", dir: "actors", schema: "actor" },
+  { key: "components", dir: "components", schema: "component" },
   { key: "flows", dir: "flows", schema: "flow" },
   { key: "protocols", dir: "protocols", schema: "protocol" },
   { key: "state", dir: "state", schema: "state" },

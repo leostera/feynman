@@ -22,9 +22,10 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
     "",
     "The extraction runs in three phases, and I will tell you when each one is done:",
-    "  1. Actors: a high-level map of the whole system.",
+    "  1. Actors: who and what takes part in the system, and the components inside them.",
     "  2. Flows: groups of connected actors, one at a time, reading their code in full.",
     "  3. Depth: flows, protocols, invariants, claims, and limits, made precise.",
+    SCOPE,
     "Files you read in full are recorded automatically. Use feynman_skip for vendored or generated files, and feynman_status to see where you are.",
     ...outdated(report),
     "",
@@ -32,16 +33,21 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
   ].join("\n");
 }
 
+const SCOPE =
+  "Model the system this repository builds, not how the repository is built: workspace setup, developer CLIs, CI, and build scripts are read like everything else, but they are not actors, flows, or protocols unless they change what the system does.";
+
 const PHASE_1 = [
   "Phase 1: actors. Survey the whole repository before reading anything in depth: list the tree, read manifests, READMEs, entrypoints, and configuration, and skim widely; partial reads are fine now.",
-  "Then write meta.json (what the system is and does) and one file per actor:",
-  "  - every first-party component that runs or is built on its own, with footprint.paths covering its code;",
-  "  - every external party it interacts with: people, services, platforms, other programs.",
+  "Then write meta.json (what the system is and does) and the actors: things with a runtime identity that take part in its behaviour. Start from whoever uses the system (a person, or another program such as a client), then follow what it talks to:",
+  "  - people (kind person) and programs or services that use the system or that it calls;",
+  "  - the processes this repository ships (first-party), such as a CLI, a server, a browser page, or a plugin running inside a host program (the host is its own actor).",
+  "Packages, modules, and libraries are not actors. Write them as components: each with footprint.paths covering its code, the actors it runs in, and the components it depends on. Every first-party actor needs at least one component.",
   "In each actor's talksTo, list the actors it communicates with. Don't write flows yet. Stop when the map covers the whole system.",
 ].join("\n");
 
 const PHASE_2 = [
-  "Phase 2: flows. Work through the system one group of connected actors at a time. For each group, read the listed files in full (continue truncated reads with offsets), then write the flows that run through these actors: what triggers each one, and step by step which actor does what to which other actor, over which protocol.",
+  "Phase 2: flows. Work through the system one group of connected actors at a time. For each group, read the listed files in full (continue truncated reads with offsets), then write the flows that run through these actors.",
+  "A flow is a behaviour of the system, a job it does for an actor: what triggers it, step by step which actor does what to which other actor (over which protocol, by which component), and the outcome. Loading a plugin or installing dependencies is how the system starts or is built, not something it does.",
   "Add the protocols, state, invariants, and limits you meet on the way; precision comes in phase 3. Fix the actor map whenever the code disagrees with it. Stop when the group is done, and I will give you the next one.",
 ].join("\n");
 
@@ -66,8 +72,8 @@ function describeGroup(group: Group | null): string[] {
   const files = group.files.length === 1 ? "this file" : `these ${group.files.length} files`;
   const talk = group.actors.length === 1 ? "talks" : "talk";
   const head = group.actors.length
-    ? `Next group: ${group.actors.join(", ")}${group.neighbours.length ? `, which ${talk} to ${group.neighbours.join(", ")}` : ""}. Read ${files} (~${kb} KB):`
-    : `Last group: files outside every actor's footprint. Read them (~${kb} KB); they may belong in a footprint, or describe how the system is built, configured, or deployed:`;
+    ? `Next group: ${group.actors.join(", ")}${group.neighbours.length ? `, which ${talk} to ${group.neighbours.join(", ")}` : ""}; components ${group.components.join(", ")}. Read ${files} (~${kb} KB):`
+    : `Last group: files outside every component's footprint. Read them (~${kb} KB); they may belong to a component, or describe how the system is configured or deployed:`;
   return [head, ...list(group.files, 80), ...(group.remaining ? [`(${group.remaining} more unread file${group.remaining === 1 ? "" : "s"} in later groups.)`] : [])];
 }
 

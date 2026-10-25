@@ -10,10 +10,10 @@
     "fileUrl": "https://github.com/leostera/axo/blob/4b820700fafce7377352a0a1bcfe6d425279ae5d/{path}",
     "main": {
       "ref": "main",
-      "commit": "78ce0997267bb26a36624203f7a02d6fa3484e02",
+      "commit": "0ca6cf314eb3f1d1c6e45f282113fd5466e07157",
       "ahead": 0,
-      "behind": 10,
-      "checkedAt": "2026-10-25T04:28:51.111Z"
+      "behind": 14,
+      "checkedAt": "2026-10-25T05:09:54.232Z"
     },
     "footprint": {
       "files": 509,

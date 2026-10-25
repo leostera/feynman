@@ -1,18 +1,11 @@
 {
+  "kind": "program",
   "provenance": "first-party",
   "runsOn": {
     "location": "local",
     "platform": "Pi process and Axod bridge workers over per-session Unix sockets"
   },
   "summary": "Axo's Rust bridge launches Pi with a scoped transcript lock, secret bridge token and session/pane identity; Axod authenticates and verifies that identity before consuming ordered Pi lifecycle events or requesting shutdown and transcript takeover.",
-  "footprint": {
-    "paths": [
-      "crates/axo-pi/src",
-      "packages/pi-axo/src"
-    ],
-    "files": 18,
-    "lines": 3969
-  },
   "anchors": [
     "crates/axo-pi/src/lib.rs",
     "crates/axo-pi/src/launch.rs",

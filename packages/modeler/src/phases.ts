@@ -1,9 +1,11 @@
 // The three phases of an extraction, and what each one still lacks.
 //
-//   1. actors  Survey the whole repository and map its actors: first-party components
-//              with footprints, external parties, and who talks to whom (`talksTo`).
-//   2. flows   Work through groups of connected actors one at a time, reading their
-//              code in full and writing the flows that run through them.
+//   1. actors  Survey the whole repository and map its actors (things with a runtime
+//              identity, starting from the system's users), who talks to whom
+//              (`talksTo`), and the components (code, with footprints) inside them.
+//   2. flows   Work through groups of connected actors one at a time, reading the
+//              code of their components in full and writing the behaviours that run
+//              through them.
 //   3. depth   Make flows, protocols, invariants, claims, and limits precise.
 //
 // Everything here is a pure function of the model and the unread files, so the
@@ -18,7 +20,12 @@ export const PHASE_NAMES: Record<Phase, string> = { 1: "actors", 2: "flows", 3: 
 export const GROUP_BUDGET = 160_000;
 
 const isFirstParty = (actor: Element) => actor.provenance === "first-party";
-const footprintOf = (actor: Element): string[] => actor.footprint?.paths ?? [];
+
+/** Components running in `actor`. */
+const componentsOf = (model: Model, actor: Element): Element[] => model.components.filter((component) => component.actors?.includes(actor.id));
+
+/** The code of an actor: the footprints of the components that run in it. */
+const footprintOf = (model: Model, actor: Element): string[] => componentsOf(model, actor).flatMap((component) => component.footprint?.paths ?? []);
 
 /** Whether `file` lies under a footprint path (a directory, a file, or "."). */
 export function owns(paths: string[], file: string): boolean {
@@ -52,12 +59,20 @@ export function actorGaps(model: Model): string[] {
   if (model.actors.length >= 2) {
     for (const actor of model.actors) if (graph.get(actor.id)!.size === 0) gaps.push(`actors/${actor.id} talks to no other actor; fill talksTo`);
   }
+  if (model.actors.length && !model.actors.some((actor) => actor.kind === "person" || !isFirstParty(actor))) {
+    gaps.push("no actor uses the system: who or what starts its behaviours (a person, another program, a client)?");
+  }
+  for (const actor of model.actors.filter(isFirstParty)) {
+    if (!componentsOf(model, actor).length) gaps.push(`actors/${actor.id} is first-party, but no component runs in it; add components with footprints`);
+  }
   return gaps;
 }
 
 export interface Group {
   /** First-party actors whose unread code this group covers; empty for files outside every footprint. */
   actors: string[];
+  /** Components running in those actors. */
+  components: string[];
   /** Other actors they talk to, for context. */
   neighbours: string[];
   /** Unread files, within the budget when possible. */
@@ -76,7 +91,7 @@ export interface Group {
 export function nextGroup(model: Model, unread: string[], sizes: Map<string, number>, budget = GROUP_BUDGET): Group | null {
   if (!unread.length) return null;
   const actors = model.actors.filter(isFirstParty).sort((a, b) => a.id.localeCompare(b.id));
-  const unreadOf = (actor: Element) => unread.filter((file) => owns(footprintOf(actor), file));
+  const unreadOf = (actor: Element) => unread.filter((file) => owns(footprintOf(model, actor), file));
   const size = (files: string[]) => files.reduce((n, file) => n + (sizes.get(file) ?? 0), 0);
   const graph = connections(model);
 
@@ -105,13 +120,14 @@ export function nextGroup(model: Model, unread: string[], sizes: Map<string, num
       files.push(file);
       bytes += n;
     }
-    return { actors: members, neighbours, files, bytes, remaining: unread.length - files.length };
+    const components = model.components.filter((component) => component.actors?.some((id: string) => members.includes(id))).map((component) => component.id).sort();
+    return { actors: members, components, neighbours, files, bytes, remaining: unread.length - files.length };
   }
 }
 
-/** Files no first-party footprint covers. */
+/** Files no component's footprint covers. */
 export function unowned(model: Model, files: string[]): string[] {
-  const paths = model.actors.filter(isFirstParty).flatMap(footprintOf);
+  const paths = model.components.flatMap((component) => component.footprint?.paths ?? []);
   return files.filter((file) => !owns(paths, file));
 }
 

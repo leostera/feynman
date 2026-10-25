@@ -15,7 +15,12 @@
       "type": "string"
     },
     "trigger": {
-      "type": "string"
+      "type": "string",
+      "description": "What starts it, and which actor: \"The user runs /feynman-extract in Pi\"."
+    },
+    "outcome": {
+      "type": "string",
+      "description": "What is true or produced when it completes."
     },
     "steps": {
       "type": "array",
@@ -37,6 +42,10 @@
           },
           "target": {
             "$ref": "urn:feynman:common#/$defs/ref"
+          },
+          "component": {
+            "$ref": "urn:feynman:common#/$defs/ref",
+            "description": "The component in the actor that does the work."
           },
           "ref": {
             "$ref": "urn:feynman:common#/$defs/ref",
@@ -65,5 +74,6 @@
     "sources": {
       "$ref": "urn:feynman:common#/$defs/sources"
     }
-  }
+  },
+  "description": "A behaviour of the system: something it does for an actor, from a trigger to an outcome (build a model, render it, accept an upload). Not how the system is built, installed, or developed."
 }
