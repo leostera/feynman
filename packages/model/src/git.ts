@@ -21,15 +21,3 @@ export function tryGit(repository: string, ...args: string[]): string | null {
 export function lines(text: string): string[] {
   return text ? text.split("\n") : [];
 }
-
-/**
- * Every file git tracks at `commit`, i.e. every file the repository does not ignore,
- * leaving out paths matching the `exclude` pathspecs.
- */
-export function trackedFiles(repository: string, commit: string, exclude: string[] = []): string[] {
-  if (!exclude.length) return lines(git(repository, "-c", "core.quotePath=false", "ls-tree", "-r", "--full-tree", "--name-only", commit));
-  // ls-tree does not take pathspec magic such as :(exclude); a diff against the empty tree does.
-  const empty = git(repository, "hash-object", "-t", "tree", "/dev/null");
-  const pathspecs = [":/", ...exclude.map((pattern) => `:(top,exclude)${pattern}`)];
-  return lines(git(repository, "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", empty, commit, "--", ...pathspecs));
-}

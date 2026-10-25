@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
-import type { Element, Model } from "@feynman/model";
+import type { Actor, Model } from "@feynman/model";
 import { actorGaps, depthGaps, isTestFile, nextGroup, owns } from "../src/phases.ts";
 
 /** A model whose first-party actors each run one component, named after the actor, covering `paths`. */
-const model = (parts: Partial<Model> & { actors: (Element & { paths?: string[] })[] }): Model => {
+// Fixtures name only the fields the phases look at.
+type Fixture = Partial<Actor> & { id: string; paths?: string[] };
+const model = (parts: Record<string, unknown> & { actors: Fixture[] }): Model => {
   const components = parts.actors.filter((a) => a.paths).map((a) => ({ id: a.id, actors: [a.id], footprint: { paths: a.paths } }));
   const actors = parts.actors.map(({ paths: _, ...a }) => a);
-  return { meta: { summary: "x" }, flows: [], protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], components, ...parts, actors } as Model;
+  return { meta: { summary: "x" }, flows: [], protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], components, ...parts, actors } as unknown as Model;
 };
-const actor = (id: string, paths: string[] | null, talksTo: string[] = []): Element & { paths?: string[] } =>
+const actor = (id: string, paths: string[] | null, talksTo: string[] = []): Fixture =>
   paths ? { id, kind: "program", provenance: "first-party", paths, talksTo } : { id, kind: "person", provenance: "third-party", talksTo };
 
 test("footprints own files under directories, files, and the root", () => {
@@ -54,12 +56,12 @@ test("depth gaps: one-actor flows, unexplained connections, actors in no flow, s
       { id: "think", steps: [{ actor: "api", action: "thinks" }] },
     ],
     protocols: [{ id: "sql", server: "db", clients: ["api"], messages: [{ name: "select" }] }],
-    invariants: [{ id: "limit", enforcement: "runtime", enforcedAt: { trigger: "a request", frames: [{ symbol: "check" }] } }],
+    invariants: [{ id: "limit", enforcement: ["runtime"], enforcedAt: [{ trigger: "a request", frames: [{ symbol: "check" }] }] }],
   });
   expect(depthGaps(m)).toEqual([
     "flows/think involves only api; name each step's target",
     "api ↔ user talk, but no flow step or protocol shows how",
-    "invariants/limit: trace the call path from a request to the check (enforcedAt.frames)",
+    "invariants/limit is enforced at runtime; trace the call path from its trigger to the check (enforcedAt frames)",
   ]);
 });
 
@@ -73,6 +75,6 @@ test("the model is thin while no invariant, claim, or limit cites the tests", ()
   expect(depthGaps(m, ["api/a.ts", "api/a.test.ts"])).toEqual([
     "1 test files check behaviour, but no invariant, claim, or limit cites one: record what they check (invariant tests, claim evidence)",
   ]);
-  const cited = { ...m, invariants: [{ id: "bounded", enforcement: ["test-time"], enforcedAt: [], tests: ["api/a.test.ts"] }] } as Model;
+  const cited = { ...m, invariants: [{ id: "bounded", enforcement: ["test-time"], enforcedAt: [], tests: ["api/a.test.ts"] }] } as unknown as Model;
   expect(depthGaps(cited, ["api/a.ts", "api/a.test.ts"])).toEqual([]);
 });

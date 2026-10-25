@@ -4,9 +4,9 @@
   "type": "module",
   "description": "The Feynman model: JSON Schemas, a loader for model directories, and checking, coverage, and measuring tools.",
   "exports": {
-    ".": {
-      "default": "./src/index.ts"
-    },
+    ".": "./src/index.ts",
+    "./anchors": "./src/anchors.ts",
+    "./types": "./src/types.ts",
     "./schema/*": "./schema/*"
   },
   "bin": {

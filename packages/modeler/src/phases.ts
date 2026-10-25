@@ -10,7 +10,7 @@
 //
 // Everything here is a pure function of the model and the unread files, so the
 // current group and the remaining gaps are recomputed whenever the agent stops.
-import { anchoredFiles, type Element, type Model } from "@feynman/model";
+import { anchoredFiles, type Actor, type Component, type Model } from "@feynman/model";
 
 export type Phase = 1 | 2 | 3;
 
@@ -19,13 +19,13 @@ export const PHASE_NAMES: Record<Phase, string> = { 1: "actors", 2: "flows", 3: 
 /** Roughly how much unread code one group asks for (bytes; ~40k tokens). */
 export const GROUP_BUDGET = 160_000;
 
-const isFirstParty = (actor: Element) => actor.provenance === "first-party";
+const isFirstParty = (actor: Actor) => actor.provenance === "first-party";
 
 /** Components running in `actor`. */
-const componentsOf = (model: Model, actor: Element): Element[] => model.components.filter((component) => component.actors?.includes(actor.id));
+const componentsOf = (model: Model, actor: Actor): Component[] => model.components.filter((component) => component.actors?.includes(actor.id));
 
 /** The code of an actor: the footprints of the components that run in it. */
-const footprintOf = (model: Model, actor: Element): string[] => componentsOf(model, actor).flatMap((component) => component.footprint?.paths ?? []);
+const footprintOf = (model: Model, actor: Actor): string[] => componentsOf(model, actor).flatMap((component) => component.footprint?.paths ?? []);
 
 /** Whether `file` lies under a footprint path (a directory, a file, or "."). */
 export function owns(paths: string[], file: string): boolean {
@@ -91,7 +91,7 @@ export interface Group {
 export function nextGroup(model: Model, unread: string[], sizes: Map<string, number>, budget = GROUP_BUDGET): Group | null {
   if (!unread.length) return null;
   const actors = model.actors.filter(isFirstParty).sort((a, b) => a.id.localeCompare(b.id));
-  const unreadOf = (actor: Element) => unread.filter((file) => owns(footprintOf(model, actor), file));
+  const unreadOf = (actor: Actor) => unread.filter((file) => owns(footprintOf(model, actor), file));
   const size = (files: string[]) => files.reduce((n, file) => n + (sizes.get(file) ?? 0), 0);
   const graph = connections(model);
 
@@ -120,7 +120,7 @@ export function nextGroup(model: Model, unread: string[], sizes: Map<string, num
       files.push(file);
       bytes += n;
     }
-    const components = model.components.filter((component) => component.actors?.some((id: string) => members.includes(id))).map((component) => component.id).sort();
+    const components = model.components.filter((component) => component.actors?.some((id) => members.includes(id))).map((component) => component.id).sort();
     return { actors: members, components, neighbours, files, bytes, remaining: unread.length - files.length };
   }
 }
@@ -182,9 +182,9 @@ export function depthGaps(model: Model, files: string[] = []): string[] {
     }
   }
   for (const invariant of model.invariants) {
-    const frames = invariant.enforcedAt?.frames ?? [];
-    if (invariant.enforcement === "runtime" && frames.length < 2) {
-      gaps.push(`invariants/${invariant.id}: trace the call path from ${invariant.enforcedAt?.trigger ?? "its trigger"} to the check (enforcedAt.frames)`);
+    const traced = (invariant.enforcedAt ?? []).some((path) => path.frames.length >= 2);
+    if (invariant.enforcement.includes("runtime") && !traced) {
+      gaps.push(`invariants/${invariant.id} is enforced at runtime; trace the call path from its trigger to the check (enforcedAt frames)`);
     }
   }
   return gaps;

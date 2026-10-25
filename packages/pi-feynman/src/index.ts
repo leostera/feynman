@@ -19,7 +19,7 @@ export default function feynman(pi: ExtensionAPI) {
     new Extraction({
       cwd: ctx.cwd,
       ledger: `session-${ctx.sessionManager.getSessionId().slice(0, 8)}`,
-      onStateChange: (state) => pi.appendEntry<DriveState>(DRIVE_ENTRY, state),
+      onStateChange: (state) => pi.appendEntry<DriveState | null>(DRIVE_ENTRY, state),
     });
   const current = (ctx: ExtensionContext): Extraction => (extraction ??= open(ctx));
 
@@ -27,10 +27,10 @@ export default function feynman(pi: ExtensionAPI) {
   // made (with any truncation its result reported), so a resumed session keeps its evidence.
   pi.on("session_start", (_event, ctx) => {
     extraction = open(ctx);
-    let state: DriveState | null = null;
+    let state: unknown = null;
     const reads = new Map<string, Record<string, unknown>>();
     for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type === "custom" && entry.customType === DRIVE_ENTRY) state = entry.data as DriveState;
+      if (entry.type === "custom" && entry.customType === DRIVE_ENTRY) state = entry.data;
       if (entry.type !== "message") continue;
       const message = entry.message;
       if (message.role === "assistant") {
@@ -59,7 +59,7 @@ export default function feynman(pi: ExtensionAPI) {
   pi.on("tool_call", (event, ctx) => {
     if (event.toolName !== "write" && event.toolName !== "edit") return;
     if (current(ctx).isLedgerPath(ctx.cwd, String(event.input.path ?? ""))) {
-      return { block: true, reason: `Coverage ledgers are written by Feynman: files are recorded once read in full, and ${TOOLS.skip.name} records vendored or generated ones.` };
+      return { block: true, reason: `Coverage ledgers are written by Feynman: files are recorded once read in full, and ${TOOLS.skip.name} records the rest.` };
     }
   });
 

@@ -1,44 +1,32 @@
-// Validate a model directory: each file against its JSON Schema, cross-references
-// between elements, and (with a repository) that anchors exist at the modelled commit.
-import { readdirSync, readFileSync } from "node:fs";
+// Validate a model directory: each file against its JSON Schema, references between
+// elements, and (with a repository) that anchors exist in the modelled snapshot.
 import { join, relative } from "node:path";
-import Ajv2020 from "ajv/dist/2020.js";
-import addFormats from "ajv-formats";
-import { existsSync } from "node:fs";
+import { modelAnchors } from "./anchors.ts";
+import { readConfig } from "./config.ts";
+import { KINDS, loadModel, readCoverage, readElements } from "./model.ts";
+import { schemaProblems } from "./schema.ts";
 import { existsInSnapshot, readInSnapshot, snapshotOf } from "./snapshot.ts";
-import { modelAnchors, type ParsedAnchor } from "./anchors.ts";
-export { anchoredFiles, modelAnchors, parseAnchor } from "./anchors.ts";
-import { configPath } from "./config.ts";
-import { KINDS, loadModel, readCoverage, readElements, type Kind, type Model } from "./model.ts";
+import type { KindKey, Model, ResolvedAnchor } from "./types.ts";
 
-export const SCHEMA_DIR = join(import.meta.dirname, "../schema");
-
-let ajv: InstanceType<typeof Ajv2020> | undefined;
-function validator(schema: string) {
-  if (!ajv) {
-    ajv = new Ajv2020({ allErrors: true, allowUnionTypes: true });
-    (addFormats as unknown as (ajv: object) => void)(ajv);
-    for (const name of readdirSync(SCHEMA_DIR)) ajv.addSchema(JSON.parse(readFileSync(join(SCHEMA_DIR, name), "utf8")));
-  }
-  const validate = ajv.getSchema(`urn:feynman:${schema}`);
-  if (!validate) throw new Error(`no schema urn:feynman:${schema}`);
-  return validate;
-}
+export { SCHEMA_DIR } from "./schema.ts";
 
 /** Problems with the model, as human-readable lines; empty when it is valid. */
 export function checkModel(modelDir: string, repository?: string): string[] {
-  const problems: string[] = [];
-  const check = (schema: string, path: string, value: unknown) => {
-    const validate = validator(schema);
-    if (!validate(value)) for (const e of validate.errors ?? []) problems.push(`${relative(modelDir, path)}${e.instancePath} ${e.message}`);
-  };
-
   let model: Model;
   try {
     model = loadModel(modelDir);
   } catch (error) {
     return [(error as Error).message];
   }
+  return [...checkFiles(modelDir, model), ...checkReferences(model), ...(repository ? checkAnchors(model, repository) : [])];
+}
+
+/** Every file against its schema, and element file names as ids. */
+function checkFiles(modelDir: string, model: Model): string[] {
+  const problems: string[] = [];
+  const check = (schema: string, path: string, value: unknown) => {
+    for (const problem of schemaProblems(schema, value)) problems.push(`${relative(modelDir, path)}${problem.startsWith("/") ? "" : " "}${problem}`);
+  };
   check("meta", join(modelDir, "meta.json"), model.meta);
   for (const kind of KINDS) {
     for (const { id, path, value } of readElements(modelDir, kind)) {
@@ -47,21 +35,23 @@ export function checkModel(modelDir: string, repository?: string): string[] {
     }
   }
   for (const { path, value } of readCoverage(modelDir)) check("coverage", path, value);
-  if (existsSync(configPath(modelDir))) {
-    try {
-      check("config", configPath(modelDir), JSON.parse(readFileSync(configPath(modelDir), "utf8")));
-    } catch (error) {
-      problems.push(`${configPath(modelDir)}: ${(error as Error).message}`);
-    }
+  try {
+    readConfig(modelDir);
+  } catch (error) {
+    problems.push((error as Error).message);
   }
+  return problems;
+}
 
-  // Cross-references, each to the collection it must name.
-  const ids = Object.fromEntries(KINDS.map((kind) => [kind.key, new Set(model[kind.key].map((e) => e.id))])) as Record<Kind["key"], Set<string>>;
-  const ref = (where: string, id: string | undefined, key: Kind["key"]) => {
+/** Every reference names an element of the kind it must name. */
+function checkReferences(model: Model): string[] {
+  const problems: string[] = [];
+  const ids = Object.fromEntries(KINDS.map((kind) => [kind.key, new Set(model[kind.key].map((element) => element.id))])) as Record<KindKey, Set<string>>;
+  const ref = (where: string, id: string | undefined, key: KindKey) => {
     if (id !== undefined && !ids[key].has(id)) problems.push(`${where} → unknown ${key} ${id}`);
   };
   for (const flow of model.flows) {
-    (flow.steps ?? []).forEach((step: Record<string, string>, i: number) => {
+    (flow.steps ?? []).forEach((step, i) => {
       const at = `flows/${flow.id} step ${i + 1}`;
       ref(`${at} actor`, step.actor, "actors");
       ref(`${at} target`, step.target, "actors");
@@ -81,35 +71,33 @@ export function checkModel(modelDir: string, repository?: string): string[] {
     for (const id of component.actors ?? []) ref(`components/${component.id} actors`, id, "actors");
     for (const id of component.dependsOn ?? []) ref(`components/${component.id} dependsOn`, id, "components");
   }
-  const known = new Set(KINDS.flatMap((kind) => model[kind.key].map((e) => `${kind.dir}/${e.id}`)));
-  for (const key of ["claims", "limits"] as const) {
-    for (const element of model[key]) {
-      for (const path of element.about ?? []) if (!known.has(path)) problems.push(`${key}/${element.id} about → no element ${path}`);
-    }
-  }
-
-  if (repository) problems.push(...checkAnchors(model, repository));
+  const paths = new Set(KINDS.flatMap((kind) => model[kind.key].map((element) => `${kind.dir}/${element.id}`)));
+  const about = (where: string, targets: string[] = []) => {
+    for (const path of targets) if (!paths.has(path)) problems.push(`${where} about → no element ${path}`);
+  };
+  for (const claim of model.claims) about(`claims/${claim.id}`, claim.about);
+  for (const limit of model.limits) about(`limits/${limit.id}`, limit.about);
   return problems;
 }
 
-/** Every anchor's file must exist at the modelled commit, and any span must fall inside it. */
+/** Every anchored file exists in the snapshot, and every span falls inside its file. */
 function checkAnchors(model: Model, repository: string): string[] {
-  const anchors: ParsedAnchor[] = modelAnchors(model);
-  for (const component of model.components) for (const path of component.footprint?.paths ?? []) anchors.push({ file: path });
-
+  const footprints = model.components.flatMap((component) => component.footprint?.paths ?? []).map((file): ResolvedAnchor => ({ file }));
+  const anchors = [...modelAnchors(model), ...footprints];
   const snapshot = snapshotOf(repository, { commit: model.meta.source?.commit ?? "HEAD", worktree: model.meta.source?.worktree });
   const where = `${snapshot.commit.slice(0, 7)}${snapshot.worktree ? " with uncommitted changes" : ""}`;
   const lineCounts = new Map<string, number>();
-  const found = new Set<string>();
-  for (const { file, start, end } of anchors) {
+  const problems = new Set<string>();
+  for (const { file, span } of anchors) {
     if (!existsInSnapshot(snapshot, file)) {
-      found.add(`missing path ${file} at ${where}`);
+      problems.add(`missing path ${file} at ${where}`);
       continue;
     }
-    if (!start) continue;
+    if (!span) continue;
     if (!lineCounts.has(file)) lineCounts.set(file, (readInSnapshot(snapshot, file) ?? "").split("\n").length);
-    const last = end ?? start;
-    if (last < start || last > lineCounts.get(file)!) found.add(`span ${start}-${last} outside ${file} (${lineCounts.get(file)} lines)`);
+    const total = lineCounts.get(file)!;
+    const [start, end] = [span.start.line, span.end?.line ?? span.start.line];
+    if (end < start || end > total) problems.add(`span ${start}-${end} outside ${file} (${total} lines)`);
   }
-  return [...found];
+  return [...problems];
 }

@@ -1,5 +1,5 @@
 // What the driven agent is told.
-import { describeCoverage, SCHEMA_DIR, type CoverageReport } from "@feynman/model";
+import { describeCoverage, describeSnapshot, SCHEMA_DIR, type CoverageReport } from "@feynman/model";
 import type { Group, Phase } from "./phases.ts";
 import { MODEL_DIR, type Start } from "./workspace.ts";
 
@@ -11,13 +11,13 @@ const list = (items: string[], limit = LISTED) => [
 ];
 
 export function kickoff(start: Start, report: CoverageReport, phase: Phase, group: Group | null): string {
-  const at = `${start.commit.slice(0, 7)}${start.worktree ? " with your uncommitted changes" : ""}`;
+  const at = describeSnapshot(report.snapshot);
   const scope =
     start.kind === "update"
       ? `an update from ${start.base.slice(0, 7)} to ${at}, covering the ${report.required.length} files changed since`
       : start.kind === "bootstrap"
         ? `a first snapshot at ${at}, covering ${report.required.length} files`
-        : `resuming the ${start.mode} at ${at}; ${report.missing.length} of ${report.required.length} files are still unread`;
+        : `resuming the ${start.mode} at ${at}; ${report.missing.length} of ${report.required.length} files are not covered yet`;
   return [
     `Extract the Feynman model of this repository, following the modelling skill. This is ${scope}.`,
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
@@ -84,7 +84,7 @@ function describeGroup(group: Group | null): string[] {
 
 /** Elements derived from files that changed: they must be re-examined, not just the files. */
 function outdated(report: CoverageReport): string[] {
-  if (!report.outdated?.length) return [];
+  if (!report.outdated.length) return [];
   return [
     "",
     `${report.outdated.length} element(s) were derived from files that changed; re-examine each against its changed sources and update or remove it:`,
@@ -105,7 +105,7 @@ export interface Situation {
 
 /** What the agent is told when it stops; `nudge` asks it to continue. */
 export function continuation({ phase, report, problems, gaps, group, entered }: Situation, nudge = true): string {
-  const out = [`Feynman, phase ${phase} of 3: ${describeCoverage(report).replace("reviewed", "read")}.`];
+  const out = [`Feynman, phase ${phase} of 3: ${describeCoverage(report)}.`];
   if (entered) {
     out.push("", phase === 2 ? phase2(group) : phase === 3 ? PHASE_3 : PHASE_1);
     if (phase === 3 && gaps.length) out.push("", "To begin with, the model is thin here:", ...list(gaps));

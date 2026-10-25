@@ -7,19 +7,18 @@ export const TOOLS = {
     name: "feynman_extract",
     label: "Feynman: extract",
     description:
-      "Start (or resume) extracting the Feynman model of the current repository at HEAD: a first snapshot when there is no model, or an update from the modelled commit. Returns what to do; afterwards, coverage is checked whenever you stop.",
+      "Start or resume extracting the Feynman model of this repository at HEAD: a first snapshot, or an update from the modelled commit. Returns what to do; coverage is checked whenever you stop.",
     snippet: "Start or resume extracting the Feynman model of this repository",
   },
   skip: {
     name: "feynman_skip",
     label: "Feynman: skip",
     description:
-      "Set aside files that are not part of how the system behaves, so they need not be read in full: files about developing it (CI, build and release scripts, workspace setup, project websites, contributor docs; not tests, which check behaviour and are read), copies of third-party code, and generated output. A directory ending in `/` covers everything under it. Everything else is recorded automatically once you have read it in full.",
+      "Set aside files that are not part of how the system behaves, so they need not be read: development files (CI, build and release scripts, tooling, project websites, contributor docs), vendored code, and generated output. Tests are not development; read them. A path ending in `/` covers its directory. Files you read in full are recorded automatically.",
     snippet: "Set aside development, vendored, or generated files for the Feynman model",
     params: {
       paths: "Repository-relative files, or directories ending in `/`",
-      outcome:
-        "development: how the system is developed, built, or published, not how it behaves (tests are not development). vendored: a copy of someone else's code. generated: output of a tool in or outside this repository.",
+      outcome: "development: how the system is developed, built, or published. vendored: a copy of someone else's code. generated: output of a tool.",
       note: "What it is for or where it comes from, e.g. `publishes the npm packages`, `lockfile written by bun install`, `copy of xterm.js 5.3`",
     },
     outcomes: SKIP_OUTCOMES,
@@ -27,9 +26,8 @@ export const TOOLS = {
   status: {
     name: "feynman_status",
     label: "Feynman: status",
-    description:
-      "Show where the Feynman extraction stands: its phase, how many files are read, the current group of actors to read or what the model still lacks, and any validation problems.",
+    description: "Show where the Feynman extraction stands: phase, coverage, the current group or what the model lacks, and validation problems.",
     snippet: "Check Feynman model coverage and validity",
-    params: { missing: "List every unread path instead" },
+    params: { missing: "List every uncovered path instead" },
   },
 } as const;

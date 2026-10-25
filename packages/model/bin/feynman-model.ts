@@ -45,7 +45,7 @@ switch (command) {
     console.log(describeCoverage(report));
     if (report.deleted.length) console.log(`${report.deleted.length} deleted; check reports any anchor still pointing at them`);
     if (report.stale.length) console.log(`ignored ledgers for other commits: ${report.stale.join(", ")}`);
-    if (report.unknown.length) console.log(`ledgers name ${report.unknown.length} paths not in the commit, e.g. ${report.unknown.slice(0, 3).join(", ")}`);
+    if (report.unknown.length) console.log(`ledgers name ${report.unknown.length} paths not in the snapshot, e.g. ${report.unknown.slice(0, 3).join(", ")}`);
     for (const problem of report.problems) console.log(problem);
     if (report.missing.length) {
       console.log("unreviewed:");

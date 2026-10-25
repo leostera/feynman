@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:feynman:coverage",
   "title": "Coverage ledger",
-  "description": "model/coverage/<batch>.json: the files one extraction pass reviewed at one commit. tools/coverage.mjs checks that the ledgers for the modelled commit account for every required file.",
+  "description": "coverage/<batch>.json: what one extraction session covered at one commit. Coverage checks that the ledgers for the modelled commit account for every required file.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -41,11 +41,9 @@
               "read",
               "development",
               "vendored",
-              "generated",
-              "modelled",
-              "no-behaviour"
+              "generated"
             ],
-            "description": "read: read in full in the extraction session (recorded automatically). development: about how the system is developed, built, or published rather than how it behaves (tests are read: they check behaviour); not read in full, with a note saying why. vendored or generated: not read, with a note naming the origin. modelled and no-behaviour: recorded by earlier versions."
+            "description": "read: read in full in an extraction session (recorded automatically). development: about developing, building, or publishing the system rather than how it behaves, with a note saying what it is for. vendored or generated: copied or produced by a tool, with a note naming the origin."
           },
           "note": {
             "type": "string",

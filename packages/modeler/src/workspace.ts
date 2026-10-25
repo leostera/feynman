@@ -1,7 +1,7 @@
 // Where the repository and its model are, and how an extraction starts.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
-import { git, tryGit } from "@feynman/model";
+import { git, loadModel, tryGit, writeMeta, type Meta } from "@feynman/model";
 
 export const MODEL_DIR = ".feynman/model";
 
@@ -38,45 +38,38 @@ export type Start = (
 export function startExtraction({ repository, modelDir }: Workspace): Start {
   const worktree = git(repository, "status", "--porcelain", "--untracked-files=normal", "--", ":/", ":(top,exclude).feynman") !== "";
   const commit = git(repository, "rev-parse", "HEAD");
-  const metaPath = join(modelDir, "meta.json");
 
-  if (!existsSync(metaPath)) {
+  if (!existsSync(join(modelDir, "meta.json"))) {
     mkdirSync(modelDir, { recursive: true });
-    const meta = {
+    writeMeta(modelDir, {
       system: basename(repository),
       summary: "",
       source: { repository: ".", commit, ...(worktree ? { worktree } : {}) },
       extractedBy: "feynman",
       extraction: "bootstrap",
-    };
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
+    });
     return { kind: "bootstrap", commit, worktree };
   }
 
-  const meta = JSON.parse(readFileSync(metaPath, "utf8"));
-  const modelled = tryGit(repository, "rev-parse", meta.source?.commit ?? "");
+  const { meta } = loadModel(modelDir);
+  const modelled = tryGit(repository, "rev-parse", meta.source.commit);
   if (modelled === commit) {
     // Same commit: what changed on disk since is caught by the hashes of what was read.
-    setWorktree(meta, worktree);
-    writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
-    return { kind: "resume", mode: meta.extraction === "update" ? "update" : "bootstrap", commit, worktree };
+    writeMeta(modelDir, { ...meta, source: withWorktree(meta.source, worktree) });
+    return { kind: "resume", mode: meta.extraction ?? "bootstrap", commit, worktree };
   }
   if (!modelled || tryGit(repository, "merge-base", "--is-ancestor", modelled, commit) === null) {
-    throw new Error(`The model is at ${meta.source?.commit}, which is not an ancestor of HEAD. Check out a descendant, or remove ${MODEL_DIR} to bootstrap.`);
+    throw new Error(`The model is at ${meta.source.commit}, which is not an ancestor of HEAD. Check out a descendant, or remove ${MODEL_DIR} to bootstrap.`);
   }
 
-  meta.extraction = "update";
-  meta.source = { ...meta.source, base: { commit: modelled }, commit };
-  setWorktree(meta, worktree);
-  delete meta.source.main;
-  writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
-  // Ledgers describe reviews at the old commit; history keeps them.
-  const coverageDir = join(modelDir, "coverage");
-  if (existsSync(coverageDir)) for (const name of readdirSync(coverageDir)) rmSync(join(coverageDir, name));
+  const { main: _main, ...source } = meta.source;
+  writeMeta(modelDir, { ...meta, extraction: "update", source: withWorktree({ ...source, base: { commit: modelled }, commit }, worktree) });
+  // Ledgers describe coverage at the old commit; history keeps them.
+  rmSync(join(modelDir, "coverage"), { recursive: true, force: true });
   return { kind: "update", base: modelled, commit, worktree };
 }
 
-function setWorktree(meta: { source: Record<string, unknown> }, worktree: boolean) {
-  if (worktree) meta.source.worktree = true;
-  else delete meta.source.worktree;
+function withWorktree(source: Meta["source"], worktree: boolean): Meta["source"] {
+  const { worktree: _was, ...rest } = source;
+  return worktree ? { ...rest, worktree } : rest;
 }

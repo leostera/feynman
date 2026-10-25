@@ -2,28 +2,25 @@
 //
 //   model/
 //     meta.json
-//     actors/<id>.json  components/<id>.json  flows/<id>.json  protocols/<id>.json  state/<id>.json
-//     state-machines/<id>.json  invariants/<id>.json  claims/<id>.json  limits/<id>.json
+//     actors/<id>.json  components/<id>.json  flows/<id>.json  protocols/<id>.json
+//     state/<id>.json  state-machines/<id>.json  invariants/<id>.json  claims/<id>.json  limits/<id>.json
+//     coverage/<batch>.json
 //
 // An element's id is its file name and is not repeated inside the file. Loading
 // returns one object with every collection sorted by id, so anything built from
 // it (the rendered HTML in particular) does not depend on directory order.
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Element, KindKey, Ledger, Meta, Model } from "./types.ts";
 
-/** A collection of elements: its key in a loaded model, directory, and schema name. */
+/** An element collection: its key in a loaded model, directory, and schema name. */
 export interface Kind {
-  key: "actors" | "components" | "flows" | "protocols" | "state" | "stateMachines" | "invariants" | "claims" | "limits";
+  key: KindKey;
   dir: string;
   schema: string;
 }
 
-/** An element as loaded: its file's contents plus the id its file name carries. */
-export type Element = { id: string } & Record<string, any>;
-
-export type Model = { meta: Record<string, any> } & Record<Kind["key"], Element[]>;
-
-/** Collections in display order: bundle key, directory, schema name. */
+/** Collections in display order. */
 export const KINDS: Kind[] = [
   { key: "actors", dir: "actors", schema: "actor" },
   { key: "components", dir: "components", schema: "component" },
@@ -36,32 +33,46 @@ export const KINDS: Kind[] = [
   { key: "limits", dir: "limits", schema: "limit" },
 ];
 
-const readJson = (path: string): any => {
+/** Every element of a model, with its kind. */
+export function elementsOf(model: Model): { kind: Kind; element: Element }[] {
+  return KINDS.flatMap((kind) => model[kind.key].map((element) => ({ kind, element })));
+}
+
+function readJson(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
     throw new Error(`${path}: ${(error as Error).message}`);
   }
-};
+}
 
 const json = (value: unknown) => JSON.stringify(value, null, 2) + "\n";
 
-/** Element files of one collection, as `{ id, path, value }`, sorted by id. */
-export function readElements(modelDir: string, kind: Kind): { id: string; path: string; value: Record<string, any> }[] {
-  const dir = join(modelDir, kind.dir);
+/** `*.json` files in `dir`, as `{ name, path }` sorted by name (without `.json`). */
+function jsonFiles(dir: string): { name: string; path: string }[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => name.slice(0, -".json".length))
+    .filter((file) => file.endsWith(".json"))
     .sort()
-    .map((id) => ({ id, path: join(dir, `${id}.json`), value: readJson(join(dir, `${id}.json`)) }));
+    .map((file) => ({ name: file.slice(0, -".json".length), path: join(dir, file) }));
 }
 
-/** The whole model as one object: `{ meta, actors: [{ id, … }], … }`. */
+/** Element files of one collection, as `{ id, path, value }`, sorted by id. */
+export function readElements(modelDir: string, kind: Kind): { id: string; path: string; value: unknown }[] {
+  return jsonFiles(join(modelDir, kind.dir)).map(({ name, path }) => ({ id: name, path, value: readJson(path) }));
+}
+
+/**
+ * The whole model as one object. Files are not validated (see `checkModel`): during
+ * an extraction the model is incomplete, and readers must tolerate missing fields.
+ */
 export function loadModel(modelDir: string): Model {
   if (!existsSync(join(modelDir, "meta.json"))) throw new Error(`${modelDir} has no meta.json`);
   const model = { meta: readJson(join(modelDir, "meta.json")) } as Model;
-  for (const kind of KINDS) model[kind.key] = readElements(modelDir, kind).map(({ id, value }) => ({ id, ...value }));
+  for (const kind of KINDS) {
+    const elements = readElements(modelDir, kind).map(({ id, value }) => ({ id, ...(value as object) }));
+    (model as Record<KindKey, unknown>)[kind.key] = elements;
+  }
   return model;
 }
 
@@ -72,41 +83,12 @@ export function writeElement(modelDir: string, kind: Kind, element: Element): vo
   writeFileSync(join(modelDir, kind.dir, `${id}.json`), json(value));
 }
 
-export function writeMeta(modelDir: string, meta: Record<string, unknown>): void {
+export function writeMeta(modelDir: string, meta: Meta): void {
   mkdirSync(modelDir, { recursive: true });
   writeFileSync(join(modelDir, "meta.json"), json(meta));
 }
 
-/** Replace a model directory's contents with `model`. */
-export function writeModel(modelDir: string, model: Model): void {
-  writeMeta(modelDir, model.meta);
-  for (const kind of KINDS) {
-    rmSync(join(modelDir, kind.dir), { recursive: true, force: true });
-    for (const element of model[kind.key] ?? []) writeElement(modelDir, kind, element);
-  }
-}
-
-/** `read` is recorded automatically; `modelled` and `no-behaviour` come from older ledgers. */
-export type Outcome = "read" | "development" | "modelled" | "no-behaviour" | "vendored" | "generated";
-export interface LedgerEntry {
-  path: string;
-  outcome: Outcome;
-  note?: string;
-  /** For reads of the working tree: the content hash (git blob id) that was read. */
-  hash?: string;
-}
-export interface Ledger {
-  commit: string;
-  summary: string;
-  files: LedgerEntry[];
-}
-
 /** Coverage ledgers (`coverage/<batch>.json`), as `{ batch, path, value }`. */
 export function readCoverage(modelDir: string): { batch: string; path: string; value: Ledger }[] {
-  const dir = join(modelDir, "coverage");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith(".json"))
-    .sort()
-    .map((name) => ({ batch: name.slice(0, -".json".length), path: join(dir, name), value: readJson(join(dir, name)) }));
+  return jsonFiles(join(modelDir, "coverage")).map(({ name, path }) => ({ batch: name, path, value: readJson(path) as Ledger }));
 }

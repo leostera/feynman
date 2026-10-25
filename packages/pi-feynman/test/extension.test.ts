@@ -81,12 +81,12 @@ test("guides the agent through actors, groups of connected actors, and depth", a
   expect(reports[0]).toContain("actors/server talks to no other actor");
   expect(reports[1]).toContain("Phase 2: flows");
   expect(reports[1]).toContain("Next group: client, server, which talk to user; components client, server. Read these 2 files");
-  expect(reports[2]).toContain("1 of 3 files read"); // the server was only skimmed
+  expect(reports[2]).toContain("1 of 3 files covered"); // the server was only skimmed
   expect(reports[2]).toContain("src/server.ts");
   expect(reports[3]).toContain("Last group: files outside every component's footprint");
   expect(reports[3]).toContain("README.md");
   expect(reports[4]).toContain("Phase 3: depth");
-  expect(reports[5]).toContain("3 of 3 files read");
+  expect(reports[5]).toContain("3 of 3 files covered");
   expect(reports[5]).toContain("the model is valid");
   expect(harness.pending()).toBe(0);
 
@@ -117,7 +117,7 @@ test("sets aside development, vendored, and generated files without reading them
   const [vendored, development, rejected] = toolResults(harness).filter((r) => r.tool === "feynman_skip");
   expect(vendored.text).toContain("Recorded 2 path(s) as vendored");
   expect(development.text).toContain("Recorded 1 path(s) as development");
-  expect(development.text).toContain("3 of 6 files read"); // vendor/lib.js, bun.lock, scripts/publish.sh
+  expect(development.text).toContain("3 of 6 files covered"); // vendor/lib.js, bun.lock, scripts/publish.sh
   expect(rejected.text).toContain("src/server.ts: say in note where it comes from");
 });
 
@@ -129,7 +129,7 @@ test("extracts uncommitted work, recording what was read", async () => {
   harness.respond([call("feynman_extract", {}), call("read", { path: "src/new.ts" }), stop()]);
   await harness.session.prompt("Extract.");
 
-  expect(toolResults(harness)[0].text).toContain("with your uncommitted changes, covering 4 files");
+  expect(toolResults(harness)[0].text).toContain("with uncommitted changes, covering 4 files");
   const meta = JSON.parse(readFileSync(join(cwd, ".feynman/model/meta.json"), "utf8"));
   expect(meta.source.worktree).toBe(true);
   const [ledger] = readdirSync(join(cwd, ".feynman/model/coverage"));

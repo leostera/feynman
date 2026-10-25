@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { computeCoverage, measureModel, outdatedElements } from "../src/index.ts";
+import { computeCoverage, measureModel, outdatedElements, snapshotOf } from "../src/index.ts";
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "feynman-sources-"));
@@ -37,7 +37,7 @@ test("elements record the content hash of the files they anchor, and go stale wh
 
   write("src/server.ts", "export const limit = 2048;\n");
   const second = commit("raise the limit");
-  expect(outdatedElements(root, modelDir, second)).toEqual([{ kind: "limits", id: "body-size", files: ["src/server.ts"] }]);
+  expect(outdatedElements(snapshotOf(root, { commit: second }), modelDir)).toEqual([{ kind: "limits", id: "body-size", files: ["src/server.ts"] }]);
 
   // Update mode requires the changed file and reports the element derived from it.
   const meta = JSON.parse(readFileSync(join(modelDir, "meta.json"), "utf8"));
@@ -59,14 +59,14 @@ test("sources hash what is on disk, so a model of uncommitted work stays current
   write("src/new.ts", "export const fresh = true;\n");
   write(".feynman/model/limits/fresh.json", JSON.stringify({ subject: "fresh", value: "yes", kind: "other", anchors: ["src/new.ts"] }));
   measureModel(root, modelDir);
-  expect(outdatedElements(root, modelDir)).toEqual([]);
-  expect(outdatedElements(root, modelDir, first).map(({ id }) => id)).toEqual(["body-size", "fresh"]);
+  expect(outdatedElements(snapshotOf(root, { commit: "HEAD", worktree: true }), modelDir)).toEqual([]);
+  expect(outdatedElements(snapshotOf(root, { commit: first }), modelDir).map(({ id }) => id)).toEqual(["body-size", "fresh"]);
 
   // Committing the work changes nothing about the model.
   const second = commit("raise the limit");
-  expect(outdatedElements(root, modelDir, second)).toEqual([]);
+  expect(outdatedElements(snapshotOf(root, { commit: second }), modelDir)).toEqual([]);
 
   // Editing again makes only the element derived from the edited file outdated.
   write("src/server.ts", "export const limit = 4096;\n");
-  expect(outdatedElements(root, modelDir)).toEqual([{ kind: "limits", id: "body-size", files: ["src/server.ts"] }]);
+  expect(outdatedElements(snapshotOf(root, { commit: "HEAD", worktree: true }), modelDir)).toEqual([{ kind: "limits", id: "body-size", files: ["src/server.ts"] }]);
 });
