@@ -22,10 +22,11 @@ export type {
   Icon,
   Mood,
   Row,
+  Token,
   Look,
   Link,
 } from "./dsl.ts";
-export { appearance, declaresLinks, liveLinks, type Appearance, type LiveLink } from "./look.ts";
+export { appearance, declaresLinks, dropsFor, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
 export * from "./engine.ts";
 export { Runner, runScenario } from "./run.ts";
 export type * from "./spec.ts";

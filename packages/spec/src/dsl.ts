@@ -44,6 +44,21 @@ export interface Row {
   mood?: Mood;
   /** Rows with the same group are boxed together under it: "Alice's account". */
   group?: string;
+  /** An instance (id or label) this row belongs to; its group, and the row if it has no mood, take its colour. */
+  owner?: string;
+}
+
+/**
+ * Something an instance holds that a person can pick up and drop on another node, such as a
+ * pairing code or a signed-in person. Dropping it runs the target's action whose input
+ * `accepts` this kind, with `value` as that input.
+ */
+export interface Token {
+  kind: string;
+  value: string | number | boolean;
+  /** What the chip shows; the value by default. */
+  label?: string;
+  mood?: Mood;
 }
 
 export interface Look<S> {
@@ -52,6 +67,8 @@ export interface Look<S> {
   status?: (state: Readonly<S>) => string;
   mood?: (state: Readonly<S>) => Mood;
   rows?: (state: Readonly<S>) => Row[];
+  /** Things to drag onto other nodes, floating beside this one. */
+  tokens?: (state: Readonly<S>, self: { id: string; label: string }) => Token[];
 }
 
 /** A live connection an instance holds: a socket, a session, a subscription. */
@@ -63,6 +80,8 @@ export interface Link {
   label?: string;
   mood?: Mood;
   style?: "solid" | "dashed" | "dotted";
+  /** The label of a row on the target to end at, so the line meets what it connects to. */
+  row?: string;
 }
 
 // Messages ----------------------------------------------------------------------------------
@@ -193,6 +212,7 @@ export interface InputDef<T = InputType> {
   readonly [INPUT]: true;
   type: T;
   examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[];
+  accepts?: string;
 }
 
 type ValueOf<T> = T extends StringConstructor
@@ -333,7 +353,11 @@ export interface SpecBuilder<M extends Registry> {
   defineLimit(def: { name: string; value: number; unit?: string; sources: Source[] }): Limit;
   defineActor<S, A = {}, T = {}>(def: ActorDef<M, S, A, T>): Actor<S, A>;
   /** An action input: its type, and the example values the playground offers and the checker tries. */
-  defineInput<const T extends InputType>(type: T, options?: { examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[] }): InputDef<T>;
+  /**
+   * An action input. `examples` are what the playground offers and the checker tries;
+   * `accepts` names a token kind that can be dropped on the node to fill this input.
+   */
+  defineInput<const T extends InputType>(type: T, options?: { examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[]; accepts?: string }): InputDef<T>;
   defineInvariants(defs: Record<string, InvariantDef>): void;
   defineScenario(def: { name: string; description?: string; run(script: Script): void }): void;
 }
@@ -381,7 +405,7 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
       return actor as unknown as Actor<any, any>;
     },
     defineInput(type, options) {
-      return { type, examples: options?.examples } as never;
+      return { type, examples: options?.examples, accepts: options?.accepts } as never;
     },
     defineInvariants(defs) {
       for (const [id, def] of Object.entries(defs)) spec.invariants.push(invariantInfo(id, def));
@@ -416,7 +440,7 @@ interface RawActor {
   durable?: string[];
   look?: ActorInfo["look"];
   links?: ActorInfo["links"];
-  actions?: Record<string, RawStep & { label: string; inputs?: Record<string, { type: InputType; examples?: unknown }> }>;
+  actions?: Record<string, RawStep & { label: string; inputs?: Record<string, { type: InputType; examples?: unknown; accepts?: string }> }>;
   transitions?: Record<string, RawStep>;
 }
 
@@ -437,7 +461,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       inputs: Object.fromEntries(
         Object.entries(step.inputs ?? {}).map(([name, input]) => [
           name,
-          { type: inputKind(input.type), values: Array.isArray(input.type) ? [...input.type] : undefined, examples: examplesOf(input.examples) },
+          { type: inputKind(input.type), values: Array.isArray(input.type) ? [...input.type] : undefined, examples: examplesOf(input.examples), accepts: input.accepts },
         ]),
       ),
       run: step.run as ActionInfo["run"],

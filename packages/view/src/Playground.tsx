@@ -1,16 +1,17 @@
 // The playground: the spec's world as a living diagram. Time runs (Play) or steps (Step);
-// messages travel the wires and are slowed down while in flight so you can see them; click
-// a node to act on it, click a message to deliver it now or lose it. A tip says what to try
-// next, presets start from a scenario, and the timeline on the right is the event log.
-import { Button, cn, DropdownMenu, Select } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, ArrowUUpLeftIcon, LightbulbIcon, PauseIcon, PlayIcon, PlusIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
-import type { Pending, Spec, World } from "@feynman/spec";
+// messages travel the wires, slowed while in flight so you can see them. Click a node to act
+// on it, drag what a node holds onto another to use it there, click a message to deliver it
+// now or lose it. The timeline is the event log: hover to peek, click to travel back, then
+// step through it with ← and →; acting in the past continues from there.
+import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
+import { ArrowCounterClockwiseIcon, ArrowLeftIcon, PauseIcon, PlayIcon, PlusIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { appearance, dropsFor, type Drop, type Pending, type Spec, type Token, type World } from "@feynman/spec";
 import { clock as clockAt, labelOf, messageName, time } from "./format";
-import { iconFor } from "./playground/look";
-import { InputsDialog, InspectDialog, NodeMenu } from "./playground/NodeMenu";
-import { bubbleText, Stage, useFit, useLayout, type Bubble } from "./playground/Stage";
-import { apply, current, nextHint, nextLabel, type Hint, type Op, type Session } from "./session";
+import { iconFor, instanceColors, TONES, toneColor } from "./playground/look";
+import { InputsDialog, InspectDialog, NodeMenu, type Asking } from "./playground/NodeMenu";
+import { bubbleText, Stage, TokenChip, useFit, useLayout, type Bubble, type Dragging } from "./playground/Stage";
+import { apply, current, nextHint, nextLabel, rollback, type Hint, type Op, type Session } from "./session";
 import { Timeline } from "./Timeline";
 import { useExplorer } from "./ui";
 
@@ -23,60 +24,101 @@ export interface ReactNodeMenu {
 const SPEEDS = [0.25, 1, 5, 25];
 /** Real milliseconds a message takes on screen, at most: flights are slowed to this. */
 const FLIGHT_MS = 900;
+/** Real milliseconds per event when playing back through the past. */
+const REPLAY_MS = 700;
+
+/** The world after `index` steps were taken; -1 is the start. */
+function worldAt(session: Session, index: number): World {
+  return index < 0 ? session.initial : session.steps[index].world;
+}
 
 export function Playground({ session, setSession, scenarios }: { session: Session; setSession: (s: Session) => void; scenarios: ReactNodeMenu }) {
   const { spec } = useExplorer();
-  const [preview, setPreview] = useState<number | null>(null);
+  /** Hovering a timeline event peeks at it; leaving returns. */
+  const [hover, setHover] = useState<number | null>(null);
+  /** The moment travelled back to, null for now. Acting there continues from it. */
+  const [cursor, setCursor] = useState<number | null>(null);
   const [packet, setPacket] = useState<Extract<Pending, { kind: "deliver" }> | null>(null);
-  const [asking, setAsking] = useState<{ instance: string; action: string } | null>(null);
+  const [asking, setAsking] = useState<Asking | null>(null);
   const [inspecting, setInspecting] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<{ target: string; drops: Drop[]; at: { x: number; y: number } } | null>(null);
+  const last = session.steps.length - 1;
+  const travelled = cursor !== null && cursor < last ? cursor : null;
+  useEffect(() => setCursor(null), [session.origin, session.initial]);
   const live = current(session);
-  const clock = useClock(spec, session, setSession, preview === null);
-  const world = preview === null ? live : preview < 0 ? session.initial : session.steps[preview].world;
+  const clock = useClock(spec, session, setSession, travelled === null && hover === null);
+  const base = travelled === null ? live : worldAt(session, travelled);
+  const viewing = hover ?? travelled;
+  const world = viewing === null ? live : worldAt(session, viewing);
   const graph = useLayout(spec, world);
   const { ref, fit } = useFit(graph?.width ?? 0, graph?.height ?? 0);
-  const focus = preview === null ? (session.steps.at(-1)?.event ?? null) : preview >= 0 ? session.steps[preview].event : null;
-  const hint = nextHint(spec, live);
+  const focus = viewing === null ? (session.steps.at(-1)?.event ?? null) : viewing >= 0 ? session.steps[viewing].event : null;
+  const hint = nextHint(spec, base);
   const run = (op: Op) => {
-    setPreview(null);
+    const from = travelled === null ? session : rollback(session, travelled + 1);
+    setCursor(null);
+    setHover(null);
     setPacket(null);
-    setSession(apply(spec, session, { ...op, at: clock.now }));
+    setChoosing(null);
+    setSession(apply(spec, from, travelled === null ? { ...op, at: clock.now } : op));
   };
-  const bubbles = recentBubbles(spec, session, preview);
+  const back = () => {
+    clock.setPlaying(false);
+    setCursor(Math.max(-1, (travelled ?? last) - 1));
+  };
+  const forward = () => {
+    if (travelled !== null) setCursor(travelled + 1 >= last ? null : travelled + 1);
+    else setSession(stepOnce(spec, session));
+  };
+  // Playing in the past plays the recorded events back, then carries on live.
+  useEffect(() => {
+    if (!clock.playing || travelled === null || hover !== null) return;
+    const timer = setTimeout(() => setCursor(travelled + 1 >= last ? null : travelled + 1), REPLAY_MS / Math.max(1, clock.speed));
+    return () => clearTimeout(timer);
+  }, [clock.playing, clock.speed, travelled, hover, last]);
+  useKeys({ ArrowLeft: back, ArrowRight: forward, " ": () => clock.setPlaying(!clock.playing) });
+  const drag = useTokenDrag(spec, base, (target, drops, at) => {
+    if (drops.length === 1 && drops[0].complete) run({ op: "act", instance: target, key: drops[0].action.key, inputs: drops[0].inputs });
+    else if (drops.length === 1) setAsking({ instance: target, action: drops[0].action.key, inputs: drops[0].inputs });
+    else if (drops.length > 1) setChoosing({ target, drops, at });
+  });
+  const bubbles = recentBubbles(spec, session, viewing);
   const pulse = hint.kind === "act" ? hint.instance : null;
   const handlers = { onRun: run, onInputs: (instance: string, action: string) => setAsking({ instance, action }), onInspect: setInspecting };
+  const canAct = hover === null;
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         <NavBar
           scenarios={scenarios}
           origin={session.origin}
-          world={live}
+          world={base}
           clock={clock}
-          hint={hint}
-          previewing={preview !== null}
-          canStep={hint.kind === "pending" || hint.kind === "guard"}
-          canUndo={session.steps.length > 0}
+          shown={viewing === null ? clock.now : world.clock}
+          canBack={(travelled ?? last) >= 0}
+          canStep={travelled !== null || hint.kind === "pending" || hint.kind === "guard"}
           onRun={run}
-          onUndo={() => setSession({ ...session, steps: session.steps.slice(0, -1), ops: session.ops?.slice(0, -1) ?? null })}
+          onBack={back}
           onReset={() => scenarios.onPick(session.origin)}
-          onStep={() => setSession(stepOnce(spec, session))}
+          onStep={forward}
         />
-        <div ref={ref} className="relative min-h-0 flex-1 overflow-hidden bg-kumo-canvas" onClick={() => setPacket(null)}>
+        <div ref={ref} className="relative min-h-0 flex-1 overflow-hidden bg-kumo-canvas" onClick={() => (setPacket(null), setChoosing(null))}>
           {graph && (
             <Stage
               world={world}
               graph={graph}
               fit={fit}
-              clock={preview === null ? clock.now : world.clock}
-              live={preview === null}
+              clock={viewing === null ? clock.now : world.clock}
+              live={canAct}
               focus={focus}
               bubbles={bubbles}
               next={hint.kind === "pending" ? hint.pending.id : null}
               pulse={pulse}
+              dragging={drag.dragging}
+              onToken={drag.start}
               menu={(id, trigger, children) =>
-                preview === null ? (
-                  <NodeMenu id={id} world={live} trigger={trigger} handlers={handlers}>
+                canAct ? (
+                  <NodeMenu id={id} world={base} trigger={trigger} handlers={handlers}>
                     {children}
                   </NodeMenu>
                 ) : (
@@ -86,17 +128,97 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
               onPacket={(p) => setPacket(p)}
             />
           )}
-          {packet && preview === null && <PacketMenu pending={packet} world={live} onClose={() => setPacket(null)} onRun={run} />}
+          <div className="pointer-events-none absolute inset-x-3 top-3 flex justify-center">
+            <Tip
+              text={hover !== null ? "Peeking at this moment. Click it to travel back here." : travelled !== null ? pastTip(session, travelled) : tipFor(spec, hint, base)}
+              action={travelled !== null && hover === null ? { label: "Back to now", onClick: () => setCursor(null) } : null}
+            />
+          </div>
+          <Legend />
+          {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
+          {choosing && <DropChoice choice={choosing} world={base} onRun={run} onAsk={(drop) => (setChoosing(null), setAsking({ instance: choosing.target, action: drop.action.key, inputs: drop.inputs }))} />}
         </div>
       </div>
-      <Timeline
-        session={session}
-        preview={preview}
-        onPreview={setPreview}
-        onRollback={(n) => (setPreview(null), setSession({ ...session, steps: session.steps.slice(0, n), ops: session.ops?.slice(0, n) ?? null }))}
-      />
-      <InputsDialog target={asking} world={live} onClose={() => setAsking(null)} onRun={run} />
-      <InspectDialog id={inspecting} world={live} onClose={() => setInspecting(null)} />
+      <Timeline session={session} preview={hover} cursor={travelled} onPreview={setHover} onPick={(n) => (setHover(null), setCursor(n >= last ? null : n))} />
+      {drag.dragging && drag.at && (
+        <div className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 scale-110" style={{ left: drag.at.x, top: drag.at.y }}>
+          <TokenChip token={drag.dragging.token} color={instanceColors(spec, base).get(drag.dragging.from)} />
+        </div>
+      )}
+      <InputsDialog target={asking} world={base} onClose={() => setAsking(null)} onRun={run} />
+      <InspectDialog id={inspecting} world={base} onClose={() => setInspecting(null)} />
+    </div>
+  );
+}
+
+function pastTip(session: Session, index: number): string {
+  const events = session.steps.filter((s) => s.event).length;
+  const at = session.steps.slice(0, index + 1).filter((s) => s.event).length;
+  return `Back at event ${at} of ${events}. Step through with ← and →, press Play to watch it again, or act here to try something else from this moment.`;
+}
+
+function useKeys(keys: Record<string, () => void>) {
+  const ref = useRef(keys);
+  ref.current = keys;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (target?.closest("input, textarea, select, [role=dialog], [role=menu], [role=listbox]")) return;
+      const f = ref.current[e.key];
+      if (!f) return;
+      e.preventDefault();
+      f();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+// Drag and drop: pick up a token a node holds, drop it on a node with an action that accepts it -------------
+
+function useTokenDrag(spec: Spec, world: World, onDrop: (target: string, drops: Drop[], at: { x: number; y: number }) => void) {
+  const [dragging, setDragging] = useState<Dragging | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const latest = useRef({ world, onDrop });
+  latest.current = { world, onDrop };
+  const start = (from: string, token: Token, e: ReactPointerEvent) => {
+    const targets = new Set(world.instances.filter((i) => i.id !== from && dropsFor(spec, world, i.id, token).length).map((i) => i.id));
+    setDragging({ from, token, targets });
+    setAt({ x: e.clientX, y: e.clientY });
+    const move = (ev: PointerEvent) => setAt({ x: ev.clientX, y: ev.clientY });
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDragging(null);
+      setAt(null);
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-instance]");
+      const target = el?.dataset.instance;
+      if (!target || !targets.has(target)) return;
+      const { world, onDrop } = latest.current;
+      onDrop(target, dropsFor(spec, world, target, token), { x: ev.clientX, y: ev.clientY });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return { dragging, at, start };
+}
+
+function DropChoice({ choice, world, onRun, onAsk }: { choice: { target: string; drops: Drop[]; at: { x: number; y: number } }; world: World; onRun: (op: Op) => void; onAsk: (drop: Drop) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const rect = box.current?.offsetParent?.getBoundingClientRect();
+  return (
+    <div
+      ref={box}
+      className="absolute z-30 flex items-center gap-1 rounded-full bg-kumo-elevated p-1 pl-3 shadow-xl ring ring-kumo-brand"
+      style={{ left: choice.at.x - (rect?.left ?? 0), top: choice.at.y - (rect?.top ?? 0) }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="text-xs text-kumo-subtle">{labelOf(world, choice.target)}:</span>
+      {choice.drops.map((drop) => (
+        <Button key={drop.action.key} size="xs" variant="secondary" onClick={() => (drop.complete ? onRun({ op: "act", instance: choice.target, key: drop.action.key, inputs: drop.inputs }) : onAsk(drop))}>
+          {drop.action.label}
+        </Button>
+      ))}
     </div>
   );
 }
@@ -197,12 +319,11 @@ function NavBar({
   origin,
   world,
   clock,
-  hint,
-  previewing,
+  shown,
+  canBack,
   canStep,
-  canUndo,
   onRun,
-  onUndo,
+  onBack,
   onReset,
   onStep,
 }: {
@@ -210,43 +331,61 @@ function NavBar({
   origin: string;
   world: World;
   clock: Clock;
-  hint: Hint;
-  previewing: boolean;
+  shown: number;
+  canBack: boolean;
   canStep: boolean;
-  canUndo: boolean;
   onRun: (op: Op) => void;
-  onUndo: () => void;
+  onBack: () => void;
   onReset: () => void;
   onStep: () => void;
 }) {
-  const { spec } = useExplorer();
-  const tip = previewing ? "Looking back in time. Click the event to go back to it, or move away to return." : tipFor(spec, hint, world);
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-base px-3">
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-kumo-hairline bg-kumo-base px-3">
       <Select size="sm" aria-label="Start from" className="w-56" value={origin} onValueChange={(v) => v && scenarios.onPick(String(v))} items={scenarios.items} />
       <AddMenu world={world} onRun={onRun} />
-      <span className="mx-1 h-5 w-px bg-kumo-hairline" />
-      <span className="w-[4.5rem] text-right font-mono text-[12px] tabular-nums">{clockAt(clock.now)}</span>
-      <Button variant={clock.playing ? "secondary" : "primary"} size="sm" icon={clock.playing ? <PauseIcon /> : <PlayIcon />} onClick={() => clock.setPlaying(!clock.playing)}>
-        {clock.playing ? "Pause" : "Play"}
-      </Button>
-      <Button variant="ghost" size="sm" icon={<SkipForwardIcon />} disabled={!canStep} onClick={onStep}>
-        Step
-      </Button>
-      <div className="flex rounded-lg bg-kumo-recessed p-0.5">
-        {SPEEDS.map((s) => (
-          <button key={s} type="button" onClick={() => clock.setSpeed(s)} className={cn("rounded-md px-2 py-0.5 font-mono text-[11px] text-kumo-subtle", clock.speed === s && "bg-kumo-base text-kumo-default shadow-sm")}>
-            {s === 0.25 ? "¼" : s}×
-          </button>
-        ))}
+      <div className="mx-auto flex items-center gap-1 rounded-full bg-kumo-elevated p-1 ring ring-kumo-line">
+        <span className="w-[4.25rem] px-2 text-right font-mono text-xs tabular-nums">{clockAt(shown)}</span>
+        <Button size="xs" variant="ghost" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={12} />} disabled={!canBack} onClick={onBack} />
+        <Button size="xs" variant={clock.playing ? "secondary" : "primary"} icon={clock.playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />} onClick={() => clock.setPlaying(!clock.playing)}>
+          {clock.playing ? "Pause" : "Play"}
+        </Button>
+        <Button size="xs" variant="ghost" icon={<SkipForwardIcon size={12} />} title="Next event (→)" disabled={!canStep} onClick={onStep}>
+          Step
+        </Button>
+        <Tabs size="sm" value={String(clock.speed)} onValueChange={(v) => clock.setSpeed(Number(v))} tabs={SPEEDS.map((s) => ({ value: String(s), label: `${s === 0.25 ? "¼" : s}×` }))} />
+        <Button size="xs" variant="ghost" shape="square" aria-label="Start over" title="Start over" icon={<ArrowCounterClockwiseIcon size={12} />} onClick={onReset} />
       </div>
-      <Button variant="ghost" size="sm" shape="square" aria-label="Undo the last step" disabled={!canUndo} onClick={onUndo} icon={<ArrowUUpLeftIcon />} />
-      <Button variant="ghost" size="sm" shape="square" aria-label="Start over" onClick={onReset} icon={<ArrowCounterClockwiseIcon />} />
-      <span className="mx-1 h-5 w-px bg-kumo-hairline" />
-      <LightbulbIcon size={16} weight="duotone" className="shrink-0 text-kumo-warning" />
-      <span className="min-w-0 flex-1 truncate text-[13px] text-kumo-subtle" title={tip}>
-        {tip}
+      <span className="w-[calc(14rem+2rem)]" />
+    </div>
+  );
+}
+
+/** What to try next, as a pill over the canvas. */
+function Tip({ text, action }: { text: string; action: { label: string; onClick: () => void } | null }) {
+  return (
+    <div key={text} className="feynman-tip pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-kumo-tint px-3 py-1.5 text-sm shadow-sm ring ring-kumo-hairline">
+      <span aria-hidden>👉</span>
+      <span className="min-w-0 truncate" title={text}>
+        {text}
       </span>
+      {action && (
+        <Button size="xs" variant="secondary" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function Legend() {
+  return (
+    <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-3 text-[11px] text-kumo-subtle">
+      {TONES.map((t) => (
+        <span key={t.tone} className="flex items-center gap-1">
+          <span className="size-2 rounded-full" style={{ background: toneColor(t.tone) }} />
+          {t.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -258,7 +397,7 @@ function AddMenu({ world, onRun }: { world: World; onRun: (op: Op) => void }) {
   if (!kinds.length) return null;
   return (
     <DropdownMenu>
-      <DropdownMenu.Trigger render={<Button variant="secondary" size="sm" shape="square" aria-label="Add" icon={<PlusIcon />} />} />
+      <DropdownMenu.Trigger render={<Button variant="secondary" size="xs" shape="square" aria-label="Add" title="Add someone or something" icon={<PlusIcon size={12} />} />} />
       <DropdownMenu.Content>
         <DropdownMenu.Group>
         <DropdownMenu.Label>Add</DropdownMenu.Label>
@@ -276,7 +415,20 @@ function AddMenu({ world, onRun }: { world: World; onRun: (op: Op) => void }) {
   );
 }
 
+/** The first token some node holds that another node would accept. */
+function firstDrag(spec: Spec, world: World): { from: string; token: Token; to: string } | null {
+  for (const instance of world.instances) {
+    for (const token of appearance(spec, world, instance.id).tokens) {
+      const to = world.instances.find((i) => i.id !== instance.id && dropsFor(spec, world, i.id, token).length);
+      if (to) return { from: instance.id, token, to: to.id };
+    }
+  }
+  return null;
+}
+
 function tipFor(spec: Spec, hint: Hint, world: World): string {
+  const drag = hint.kind === "act" || hint.kind === "done" ? firstDrag(spec, world) : null;
+  if (drag) return `Drag ${drag.token.label ?? String(drag.token.value)} from ${labelOf(world, drag.from)} onto ${labelOf(world, drag.to)}, or click a node to see what else it can do.`;
   switch (hint.kind) {
     case "spawn":
       return `Add a ${hint.actor} with + to begin.`;

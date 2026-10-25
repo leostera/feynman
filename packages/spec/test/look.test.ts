@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { appearance, defineSpec, liveLinks, message, runScenario } from "../src/index.ts";
+import { appearance, defineSpec, dropsFor, liveLinks, message, runScenario } from "../src/index.ts";
 
 const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ name: "dial" }), Up: message<{ n: number }>({ name: "up", tone: "reply" }) } }, (spec) => {
   const { Dial, Up } = spec.messages;
@@ -9,7 +9,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
     zone,
     singleton: true,
     initialState: () => ({ peers: [] as string[] }),
-    look: { icon: "cloud", status: (s) => `${s.peers.length} connected`, rows: (s) => s.peers.map((p) => ({ label: p, group: "peers", mood: "ok" as const })) },
+    look: { icon: "cloud", status: (s) => `${s.peers.length} connected`, rows: (s) => s.peers.map((p) => ({ label: p, group: "peers", mood: "ok" as const })), tokens: () => [{ kind: "slot", value: 7 }] },
     transitions: {
       [Dial]: {
         description: "Accepts a peer.",
@@ -33,7 +33,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
       dial: {
         label: "Dial",
         description: "Dials the hub.",
-        inputs: { n: spec.defineInput(Number, { examples: [1, 2] }) },
+        inputs: { n: spec.defineInput(Number, { examples: [1, 2], accepts: "slot" }) },
         sources: ["peer.ts#dial"],
         sends: [Dial],
         run: (_s, { n }, ctx) => ctx.send(ctx.the(Hub), Dial, { n }),
@@ -59,7 +59,11 @@ test("look, links and say: presentation as data, evaluated against the world", (
   const run = runScenario(spec, spec.scenarios[0]);
   expect(run.error).toBeUndefined();
   const world = run.worlds.at(-1)!;
-  expect(appearance(spec, world, "hub")).toEqual({ icon: "cloud", status: "1 connected", mood: null, rows: [{ label: "1", group: "peers", mood: "ok" }] });
+  expect(appearance(spec, world, "hub")).toEqual({ icon: "cloud", status: "1 connected", mood: null, rows: [{ label: "1", group: "peers", mood: "ok" }], tokens: [{ kind: "slot", value: 7 }] });
+  // Dropping the hub's token on the peer dials with it.
+  const drops = dropsFor(spec, world, "peer-p", { kind: "slot", value: 7 });
+  expect(drops.map((d) => [d.action.key, d.inputs, d.complete])).toEqual([["dial", { n: 7 }, true]]);
+  expect(dropsFor(spec, world, "hub", { kind: "slot", value: 7 })).toEqual([]);
   expect(liveLinks(spec, world)).toEqual([{ to: "Hub", kind: "socket", from: "peer-p", target: "hub" }]);
   expect(run.events.find((e) => e.key === "message:Dial")?.text).toBe("Accepted peer 1; 1 now");
   // Example arrays work like example functions.

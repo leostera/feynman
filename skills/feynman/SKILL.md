@@ -159,7 +159,12 @@ export default defineSpec(
       name: "Person",
       zone: devices,
       initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
-      look: { icon: "phone", status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in") },
+      look: {
+        icon: "phone",
+        status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in"),
+        // The code on screen, to drag onto a Mac (see `accepts` on the Mac's `link` input).
+        tokens: (s) => s.codes.slice(-1).map((code) => ({ kind: "pairing code", value: code })),
+      },
       // Actions: what a person (or the outside world) can do. They are buttons in the playground,
       // and the checker tries them in every order.
       actions: {
@@ -194,7 +199,7 @@ export default defineSpec(
           // Inputs have a type; examples are what the playground offers and the checker tries.
           // Examples are what the playground offers and the checker tries: a list, or a function of the world.
           // Give such functions a return type when they name another actor (see "Types" below).
-          inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"] }) },
+          inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"], accepts: "pairing code" }) },
           when: (s) => s.account === null, // offered only while this holds
           sources: ["apps/macos/RemoteAccess.swift#RemoteAccess.link"],
           sends: [Redeem],
@@ -292,6 +297,18 @@ actor, add:
   one to three rows.
 - **`links`** for connections that come and go: sockets, sessions, subscriptions. Only
   live links are drawn prominently.
+- **`look.tokens`** for things a person would carry from one node to another: a pairing
+  code shown on a phone, a link to share, a file to upload. Each is `{ kind, value, label? }`,
+  and it floats beside the node. Give the receiving action's input `accepts: kind`, as in
+  `spec.defineInput(String, { examples, accepts: "pairing code" })`. Dragging the token onto
+  that node then runs the action with it. This is the most memorable way to show a
+  hand-off between actors.
+- **`row`** on a link: the label of the target's row it ends at. With it, a Mac's socket
+  meets that Mac's line in the relay rather than the relay's icon.
+- **`owner`** on a row: the instance it belongs to, by id or label. The row's group, and
+  the row itself if it has no mood, take that instance's colour; links take their
+  source's. Readers can then follow Alice through the system.
+- **Zone `description`**: a few words beside its name, such as "sign in with Access".
 - **`say`** on the steps a reader cares about. It is the sentence the timeline and the
   speech bubbles show, such as "Made code 19YP for alice, valid 10 minutes". Without it,
   they show the `description`.
