@@ -1,0 +1,9 @@
+{
+  "statement": "Publishing dist/Axo.app never exposes a partially copied bundle or follows a symlinked destination: an existing directory is exchanged atomically so the previous bundle remains available for rollback, and a new destination is created exclusively to reject a concurrent replacement.",
+  "enforcement": ["runtime"],
+  "consequence": "A failed or concurrent package operation must not leave a partially installed app or overwrite an unexpected filesystem target.",
+  "enforcedAt": [
+    { "trigger": "The validated staged app is moved to dist/Axo.app", "frames": [ { "symbol": "renameatx_np(RENAME_SWAP / RENAME_EXCL)", "anchor": "scripts/replace-app.swift" } ] }
+  ],
+  "anchors": ["scripts/replace-app.swift", "scripts/build-mac.sh"]
+}

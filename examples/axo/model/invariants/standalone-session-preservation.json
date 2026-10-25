@@ -1,0 +1,7 @@
+{
+  "statement":"Axod maintains exactly one open standalone (home-directory, no-workspace) Session independently of Workspace Sessions. Closing its final Session or final shell archives that record and creates a fresh standalone replacement rather than leaving the catalog without a home Session.",
+  "enforcement":["runtime"],
+  "consequence":"Without a standalone Session, the app loses the default place for ordinary terminal sessions and the session catalog may become unusable after closing its last entry.",
+  "enforcedAt":[{"trigger":"Axod closes a standalone Session or its final shell","frames":[{"symbol":"session close and replacement lifecycle","anchor":"crates/axo-server/src/session.rs"}]}],
+  "anchors":["crates/axo-server/src/session.rs", "crates/axod/tests/rpc.rs"]
+}

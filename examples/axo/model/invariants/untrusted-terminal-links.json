@@ -1,0 +1,8 @@
+{
+  "statement":"Terminal-provided OSC 8 and unknown-kind links are not dispatched directly: malformed, deceptive-character, inaccessible and executable local targets are denied, well-understood HTTP(S)/mailto and safe local files may open, and custom schemes require user confirmation. The alert displays normalized/escaped target text and Cancel is the default.",
+  "enforcement":["runtime"],
+  "consequence":"A terminal-produced link could otherwise dispatch to a registered application or open an executable/local target without the user seeing the effective destination.",
+  "enforcedAt":[{"trigger":"libghostty issues an open-URL action","frames":[{"symbol":"GhosttyRuntime.handleAction","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Actions.swift"},{"symbol":"TerminalLinkPolicy.open","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/TerminalLinks.swift"},{"symbol":"UntrustedURL.decision","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURL.swift"},{"symbol":"UntrustedURLAlert.presentConfirmation / presentBlock","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURLAlert.swift"}]}],
+  "tests":["apple/AxoMac/Tests/AxoMacTests/UntrustedURLTests.swift"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Terminal/TerminalLinks.swift", "apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURL.swift", "apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURLAlert.swift"]
+}

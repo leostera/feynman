@@ -1,0 +1,7 @@
+{
+  "subject":"One newline-delimited Pi bridge record may not exceed the maximum transport record size.",
+  "value":"8 MiB",
+  "kind":"size",
+  "about":["actors/axo-pi-bridge"],
+  "anchors":["crates/axo-pi/src/bridge.rs#MAX_RECORD_BYTES"]
+}

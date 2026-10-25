@@ -1,0 +1,7 @@
+{
+  "statement":"Inline session and workspace renames must contain a non-empty, trimmed name of at most 80 UTF-16 code units; invalid drafts remain open and are not sent to the daemon.",
+  "enforcement":["runtime"],
+  "consequence":"Unbounded or empty names could violate the server's naming contract and create inaccessible or confusing sidebar entries.",
+  "enforcedAt":[{"trigger":"The user commits a sidebar rename","frames":[{"symbol":"WorkbenchSidebar.commitRename","anchor":"apple/AxoMac/Sources/AxoMac/Workbench/WorkbenchSidebar.swift"}]}],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Workbench/WorkbenchSidebar.swift", "apple/AxoMac/Sources/AxoMac/Workbench/SidebarRenameEditor.swift"]
+}

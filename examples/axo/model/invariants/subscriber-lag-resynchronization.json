@@ -1,0 +1,7 @@
+{
+  "statement":"Subscription publishers never block on a slow subscriber. Queue overflow discards the potentially gapped backlog and emits one lag marker by itself; the consumer must fetch fresh catalog/session state rather than continue as if no event were lost. Catalog-only subscriptions exclude high-volume terminal and Pi streams.",
+  "enforcement":["runtime"],
+  "consequence":"A subscriber could otherwise continue from incomplete state and present a stale or inconsistent session catalog as live.",
+  "enforcedAt":[{"trigger":"A subscriber queue fills or event scopes are selected","frames":[{"symbol":"EventQueue.push / take","anchor":"crates/axo-ipc/src/event_queue.rs"},{"symbol":"Event.scope / EventScope.accepts","anchor":"crates/axo-protocol/src/event.rs"}]}],
+  "anchors":["crates/axo-ipc/src/event_queue.rs", "crates/axo-protocol/src/event.rs"]
+}

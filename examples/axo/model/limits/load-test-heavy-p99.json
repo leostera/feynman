@@ -1,0 +1,7 @@
+{
+  "subject":"Heavy load profile pass threshold for control-plane operation p99 latency.",
+  "value":"10 ms",
+  "kind":"latency",
+  "about":["flows/daemon-load-test"],
+  "anchors":["crates/axod-loadtest/src/main.rs#Profile::named"]
+}

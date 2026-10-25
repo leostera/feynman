@@ -1,0 +1,7 @@
+{
+  "subject":"A main-thread run-loop iteration longer than this budget is considered busy and is signposted for performance inspection.",
+  "value":"16ms (one 60Hz frame)",
+  "kind":"latency",
+  "about":["actors/axo-macos-app"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Support/MainThreadStallMonitor.swift#frameBudget"]
+}

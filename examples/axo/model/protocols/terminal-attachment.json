@@ -1,0 +1,16 @@
+{
+  "summary": "Attach protocol v2 sends replayed and live PTY output over a Unix stream while passing the PTY master descriptor separately for input and terminal control.",
+  "style": "binary",
+  "transport": "Private daemon Unix-domain attachment socket; PTY master transferred with SCM_RIGHTS ancillary data.",
+  "server": "axod-daemon",
+  "clients": ["axo-macos-app", "axod-cli"],
+  "framing": "Client sends positive shell ID as decimal plus newline. Server sends big-endian u64 replay byte length (or u64::MAX plus one-byte rejection code), then one byte '1' with a PTY descriptor via SCM_RIGHTS, then replay bytes followed by live output until EOF. Control stream is output-only; PTY descriptor is input/resize/query only. Attach protocol v2.",
+  "version": "v2",
+  "messages": [
+    {"name":"attach request","kind":"call","from":"axo-macos-app","fields":[{"name":"shellId","type":"positive i64","note":"decimal text terminated by newline"}],"returns":[{"name":"replayLength","type":"big-endian u64","note":"bounded by terminal replay history maximum"},{"name":"ptyMaster","type":"SCM_RIGHTS descriptor"},{"name":"output","type":"raw bytes stream","note":"replay then live bytes until EOF"}]},
+    {"name":"rejection","kind":"record","fields":[{"name":"marker","type":"u64::MAX"},{"name":"code","type":"u8","note":"2 shell not open, 3 other, 4 daemon busy"}]}
+  ],
+  "parsing": [{"summary":"Server accepts only positive decimal shell IDs terminated by newline within a deadline. Client verifies header, bounded replay length, one-byte marker and exactly supplied descriptor ancillary message.","anchors":["crates/axo-pty/src/attach.rs", "apple/AxoRPC/Sources/AxoRPC/TerminalAttachment.swift"]}],
+  "compatibility": "Protocol v2 separates the control output stream from PTY input; deprecated v1 rejection code 1 maps to generic rejection. The terminal-attach helper remains an alternate bridge client.",
+  "anchors": ["crates/axo-pty/src/attach.rs", "apple/AxoRPC/Sources/AxoRPC/TerminalAttachment.swift"]
+}

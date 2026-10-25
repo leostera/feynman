@@ -1,0 +1,8 @@
+{
+  "statement":"The app closes an idle shell directly, but asks for confirmation when Axod reports the foreground shell busy or the busy check fails; a cancelled confirmation cannot later close that shell.",
+  "enforcement":["runtime","test-time"],
+  "consequence":"Closing a shell without confirming could interrupt user work, and a stale asynchronous confirmation could close a pane after the user cancelled it.",
+  "enforcedAt":[{"trigger":"User requests closing a shell","frames":[{"symbol":"TerminalSessionsModel.requestCloseShell / confirmShellClose","anchor":"apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift"}]}],
+  "tests":["apple/AxoMac/Tests/AxoMacTests/TerminalCatalogTests.swift"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift"]
+}

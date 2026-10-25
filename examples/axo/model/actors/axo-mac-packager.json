@@ -1,0 +1,23 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS build host with Bazel and Xcode"
+  },
+  "summary": "The packaging scripts compile the Pi extension and optimized Axo app, bundle axod and Ghostty resources, validate build/platform metadata, sign and verify both executables, and atomically publish dist/Axo.app while preserving the previous bundle for rollback.",
+  "footprint": {
+    "paths": [
+      "scripts/build-mac.sh",
+      "scripts/replace-app.swift",
+      "scripts/workspace-status.sh"
+    ],
+    "files": 3,
+    "lines": 216
+  },
+  "anchors": [
+    "scripts/build-mac.sh",
+    "scripts/replace-app.swift",
+    "scripts/workspace-status.sh",
+    "apple/AxoMac/BUILD.bazel"
+  ]
+}

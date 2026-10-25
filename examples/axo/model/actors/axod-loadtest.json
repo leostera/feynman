@@ -1,0 +1,24 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS test harness and isolated axod subprocess"
+  },
+  "summary": "The test-only axod-loadtest binary launches axod with a temporary HOME and Pi fixture under /tmp, stresses subscribers, terminal output, attach churn and pane lifecycle, and probes control-plane latency while sampling daemon resource peaks; it never targets a user's daemon.",
+  "footprint": {
+    "paths": [
+      "crates/axod-loadtest/src",
+      "crates/axod-loadtest/tests"
+    ],
+    "files": 6,
+    "lines": 1208
+  },
+  "anchors": [
+    "crates/axod-loadtest/src/main.rs",
+    "crates/axod-loadtest/src/client.rs",
+    "crates/axod-loadtest/src/daemon.rs",
+    "crates/axod-loadtest/src/metrics.rs",
+    "crates/axod-loadtest/src/stats.rs",
+    "crates/axod-loadtest/tests/smoke.rs"
+  ]
+}

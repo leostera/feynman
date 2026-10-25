@@ -1,0 +1,7 @@
+{
+  "subject":"Complete terminal replay history and per-subscriber live output backlog are each capped independently.",
+  "value":"8 MiB each",
+  "kind":"size",
+  "about":["actors/axod-daemon", "protocols/terminal-attachment"],
+  "anchors":["crates/axo-pty/src/output.rs#MAX_TERMINAL_OUTPUT_HISTORY_BYTES", "crates/axo-pty/src/output.rs#MAX_SUBSCRIBER_BACKLOG_BYTES"]
+}

@@ -1,9 +1,0 @@
-{
-  "owner": "account-do",
-  "summary": "Per-account SQLite: web sessions (digest only), pairings (verifier only), account_hosts (credential verifier, generation, revoked_at), host session snapshots, relay routes and pending correlations.",
-  "lifetime": "durable",
-  "anchors": [
-    "packages/axo-api-worker/src/auth/account-manager.ts",
-    "packages/axo-api-worker/src/axo-host-relay.ts"
-  ]
-}

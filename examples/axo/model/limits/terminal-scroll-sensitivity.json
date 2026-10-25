@@ -1,0 +1,7 @@
+{
+  "subject":"The persisted terminal scroll-sensitivity multiplier is clamped to the supported range.",
+  "value":"0.1–3.0× (neutral 1.0×)",
+  "kind":"rate",
+  "about":["actors/axo-macos-app"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Terminal/TerminalScrollSensitivity.swift#minimumMultiplier", "apple/AxoMac/Sources/AxoMac/Terminal/TerminalScrollSensitivity.swift#maximumMultiplier"]
+}

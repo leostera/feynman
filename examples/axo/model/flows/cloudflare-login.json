@@ -1,0 +1,11 @@
+{
+  "summary":"Cloudflare OAuth login establishes an account-scoped web session, with encrypted cookies and Durable Object-backed session revocation/profile checks.",
+  "trigger":"Browser opens the cloudflare login route and returns to the OAuth callback.",
+  "steps":[
+    {"actor":"axo-cloud-api","action":"Create state and PKCE verifier, redirect to Cloudflare OAuth, and seal short-lived flow claims in a secure HttpOnly SameSite=Lax cookie."},
+    {"actor":"axo-cloud-api","action":"Validate callback code/state/cookie and expiry; exchange code and retrieve identity profile."},
+    {"actor":"axo-cloud-api","action":"Resolve immutable account ID from issuer-qualified identity, persist profile and HMAC digest of a new expiring session, then issue purpose-separated encrypted session cookie."},
+    {"actor":"axo-cloud-api","action":"For authenticated requests, decrypt claims, enforce expiry and optional Origin/CSRF checks, then verify server-side session is live; logout revokes it and closes matching client relays."}
+  ],
+  "anchors":["packages/axo-api-worker/src/auth/cloudflare.ts", "packages/axo-api-worker/src/auth/crypto.ts", "packages/axo-api-worker/src/auth/account.ts", "packages/axo-api-worker/src/auth/account-manager.ts"]
+}

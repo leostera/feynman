@@ -1,0 +1,7 @@
+{
+  "subject":"At startup, an axod stdout/stderr log above the rotation threshold is moved to one .log.1 backup.",
+  "value":"10 MiB per log",
+  "kind":"size",
+  "about":["actors/axod-daemon"],
+  "anchors":["crates/axod/src/main.rs#MAX_LOG_BYTES"]
+}

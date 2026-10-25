@@ -1,0 +1,7 @@
+{
+  "subject":"Client-reported terminal viewport values are constrained before Axod computes PTY grid sizes.",
+  "value":"area dimensions ≤100,000 points; backing scale ≤8; cell dimensions 1–4,096 pixels; padding per side ≤1,000 points; divider ≤100 points",
+  "kind":"size",
+  "about":["protocols/local-rpc"],
+  "anchors":["crates/axo-protocol/src/viewport.rs#MAX_AREA_POINTS", "crates/axo-protocol/src/viewport.rs#MAX_BACKING_SCALE", "crates/axo-protocol/src/viewport.rs#MAX_CELL_PIXELS", "crates/axo-protocol/src/viewport.rs#MAX_PADDING_POINTS", "crates/axo-protocol/src/viewport.rs#MAX_DIVIDER_POINTS"]
+}

@@ -1,6 +1,0 @@
-{
-  "summary": "Relay status reported to local clients.",
-  "anchors": [
-    "crates/axo-protocol/src/relay.rs#RelayState"
-  ]
-}

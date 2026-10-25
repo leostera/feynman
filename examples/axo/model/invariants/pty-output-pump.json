@@ -1,0 +1,7 @@
+{
+  "statement":"Axod is the sole PTY master reader and starts a permanent output pump at process spawn. The pump drains output even with no client attached, publishes and fans each chunk without blocking on subscribers, and atomically pairs complete replay with later live output. If history exceeds its cap it is discarded rather than replaying a truncated VT stream; a subscriber exceeding its own backlog cap is disconnected and must reattach.",
+  "enforcement":["runtime"],
+  "consequence":"Multiple PTY readers could split or steal output; blocked clients could freeze a process; partial VT replay or a silent gap could corrupt the rendered terminal state.",
+  "enforcedAt":[{"trigger":"Axod starts a PTY process or attaches an output subscriber","frames":[{"symbol":"TerminalOutput.start / run / subscribe","anchor":"crates/axo-pty/src/output.rs"},{"symbol":"PtyProcess.spawn","anchor":"crates/axo-pty/src/process.rs"}]}],
+  "anchors":["crates/axo-pty/src/output.rs", "crates/axo-pty/src/process.rs", "crates/axo-pty/src/attach.rs"]
+}

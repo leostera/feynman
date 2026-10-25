@@ -1,0 +1,6 @@
+{
+  "summary":"The fixture Axo app validates its bundled app-to-daemon RPC and terminal-attach contract against an isolated axod without changing LaunchAgent registration.",
+  "trigger":"The test host is launched with --self-test and AXO_SELF_TEST_SOCKET pointing to an isolated daemon.",
+  "steps":[{"actor":"axo-mac-test-host","action":"Check daemon health and require exactly one initial default Session; create a test Session and verify its PTY shell using the bundled axod terminal-attach helper."},{"actor":"axo-mac-test-host","action":"Create two additional shells, verify the exact pane set and ensure unrelated baseline Sessions remain unchanged."},{"actor":"axo-mac-test-host","action":"Close middle/first shells without archiving the Session, close baseline Sessions independently, then close the last pane and require a new replacement Session."},{"actor":"axo-mac-test-host","action":"Emit AXO_SELF_TEST_OK and exit zero on success; emit a diagnostic marker and exit nonzero on any contract or PTY output failure."}],
+  "anchors":["apple/AxoMac/Sources/AxoMacTestHost/AxoAppEnvironment+TestHost.swift", "apple/AxoMac/Sources/AxoMacTestHost/AxoAppSelfTest.swift"]
+}

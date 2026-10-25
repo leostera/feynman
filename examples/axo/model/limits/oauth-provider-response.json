@@ -1,0 +1,7 @@
+{
+  "subject":"Cloudflare OAuth token and userinfo endpoint responses are bounded before parsing.",
+  "value":"16 KiB",
+  "kind":"size",
+  "about":["actors/axo-cloud-api"],
+  "anchors":["packages/axo-api-worker/src/auth/provider.ts#boundedJson"]
+}

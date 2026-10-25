@@ -1,0 +1,7 @@
+{
+  "subject":"Minimum interval between successive reattachment attempts for one shell surface.",
+  "value":"2 seconds",
+  "kind":"interval",
+  "about":["actors/axo-macos-app"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Terminal/Surface/ReattachThrottle.swift#minimumInterval"]
+}

@@ -1,0 +1,7 @@
+{
+  "subject":"A configured shell/agent command line must be at most 4,096 bytes and contain no more than 128 arguments.",
+  "value":"4,096 bytes; 128 arguments",
+  "kind":"size",
+  "about":["actors/axod-daemon"],
+  "anchors":["crates/axo-pty/src/command.rs#MAX_COMMAND_LINE_BYTES", "crates/axo-pty/src/command.rs#MAX_COMMAND_ARGUMENTS"]
+}

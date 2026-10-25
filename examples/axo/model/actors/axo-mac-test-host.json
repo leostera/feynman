@@ -1,0 +1,23 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS test host app compiled from AxoMac with fixture-only launch modes"
+  },
+  "summary": "The dedicated test-host executable runs either a file-driven UI-test fixture against an isolated daemon or an app-to-daemon self-test; these automation and exit paths are absent from the shipped app.",
+  "footprint": {
+    "paths": [
+      "apple/AxoMac/Sources/AxoMacTestHost",
+      "apple/AxoMac/run_visual_ui_test.sh"
+    ],
+    "files": 4,
+    "lines": 915
+  },
+  "anchors": [
+    "apple/AxoMac/Sources/AxoMacTestHost/AxoAppEnvironment+TestHost.swift",
+    "apple/AxoMac/Sources/AxoMacTestHost/AxoAppSelfTest.swift",
+    "apple/AxoMac/Sources/AxoMacTestHost/TerminalUITestAutomation.swift",
+    "apple/AxoMac/BUILD.bazel",
+    "apple/AxoMac/run_visual_ui_test.sh"
+  ]
+}

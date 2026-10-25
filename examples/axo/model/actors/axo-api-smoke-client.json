@@ -1,0 +1,18 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "Node.js developer smoke-test client"
+  },
+  "summary": "A developer-only client loads an owner-only Access assertion, discovers a legacy machine catalog by default and performs read-only runtime inspection only for an explicitly selected online machine. Approved-start mutation additionally requires an explicit profile; failures after dispatch are reported as unknown outcome and are never retried automatically.",
+  "footprint": {
+    "paths": [
+      "packages/axo-api-worker/scripts"
+    ],
+    "files": 1,
+    "lines": 162
+  },
+  "anchors": [
+    "packages/axo-api-worker/scripts/dummy-client.ts"
+  ]
+}

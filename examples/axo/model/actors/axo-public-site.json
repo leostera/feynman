@@ -1,0 +1,27 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "cloud",
+    "provider": "Cloudflare",
+    "platform": "Workers Static Assets and API Worker"
+  },
+  "summary": "The unified public site serves the browser SPA and routes only account/auth API paths to the Worker; remaining API paths fail closed, while non-API paths use SPA static assets. Durable Object exports retain account, identity, pairing, session history, host directory and host relay state.",
+  "footprint": {
+    "paths": [
+      "sites/axo.leostera.dev/src",
+      "sites/axo.leostera.dev/cloudflare.config.ts",
+      "sites/axo.leostera.dev/vite.config.ts",
+      "sites/axo.leostera.dev/index.html"
+    ],
+    "files": 5,
+    "lines": 101
+  },
+  "anchors": [
+    "sites/axo.leostera.dev/src/index.ts",
+    "sites/axo.leostera.dev/src/main.tsx",
+    "sites/axo.leostera.dev/cloudflare.config.ts",
+    "sites/axo.leostera.dev/tests/deployment.test.mjs",
+    "sites/axo.leostera.dev/vite.config.ts",
+    "sites/axo.leostera.dev/index.html"
+  ]
+}

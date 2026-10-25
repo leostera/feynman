@@ -1,0 +1,6 @@
+{
+  "summary":"A developer smoke client safely discovers remote machines and optionally performs an explicit read or approved-start mutation without automatic retries.",
+  "trigger":"Developer runs the Worker smoke script with an HTTPS API base URL and private client credential file.",
+  "steps":[{"actor":"axo-api-smoke-client","action":"Require an absolute, private, bounded owner-only credential file; validate HTTPS base URL (HTTP only with explicit loopback allowance), and submit Access-authenticated machine discovery with redirects disabled and a 10-second deadline."},{"actor":"axo-api-smoke-client","action":"Print validated discovery; default invocation exits without mutations. Optional read or start requires an explicit machine that is online with a host generation."},{"actor":"axo-api-smoke-client","action":"For approved start, require explicit profile, generate command and target IDs, log complete non-secret intent before dispatch, then validate result. On failure, distinguish pre-mutation from unknown post-attempt outcome and never retry automatically."}],
+  "anchors":["packages/axo-api-worker/scripts/dummy-client.ts", "packages/axo-api-worker/testing/access-headers.ts"]
+}

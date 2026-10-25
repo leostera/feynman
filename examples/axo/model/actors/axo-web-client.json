@@ -1,0 +1,27 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "browser",
+    "platform": "Browser SPA"
+  },
+  "summary": "The browser client discovers account hosts and session metadata over credentialed HTTPS, subscribes to one host generation over the relay, renders live terminal output and agent history, and sends typed remote session/input/resize controls only while the relay is active.",
+  "footprint": {
+    "paths": [
+      "packages/axo-web-app/src",
+      "packages/axo-app/src"
+    ],
+    "files": 9,
+    "lines": 2075
+  },
+  "anchors": [
+    "packages/axo-web-app/src/remote-terminal-app.tsx",
+    "packages/axo-web-app/src/terminal-pane.tsx",
+    "packages/axo-web-app/src/cloudflare-sign-in-app.tsx",
+    "packages/axo-app/src/index.ts",
+    "packages/axo-web-app/src/main.tsx",
+    "packages/axo-web-app/src/landing-page.tsx",
+    "packages/axo-web-app/src/pi-history-pane.tsx",
+    "packages/axo-web-app/test/browser.test.mjs",
+    "packages/axo-app/test/remote-api.test.mjs"
+  ]
+}

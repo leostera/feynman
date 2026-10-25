@@ -1,0 +1,11 @@
+{
+  "summary": "When enabled, the app retries recovery of unavailable Pi panes with one task per shell; Axod owns the actual idle-only, non-forcing recovery and result reconciliation.",
+  "trigger": "Session snapshots show an unavailable Pi pane and automatic recovery preference is enabled.",
+  "steps": [
+    {"actor":"axo-macos-app","action":"Schedule at most one retry loop per unavailable Pi shell and stop it when preference is disabled, shell disappears, or shell recovers."},
+    {"actor":"axo-macos-app","action":"Negotiate support and request the auto-restart RPC; unsupported daemon retries after 30 seconds and transient errors use exponential backoff up to 30 seconds."},
+    {"actor":"axod-daemon","action":"Recover the unavailable pane only under automatic idle-only, non-forcing takeover policy; verify pane/runtime reservation before committing recovered process."},
+    {"actor":"axo-macos-app","action":"Validate returned session identity and shell availability, then update the local catalog."}
+  ],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Sessions/AutomaticPiRestarter.swift", "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift", "crates/axo-server/src/session.rs", "apple/AxoRPC/Sources/AxoRPC/UnixSocketRPC.swift"]
+}

@@ -1,0 +1,7 @@
+{
+  "subject":"A parsed terminal layout is bounded in recursive depth and total nodes.",
+  "value":"depth ≤64; nodes ≤255",
+  "kind":"depth",
+  "about":["protocols/local-rpc"],
+  "anchors":["crates/axo-protocol/src/layout.rs#MAX_LAYOUT_DEPTH", "crates/axo-protocol/src/layout.rs#MAX_LAYOUT_NODES"]
+}

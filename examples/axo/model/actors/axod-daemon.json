@@ -1,0 +1,38 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS per-user LaunchAgent / Rust process"
+  },
+  "summary": "The long-running daemon owns the local Unix-domain JSON-RPC endpoint, session lifecycle, shell PTYs and optional remote relay; it persists session metadata while runtime terminal output history is memory-only.",
+  "footprint": {
+    "paths": [
+      "crates/axo-server/src",
+      "crates/axo-relay/src",
+      "crates/axo-pty/src"
+    ],
+    "files": 14,
+    "lines": 13561
+  },
+  "anchors": [
+    "crates/axo-server/src/lib.rs",
+    "crates/axo-server/src/session.rs",
+    "crates/axo-server/src/panes.rs",
+    "crates/axo-server/src/workspace_access.rs",
+    "crates/axo-relay/src/credential.rs",
+    "crates/axo-relay/src/host.rs",
+    "crates/axo-relay/src/lib.rs",
+    "crates/axo-relay/src/pairing.rs",
+    "crates/axo-relay/src/relay.rs",
+    "crates/axo-server/build.rs",
+    "crates/axo-pty/src/lib.rs",
+    "crates/axo-pty/src/command.rs",
+    "crates/axo-pty/src/output.rs",
+    "crates/axo-pty/src/process.rs",
+    "crates/axod/src/main.rs",
+    "packages/axo-api-worker/tests/axod-relay.test.ts",
+    "packages/axo-api-worker/tests/axod.test.ts",
+    "packages/axo-api-worker/tests/local.test.ts",
+    "crates/axod/tests/rpc.rs"
+  ]
+}

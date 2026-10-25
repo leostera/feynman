@@ -1,35 +1,32 @@
 {
-  "system": "axo",
-  "summary": "An agentic terminal harness: a native macOS app and a browser Workbench are clients of a per-user Rust daemon (axod) that owns PTYs, Pi agent processes and the session catalog; a Cloudflare Worker relays remote clients to linked hosts.",
+  "system": "Axo",
+  "summary": "Axo is a macOS terminal workspace for local agentic sessions, built around a SwiftUI application and a persistent Rust daemon that owns shell PTYs and session state, with optional remote access through a Cloudflare relay.",
   "source": {
-    "repository": "../axo",
-    "commit": "66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+    "repository": ".",
+    "commit": "4b820700fafce7377352a0a1bcfe6d425279ae5d",
+    "committedAt": "2026-10-25T03:16:48Z",
+    "url": "https://github.com/leostera/axo",
+    "commitUrl": "https://github.com/leostera/axo/commit/4b820700fafce7377352a0a1bcfe6d425279ae5d",
+    "fileUrl": "https://github.com/leostera/axo/blob/4b820700fafce7377352a0a1bcfe6d425279ae5d/{path}",
+    "main": {
+      "ref": "main",
+      "commit": "fc030931bd0ccf39723362c7cbe326d2a8659987",
+      "ahead": 0,
+      "behind": 8,
+      "checkedAt": "2026-10-25T04:04:02.519Z"
+    },
     "footprint": {
-      "files": 374,
-      "lines": 68323,
+      "files": 509,
+      "lines": 87766,
       "excludes": [
         "vendor/",
         "third_party/",
-        ".agents/",
         "*.lock",
         "package-lock.json",
         "*.lock.json"
       ]
-    },
-    "committedAt": "2026-10-25T01:08:44Z",
-    "url": "https://github.com/leostera/axo",
-    "commitUrl": "https://github.com/leostera/axo/commit/66d8d86b7e90fc1478d56cf948a993a16692f0e7",
-    "fileUrl": "https://github.com/leostera/axo/blob/66d8d86b7e90fc1478d56cf948a993a16692f0e7/{path}",
-    "main": {
-      "ref": "main",
-      "commit": "ca8692df9728b5e1cf031b212812485bca2f6ab2",
-      "ahead": 0,
-      "behind": 4,
-      "checkedAt": "2026-10-25T02:43:38.228Z"
     }
   },
-  "extractedBy": "agent",
-  "extraction": "bootstrap",
-  "coverage": "First pass; see coverage/ for the files reviewed. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only.",
-  "extractedAt": "2026-10-25T01:37:00Z"
+  "extractedBy": "feynman",
+  "extraction": "bootstrap"
 }

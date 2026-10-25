@@ -1,0 +1,8 @@
+{
+  "statement":"Clipboard reads and terminal-originated writes requiring Ghostty consent do not complete until the user approves the exact reviewed text; missing window, unsupported MIME/shape, or denial does not grant access. The approved payload is copied before the asynchronous sheet and the clipboard is not reread afterward.",
+  "enforcement":["runtime"],
+  "consequence":"Without this boundary, terminal programs could silently read private clipboard text or overwrite clipboard contents, or the user could approve different content than the data later sent.",
+  "enforcedAt":[{"trigger":"Ghostty requests a clipboard read/write callback","frames":[{"symbol":"GhosttyRuntime.makeRuntimeConfig","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Callbacks.swift"},{"symbol":"GhosttyRuntime.confirmClipboardRead / writeClipboard","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Clipboard.swift"},{"symbol":"TerminalClipboardConsent.requestAccess","anchor":"apple/AxoMac/Sources/AxoMac/Terminal/TerminalClipboard.swift"}]}],
+  "tests":["apple/AxoMac/Tests/AxoMacTests/TerminalClipboardTests.swift", "apple/AxoMac/Tests/AxoVisualUITests/TerminalClipboardUITests.swift"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Clipboard.swift", "apple/AxoMac/Sources/AxoMac/Terminal/TerminalClipboard.swift"]
+}

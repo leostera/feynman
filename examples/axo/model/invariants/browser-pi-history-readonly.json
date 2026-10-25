@@ -1,0 +1,7 @@
+{
+  "statement":"The browser presents Pi history as a read-only, private conversation projection: only completed user/assistant message events become messages; plain text and image placeholders are rendered, while non-message/tool events are omitted except an assistant tool-name summary when no text exists. Remote terminal control remains separate from this history pane.",
+  "enforcement":["runtime"],
+  "consequence":"Rendering arbitrary event payloads or suggesting the browser can continue an agent turn would misrepresent the durable transcript and its control boundary.",
+  "enforcedAt":[{"trigger":"The browser maps persisted/live Pi events to visible conversation history","frames":[{"symbol":"conversationMessageFromPiEvent","anchor":"packages/axo-web-app/src/pi-history-pane.tsx"},{"symbol":"PiHistoryPane","anchor":"packages/axo-web-app/src/pi-history-pane.tsx"}]}],
+  "anchors":["packages/axo-web-app/src/pi-history-pane.tsx", "packages/axo-web-app/src/remote-terminal-app.tsx"]
+}

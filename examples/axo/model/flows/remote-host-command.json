@@ -1,0 +1,11 @@
+{
+  "summary": "An authenticated remote client sends a host-targeted operation through Cloudflare to a currently registered daemon; the relay tracks the hop and returns a validated outcome or an explicit unknown-outcome error for reconciliation.",
+  "trigger": "An authenticated client WebSocket calls a host remote method after protocol negotiation.",
+  "steps": [
+    { "actor": "axo-cloud-api", "action": "Validate identity, expiry, WebSocket origin, host admission and connection capacity before routing to the host relay." },
+    { "actor": "axo-cloud-api", "action": "Parse the method and target generation, ensure the registered host route is active, enforce pending-operation bounds, then persist a correlation and deadline before forwarding the RPC hop." },
+    { "actor": "axo-cloud-api", "action": "Host daemon performs the remote operation against its local session manager and replies using the relay hop ID." },
+    { "actor": "axo-cloud-api", "action": "Validate the daemon result schema and generation, map the response to the original client request, or return an unknown-outcome response directing the client to reconcile." }
+  ],
+  "anchors": ["packages/axo-api-worker/src/http/router.ts", "packages/axo-api-worker/src/axo-host-relay.ts", "schemas/axo.leostera.dev/v1/host-relay.schema.json"]
+}

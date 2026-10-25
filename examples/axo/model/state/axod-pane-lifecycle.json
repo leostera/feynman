@@ -1,0 +1,6 @@
+{
+  "owner":"axod-daemon",
+  "summary":"One catalog entry per open pane is either Running(process/runtime identity) or Unavailable(Pi pane metadata/recovery state). Recovery moves Idle to InProgress(unique RuntimeId), then commits to Running only if the same session/pane reservation is current; failure releases it, while close/shutdown/removal invalidates stale work. Session queries include running and unavailable panes exactly once.",
+  "lifetime":"Runtime pane state is rebuilt from durable open session/shell rows at daemon startup. Runtime IDs and recovery reservations are process-local; persisted Pi identity/transcript references survive restart.",
+  "anchors":["crates/axo-server/src/panes.rs", "crates/axo-server/src/session.rs"]
+}

@@ -1,0 +1,16 @@
+{
+  "summary": "Zod contracts for generation-scoped remote session state, desired/observed pane graphs, Pi chat commands/history, and revisioned mutations.",
+  "style": "json-rpc",
+  "transport": "Shared TypeScript contract definitions imported by the API and client packages; this file defines the JSON parameter/result shapes, while transport routing is handled separately.",
+  "version": "State result envelope declares schemaVersion 5; revisions, hostGeneration and storeGeneration scope observed state and mutations.",
+  "messages": [
+    {"name":"axo.state.get / workspace.list / session.list / session.get","kind":"call","summary":"Read generation/revision-enveloped desired workspace, session and observed pane data using bounded cursors."},
+    {"name":"axo.state.chat.command.submit / command.get","kind":"call","summary":"Submit or read send/steer/cancel/answer commands bound to runtime, host, store and revision identities."},
+    {"name":"axo.state.chat.history / tool.get","kind":"call","summary":"Cursor-based live/stopped history and bounded tool-output chunks with head-digest/runtime checks."},
+    {"name":"axo.state.workspace.create / session.create / rename / lifecycle.set / pane.add / pane.remove / session.delete","kind":"call","summary":"Revisioned mutations carry command IDs and accepted graphs/receipts; layout and graph invariants constrain pane identities and workspace/session composition."}
+  ],
+  "parsing": [{"summary":"Zod strict schemas reject unknown fields and enforce UUIDs, generations, revision order, graph membership, pane-role constraints, layout depth/node bounds, command payload sizes, and history cursor identity.","anchors":["packages/axo-api/src/state-contracts.ts"]}],
+  "definitions": ["packages/axo-api/src/state-contracts.ts", "packages/axo-api/src/index.ts"],
+  "compatibility": "The result envelope fixes schemaVersion 5. Host generation and store generation fence stale requests; revisions and commandId support conditional and reconcilable mutations.",
+  "anchors": ["packages/axo-api/src/state-contracts.ts", "packages/axo-api/scripts/check-schemas.mjs", "packages/axo-api/fixtures/envelopes.json"]
+}

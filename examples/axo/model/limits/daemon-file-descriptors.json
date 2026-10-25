@@ -1,0 +1,7 @@
+{
+  "subject":"Axod raises the soft RLIMIT_NOFILE target to support PTY panes, attachments and client connections, capped by the system hard limit.",
+  "value":"10,240 descriptors",
+  "kind":"count",
+  "about":["actors/axod-daemon"],
+  "anchors":["crates/axod/src/main.rs#raise_open_file_limit"]
+}

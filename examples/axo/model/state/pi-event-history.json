@@ -1,0 +1,6 @@
+{
+  "owner": "axo-cloud-api",
+  "summary": "Per account/host/session Durable Object stores an immutable identity binding and accepted Pi event records keyed by host generation, Pi session, stream and sequence. Duplicate identical events are idempotently acknowledged; conflicting duplicates are rejected. Event pages use increasing row IDs and bounded limits.",
+  "lifetime": "Durable SQLite history per account-private session; no deletion/retention expiry is defined in this implementation. Host generation is retained as part of event identity.",
+  "anchors": ["packages/axo-api-worker/src/session-history.ts", "packages/axo-api/src/pi-history.ts", "packages/axo-web-app/src/pi-history-pane.tsx", "packages/axo-api-worker/tests/session-history.test.ts", "packages/axo-api-worker/tests/session-events.test.ts"]
+}

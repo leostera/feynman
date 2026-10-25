@@ -1,0 +1,40 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "Pi process and Axod bridge workers over per-session Unix sockets"
+  },
+  "summary": "Axo's Rust bridge launches Pi with a scoped transcript lock, secret bridge token and session/pane identity; Axod authenticates and verifies that identity before consuming ordered Pi lifecycle events or requesting shutdown and transcript takeover.",
+  "footprint": {
+    "paths": [
+      "crates/axo-pi/src",
+      "packages/pi-axo/src"
+    ],
+    "files": 18,
+    "lines": 3969
+  },
+  "anchors": [
+    "crates/axo-pi/src/lib.rs",
+    "crates/axo-pi/src/launch.rs",
+    "crates/axo-pi/src/worker.rs",
+    "crates/axo-pi/src/connection.rs",
+    "crates/axo-pi/src/protocol.rs",
+    "crates/axo-pi/src/takeover.rs",
+    "crates/axo-pi/src/lock.rs",
+    "crates/axo-pi/src/activity.rs",
+    "crates/axo-pi/src/bridge.rs",
+    "crates/axo-pi/src/command.rs",
+    "crates/axo-pi/src/process_inspection.rs",
+    "crates/axo-pi/src/socket.rs",
+    "packages/pi-axo/src/bridge-server.ts",
+    "packages/pi-axo/src/extension.ts",
+    "packages/pi-axo/src/index.ts",
+    "packages/pi-axo/src/protocol.ts",
+    "packages/pi-axo/src/title.ts",
+    "packages/pi-axo/test/bridge-server.test.ts",
+    "packages/pi-axo/test/config.test.ts",
+    "packages/pi-axo/test/extension.test.ts",
+    "packages/pi-axo/test/protocol.test.ts",
+    "packages/pi-axo/test/title.test.ts"
+  ]
+}

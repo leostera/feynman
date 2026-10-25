@@ -1,0 +1,18 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "macOS command-line process"
+  },
+  "summary": "The axod executable starts the daemon or attaches a terminal's standard input and output to a daemon-owned PTY.",
+  "footprint": {
+    "paths": [
+      "crates/axod/src/main.rs"
+    ],
+    "files": 1,
+    "lines": 445
+  },
+  "anchors": [
+    "crates/axod/src/main.rs"
+  ]
+}

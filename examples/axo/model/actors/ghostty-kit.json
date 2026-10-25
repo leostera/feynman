@@ -1,0 +1,6 @@
+{
+  "provenance": "third-party",
+  "runsOn": { "location": "local", "platform": "embedded libghostty / GhosttyKit on macOS" },
+  "summary": "GhosttyKit renders terminal surfaces; Axo's pinned build patch allows embedded surfaces to adopt externally owned terminal I/O descriptors instead of launching a subprocess or owning the shell PTY lifecycle.",
+  "anchors": ["ghostty_repository.bzl", "third_party/ghostty/0001-external-terminal-io.patch", "third_party/ghostty/README.md", "third_party/ghostty/BUILD.bazel"]
+}

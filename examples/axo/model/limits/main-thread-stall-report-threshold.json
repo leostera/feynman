@@ -1,0 +1,7 @@
+{
+  "subject":"Busy run-loop iterations above this duration also emit a user-visible latency warning log.",
+  "value":"50ms",
+  "kind":"latency",
+  "about":["actors/axo-macos-app"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Support/MainThreadStallMonitor.swift#reportThreshold"]
+}

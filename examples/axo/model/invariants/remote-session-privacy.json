@@ -1,0 +1,7 @@
+{
+  "statement":"Cloud host session snapshots expose only terminal shell identifiers plus presentation metadata. They omit Pi pane records, process IDs, PTY device names, local working directories, attachment paths and transcript paths; the layout is pruned to terminal panes.",
+  "enforcement":["runtime"],
+  "consequence":"Publishing local host paths or process/device identifiers would leak machine details and could expose the agent pane as a remotely controllable terminal.",
+  "enforcedAt":[{"trigger":"Axod publishes a session snapshot to the host relay","frames":[{"symbol":"RemoteSessionSnapshot.from_record","anchor":"crates/axo-protocol/src/model.rs"}]}],
+  "anchors":["crates/axo-protocol/src/model.rs", "packages/axo-api/src/v1.ts"]
+}

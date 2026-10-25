@@ -1,0 +1,2006 @@
+{
+  "commit": "4b820700fafce7377352a0a1bcfe6d425279ae5d",
+  "summary": "Reviewed root/crate build metadata and modeled the staged signed-app packaging and atomic publication workflow.",
+  "files": [
+    {
+      "path": ".agents/skills/axo-macos-native-apps/SKILL.md",
+      "outcome": "no-behaviour",
+      "note": "Contributor guidance; documents Axo architecture but does not execute at runtime."
+    },
+    {
+      "path": ".agents/skills/axo-macos-packaging/SKILL.md",
+      "outcome": "no-behaviour",
+      "note": "Packaging instructions only; executable packaging implementation is under scripts/."
+    },
+    {
+      "path": ".agents/skills/axo-pi-title-and-attention/SKILL.md",
+      "outcome": "no-behaviour",
+      "note": "Contributor guidance; implementation lives in app and Pi extension source."
+    },
+    {
+      "path": ".agents/skills/SOURCES.md",
+      "outcome": "no-behaviour",
+      "note": "Provenance and local compatibility documentation for project-local guidance packs."
+    },
+    {
+      "path": ".agents/skills/swift-concurrency-expert/",
+      "outcome": "vendored",
+      "note": "Upstream Dimillian/Skills snapshot 05ba982bfeb0d77d3c97d4542b0ee15034d05f84, with local compatibility guidance as documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-expert-skill/",
+      "outcome": "vendored",
+      "note": "Upstream AvdLee/SwiftUI-Agent-Skill snapshot 204dba7c67256a8b707ee3fbc5759a824191974f, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-liquid-glass/",
+      "outcome": "vendored",
+      "note": "Upstream Dimillian/Skills snapshot 05ba982bfeb0d77d3c97d4542b0ee15034d05f84, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-performance-audit/",
+      "outcome": "vendored",
+      "note": "Upstream Dimillian/Skills snapshot 05ba982bfeb0d77d3c97d4542b0ee15034d05f84, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-pro/",
+      "outcome": "vendored",
+      "note": "Upstream twostraws/SwiftUI-Agent-Skill snapshot f9800713b24580bc444931949aad4519128605e8, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-ui-patterns/",
+      "outcome": "vendored",
+      "note": "Upstream Dimillian/Skills snapshot 05ba982bfeb0d77d3c97d4542b0ee15034d05f84, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".agents/skills/swiftui-view-refactor/",
+      "outcome": "vendored",
+      "note": "Upstream Dimillian/Skills snapshot 05ba982bfeb0d77d3c97d4542b0ee15034d05f84, local compatibility guidance documented in SOURCES.md."
+    },
+    {
+      "path": ".bazelignore",
+      "outcome": "no-behaviour",
+      "note": "Bazel ignored-directory configuration."
+    },
+    {
+      "path": ".bazelrc",
+      "outcome": "no-behaviour",
+      "note": "Build/test options and local RC import only."
+    },
+    {
+      "path": ".bazelversion",
+      "outcome": "no-behaviour",
+      "note": "Pins Bazel tooling version."
+    },
+    {
+      "path": ".gitignore",
+      "outcome": "no-behaviour",
+      "note": "Version-control ignore rules only."
+    },
+    {
+      "path": "apple/AxoDaemonManager/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Defines Swift library/test build targets."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Package.resolved",
+      "outcome": "generated",
+      "note": "Swift Package Manager resolution output from Package.swift."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift",
+      "outcome": "modelled",
+      "note": "App's launch-agent lifecycle and daemon build/health policy."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonPreferenceKey.swift",
+      "outcome": "modelled",
+      "note": "Persistent user-default flags and saved LaunchAgent fingerprint used by registration/restart policy."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/RegistrationDecision.swift",
+      "outcome": "modelled",
+      "note": "Selection logic for automatic service registration versus user-disabled/approval states."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/RestartMethod.swift",
+      "outcome": "modelled",
+      "note": "LaunchAgent definition comparison drives kickstart versus re-registration."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Tests/AxoDaemonManagerTests/RegistrationDecisionTests.swift",
+      "outcome": "modelled",
+      "note": "Exercises first-registration, explicit disabled and approval/enabled status decisions."
+    },
+    {
+      "path": "apple/AxoDaemonManager/Tests/AxoDaemonManagerTests/RestartMethodTests.swift",
+      "outcome": "modelled",
+      "note": "Exercises same-definition in-place restart versus re-registration and plist fingerprinting."
+    },
+    {
+      "path": "apple/AxoMac/AxoUITest-Info.plist",
+      "outcome": "no-behaviour",
+      "note": "Fixture app bundle metadata; executable/test-host behavior is anchored to Swift source."
+    },
+    {
+      "path": "apple/AxoMac/BUILD.bazel",
+      "outcome": "modelled",
+      "note": "Defines shared app/test-host targets, excludes live UI E2E tests from unit lane, and wires isolated UI test fixtures."
+    },
+    {
+      "path": "apple/AxoMac/Info.plist",
+      "outcome": "no-behaviour",
+      "note": "Shipped app bundle metadata, including URL scheme declaration; app URL routing is modeled from Swift source."
+    },
+    {
+      "path": "apple/AxoMac/Resources/dev.leostera.axo.axod.plist",
+      "outcome": "modelled",
+      "note": "Per-user bundled LaunchAgent runs at login and keepalive, injects relay URL and PATH, uses Interactive process priority and five-second throttle."
+    },
+    {
+      "path": "apple/AxoMac/run_visual_ui_test.sh",
+      "outcome": "modelled",
+      "note": "Runs UI tests only after checking no Axo frontend exists, provisions isolated daemon/home/temp roots per case, and cleans up with bounded process handling."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/AxoApp.swift",
+      "outcome": "modelled",
+      "note": "Native app startup, scenes, user actions, environment preparation and daemon persistence behavior."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/AxoAppEnvironment.swift",
+      "outcome": "modelled",
+      "note": "Production launch environment connects session model and daemon health checks, while allowing isolated test entry modes."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/AxoPreferenceKey.swift",
+      "outcome": "modelled",
+      "note": "Names the app's persistent user preference keys."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/AxoURLSchemeDelegate.swift",
+      "outcome": "modelled",
+      "note": "Delivers incoming app URLs to the shared pairing link router."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/AxoWorkbench.swift",
+      "outcome": "modelled",
+      "note": "App-process coordinator starts catalog synchronization and reconciles Ghostty surfaces/focus against daemon state."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/ObservationLoop.swift",
+      "outcome": "modelled",
+      "note": "Observation-based loops deliver changed values later on the main actor and skip equal values."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/PairingLinkRouter.swift",
+      "outcome": "modelled",
+      "note": "Validated pairing links become app-wide pending pairing state and route revision."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/App/SleepPreventionController.swift",
+      "outcome": "modelled",
+      "note": "Persists user preference and starts/releases an OS idle-sleep-prevention activity."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/AutomaticPiRestarter.swift",
+      "outcome": "modelled",
+      "note": "Per-shell automatic recovery retry loops and backoff."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/AxodClient.swift",
+      "outcome": "modelled",
+      "note": "App-side local RPC methods and protocol adapter for daemon session/settings operations."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/SessionCatalog.swift",
+      "outcome": "modelled",
+      "note": "Sorted unique session projection with last record winning, shell lookup and command-result updates."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/SessionNavigation.swift",
+      "outcome": "modelled",
+      "note": "Recent session MRU bound, workspace grouping and successor/wrapping navigation policy."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalCatalogSync.swift",
+      "outcome": "modelled",
+      "note": "Catalog subscription ordering, event application, reconnect/backoff and daemon health recheck trigger."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalLayout.swift",
+      "outcome": "modelled",
+      "note": "Pure split layout algebra, local pending split presentation and persisted layout conversions."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalLayoutWriter.swift",
+      "outcome": "modelled",
+      "note": "Debounced/coalescing layout writes with per-session single-writer behavior and retry."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSession+Replacing.swift",
+      "outcome": "modelled",
+      "note": "Immutable session record replacement preserving daemon-owned fields while updating shell membership."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift",
+      "outcome": "modelled",
+      "note": "Client catalog/projection state, user session/shell commands, non-idempotent split reconciliation and close confirmation behavior."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/ViewportReporter.swift",
+      "outcome": "modelled",
+      "note": "Debounced latest-viewport reports and resend after daemon reconnection."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/WorkbenchSelection.swift",
+      "outcome": "modelled",
+      "note": "Local selection/focus/layout normalization and layout write generation across catalog updates."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/AboutSettingsView.swift",
+      "outcome": "modelled",
+      "note": "Displays app/daemon version, build, commit and daemon status."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/DaemonCommandSettingSection.swift",
+      "outcome": "modelled",
+      "note": "Loads/saves agent and shell command configuration through daemon settings client."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/GeneralSettingsView.swift",
+      "outcome": "modelled",
+      "note": "Exposes bounded scroll sensitivity, sleep prevention, shell command setting and explicit daemon restart confirmation."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/RemoteAccessModel.swift",
+      "outcome": "modelled",
+      "note": "Remote access settings state consumes relay push events and refreshes after user actions/reconnection."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/RemoteAccessSettingsView.swift",
+      "outcome": "modelled",
+      "note": "User interactions for pairing code entry and requesting relay connectivity."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/SettingsView.swift",
+      "outcome": "modelled",
+      "note": "Routes settings sections and exposes theme choice, automatic safe-only Pi recovery preference and agent command configuration."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Support/AxoTrace.swift",
+      "outcome": "modelled",
+      "note": "Provides structured app loggers and latency signpost helpers."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Support/MainThreadStallMonitor.swift",
+      "outcome": "modelled",
+      "note": "Observes main run-loop busy intervals and reports/signposts threshold crossings."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyResourceLocator.swift",
+      "outcome": "modelled",
+      "note": "Prefers installed Ghostty resources only when the installed themes directory exists, otherwise uses bundled resources."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime.swift",
+      "outcome": "modelled",
+      "note": "Owns libghostty runtime/config, surface state, focus, attention, terminal actions and viewport construction."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Actions.swift",
+      "outcome": "modelled",
+      "note": "Dispatches libghostty surface actions including links, clipboard, attention and status."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Callbacks.swift",
+      "outcome": "modelled",
+      "note": "Main-thread-only C callback boundary, wakeup/tick dispatch and surface output end handling."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Clipboard.swift",
+      "outcome": "modelled",
+      "note": "Clipboard callbacks parse plain text, invoke consent and complete Ghostty requests with owned payload copies."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/GhosttyRuntime+Config.swift",
+      "outcome": "modelled",
+      "note": "Loads Ghostty resources/defaults/user config and reports final padding/scrollbar/attention settings."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceHostNSView.swift",
+      "outcome": "modelled",
+      "note": "Owns one terminal surface and its layered scrollbar, untrusted-link hover, status and find overlays; forwards search actions."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceNSView.swift",
+      "outcome": "modelled",
+      "note": "MainActor libghostty surface lifetime, focus/occlusion, callback state, viewport sizing, PTY-grid reporting and find/scroll actions."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceNSView+Keyboard.swift",
+      "outcome": "modelled",
+      "note": "Ghostty keyboard and IME routing, application menu precedence, fallback shortcuts and delayed delivery tracing."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceNSView+Menu.swift",
+      "outcome": "modelled",
+      "note": "Context menu, Services clipboard boundary and accessible visible viewport extraction limited to 64 KiB."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceNSView+Mouse.swift",
+      "outcome": "modelled",
+      "note": "Pointer, scroll, pressure/Quick Look, focus-only click handling, and text/file URL drop input."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttySurfaceNSView+TextInput.swift",
+      "outcome": "modelled",
+      "note": "AppKit text input client for IME marked preedit, committed text delivery and selection geometry."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttyTerminalView.swift",
+      "outcome": "modelled",
+      "note": "Creates Ghostty surface presentation from app/runtime pane context."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/ReattachThrottle.swift",
+      "outcome": "modelled",
+      "note": "Per-shell two-second retry window delays repeated surface reattachment without dropping a live pane."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/TerminalKeyEquivalentPolicy.swift",
+      "outcome": "modelled",
+      "note": "Routes focused terminal shortcuts between Axo menu, Ghostty bindings and AppKit with control-equivalent normalization."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/TerminalPTYSize.swift",
+      "outcome": "modelled",
+      "note": "Clamps PTY grid dimensions, duplicates master descriptor and only issues TIOCSWINSZ when grid changes."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/Surface/TerminalSurfaceConnection.swift",
+      "outcome": "modelled",
+      "note": "Surface connection state values are represented in the embedded surface flow."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalAccessibility.swift",
+      "outcome": "modelled",
+      "note": "Bounds accessibility text, validates UTF-16 selection ranges and maps visible-screen character indices to lines."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalAttention.swift",
+      "outcome": "modelled",
+      "note": "Configurable terminal bell, command completion notifications and OS notification delivery."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalClipboard.swift",
+      "outcome": "modelled",
+      "note": "Clipboard MIME policy and asynchronous user-consent sheet behavior."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalFind.swift",
+      "outcome": "modelled",
+      "note": "Search actions map to Ghostty binding commands; Axo find bar supports immediate query, result count, next/previous and Escape."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalLinks.swift",
+      "outcome": "modelled",
+      "note": "Routes trusted versus terminal-controlled URLs and displays escaped hover targets."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalPointerInput.swift",
+      "outcome": "modelled",
+      "note": "Maps mouse/scroll/pressure policy and restricts context menu, Services, and drag/drop inputs to supported forms."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalScrollbar.swift",
+      "outcome": "modelled",
+      "note": "Native overlay scrollbar maps Ghostty row offsets, routes wheel input to the surface, and updates for focus/occlusion."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalScrollSensitivity.swift",
+      "outcome": "modelled",
+      "note": "Maps the preference to a centered normalized slider and clamps multiplier from 0.1× to 3×."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalSurfaceRegistry.swift",
+      "outcome": "modelled",
+      "note": "Owns surface/view lifetimes, attach/re-attach generation fencing, PTY streams and settled offscreen pane sizing."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalSurfaceStatus.swift",
+      "outcome": "modelled",
+      "note": "Maintains Ghostty-driven status/search/exit/presentation state and non-interactive badge precedence."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/TerminalTextInput.swift",
+      "outcome": "modelled",
+      "note": "Decodes committed surrogate pairs and computes IME text-input geometry."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURL.swift",
+      "outcome": "modelled",
+      "note": "Parses untrusted links, normalizes local paths and rejects unsafe schemes/files/characters."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Terminal/UntrustedURLAlert.swift",
+      "outcome": "modelled",
+      "note": "Defers modal actions, confirms custom target opens and provides block/copy path for denied links."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/SessionSidebarRow.swift",
+      "outcome": "modelled",
+      "note": "Projects session attention/status into accessible row glyphs; bell/command attention overrides catalog status until pane focus clears it."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/SidebarRenameEditor.swift",
+      "outcome": "modelled",
+      "note": "Inline rename UI submits on Enter and cancels on Escape."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneGeometry.swift",
+      "outcome": "modelled",
+      "note": "Computes split ratio clamping and recursive pane geometry shared with on- and offscreen terminal sizing."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneViews.swift",
+      "outcome": "modelled",
+      "note": "Projects pane/pending split states, delays progress indicator, prompts explicit Pi restart and routes split/close actions."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/TerminalSplitView.swift",
+      "outcome": "modelled",
+      "note": "Interactive split divider keeps a minimum pane size and double-click restores equal ratio."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/TerminalWorkbenchView.swift",
+      "outcome": "modelled",
+      "note": "Coordinates selected layout, offscreen sizing and viewport reporting; gates destructive close/archive behind confirmations."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/WindowDragStrip.swift",
+      "outcome": "modelled",
+      "note": "Hidden-titlebar drag strip handles window movement and follows macOS double-click titlebar preference."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/WorkbenchSidebar.swift",
+      "outcome": "modelled",
+      "note": "Workspace/session navigation, collapse state, rename/archive/create operations and sidebar error presentation."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Workbench/WorkspaceCreationSheet.swift",
+      "outcome": "modelled",
+      "note": "Collects a normalized workspace name and folder, scopes bookmark access during create and dismisses on success."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMacMain/AxoMain.swift",
+      "outcome": "modelled",
+      "note": "Shipped executable delegates to the production Axo app entrypoint."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMacTestHost/AxoAppEnvironment+TestHost.swift",
+      "outcome": "modelled",
+      "note": "Build-only fixture launch selection disables daemon startup/window for self-test and requires isolated endpoints for UI-test mode."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMacTestHost/AxoAppSelfTest.swift",
+      "outcome": "modelled",
+      "note": "Exercises RPC-created session/shell lifecycle and terminal-attach resource/output contract, then reports marker/exit status."
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMacTestHost/TerminalUITestAutomation.swift",
+      "outcome": "modelled",
+      "note": "Polls a test control directory and injects validated keyboard/text actions, session selection, refresh and bounded surface waits."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/AgentAutoRestartPreferenceTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies automatic Pi restart defaults off and persists across TerminalSessionsModel instances."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/GhosttyResourceLocatorTests.swift",
+      "outcome": "modelled",
+      "note": "Tests installed resource preference only with themes directory and bundled fallback otherwise."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/LaunchAgentPlistTests.swift",
+      "outcome": "modelled",
+      "note": "Asserts LaunchAgent process priority is Interactive so shell/Pi children are not background-prioritized."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/MainThreadStallMonitorTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies main-run-loop stall observation above frame budget and that stop disables reports."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/ObservationLoopTests.swift",
+      "outcome": "modelled",
+      "note": "Confirms immediate initial delivery, distinct accessed-value updates, and cancellation."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/ObservationTestSupport.swift",
+      "outcome": "modelled",
+      "note": "Provides observable-state change probe used by tests."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/PairingLinkRouterTests.swift",
+      "outcome": "modelled",
+      "note": "Checks canonicalized valid pairing codes and invalid-link nonreplacement behavior."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/PreferenceKeyTests.swift",
+      "outcome": "modelled",
+      "note": "Ensures app and daemon preference keys are globally unique."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/ReattachThrottleTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies same-shell retry delay, independent shell throttles and reset behavior."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/SessionCatalogTests.swift",
+      "outcome": "modelled",
+      "note": "Specifies sorted stable catalog, last duplicate wins, ordered upsert, shell lookup, and copy-on-remove semantics."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/SessionNavigationTests.swift",
+      "outcome": "modelled",
+      "note": "Covers bounded recents, workspace grouping, wrapping navigation, successor precedence and observable catalog projections."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/SleepPreventionControllerTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies persisted preference controls one idempotent system sleep-prevention activity."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalAccessibilityTests.swift",
+      "outcome": "modelled",
+      "note": "Exercises UTF-16 range correctness, scalar-safe UTF-8 truncation and exact payload ceiling."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalAppE2ETests.swift",
+      "outcome": "modelled",
+      "note": "Runs bundled app --self-test against an isolated Axod and checks packaged resources and app/PTY contract."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalCatalogTests.swift",
+      "outcome": "modelled",
+      "note": "Exercises snapshot/event projections, observation invalidation boundaries, lag/reconnect resync, busy-close confirmation and push-driven relay state."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalClipboardTests.swift",
+      "outcome": "modelled",
+      "note": "Specifies explicit clipboard consent, exact reviewed payload visibility and single valid plain-text representation."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalKeyEquivalentPolicyTests.swift",
+      "outcome": "modelled",
+      "note": "Specifies menu/terminal/AppKit precedence, control-key workarounds and safe redispatch."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalLayoutTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies pending view-only splits, stable layout transformations, unique pane placement, collapse and focus fallback."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalPaneGeometryTests.swift",
+      "outcome": "modelled",
+      "note": "Confirms divider-aware nested split geometry, clamping and nonnegative tiny-area behavior."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalPointerInputTests.swift",
+      "outcome": "modelled",
+      "note": "Covers supported pointer, scroll, overlay, context menu, plain text/file drop, Services and Quick Look policies."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalPTYSizeTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies empty-grid rejection, UInt16 clamping, stale-grid correction, no duplicate resize and descriptor ownership."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalRenderFeedbackTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies focus changes avoid unnecessary attention invalidations and status callback delivery is deferred/current."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalScrollSensitivityTests.swift",
+      "outcome": "modelled",
+      "note": "Tests bounded logarithmic scroll sensitivity mapping, neutral midpoint and non-finite fallback."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalSplitE2ETests.swift",
+      "outcome": "modelled",
+      "note": "Exercises native surface reparenting ownership, nested split geometry, persistent split identity and pruning."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalSurfaceStatusTests.swift",
+      "outcome": "modelled",
+      "note": "Tests Ghostty status badge precedence, progress/search projection and bell/command-finish notification policy."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalSurfaceViewportTests.swift",
+      "outcome": "modelled",
+      "note": "Tests clipping, seeded pane/proposal surface size, host reparenting resize ownership, transient-zero retention and per-window notification observers."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalTextInputTests.swift",
+      "outcome": "modelled",
+      "note": "Covers Unicode surrogate buffering/clearing, supported committed-text representations and candidate/selection IME geometry."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalWindowPaddingTests.swift",
+      "outcome": "modelled",
+      "note": "Confirms reported client viewport padding matches Axo defaults unless user Ghostty config overrides."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/TerminalWorkbenchE2ETests.swift",
+      "outcome": "modelled",
+      "note": "Exercises real isolated daemon shell/session/workspace lifecycle, durable split hierarchy, PTY grid sizing/replay and delayed hidden-surface resize."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/UntrustedURLTests.swift",
+      "outcome": "modelled",
+      "note": "Covers URL scheme classification, invisible/bidi controls, executable/symlink local file rejection and safe route distinctions."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/ViewportReporterTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies debounced latest viewport, deduplication, re-send on reconnect and old-daemon feature gating."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoMacTests/WorkbenchSelectionTests.swift",
+      "outcome": "modelled",
+      "note": "Specifies default/stored layouts, selection recovery, pane focus, split placement, resize clamping and layout-order navigation."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoVisualUITests/AxoVisualUITests.swift",
+      "outcome": "modelled",
+      "note": "Shared real-UI test helpers enforce process isolation and bounded waits for app/daemon state."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoVisualUITests/SessionWorkflowUITests.swift",
+      "outcome": "modelled",
+      "note": "Exercises sidebar/workspace/session UI, terminal commands, clipboard, nested splits, lifecycle recovery and app relaunch with persisted Pi session."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoVisualUITests/TerminalClipboardUITests.swift",
+      "outcome": "modelled",
+      "note": "Real UI tests confirm OSC 52 clipboard reads/writes require consent and denial/cancel preserve private clipboard content."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoVisualUITests/TerminalInputUITests.swift",
+      "outcome": "modelled",
+      "note": "Tests Kitty keyboard negotiation, Shift-Enter/Command key encoding, focus-only click filtering, mouse-wheel reporting and accessible visible screen text."
+    },
+    {
+      "path": "apple/AxoMac/Tests/AxoVisualUITests/UITestFixture.swift",
+      "outcome": "modelled",
+      "note": "Drives isolated UI-test app by file control requests, captures OCR-checked screenshots and manages fixture process/environment."
+    },
+    {
+      "path": "apple/AxoRPC/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel library and tests wiring, including real axod binary for interop."
+    },
+    {
+      "path": "apple/AxoRPC/Package.resolved",
+      "outcome": "generated",
+      "note": "Swift Package Manager resolution output generated from apple/AxoRPC/Package.swift."
+    },
+    {
+      "path": "apple/AxoRPC/Package.swift",
+      "outcome": "no-behaviour",
+      "note": "Swift package target/dependency and macOS platform build metadata."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/HostPairingCode.swift",
+      "outcome": "modelled",
+      "note": "Parses normalized 8-symbol Crockford-style code and accepts only exact axo://pair/<code> URLs without query, fragment, escapes or extra path."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/ClientViewport.swift",
+      "outcome": "modelled",
+      "note": "Represents points/pixels/cell/padding and rejects empty area/cell, nonpositive backing scale and negative divider."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/DaemonModels.swift",
+      "outcome": "modelled",
+      "note": "Defines positive canonical build numbers, bounded absolute Unix socket paths and local RPC/config result values."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/Identifiers.swift",
+      "outcome": "modelled",
+      "note": "Separates SessionID/ShellID types while encoding each as a plain JSON integer."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/RemoteAccessModels.swift",
+      "outcome": "modelled",
+      "note": "Represents remote connection state, host metadata and pairing result values."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/SessionEvents.swift",
+      "outcome": "modelled",
+      "note": "Decodes typed session/shell/output/workspace/focus/relay/lag events and ignores unknown event variants for forward compatibility."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/Models/SessionModels.swift",
+      "outcome": "modelled",
+      "note": "Defines session/workspace/pane and availability records; shell availability reason must exist exactly for unavailable panes."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/SessionLayout.swift",
+      "outcome": "modelled",
+      "note": "Encodes tagged pane/split layout nodes with stable shellId key and rejects unknown kinds."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/TerminalAttachment.swift",
+      "outcome": "modelled",
+      "note": "Swift client reads attachment header, receives PTY descriptor, and gives ownership to Ghostty."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/UnixSocketRPC.swift",
+      "outcome": "modelled",
+      "note": "Typed app-side RPC requests, method capability names, validation and request-specific timeout handling."
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/UnixSocketTransport.swift",
+      "outcome": "modelled",
+      "note": "Client side of the local newline-delimited Unix socket protocol."
+    },
+    {
+      "path": "apple/AxoRPC/Tests/AxoRPCDaemonInteropTests/AxodInteropTests.swift",
+      "outcome": "modelled",
+      "note": "Runs real axod and Swift RPC client to verify negotiation, core session/relay operations, safe unavailable-pane behavior and concurrent/replay PTY attachments."
+    },
+    {
+      "path": "apple/AxoRPC/Tests/AxoRPCTests/BoundaryValueTests.swift",
+      "outcome": "modelled",
+      "note": "Tests strict pairing/deep-link, socket path, canonical build number, layout wire tags and availability-role invariants."
+    },
+    {
+      "path": "apple/AxoRPC/Tests/AxoRPCTests/IdentifierCodingTests.swift",
+      "outcome": "modelled",
+      "note": "Verifies typed session/shell IDs retain plain integer wire representation."
+    },
+    {
+      "path": "apple/AxoRPC/Tests/AxoRPCTests/UnixSocketRPCTransportTests.swift",
+      "outcome": "modelled",
+      "note": "Specifies fast failure for missing/stale sockets, server error propagation, older health response compatibility and relay/pairing RPC shapes."
+    },
+    {
+      "path": "BUILD_NUMBER",
+      "outcome": "no-behaviour",
+      "note": "Canonical base build number consumed by packaging."
+    },
+    {
+      "path": "BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Exports root manifest/build-number files; build graph metadata only."
+    },
+    {
+      "path": "bun.lock",
+      "outcome": "generated",
+      "note": "Bun workspace dependency lock generated from package manifests."
+    },
+    {
+      "path": "Cargo.lock",
+      "outcome": "generated",
+      "note": "Cargo dependency resolution output generated from Cargo.toml manifests."
+    },
+    {
+      "path": "Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "Rust workspace membership and resolver configuration only."
+    },
+    {
+      "path": "crates/axo-ipc/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel library/test wiring for axo-ipc."
+    },
+    {
+      "path": "crates/axo-ipc/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "axo-ipc crate metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-ipc/src/event_queue.rs",
+      "outcome": "modelled",
+      "note": "Bounded per-subscription queue never blocks publishers; drops gapped backlog for a lag marker and supports blocking/async waiters."
+    },
+    {
+      "path": "crates/axo-ipc/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Defines local IPC module exports and queue/server interface."
+    },
+    {
+      "path": "crates/axo-ipc/src/server.rs",
+      "outcome": "modelled",
+      "note": "NDJSON Unix socket transport, bounded request processing, typed parsing and async event long-poll handling."
+    },
+    {
+      "path": "crates/axo-pi/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Build target wiring for Rust library and its unit tests; no runtime behavior."
+    },
+    {
+      "path": "crates/axo-pi/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "Crate package metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-pi/src/activity.rs",
+      "outcome": "modelled",
+      "note": "Anchored by AxoPi actor status derivation from bridge activity."
+    },
+    {
+      "path": "crates/axo-pi/src/bridge.rs",
+      "outcome": "modelled",
+      "note": "Anchored by AxoPi bridge actor bounded NDJSON transport and absolute request deadlines."
+    },
+    {
+      "path": "crates/axo-pi/src/command.rs",
+      "outcome": "modelled",
+      "note": "Anchored by AxoPi actor's Axo-managed Pi launch command policy."
+    },
+    {
+      "path": "crates/axo-pi/src/connection.rs",
+      "outcome": "modelled",
+      "note": "Bridge phase machine verifies exact pane identity and bounds a single monotonically increasing event stream."
+    },
+    {
+      "path": "crates/axo-pi/src/history.rs",
+      "outcome": "modelled",
+      "note": "Permits recovery only for the original canonical regular transcript under the Axo-owned directory, without symlinks."
+    },
+    {
+      "path": "crates/axo-pi/src/launch.rs",
+      "outcome": "modelled",
+      "note": "Starts Pi on a PTY with managed transcript/extension/session environment and inherited writer-lock descriptor."
+    },
+    {
+      "path": "crates/axo-pi/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Defines the Pi integration module boundary and public lifecycle interfaces."
+    },
+    {
+      "path": "crates/axo-pi/src/lock.rs",
+      "outcome": "modelled",
+      "note": "Exclusive flock is Pi liveness proof and transcript-writer mutual exclusion; safe no-follow lock acquisition."
+    },
+    {
+      "path": "crates/axo-pi/src/process_inspection.rs",
+      "outcome": "modelled",
+      "note": "Anchored by AxoPi actor's cancellable bounded metadata inspection for safe process takeover."
+    },
+    {
+      "path": "crates/axo-pi/src/protocol.rs",
+      "outcome": "modelled",
+      "note": "Defines v1 NDJSON authentication, identity, event and shutdown command records with strict command result parsing."
+    },
+    {
+      "path": "crates/axo-pi/src/socket.rs",
+      "outcome": "modelled",
+      "note": "Anchored by AxoPi actor's socket path derivation and lock-fenced abandoned socket reconciliation."
+    },
+    {
+      "path": "crates/axo-pi/src/takeover.rs",
+      "outcome": "modelled",
+      "note": "Preserve-vs-explicit restart takeover policies, authenticated process verification and bounded TERM/KILL escalation."
+    },
+    {
+      "path": "crates/axo-pi/src/worker.rs",
+      "outcome": "modelled",
+      "note": "Follows only the current pane Pi, reconnects transport drops, and permanently rejects protocol/identity violations."
+    },
+    {
+      "path": "crates/axo-protocol/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel library/test wiring and schema fixture data for axo-protocol."
+    },
+    {
+      "path": "crates/axo-protocol/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "axo-protocol crate metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-protocol/src/conformance.rs",
+      "outcome": "modelled",
+      "note": "Checks canonical v1 schema fixtures round-trip and verifies daemon-emitted local session records conform."
+    },
+    {
+      "path": "crates/axo-protocol/src/event.rs",
+      "outcome": "modelled",
+      "note": "Defines catalog versus high-volume stream event scope and lag notification semantics."
+    },
+    {
+      "path": "crates/axo-protocol/src/ids.rs",
+      "outcome": "modelled",
+      "note": "Session and shell identifiers are positive SQLite IDs; UUIDv4 generation uses OS randomness."
+    },
+    {
+      "path": "crates/axo-protocol/src/layout.rs",
+      "outcome": "modelled",
+      "note": "Validates bounded binary pane trees, unique pane/split IDs and 0.01–0.99 ratios; pruning collapses single-child splits."
+    },
+    {
+      "path": "crates/axo-protocol/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Exports boundary-parsed protocol types whose constructors/deserialization establish identifier/layout/viewport invariants."
+    },
+    {
+      "path": "crates/axo-protocol/src/model.rs",
+      "outcome": "modelled",
+      "note": "Defines local session/pane/workspace records and projects remote snapshots to terminal panes without local process/path metadata."
+    },
+    {
+      "path": "crates/axo-protocol/src/relay.rs",
+      "outcome": "modelled",
+      "note": "Defines Cloudflare relay status and host kind returned to local clients."
+    },
+    {
+      "path": "crates/axo-protocol/src/rpc.rs",
+      "outcome": "modelled",
+      "note": "Local RPC method names, typed request/result structures, strict parameter decoding and limits."
+    },
+    {
+      "path": "crates/axo-protocol/src/viewport.rs",
+      "outcome": "modelled",
+      "note": "Validates reported viewport, mirrors client split geometry/libghostty padding math, and computes bounded PTY grids."
+    },
+    {
+      "path": "crates/axo-pty/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel library/test wiring for axo-pty."
+    },
+    {
+      "path": "crates/axo-pty/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "axo-pty crate metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-pty/src/attach.rs",
+      "outcome": "modelled",
+      "note": "Rust server/client implementation of attach v2 framing, replay and descriptor transfer."
+    },
+    {
+      "path": "crates/axo-pty/src/command.rs",
+      "outcome": "modelled",
+      "note": "Shell-style command parser bounds bytes/arguments, rejects unsafe command controls and resolves only absolute or PATH executables."
+    },
+    {
+      "path": "crates/axo-pty/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Defines PTY process, permanent output fan-out and attach-v2 module interfaces."
+    },
+    {
+      "path": "crates/axo-pty/src/output.rs",
+      "outcome": "modelled",
+      "note": "Sole-reader output pump, complete replay and atomic live subscriptions with bounded history/backlogs and overflow reattach."
+    },
+    {
+      "path": "crates/axo-pty/src/process.rs",
+      "outcome": "modelled",
+      "note": "Creates session-leader PTY children, controls input/resize and stops process groups concurrently with bounded HUP/TERM/KILL escalation."
+    },
+    {
+      "path": "crates/axo-relay/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel library/test wiring for axo-relay."
+    },
+    {
+      "path": "crates/axo-relay/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "axo-relay crate metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-relay/src/credential.rs",
+      "outcome": "modelled",
+      "note": "Stores per-host credentials in macOS generic-password Keychain and treats deletion of absent items idempotently; test-only memory store elsewhere."
+    },
+    {
+      "path": "crates/axo-relay/src/host.rs",
+      "outcome": "modelled",
+      "note": "RelayHost contract exposes generation-bound host snapshots/events and local session/shell/layout/input/resize operations."
+    },
+    {
+      "path": "crates/axo-relay/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Exports host pairing, relay control/configuration and worker APIs."
+    },
+    {
+      "path": "crates/axo-relay/src/pairing.rs",
+      "outcome": "modelled",
+      "note": "Creates/stores random 32-byte credential before TLS redemption; validates code/host/response binding and bounded HTTP/chunked response."
+    },
+    {
+      "path": "crates/axo-relay/src/relay.rs",
+      "outcome": "modelled",
+      "note": "Implements secure account/legacy WebSocket relay, config lifecycle, heartbeat/reconnect/resync, strict generation-fenced remote commands, metadata projection and redirect rules."
+    },
+    {
+      "path": "crates/axo-server/build_number.env",
+      "outcome": "no-behaviour",
+      "note": "Bazel build-number placeholder substituted with stable build number."
+    },
+    {
+      "path": "crates/axo-server/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel server/test wiring, fixture extension, and stamped build input."
+    },
+    {
+      "path": "crates/axo-server/build.rs",
+      "outcome": "modelled",
+      "note": "Injects a positive canonical decimal build number from environment override or configured file."
+    },
+    {
+      "path": "crates/axo-server/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "axo-server crate metadata and dependency declarations."
+    },
+    {
+      "path": "crates/axo-server/src/lib.rs",
+      "outcome": "modelled",
+      "note": "Daemon runtime initialization, socket lifecycle, RPC registration and shutdown."
+    },
+    {
+      "path": "crates/axo-server/src/panes.rs",
+      "outcome": "modelled",
+      "note": "Implements unique Running/Unavailable pane states and reservation-ID fenced recovery transitions; tests exhaust lifecycle transitions."
+    },
+    {
+      "path": "crates/axo-server/src/session.rs",
+      "outcome": "modelled",
+      "note": "Full session manager implementation: durable session/workspace lifecycle, local events and PTY attachment/input/viewport, Pi recovery/resume, workspace access, DB migration, cleanup and extensive invariant tests."
+    },
+    {
+      "path": "crates/axo-server/src/workspace_access.rs",
+      "outcome": "modelled",
+      "note": "Canonicalizes workspace directory; on macOS resolves and retains matching security-scoped bookmark access with bounded canonical base64 decoding."
+    },
+    {
+      "path": "crates/axo-server/testdata/pi-extension.js",
+      "outcome": "no-behaviour",
+      "note": "Explicit inert extension runfile; fixtures do not exercise Pi behavior."
+    },
+    {
+      "path": "crates/axod-loadtest/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Builds test-only load tool and exclusive smoke test with axod and Pi fixture dependencies."
+    },
+    {
+      "path": "crates/axod-loadtest/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "Load-test package metadata and dependencies."
+    },
+    {
+      "path": "crates/axod-loadtest/src/client.rs",
+      "outcome": "modelled",
+      "note": "Persistent single-in-flight JSON-RPC test client and minimal terminal/session wire types."
+    },
+    {
+      "path": "crates/axod-loadtest/src/daemon.rs",
+      "outcome": "modelled",
+      "note": "Isolated daemon lifecycle and attach-v2 load helper; temporary HOME and bounded graceful shutdown."
+    },
+    {
+      "path": "crates/axod-loadtest/src/main.rs",
+      "outcome": "modelled",
+      "note": "Smoke/heavy profiles, worker assignment and concurrent output/subscription/attach/lifecycle/control-plane probes."
+    },
+    {
+      "path": "crates/axod-loadtest/src/metrics.rs",
+      "outcome": "modelled",
+      "note": "Samples process peak threads, descriptors and resident memory every 200 ms."
+    },
+    {
+      "path": "crates/axod-loadtest/src/stats.rs",
+      "outcome": "modelled",
+      "note": "Reports per-operation quantiles, errors, events and profile budget verdict."
+    },
+    {
+      "path": "crates/axod-loadtest/tests/smoke.rs",
+      "outcome": "modelled",
+      "note": "Runs isolated smoke profile and requires success plus session-list measurement."
+    },
+    {
+      "path": "crates/axod/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Bazel daemon binary/RPC test wiring and fixture runfiles."
+    },
+    {
+      "path": "crates/axod/Cargo.toml",
+      "outcome": "no-behaviour",
+      "note": "Axod binary package metadata and dependencies."
+    },
+    {
+      "path": "crates/axod/README.md",
+      "outcome": "no-behaviour",
+      "note": "Operational documentation consolidates implemented attachment, recovery, shutdown and relay guarantees."
+    },
+    {
+      "path": "crates/axod/src/main.rs",
+      "outcome": "modelled",
+      "note": "CLI daemon setup, file logging/rotation, descriptor limit raise and v2 terminal-attach stdin/stdout/raw-mode/SIGWINCH forwarding."
+    },
+    {
+      "path": "crates/axod/testdata/pi-fixture.sh",
+      "outcome": "no-behaviour",
+      "note": "Test-only Pi stand-in that sleeps while preserving inherited transcript lock; not a production executable."
+    },
+    {
+      "path": "crates/axod/tests/rpc.rs",
+      "outcome": "modelled",
+      "note": "End-to-end local RPC/PTY tests cover startup, persistence/recovery, viewport, attach/replay, long-poll concurrency, config validation and standalone replacement."
+    },
+    {
+      "path": "docs/axo-app-architecture-audit.md",
+      "outcome": "no-behaviour",
+      "note": "Resolved architecture audit and historical findings; current runtime behavior is anchored to implementation."
+    },
+    {
+      "path": "docs/axo-app-audit-2.md",
+      "outcome": "no-behaviour",
+      "note": "Resolved follow-up audit documenting past defects and fixes; not runtime implementation."
+    },
+    {
+      "path": "docs/axo-refactor-plan.md",
+      "outcome": "no-behaviour",
+      "note": "Refactor proposal/status log; implemented behavior is modeled from source rather than plan text."
+    },
+    {
+      "path": "docs/axod-recovery-hardening.md",
+      "outcome": "no-behaviour",
+      "note": "Recovery hardening verification report and limitations, not executable implementation."
+    },
+    {
+      "path": "docs/ghostty-surface-parity.md",
+      "outcome": "no-behaviour",
+      "note": "Comparison/audit document; native behavior is anchored to app source."
+    },
+    {
+      "path": "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md",
+      "outcome": "no-behaviour",
+      "note": "Proposal/history for OAuth and pairing; actual behavior modeled from Worker and client code."
+    },
+    {
+      "path": "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md",
+      "outcome": "no-behaviour",
+      "note": "Design proposal with implementation claims and unresolved questions; behavior modeled from code."
+    },
+    {
+      "path": "docs/terminal-input-acceptance.md",
+      "outcome": "no-behaviour",
+      "note": "Acceptance evidence and pending manual-checklist report, not runtime implementation."
+    },
+    {
+      "path": "ghostty_repository.bzl",
+      "outcome": "modelled",
+      "note": "Pins Ghostty/Zig and applies Axo patch before building GhosttyKit and resources."
+    },
+    {
+      "path": "MODULE.bazel",
+      "outcome": "no-behaviour",
+      "note": "Pins Bazel extensions/toolchains/dependencies and Ghostty repository; build configuration only."
+    },
+    {
+      "path": "MODULE.bazel.lock",
+      "outcome": "generated",
+      "note": "Bazel module dependency resolution output generated from MODULE.bazel."
+    },
+    {
+      "path": "package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from root package.json."
+    },
+    {
+      "path": "package.json",
+      "outcome": "no-behaviour",
+      "note": "Root build/test/typecheck scripts and tooling dependencies."
+    },
+    {
+      "path": "packages/axo-api-worker/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this package."
+    },
+    {
+      "path": "packages/axo-api-worker/package.json",
+      "outcome": "no-behaviour",
+      "note": "Package scripts/dependencies define schema, typecheck, core/relay tests and developer smoke commands."
+    },
+    {
+      "path": "packages/axo-api-worker/README.md",
+      "outcome": "no-behaviour",
+      "note": "Documents account-vs-legacy route ownership, deployment names, OAuth setup and known live pairing validation boundary."
+    },
+    {
+      "path": "packages/axo-api-worker/scripts/dummy-client.ts",
+      "outcome": "modelled",
+      "note": "Discovery-only by default; explicit machine/profile gates read/start operations and post-dispatch failures are never retried."
+    },
+    {
+      "path": "packages/axo-api-worker/src/access.ts",
+      "outcome": "modelled",
+      "note": "Role-scoped Worker edge principal abstraction with bounded connection lifetime."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/account-manager.ts",
+      "outcome": "modelled",
+      "note": "Account Durable Object owns profile/session, pairing and host credentials plus host relay authorization and Pi history dispatch."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/account.ts",
+      "outcome": "modelled",
+      "note": "Durable Object maps stable account identity to immutable generated account ID."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/cloudflare.ts",
+      "outcome": "modelled",
+      "note": "OAuth PKCE flow, encrypted cookies, session authentication/CSRF and account resolver."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/crypto.ts",
+      "outcome": "modelled",
+      "note": "HMAC/digest, constant-time compare and AES-GCM/HKDF cookie cryptography."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/pairing-directory.ts",
+      "outcome": "modelled",
+      "note": "Sharded pairing verifier index and transactional sliding-window rate-limit Durable Objects."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/pairing.ts",
+      "outcome": "modelled",
+      "note": "One-time host pair registration, credentials, HMAC verifiers and redemption limits."
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/provider.ts",
+      "outcome": "modelled",
+      "note": "Exchanges authorization code with Cloudflare, parses bearer/userinfo responses, and bounds provider JSON."
+    },
+    {
+      "path": "packages/axo-api-worker/src/axo-host-directory.ts",
+      "outcome": "modelled",
+      "note": "Durable Object host registration, admission reservations and transactional replacement of sanitized session snapshots."
+    },
+    {
+      "path": "packages/axo-api-worker/src/axo-host-relay.ts",
+      "outcome": "modelled",
+      "note": "Durable Object route/lease state, WebSocket RPC forwarding, events, correlation and fencing."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/account-hosts.ts",
+      "outcome": "modelled",
+      "note": "Authenticated account host/snapshot/event HTTP endpoints, host revocation and account relay upgrade."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/body.ts",
+      "outcome": "modelled",
+      "note": "Reads request body as fatal UTF-8 and cancels once protocol frame-byte limit is exceeded."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/hosts.ts",
+      "outcome": "modelled",
+      "note": "Credentialed account host/session discovery requires unexpired principal and host generation match."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/machines.ts",
+      "outcome": "modelled",
+      "note": "Legacy machine listing reads current directory projection with private no-store and varied auth cache headers."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/router.ts",
+      "outcome": "modelled",
+      "note": "HTTP/CORS/auth route dispatch and WebSocket gatekeeping to host relay."
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/rpc.ts",
+      "outcome": "modelled",
+      "note": "Handles bounded JSON-RPC host discovery and machine listing; validates parameters and principal expiry."
+    },
+    {
+      "path": "packages/axo-api-worker/src/index.ts",
+      "outcome": "modelled",
+      "note": "Exports Worker and stable Durable Object deployment identities, retaining account-directory namespace compatibility."
+    },
+    {
+      "path": "packages/axo-api-worker/src/observability.ts",
+      "outcome": "modelled",
+      "note": "Structured API events intentionally exclude identifiers, URLs, credentials, payloads, paths and arbitrary error text."
+    },
+    {
+      "path": "packages/axo-api-worker/src/relay/peer.ts",
+      "outcome": "modelled",
+      "note": "Validates persisted per-peer role, identity, expiry, request-window state, frame credits, host subscriptions and session digest."
+    },
+    {
+      "path": "packages/axo-api-worker/src/relay/records.ts",
+      "outcome": "modelled",
+      "note": "Defines durable host route, request-group and pending-hop correlation/deadline records."
+    },
+    {
+      "path": "packages/axo-api-worker/src/relay/replies.ts",
+      "outcome": "modelled",
+      "note": "Bounds actual single/batch response bytes; oversized groups become correlation-preserving unknown-outcome errors."
+    },
+    {
+      "path": "packages/axo-api-worker/src/session-history.ts",
+      "outcome": "modelled",
+      "note": "Per-session durable Pi event append and cursor-page storage with identity binding and duplicate conflict checks."
+    },
+    {
+      "path": "packages/axo-api-worker/testing/access-headers.ts",
+      "outcome": "modelled",
+      "note": "Validates compact bounded JWT-shaped assertion and creates test Access cookie/header values."
+    },
+    {
+      "path": "packages/axo-api-worker/testing/client.ts",
+      "outcome": "modelled",
+      "note": "Provides bounded dummy WebSocket peer helpers for local, legacy host/machine and account-host routes with request correlation, ack, waiter and queue limits."
+    },
+    {
+      "path": "packages/axo-api-worker/testing/local-endpoint.ts",
+      "outcome": "modelled",
+      "note": "Loads private bounded owner-only discovery files without following symlinks and validates schema."
+    },
+    {
+      "path": "packages/axo-api-worker/testing/owned-worker.ts",
+      "outcome": "modelled",
+      "note": "Provides Rust-orchestrated Worker fixture with private permissioned credential files and no daemon/Pi launch."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/account-manager.test.ts",
+      "outcome": "modelled",
+      "note": "Exercises multi-host account ownership, credential/generation-scoped relays, event privacy, atomic single-use pairing/replay, account isolation and revocation."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/api.test.ts",
+      "outcome": "modelled",
+      "note": "Exercises JSON-RPC envelope conformance, legacy Access trust boundary, host generation fencing, correlated concurrent requests, unknown outcomes and client delivery credit exhaustion."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/auth.test.ts",
+      "outcome": "modelled",
+      "note": "Covers OAuth PKCE/token/userinfo identity resolution, encrypted purpose-bound cookies, keyed session digests, logout revocation and bounded non-sensitive provider errors."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/axod-relay.test.ts",
+      "outcome": "modelled",
+      "note": "Runs isolated axod against the host relay, validating metadata registration, live PTY output/input/session creation and no terminal-byte persistence."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/axod.test.ts",
+      "outcome": "modelled",
+      "note": "Exercises two real daemons, protected relay/local paths, approved idempotent runtime launches, generation restart reconciliation and PTY survival after API shutdown."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/harness.ts",
+      "outcome": "modelled",
+      "note": "Builds API Worker under Miniflare with SQLite DOs, signs synthetic Access assertions and exposes lifecycle/restart helpers."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/hosts.test.ts",
+      "outcome": "modelled",
+      "note": "Tests legacy host metadata registration/publish, CORS/cache behavior, generation conflict, terminal-content privacy, subscriptions and remote session/input routing."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/lifecycle.test.ts",
+      "outcome": "modelled",
+      "note": "Covers durable hibernation correlation/batches/credits, restart offline semantics, admission reservations, origin guard and generation immutability."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/limits.test.ts",
+      "outcome": "modelled",
+      "note": "Exercises encoded frame/batch bounds, RPC/mutation unknown deadlines, no replay after expiry and durable correlation cleanup."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/local.test.ts",
+      "outcome": "modelled",
+      "note": "Covers local endpoint file and browser-origin admission safety, RPC negotiation/framing/credits, launch receipt recovery, restart fencing, paging and bounded slow-consumer behavior."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/machines.test.ts",
+      "outcome": "modelled",
+      "note": "Covers legacy machine-list HTTP metadata projection, live/offline presence, generation clearing and no-store behavior."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/observability.test.ts",
+      "outcome": "modelled",
+      "note": "Asserts diagnostics expose only typed static metadata and that native Access test headers reject malformed or injected credential values."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/replies.property.test.ts",
+      "outcome": "modelled",
+      "note": "Seeded property campaign checks byte bounds, IDs, batch shape, schema validity and repeated durable serialization/reduction."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/replies.test.ts",
+      "outcome": "modelled",
+      "note": "Specifies JSON-encoded frame ceilings for single/batch replies and correlation preservation through oversized unknown-outcome fallback."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/session-events.test.ts",
+      "outcome": "modelled",
+      "note": "End-to-end tests owner-authenticated Pi event routing into account-private history, paging, private cache policy and account isolation."
+    },
+    {
+      "path": "packages/axo-api-worker/tests/session-history.test.ts",
+      "outcome": "modelled",
+      "note": "Tests durable per-session event identity, idempotence/conflict handling, cursor pagination, restart persistence and 60KB JSON payload bound without redaction."
+    },
+    {
+      "path": "packages/axo-api-worker/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript compiler configuration and source inclusion."
+    },
+    {
+      "path": "packages/axo-api/fixtures/envelopes.json",
+      "outcome": "modelled",
+      "note": "JSON-RPC conformance examples cover string/null/numeric IDs, notifications and invalid envelopes/batches/unsafe numeric IDs."
+    },
+    {
+      "path": "packages/axo-api/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this package."
+    },
+    {
+      "path": "packages/axo-api/package.json",
+      "outcome": "no-behaviour",
+      "note": "Shared protocol package exports/build/schema-check scripts and dependencies."
+    },
+    {
+      "path": "packages/axo-api/README.md",
+      "outcome": "no-behaviour",
+      "note": "Documents canonical JSON Schema source, runtime validation and capability availability versus authorization distinction."
+    },
+    {
+      "path": "packages/axo-api/scripts/check-schemas.mjs",
+      "outcome": "modelled",
+      "note": "Cross-validates JSON Schema and Zod fixtures, workspace/session graph invariants, local/host RPC events and strict pairing contracts."
+    },
+    {
+      "path": "packages/axo-api/src/contracts.ts",
+      "outcome": "modelled",
+      "note": "Exports API contract sets, framed interoperable JSON parsing, result guards and legacy/v1 method schemas."
+    },
+    {
+      "path": "packages/axo-api/src/host-contracts.ts",
+      "outcome": "modelled",
+      "note": "Host metadata API schemas and upgrade preparation payload validation."
+    },
+    {
+      "path": "packages/axo-api/src/identity.ts",
+      "outcome": "modelled",
+      "note": "Normalizes UUID case before using identities as routing keys."
+    },
+    {
+      "path": "packages/axo-api/src/index.ts",
+      "outcome": "modelled",
+      "note": "Exports stable contract/RPC/v1 interface used by API and clients."
+    },
+    {
+      "path": "packages/axo-api/src/pairing.ts",
+      "outcome": "modelled",
+      "note": "Strict pairing HTTP input/output contracts normalize pairing code and bound credentials/host labels."
+    },
+    {
+      "path": "packages/axo-api/src/pane-records.ts",
+      "outcome": "modelled",
+      "note": "Distinguishes retained pane presentation metadata from runtime launch authority."
+    },
+    {
+      "path": "packages/axo-api/src/pi-history.ts",
+      "outcome": "modelled",
+      "note": "Validates stored Pi event identity/order/content and creates bounded, privacy-reduced central conversation projections."
+    },
+    {
+      "path": "packages/axo-api/src/rpc.ts",
+      "outcome": "modelled",
+      "note": "Defines RPC framing, batch/pending/deadline/lease limits and maps unsafe handler failures to generic errors."
+    },
+    {
+      "path": "packages/axo-api/src/runtime-contracts.ts",
+      "outcome": "modelled",
+      "note": "Typed runtime process lifecycle, generation fence, attached state and bounded backlog schema."
+    },
+    {
+      "path": "packages/axo-api/src/state-contracts.ts",
+      "outcome": "modelled",
+      "note": "Contract source for state graph protocol and revision/generation invariants."
+    },
+    {
+      "path": "packages/axo-api/src/v1.ts",
+      "outcome": "modelled",
+      "note": "Canonical strict host/session/layout/terminal input/event and result contract validators."
+    },
+    {
+      "path": "packages/axo-api/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript declaration build configuration."
+    },
+    {
+      "path": "packages/axo-app/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this package."
+    },
+    {
+      "path": "packages/axo-app/package.json",
+      "outcome": "no-behaviour",
+      "note": "Package scripts, exports and dependency manifest; implementation is anchored to source."
+    },
+    {
+      "path": "packages/axo-app/README.md",
+      "outcome": "no-behaviour",
+      "note": "Package documentation corroborates browser credential and ephemeral-terminal-stream scope."
+    },
+    {
+      "path": "packages/axo-app/src/index.ts",
+      "outcome": "modelled",
+      "note": "Browser HTTP/WebSocket client validates API responses/events, negotiates/subscribes, bounds RPCs and acknowledges relay credits."
+    },
+    {
+      "path": "packages/axo-app/test/remote-api.test.mjs",
+      "outcome": "modelled",
+      "note": "Tests credentialed/no-store account metadata and Pi history HTTP calls plus WebSocket negotiation, subscriptions, RPC dispatch, acknowledgements and disconnect errors."
+    },
+    {
+      "path": "packages/axo-app/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript compiler configuration only."
+    },
+    {
+      "path": "packages/axo-web-app/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this package."
+    },
+    {
+      "path": "packages/axo-web-app/package.json",
+      "outcome": "no-behaviour",
+      "note": "Package scripts, exports and dependency manifest; implementation is anchored to source."
+    },
+    {
+      "path": "packages/axo-web-app/README.md",
+      "outcome": "no-behaviour",
+      "note": "Documents one-origin deployment and current browser API/authentication product routes."
+    },
+    {
+      "path": "packages/axo-web-app/src/cloudflare-sign-in-app.tsx",
+      "outcome": "modelled",
+      "note": "Cookie session status, Cloudflare login, CSRF-protected pairing creation/logout, code display/copy and app handoff."
+    },
+    {
+      "path": "packages/axo-web-app/src/landing-page.tsx",
+      "outcome": "modelled",
+      "note": "Public entry page routes to /app and describes private remote terminal access scope."
+    },
+    {
+      "path": "packages/axo-web-app/src/main.tsx",
+      "outcome": "modelled",
+      "note": "Routes /app to cookie-authenticated app, DEV-only test route to remote workspace and all other paths to landing."
+    },
+    {
+      "path": "packages/axo-web-app/src/pi-history-pane.tsx",
+      "outcome": "modelled",
+      "note": "Converts completed user/assistant Pi messages into a read-only text/image-placeholder projection and presents history status/pagination."
+    },
+    {
+      "path": "packages/axo-web-app/src/remote-terminal-app.tsx",
+      "outcome": "modelled",
+      "note": "Authenticated remote UI host/session selection, event projection, history fetch, relay lifecycle and terminal stream integration."
+    },
+    {
+      "path": "packages/axo-web-app/src/styles.css",
+      "outcome": "no-behaviour",
+      "note": "Visual styles and responsive presentation only."
+    },
+    {
+      "path": "packages/axo-web-app/src/terminal-pane.tsx",
+      "outcome": "modelled",
+      "note": "xterm lifecycle, active-connection input sequencing, persisted next sequence, debounced resize and fit/focus behavior."
+    },
+    {
+      "path": "packages/axo-web-app/src/vite-env.d.ts",
+      "outcome": "no-behaviour",
+      "note": "Vite ambient type declaration only."
+    },
+    {
+      "path": "packages/axo-web-app/test/browser.test.mjs",
+      "outcome": "modelled",
+      "note": "Browser acceptance test covers routing, host/session discovery, split terminals, live input/output, create-session, auth, pairing and sign-out."
+    },
+    {
+      "path": "packages/axo-web-app/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript compiler configuration only."
+    },
+    {
+      "path": "packages/pi-axo/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this package."
+    },
+    {
+      "path": "packages/pi-axo/package.json",
+      "outcome": "no-behaviour",
+      "note": "Extension build/test scripts and package dependency metadata."
+    },
+    {
+      "path": "packages/pi-axo/README.md",
+      "outcome": "no-behaviour",
+      "note": "Extension architecture and security reference; executable behavior is anchored to extension and bridge source."
+    },
+    {
+      "path": "packages/pi-axo/src/bridge-server.ts",
+      "outcome": "modelled",
+      "note": "Secure local socket listener, abandoned socket cleanup, one-peer authentication, bounded sequenced NDJSON, serialized commands and idempotency cache."
+    },
+    {
+      "path": "packages/pi-axo/src/extension.ts",
+      "outcome": "modelled",
+      "note": "Binds Pi session identity, restricts resume/fork behavior, maps events and implements send/cancel/shutdown controls."
+    },
+    {
+      "path": "packages/pi-axo/src/index.ts",
+      "outcome": "modelled",
+      "note": "Validates Axod environment contract before registering the extension."
+    },
+    {
+      "path": "packages/pi-axo/src/protocol.ts",
+      "outcome": "modelled",
+      "note": "Defines strict v1 bridge identities, control action parsing and bounded text/path/process values."
+    },
+    {
+      "path": "packages/pi-axo/src/title.ts",
+      "outcome": "modelled",
+      "note": "Agent title tool validates title and one representative emoji, checks current identity, persists appearance metadata and publishes updates."
+    },
+    {
+      "path": "packages/pi-axo/test/bridge-server.test.ts",
+      "outcome": "modelled",
+      "note": "Covers authenticated hello/events/commands, duplicate-ID behavior, stale scope rejection and safe socket ownership/stale cleanup."
+    },
+    {
+      "path": "packages/pi-axo/test/config.test.ts",
+      "outcome": "modelled",
+      "note": "Specifies complete absolute launch binding and shared 100-byte bridge-socket constraint."
+    },
+    {
+      "path": "packages/pi-axo/test/extension.test.ts",
+      "outcome": "modelled",
+      "note": "Verifies event publication, send/steer/cancel, idle-only and explicit shutdown, resume interception and socket cleanup."
+    },
+    {
+      "path": "packages/pi-axo/test/protocol.test.ts",
+      "outcome": "modelled",
+      "note": "Tests strict command/identity parsing, session binding, unknown-field and prompt-size rejection."
+    },
+    {
+      "path": "packages/pi-axo/test/title.test.ts",
+      "outcome": "modelled",
+      "note": "Tests repeated title metadata updates and prompt guidance for session naming."
+    },
+    {
+      "path": "packages/pi-axo/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript compiler configuration only."
+    },
+    {
+      "path": "packages/pi-axo/tsconfig.tests.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript test compilation configuration only."
+    },
+    {
+      "path": "README.md",
+      "outcome": "modelled",
+      "note": "Documents product actors, daemon/app split, terminal replay and build/test entrypoints; informs startup/attachment model."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/README.md",
+      "outcome": "modelled",
+      "note": "Normative protocol compatibility, session snapshot sanitization, IDs/generations and event persistence rules."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/BUILD.bazel",
+      "outcome": "no-behaviour",
+      "note": "Packages schemas and fixtures into v1 wire-contract filegroup for conformance tests."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/common.schema.json",
+      "outcome": "modelled",
+      "note": "Defines shared IDs, layouts, local/remote snapshots and capabilities."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/events.schema.json",
+      "outcome": "modelled",
+      "note": "Defines local notifications, catalog and terminal events, host events and host presence."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/client-viewport-set.local.call.json",
+      "outcome": "modelled",
+      "note": "Example JSON-RPC payload for terminal viewport report including pixel/cell/padding/divider geometry."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/config.get.call.json",
+      "outcome": "modelled",
+      "note": "Example config-get request for agent.command key."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/config.set.agent.call.json",
+      "outcome": "modelled",
+      "note": "Example agent command configuration request payload."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/config.set.shell.call.json",
+      "outcome": "modelled",
+      "note": "Example shell command configuration request payload."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/config.value.agent.json",
+      "outcome": "modelled",
+      "note": "Example returned configuration value for the agent command."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/config.value.shell.json",
+      "outcome": "modelled",
+      "note": "Example returned configuration value for the shell command."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/events-next.call.json",
+      "outcome": "modelled",
+      "note": "Example long-poll event request with subscription ID and bounded wait interval."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-list.result.json",
+      "outcome": "modelled",
+      "note": "Example host directory result with generation, capabilities, offline/stale state and embedded session snapshot."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-pairing-create.result.json",
+      "outcome": "modelled",
+      "note": "Example one-time host pairing code result with expiry timestamp."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.call.json",
+      "outcome": "modelled",
+      "note": "Example code redemption payload binds host and generation to credential ID/secret and label/kind."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.result.json",
+      "outcome": "modelled",
+      "note": "Example successful redemption result returns account/host/generation/credential IDs and linked timestamp."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-pi-event.relay.json",
+      "outcome": "modelled",
+      "note": "Example account relay event wraps a sequenced Pi event with host generation and stream identity."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-register.call.json",
+      "outcome": "modelled",
+      "note": "Example host registration declares v1 generation, capabilities and initial session snapshot."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-session-create.call.json",
+      "outcome": "modelled",
+      "note": "Example remote session-create request targets exact host generation."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.event.json",
+      "outcome": "modelled",
+      "note": "Example subscription-scoped remote host event carrying a generation-bound session snapshot."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.relay.event.json",
+      "outcome": "modelled",
+      "note": "Example daemon-originated host event wrapping the same session snapshot at the relay boundary."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/negotiate.call.json",
+      "outcome": "modelled",
+      "note": "Example local JSON-RPC protocol-version negotiation request."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/negotiate.result.json",
+      "outcome": "modelled",
+      "note": "Example version-1 negotiated method list for daemon/session/shell/relay APIs."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-configure.call.json",
+      "outcome": "modelled",
+      "note": "Example daemon remote-access configuration with relay URL and host metadata."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-connect.call.json",
+      "outcome": "modelled",
+      "note": "Example relay reconnect request with no parameters."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-connect.result.json",
+      "outcome": "modelled",
+      "note": "Example immediate retry request acknowledgement."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-disable.call.json",
+      "outcome": "modelled",
+      "note": "Example remote-access disable request."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-disable.result.json",
+      "outcome": "modelled",
+      "note": "Example successful remote-access disable acknowledgement."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-settings.call.json",
+      "outcome": "modelled",
+      "note": "Example relay settings query."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-settings.result.json",
+      "outcome": "modelled",
+      "note": "Example enabled relay configuration result with URL and host label/kind."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-status.call.json",
+      "outcome": "modelled",
+      "note": "Example relay connection-status query."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/remote-access-status.result.json",
+      "outcome": "modelled",
+      "note": "Example connected status, timestamp, host identity and nullable error."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/session-list.call.json",
+      "outcome": "modelled",
+      "note": "Example session catalog request."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/session-list.result.json",
+      "outcome": "modelled",
+      "note": "Example session catalog with optional resume selection, typed pane process/attachment data and tagged layout."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/session-snapshot.event.json",
+      "outcome": "modelled",
+      "note": "Example local subscription event carrying an authoritative Session snapshot and pane availability/layout."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/terminal-input.call.json",
+      "outcome": "modelled",
+      "note": "Example generation-bound remote terminal input with per-shell sequence and base64 bytes."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/terminal-input.local.call.json",
+      "outcome": "modelled",
+      "note": "Example local terminal input request with initial sequence zero."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/terminal-output.event.json",
+      "outcome": "modelled",
+      "note": "Example sequenced base64 terminal output event scoped to a local pane."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/fixtures/terminal-resize.local.call.json",
+      "outcome": "modelled",
+      "note": "Example local terminal resize request in rows and columns."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/host-relay.schema.json",
+      "outcome": "modelled",
+      "note": "Machine-readable host registration, remote operation and result definitions."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/local-rpc.schema.json",
+      "outcome": "modelled",
+      "note": "Machine-readable method/request/result constraints for local daemon protocol."
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/pairing.schema.json",
+      "outcome": "modelled",
+      "note": "Defines host pairing HTTP request/result fields and value bounds."
+    },
+    {
+      "path": "scripts/build-mac.sh",
+      "outcome": "modelled",
+      "note": "Reserves build number, compiles and validates signed app/helper bundle, then publishes staged bundle."
+    },
+    {
+      "path": "scripts/replace-app.swift",
+      "outcome": "modelled",
+      "note": "Rejects symlink/non-directory destinations and atomically swaps or exclusively renames app bundle."
+    },
+    {
+      "path": "scripts/workspace-status.sh",
+      "outcome": "modelled",
+      "note": "Exports validated stable build number to Bazel stamping."
+    },
+    {
+      "path": "sites/axo.leostera.dev/.env.example",
+      "outcome": "no-behaviour",
+      "note": "Example OAuth/session secret environment names; contains placeholders only."
+    },
+    {
+      "path": "sites/axo.leostera.dev/.gitignore",
+      "outcome": "no-behaviour",
+      "note": "Ignores generated/local deployment artifacts."
+    },
+    {
+      "path": "sites/axo.leostera.dev/cloudflare.config.ts",
+      "outcome": "modelled",
+      "note": "Configures SPA asset handling, Worker-first APIs, Cloudflare DO namespaces, observability and public origin."
+    },
+    {
+      "path": "sites/axo.leostera.dev/index.html",
+      "outcome": "modelled",
+      "note": "SPA document title/metadata and root mount point, hosted by the public site."
+    },
+    {
+      "path": "sites/axo.leostera.dev/package-lock.json",
+      "outcome": "generated",
+      "note": "npm dependency lock generated from package.json in this site."
+    },
+    {
+      "path": "sites/axo.leostera.dev/package.json",
+      "outcome": "no-behaviour",
+      "note": "Build/test scripts and dependency manifest; implementation is modeled from source."
+    },
+    {
+      "path": "sites/axo.leostera.dev/README.md",
+      "outcome": "no-behaviour",
+      "note": "Deployment, API/account scope and dev validation documentation."
+    },
+    {
+      "path": "sites/axo.leostera.dev/src/index.ts",
+      "outcome": "modelled",
+      "note": "Routes account/auth and selected account API prefixes to Worker; every other API route fails closed, non-API serves assets."
+    },
+    {
+      "path": "sites/axo.leostera.dev/src/main.tsx",
+      "outcome": "modelled",
+      "note": "Entrypoint imports shared web application for static deployment."
+    },
+    {
+      "path": "sites/axo.leostera.dev/tests/deployment.test.mjs",
+      "outcome": "modelled",
+      "note": "Tests SPA routes, auth behavior, account-host auth requirement and fail-closed legacy API routing under cf dev."
+    },
+    {
+      "path": "sites/axo.leostera.dev/tsconfig.json",
+      "outcome": "no-behaviour",
+      "note": "TypeScript compiler configuration only."
+    },
+    {
+      "path": "sites/axo.leostera.dev/vite.config.ts",
+      "outcome": "modelled",
+      "note": "Selects React and Cloudflare Vite plugins, ES2022 output and fixed loopback development server."
+    },
+    {
+      "path": "third_party/ghostty/0001-external-terminal-io.patch",
+      "outcome": "modelled",
+      "note": "Patch makes Ghostty surface adopt separate PTY/output descriptors rather than spawning process."
+    },
+    {
+      "path": "third_party/ghostty/BUILD.bazel",
+      "outcome": "modelled",
+      "note": "Exports patch referenced in the Ghostty external repository build."
+    },
+    {
+      "path": "third_party/ghostty/README.md",
+      "outcome": "modelled",
+      "note": "Explains the patched external terminal I/O contract and sizing/replay guarantees."
+    },
+    {
+      "path": "tsconfig.base.json",
+      "outcome": "no-behaviour",
+      "note": "Shared TypeScript compiler configuration only."
+    },
+    {
+      "path": "vendor/hex-rust/",
+      "outcome": "vendored",
+      "note": "Vendored reference snapshot, upstream anomalyco/hex at 104a8ac1eb87c9f393fc4ee2d434f1df30b10d1a; VENDORED.md says not an Axo dependency."
+    },
+    {
+      "path": "vendor/hex-swift-legacy/",
+      "outcome": "vendored",
+      "note": "Vendored reference snapshot, upstream KitLangton/Hex at f58d52c4cc47b3b810174060bfb8dc6f99976870."
+    }
+  ]
+}

@@ -1,12 +1,7 @@
 {
-  "subject": "Pi event data",
-  "value": "60,000 bytes",
-  "kind": "size",
-  "epistemic": "stated",
-  "about": [
-    "protocols/pi-bridge"
-  ],
-  "anchors": [
-    "crates/axo-pi/src/connection.rs:17#MAX_EVENT_DATA_BYTES"
-  ]
+  "subject":"Serialized Pi event payloads accepted by Axod's bridge and account-private durable session history.",
+  "value":"60,000 bytes",
+  "kind":"size",
+  "about":["actors/axo-pi-bridge"],
+  "anchors":["crates/axo-pi/src/connection.rs#MAX_EVENT_DATA_BYTES", "packages/axo-api-worker/tests/session-history.test.ts"]
 }

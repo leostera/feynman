@@ -1,0 +1,17 @@
+{
+  "summary": "Authenticated HTTP API for creating a one-time host pairing code from an account session and redeeming it with host identity plus daemon credential material.",
+  "style": "http",
+  "transport": "Cloudflare Worker HTTP routes POST /api/v1/account/host-pairings and POST /api/v1/host-pairings/redeem.",
+  "server": "axo-cloud-api",
+  "clients": ["axo-macos-app", "axod-daemon"],
+  "version": "v1 JSON contracts; routes are mounted by the Worker router.",
+  "messages": [
+    {"name":"POST /api/v1/account/host-pairings","kind":"route","summary":"Account-authenticated request to create a one-time code; result includes code and expiry."},
+    {"name":"POST /api/v1/host-pairings/redeem","kind":"route","summary":"Redeems code with host ID, current generation, credential ID/secret, label and kind; returns linked account/host identity and timestamp."},
+    {"name":"HostPairingRedeemRequest","kind":"record","fields":[{"name":"code","type":"string","note":"8 Crockford-style symbols separated by a hyphen"},{"name":"hostId","type":"UUID"},{"name":"hostGeneration","type":"UUID"},{"name":"credentialId","type":"UUID"},{"name":"credential","type":"string","note":"43 URL-safe base64 characters"},{"name":"label","type":"string","note":"1..128 chars"},{"name":"hostKind","type":"slug","note":"^[a-z][a-z0-9-]{0,63}$"}]},
+    {"name":"HostPairingRedeemResult","kind":"record","fields":[{"name":"linked","type":"true"},{"name":"accountId","type":"UUID"},{"name":"hostId","type":"UUID"},{"name":"hostGeneration","type":"UUID"},{"name":"credentialId","type":"UUID"},{"name":"linkedAt","type":"date-time"}]}
+  ],
+  "parsing": [{"summary":"JSON request and result objects disallow additional properties; code, UUIDs, credential encoding, label and host kind are pattern- or length-checked by schema and API implementation.","anchors":["schemas/axo.leostera.dev/v1/pairing.schema.json", "packages/axo-api-worker/src/http/router.ts"]}],
+  "definitions": ["schemas/axo.leostera.dev/v1/pairing.schema.json"],
+  "anchors": ["schemas/axo.leostera.dev/v1/pairing.schema.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-create.result.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.call.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.result.json", "packages/axo-api-worker/src/http/router.ts", "packages/axo-api-worker/src/auth/pairing.ts", "apple/AxoRPC/Sources/AxoRPC/HostPairingCode.swift", "apple/AxoRPC/Tests/AxoRPCTests/BoundaryValueTests.swift", "crates/axo-relay/src/pairing.rs", "crates/axo-relay/src/credential.rs", "crates/axo-relay/src/relay.rs"]
+}

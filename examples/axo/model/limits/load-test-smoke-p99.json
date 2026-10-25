@@ -1,0 +1,7 @@
+{
+  "subject":"Smoke profile loose pass thresholds for control-plane and shell/attach lifecycle p99 latency under parallel test load.",
+  "value":"control plane 250 ms; lifecycle 2 s",
+  "kind":"latency",
+  "about":["flows/daemon-load-test"],
+  "anchors":["crates/axod-loadtest/src/main.rs#Profile::named"]
+}

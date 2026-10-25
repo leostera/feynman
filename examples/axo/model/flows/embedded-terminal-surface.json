@@ -1,0 +1,10 @@
+{
+  "summary": "Axo embeds a Ghostty surface using daemon-provided output and PTY descriptors, allowing Ghostty to render and interact with a shell whose process and PTY are owned by axod.",
+  "trigger": "The app creates or reattaches a Ghostty surface for a shell pane.",
+  "steps": [
+    { "actor": "axo-macos-app", "action": "Open a daemon attachment using protocol v2 to receive replay/live output stream plus SCM_RIGHTS PTY descriptor, then provide those descriptors to Ghostty.", "protocol": "terminal-attachment" },
+    { "actor": "ghostty-kit", "action": "Duplicate the descriptors, parse replay/live output, and send terminal input and later resizes to the adopted PTY without spawning a subprocess.", "protocol": "terminal-attachment" },
+    { "actor": "ghostty-kit", "action": "On external output EOF, report a child-exit notification to the surface while leaving actual shell lifecycle to Axo/axod." }
+  ],
+  "anchors": ["third_party/ghostty/0001-external-terminal-io.patch", "third_party/ghostty/README.md", "ghostty_repository.bzl", "apple/AxoMac/Sources/AxoMac/Terminal/Surface/GhosttyTerminalView.swift", "apple/AxoMac/Sources/AxoMac/Terminal/Surface/TerminalSurfaceConnection.swift", "apple/AxoRPC/Sources/AxoRPC/TerminalAttachment.swift", "crates/axo-pty/src/attach.rs", "apple/AxoMac/Tests/AxoMacTests/TerminalSplitE2ETests.swift", "apple/AxoMac/Tests/AxoMacTests/TerminalSurfaceViewportTests.swift", "apple/AxoMac/Tests/AxoMacTests/TerminalWorkbenchE2ETests.swift", "apple/AxoMac/Tests/AxoVisualUITests/TerminalInputUITests.swift", "apple/AxoMac/Tests/AxoVisualUITests/SessionWorkflowUITests.swift"]
+}

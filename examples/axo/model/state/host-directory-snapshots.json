@@ -1,0 +1,6 @@
+{
+  "owner": "axo-cloud-api",
+  "summary": "Cloudflare Durable Object SQLite tables retain account-principal-bound host identity, label/kind/capabilities, current generation and last-seen time, plus sanitized per-host session snapshots. Snapshot publication replaces that host's projection atomically; snapshots omit local PTY paths and terminal output. Reservations prevent duplicate races while a host is being admitted.",
+  "lifetime": "Persistent across Worker requests and Durable Object restarts; host snapshots remain available when offline and are marked stale/offline based on current relay generation and presence.",
+  "anchors": ["packages/axo-api-worker/src/axo-host-directory.ts", "schemas/axo.leostera.dev/v1/common.schema.json"]
+}

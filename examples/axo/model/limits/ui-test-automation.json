@@ -1,0 +1,7 @@
+{
+  "subject":"File-driven UI-test automation polls for commands every 25 ms and bounds terminal surface readiness/count waits.",
+  "value":"poll 25 ms; waits 10 s",
+  "kind":"timeout",
+  "about":["actors/axo-mac-test-host"],
+  "anchors":["apple/AxoMac/Sources/AxoMacTestHost/TerminalUITestAutomation.swift#run", "apple/AxoMac/Sources/AxoMacTestHost/TerminalUITestAutomation.swift#waitForTerminalSurface"]
+}

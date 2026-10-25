@@ -1,8 +1,0 @@
-{
-  "owner": "axo-mac",
-  "summary": "TerminalSessionsModel: a client-side projection of daemon sessions, plus selected session (UserDefaults) and pending local layouts.",
-  "lifetime": "app process; selection persists",
-  "anchors": [
-    "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift"
-  ]
-}

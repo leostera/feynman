@@ -1,0 +1,6 @@
+{
+  "owner":"axo-cloud-api",
+  "summary":"A per-account Durable Object binds one immutable account ID to profile metadata, stores web-session HMAC digests/expiry/revocation, one-time pairing verifier records and linked host credential verifiers. Pairing redemption is transactionally consumed and identical retries are accepted only for the same live linked host credential/generation.",
+  "lifetime":"Web sessions expire after 30 days and are revocable; pairing codes expire after 10 minutes with bounded retention for consumed rows; linked host credentials persist until rotated or revoked. Cookies carry encrypted session claims, while Durable Objects retain session digests and credential verifiers rather than raw bearer credentials.",
+  "anchors":["packages/axo-api-worker/src/auth/account-manager.ts", "packages/axo-api-worker/src/auth/cloudflare.ts", "packages/axo-api-worker/src/auth/pairing.ts"]
+}

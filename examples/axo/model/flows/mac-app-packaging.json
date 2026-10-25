@@ -1,0 +1,11 @@
+{
+  "summary": "Build and publish a signed macOS Axo app bundle with a monotonic local build number and rollback-safe atomic replacement.",
+  "trigger": "A developer runs scripts/build-mac.sh on a configured macOS build host.",
+  "steps": [
+    { "actor": "axo-mac-packager", "action": "Select a signing identity, reserve/increment a canonical build number under a lock unless explicitly supplied, and compile the Pi extension." },
+    { "actor": "axo-mac-packager", "action": "Build the optimized Bazel app with build stamping, unpack it into a private staging directory, and include the Pi extension JavaScript." },
+    { "actor": "axo-mac-packager", "action": "Set and verify source/build metadata, deployment-target agreement, launch-agent plist validity, executable versions, signatures and matching team identity." },
+    { "actor": "axo-mac-packager", "action": "Atomically publish the staged app: swap with an existing destination to preserve the previous bundle, or use exclusive rename when no destination exists." }
+  ],
+  "anchors": ["scripts/build-mac.sh", "scripts/replace-app.swift", "scripts/workspace-status.sh"]
+}

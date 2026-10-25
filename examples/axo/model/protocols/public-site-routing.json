@@ -1,0 +1,10 @@
+{
+  "summary":"The single public origin routes account/auth APIs to the API Worker, rejects other API paths and serves the SPA for non-API URLs.",
+  "style":"http",
+  "transport":"HTTPS origin https://axo.leostera.dev; Worker Static Assets uses SPA not-found handling and runs Worker first for /api and /api/*.",
+  "server":"axo-public-site",
+  "clients":["axo-web-client"],
+  "framing":"Request path routing only. /api/auth and descendants, /api/v1/account/*, /api/v1/accounts/* and /api/v1/host-pairings/redeem delegate to the API Worker. Other /api and /api/* paths return private no-store 503. Non-API paths go to static assets/SPA fallback.",
+  "messages":[{"name":"GET / and /app","kind":"route","summary":"Serve the React app assets; browser pathname selects landing or app UI."},{"name":"/api/auth/* and account-scoped routes","kind":"route","summary":"Delegate to the API Worker for OAuth/session and account-authenticated account host/pairing/history APIs."},{"name":"other /api/*","kind":"route","summary":"Fail closed with 503 and Cache-Control: private, no-store."}],
+  "anchors":["sites/axo.leostera.dev/src/index.ts", "sites/axo.leostera.dev/cloudflare.config.ts", "sites/axo.leostera.dev/tests/deployment.test.mjs"]
+}

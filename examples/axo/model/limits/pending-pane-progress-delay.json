@@ -1,0 +1,7 @@
+{
+  "subject":"A pending pane creation must remain in progress for this delay before showing a spinner, avoiding flicker for fast local requests.",
+  "value":"150 ms",
+  "kind":"latency",
+  "about":["actors/axo-macos-app"],
+  "anchors":["apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneViews.swift#progressDelay"]
+}

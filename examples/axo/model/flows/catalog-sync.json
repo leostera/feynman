@@ -1,0 +1,11 @@
+{
+  "summary": "The macOS app maintains an authoritative local projection of daemon sessions/workspaces by subscribing before listing, then applying ordered catalog events; lag or transport failure causes reconnect and full resynchronization.",
+  "trigger": "AxoWorkbench starts catalog synchronization, or an existing subscription is lost or reports lag.",
+  "steps": [
+    { "actor": "axo-macos-app", "action": "Open a catalog-only subscription that excludes terminal output." },
+    { "actor": "axo-macos-app", "action": "Renegotiate daemon capabilities, concurrently fetch session and workspace snapshots, normalize selection/layout and update local catalog projections." },
+    { "actor": "axo-macos-app", "action": "Long-poll event batches; apply authoritative snapshots/removals and refetch workspace records on workspace changes; process relay status separately." },
+    { "actor": "axo-macos-app", "action": "On lag or transport error, unsubscribe best-effort, show reconnecting state, exponentially back off within configured bounds, then subscribe and resynchronize; after three consecutive failures ask daemon controller to recheck health." }
+  ],
+  "anchors": ["apple/AxoMac/Sources/AxoMac/Sessions/TerminalCatalogSync.swift", "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift", "apple/AxoMac/Sources/AxoMac/Sessions/AxodClient.swift", "apple/AxoMac/Tests/AxoMacTests/TerminalCatalogTests.swift", "apple/AxoMac/Tests/AxoMacTests/SessionCatalogTests.swift", "apple/AxoMac/Tests/AxoMacTests/SessionNavigationTests.swift", "apple/AxoMac/Tests/AxoMacTests/WorkbenchSelectionTests.swift"]
+}
