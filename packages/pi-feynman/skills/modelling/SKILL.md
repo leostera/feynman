@@ -93,11 +93,14 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 
 ## Process
 
-Every extraction accounts for every file it is responsible for. Reading only the
-files that look important is how models miss behaviour (a patch to a dependency,
-a script that installs a service, a config that changes a limit). Record what you
-reviewed in coverage ledgers (see Storage), and do not finish until coverage
-passes and the model is valid.
+The model describes the system as a whole, so build it from the outside in:
+first the actors, then the flows between connected actors, then the precise
+details. Every file the extraction is responsible for must still pass through
+context at some point, because reading only the files that look important is how
+models miss behaviour (a patch to a dependency, a script that installs a service,
+a config that changes a limit). Files read in full are recorded in coverage
+ledgers (see Storage); the extraction is not done until every file is read or
+skipped as vendored or generated, the model is valid, and it is no longer thin.
 
 One agent does the whole extraction in one session, following the code across
 files the way it would to understand the system, rather than reviewing files one
@@ -111,20 +114,31 @@ extraction to a separate agent, subagent, or background process.
 Responsible for: **every file git tracks at the commit**, that is, every file the
 repository does not ignore, except paths excluded in `.feynman/config.json`.
 
-1. Survey the README, docs, build graph, and entrypoints.
-2. Identify actors and where they run.
-3. Follow the code from the entrypoints: protocols, flows and their semantic
-   actions, state, state machines, invariants with their enforcement paths,
-   claims, and limits. Write and refine elements as understanding grows.
-4. Record files as reviewed once the model reflects them, with their outcome.
-5. Check what is still unreviewed and keep going until coverage passes; then
-   measure and validate (see Tools).
+1. **Actors.** Survey the whole repository before reading anything in depth:
+   the tree, manifests, READMEs, entrypoints, configuration; skim widely. Write
+   `meta.json` and every actor: first-party components with footprints covering
+   their code, and the external people, services, platforms, and programs they
+   interact with. Each actor's `talksTo` lists the actors it communicates with.
+   This map is done when every actor is connected and the system is summarised.
+2. **Flows.** Work through groups of connected actors one at a time, reading
+   their code in full, and write the flows that run through them, step by step
+   from actor to actor. Add protocols, state, invariants, and limits met on the
+   way, and correct the actor map when the code disagrees. Files outside every
+   footprint come last.
+3. **Depth.** With everything read, revise the model as a whole: every flow step
+   with its actor, target, and protocol; failure and recovery flows; protocol
+   messages with fields and returns; invariants with their call paths and tests;
+   claims with evidence; limits with where they are set; state machines.
 
-Vendored copies of third-party code may be listed as a whole directory with
+The model is thin while a flow involves a single actor, two actors talk with no
+flow or protocol showing how, a first-party actor takes part in no flow, a
+protocol does not name its server and clients or lists no messages, or a
+runtime-enforced invariant has a call path of one frame.
+
+Vendored copies of third-party code may be recorded as a whole directory with
 outcome `vendored`, once you have confirmed that is what they are and noted the
-origin. Lockfiles and other tool output are `generated`, with their source named. Patches, wrappers, and build rules around them are first-party and are
-reviewed file by file. Generated trees are listed the same way, as `generated`,
-when the files they are generated from are reviewed.
+origin. Lockfiles and other tool output are `generated`, with their source named.
+Patches, wrappers, and build rules around them are first-party and are read.
 
 ### Update (diff snapshot)
 
@@ -141,10 +155,11 @@ rewritten.
    for the old commit (history keeps them).
 3. List the changed files (coverage `--missing`) and get an overview of the
    model (`index`).
-4. Read every changed file and re-examine the outdated elements listed for it;
-   **edit** them, and add or remove elements as needed. Do not regenerate the whole model. For deleted
-   or moved files, update the anchors that pointed at them.
-5. Record each changed file in a ledger, then measure, validate, and run coverage.
+4. Read the changed files group by group (phase 2, limited to them) and
+   re-examine the outdated elements listed for them; **edit** them, and add or
+   remove elements as needed. Do not regenerate the whole model. For deleted or
+   moved files, update the anchors that pointed at them.
+5. Revise for depth (phase 3), then measure, validate, and run coverage.
 
 ## Storage
 
@@ -164,7 +179,7 @@ An element's id is its file name (a readable kebab-case slug) and is not repeate
 inside the file. `sources` is written by tools (`measure`), never by hand: the git
 blob id of each file the element anchors, as the file is on disk (committed or not). Ids are unique within a kind, need not be stable, and renaming
 one means moving its file. Fields that name a specific kind use a bare id
-(`actor`, `target`, `owner`, `server`, `clients`, `from` name actors; `ref` names
+(`actor`, `target`, `owner`, `server`, `clients`, `from`, `talksTo` name actors; `ref` names
 a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
 path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`.
 
@@ -181,10 +196,11 @@ Excluded files are never required for coverage and are not counted in code
 footprints. Exclude only what is genuinely outside the system; it is a statement
 about scope, not a way to finish faster.
 
-Coverage ledgers record what each extraction pass reviewed, at which commit:
-one file per batch, listing every reviewed file with its outcome: `modelled`
-(the model reflects what it contributes), `no-behaviour` (read; nothing to model),
-`vendored`, or `generated`. Ledgers are not rendered.
+Coverage ledgers record what each extraction pass covered, at which commit: one
+file per batch, listing every file with its outcome: `read` (read in full,
+recorded automatically), `vendored`, or `generated` (with a note naming the
+origin). Older ledgers may say `modelled` or `no-behaviour`. Ledgers are not
+rendered.
 
 Each file must validate against its schema in `packages/model/schema/` of the
 Feynman repository (JSON Schema 2020-12; shared definitions in `common.json`). Together they are the
@@ -210,14 +226,17 @@ Mechanical facts come from tools, not from the agent.
   there is no model, otherwise an update from the modelled commit (it sets
   `meta.source.base`, and drops ledgers for the old commit). Tracked files must
   match HEAD.
-- `feynman_reviewed` records files as reviewed, with their outcome. `modelled`
-  and `no-behaviour` files must have been read in full with `read` in this
-  session (searching or listing does not count), and `modelled` files must be
-  anchored by some element. `vendored` and `generated` files and trees need a
-  note naming their origin instead. Ledgers cannot be written any other way.
-- `feynman_status` shows coverage and model problems.
-- Whenever the agent stops, the extension checks coverage and validity, and asks
-  it to continue until both pass; then it measures the model. `/feynman-stop`
+- Files read in full with `read` (continuing truncated output with offsets) are
+  recorded automatically; searching or listing does not count. Ledgers cannot be
+  written any other way.
+- `feynman_skip` records vendored or generated files or trees, with a note
+  naming their origin, so they need not be read.
+- `feynman_status` shows the phase, coverage, the current group or what the
+  model lacks, and model problems.
+- Whenever the agent stops, the extension checks where the extraction stands,
+  moves to the next phase when the current one is done, and asks the agent to
+  continue (with the next group of actors in phase 2) until every file is read,
+  the model is valid, and it is no longer thin; then it measures the model. `/feynman-stop`
   stops this; `/feynman-render` renders the model to `.feynman/index.html`.
 
 ### From the command line

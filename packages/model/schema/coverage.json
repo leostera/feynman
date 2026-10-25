@@ -38,12 +38,13 @@
           },
           "outcome": {
             "enum": [
+              "read",
               "modelled",
               "no-behaviour",
               "vendored",
               "generated"
             ],
-            "description": "modelled: read, and the model reflects what it contributes. no-behaviour: read, and it has nothing to model (prose, formatting config, assets). vendored: a copy of third-party code, identified by its origin. generated: produced by a tool from files that are themselves reviewed."
+            "description": "read: read in full in the extraction session (recorded automatically). vendored or generated: not read, with a note naming the origin. modelled and no-behaviour: recorded by earlier versions."
           },
           "note": {
             "type": "string",

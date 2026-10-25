@@ -4,6 +4,6 @@ export * from "./check.ts";
 export * from "./coverage.ts";
 export * from "./measure.ts";
 export * from "./index-model.ts";
-export { git, tryGit, trackedFiles } from "./git.ts";
+export { git, lines, tryGit, trackedFiles } from "./git.ts";
 export * from "./anchors.ts";
 export * from "./sources.ts";

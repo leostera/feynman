@@ -1,6 +1,6 @@
 // The agent-facing operations, described once so every runtime adapter exposes
 // them the same way. Adapters translate these into their own tool definitions.
-import { OUTCOMES } from "./extraction.ts";
+import { SKIP_OUTCOMES } from "./extraction.ts";
 
 export const TOOLS = {
   extract: {
@@ -10,28 +10,25 @@ export const TOOLS = {
       "Start (or resume) extracting the Feynman model of the current repository at HEAD: a first snapshot when there is no model, or an update from the modelled commit. Returns what to do; afterwards, coverage is checked whenever you stop.",
     snippet: "Start or resume extracting the Feynman model of this repository",
   },
-  reviewed: {
-    name: "feynman_reviewed",
-    label: "Feynman: reviewed",
+  skip: {
+    name: "feynman_skip",
+    label: "Feynman: skip",
     description:
-      "Record repository files as reviewed for the Feynman model, with what each contributed. `modelled` and `no-behaviour` files must have been read in full with the read tool in this session (continue with offsets when output is truncated), and `modelled` files must be anchored by at least one element. `vendored` and `generated` files (lockfiles, copies of third-party code, tool output) need a note naming their origin instead; a directory ending in `/` may be recorded whole with those outcomes.",
-    snippet: "Record files as reviewed for the Feynman model",
-    guideline:
-      "While extracting a Feynman model, call feynman_reviewed for files once you have read them and reflected them in the model; batch several files per call.",
+      "Record vendored or generated files for the Feynman model, so they need not be read: copies of third-party code, lockfiles, tool output. A directory ending in `/` covers everything under it. Everything else is recorded automatically once you have read it in full.",
+    snippet: "Record vendored or generated files that need not be read for the Feynman model",
     params: {
-      path: "Repository-relative path",
-      outcome:
-        "modelled: the model reflects it and some element anchors it. no-behaviour: nothing to model (prose, formatting or lint config, assets, fixtures); source code almost always informs some element. vendored or generated: say the origin in note.",
-      summary: "What this session has covered so far, in a phrase",
+      paths: "Repository-relative files, or directories ending in `/`",
+      outcome: "vendored: a copy of someone else's code. generated: output of a tool in or outside this repository.",
+      note: "Where it comes from, e.g. `lockfile written by bun install` or `copy of xterm.js 5.3`",
     },
-    outcomes: OUTCOMES,
+    outcomes: SKIP_OUTCOMES,
   },
   status: {
     name: "feynman_status",
     label: "Feynman: status",
     description:
-      "Show Feynman model coverage (files reviewed out of those required, unreviewed files by directory) and any model validation problems.",
+      "Show where the Feynman extraction stands: its phase, how many files are read, the current group of actors to read or what the model still lacks, and any validation problems.",
     snippet: "Check Feynman model coverage and validity",
-    params: { missing: "List every unreviewed path instead of a sample" },
+    params: { missing: "List every unread path instead" },
   },
 } as const;

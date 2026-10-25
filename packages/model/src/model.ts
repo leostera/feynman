@@ -85,7 +85,8 @@ export function writeModel(modelDir: string, model: Model): void {
   }
 }
 
-export type Outcome = "modelled" | "no-behaviour" | "vendored" | "generated";
+/** `read` is recorded automatically; `modelled` and `no-behaviour` come from older ledgers. */
+export type Outcome = "read" | "modelled" | "no-behaviour" | "vendored" | "generated";
 export interface LedgerEntry {
   path: string;
   outcome: Outcome;

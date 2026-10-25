@@ -8,7 +8,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "allowJs": true,
-    "types": ["node"]
+    "types": ["node", "bun"]
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

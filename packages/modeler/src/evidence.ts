@@ -2,8 +2,8 @@
 //
 // Only reading counts: a file is read when the agent's reads together cover every
 // line of it (continuing past truncation with offsets as needed). Naming a file in
-// a search or listing does not count. Recording a file as reviewed requires having
-// read it; the agent is otherwise free to move between files in any order.
+// a search or listing does not count. The agent is free to move between files in
+// any order; files are recorded as read once they are covered.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { within } from "./paths.ts";
@@ -37,15 +37,21 @@ export class Evidence {
     return `${Math.min(covered, this.length(path))} of ${this.length(path)} lines`;
   }
 
-  /** A read of `path` (relative to `cwd`). */
-  read(cwd: string, path: string, read: Read = {}) {
+  /** Files read in full so far. */
+  files(): string[] {
+    return [...this.ranges.keys()].filter((file) => this.has(file));
+  }
+
+  /** A read of `path` (relative to `cwd`); returns the repository path once the file is read in full. */
+  read(cwd: string, path: string, read: Read = {}): string | null {
     const file = this.toRepository(cwd, path);
-    if (!file) return;
+    if (!file) return null;
     const total = this.length(file);
     const start = Math.max(1, read.offset ?? 1);
     const span = Math.min(read.limit ?? Infinity, read.returnedLines ?? Infinity);
     const end = Math.min(total, span === Infinity ? total : start + span - 1);
     this.add(file, start, Math.max(start, end));
+    return this.has(file) ? file : null;
   }
 
   private add(file: string, start: number, end: number) {

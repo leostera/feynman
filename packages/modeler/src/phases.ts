@@ -1,0 +1,160 @@
+// The three phases of an extraction, and what each one still lacks.
+//
+//   1. actors  Survey the whole repository and map its actors: first-party components
+//              with footprints, external parties, and who talks to whom (`talksTo`).
+//   2. flows   Work through groups of connected actors one at a time, reading their
+//              code in full and writing the flows that run through them.
+//   3. depth   Make flows, protocols, invariants, claims, and limits precise.
+//
+// Everything here is a pure function of the model and the unread files, so the
+// current group and the remaining gaps are recomputed whenever the agent stops.
+import type { Element, Model } from "@feynman/model";
+
+export type Phase = 1 | 2 | 3;
+
+export const PHASE_NAMES: Record<Phase, string> = { 1: "actors", 2: "flows", 3: "depth" };
+
+/** Roughly how much unread code one group asks for (bytes; ~40k tokens). */
+export const GROUP_BUDGET = 160_000;
+
+const isFirstParty = (actor: Element) => actor.provenance === "first-party";
+const footprintOf = (actor: Element): string[] => actor.footprint?.paths ?? [];
+
+/** Whether `file` lies under a footprint path (a directory, a file, or "."). */
+export function owns(paths: string[], file: string): boolean {
+  return paths.some((path) => {
+    const prefix = path.replace(/^\.\/?/, "").replace(/\/$/, "");
+    return prefix === "" || file === prefix || file.startsWith(`${prefix}/`);
+  });
+}
+
+/** Undirected connections between actors, from talksTo, protocols, and flow steps. */
+export function connections(model: Model): Map<string, Set<string>> {
+  const graph = new Map<string, Set<string>>(model.actors.map((actor) => [actor.id, new Set<string>()]));
+  const link = (a?: string, b?: string) => {
+    if (!a || !b || a === b || !graph.has(a) || !graph.has(b)) return;
+    graph.get(a)!.add(b);
+    graph.get(b)!.add(a);
+  };
+  for (const actor of model.actors) for (const other of actor.talksTo ?? []) link(actor.id, other);
+  for (const protocol of model.protocols) for (const client of protocol.clients ?? []) link(protocol.server, client);
+  for (const flow of model.flows) for (const step of flow.steps ?? []) link(step.actor, step.target);
+  return graph;
+}
+
+/** What phase 1 still lacks before the actor map is usable. */
+export function actorGaps(model: Model): string[] {
+  const gaps: string[] = [];
+  if (!model.meta.summary?.trim()) gaps.push("meta.json has no summary of what the system is and does");
+  if (!model.actors.some(isFirstParty)) gaps.push("no first-party actor yet");
+  if (model.actors.length < 2) gaps.push("a system interacts with something: add the people, services, and programs it talks to as actors");
+  const graph = connections(model);
+  if (model.actors.length >= 2) {
+    for (const actor of model.actors) if (graph.get(actor.id)!.size === 0) gaps.push(`actors/${actor.id} talks to no other actor; fill talksTo`);
+  }
+  return gaps;
+}
+
+export interface Group {
+  /** First-party actors whose unread code this group covers; empty for files outside every footprint. */
+  actors: string[];
+  /** Other actors they talk to, for context. */
+  neighbours: string[];
+  /** Unread files, within the budget when possible. */
+  files: string[];
+  bytes: number;
+  /** Unread files left beyond this group. */
+  remaining: number;
+}
+
+/**
+ * The next group of connected actors to read: the first first-party actor (by id)
+ * with unread files, plus the first-party actors it talks to, while their unread
+ * files fit the budget. A large actor is split across several groups. When every
+ * footprint is read, the files outside all footprints form the last group.
+ */
+export function nextGroup(model: Model, unread: string[], sizes: Map<string, number>, budget = GROUP_BUDGET): Group | null {
+  if (!unread.length) return null;
+  const actors = model.actors.filter(isFirstParty).sort((a, b) => a.id.localeCompare(b.id));
+  const unreadOf = (actor: Element) => unread.filter((file) => owns(footprintOf(actor), file));
+  const size = (files: string[]) => files.reduce((n, file) => n + (sizes.get(file) ?? 0), 0);
+  const graph = connections(model);
+
+  const seed = actors.find((actor) => unreadOf(actor).length);
+  if (!seed) return fit([], [], unread);
+
+  const members = [seed.id];
+  let files = unreadOf(seed);
+  const neighbours = [...(graph.get(seed.id) ?? [])].sort();
+  for (const id of neighbours) {
+    const actor = actors.find((candidate) => candidate.id === id);
+    if (!actor) continue;
+    const extra = unreadOf(actor).filter((file) => !files.includes(file));
+    if (!extra.length || size(files) + size(extra) > budget) continue;
+    members.push(id);
+    files = [...files, ...extra];
+  }
+  return fit(members, neighbours.filter((id) => !members.includes(id)), files);
+
+  function fit(members: string[], neighbours: string[], candidates: string[]): Group {
+    const files: string[] = [];
+    let bytes = 0;
+    for (const file of [...candidates].sort()) {
+      const n = sizes.get(file) ?? 0;
+      if (files.length && bytes + n > budget) break;
+      files.push(file);
+      bytes += n;
+    }
+    return { actors: members, neighbours, files, bytes, remaining: unread.length - files.length };
+  }
+}
+
+/** Files no first-party footprint covers. */
+export function unowned(model: Model, files: string[]): string[] {
+  const paths = model.actors.filter(isFirstParty).flatMap(footprintOf);
+  return files.filter((file) => !owns(paths, file));
+}
+
+/** Where the model is still thin; phase 3 ends when this is empty. */
+export function depthGaps(model: Model): string[] {
+  const gaps: string[] = [];
+  const graph = connections(model);
+  const inFlows = new Set<string>();
+  const shown = new Set<string>();
+  const pair = (a: string, b: string) => [a, b].sort().join(" ↔ ");
+
+  for (const flow of model.flows) {
+    const involved = new Set<string>();
+    for (const step of flow.steps ?? []) {
+      if (step.actor) involved.add(step.actor);
+      if (step.target) involved.add(step.target);
+      if (step.actor && step.target && step.actor !== step.target) shown.add(pair(step.actor, step.target));
+    }
+    for (const id of involved) inFlows.add(id);
+    if (involved.size < 2) gaps.push(`flows/${flow.id} involves only ${[...involved].join("") || "no actor"}; name each step's target`);
+  }
+  for (const protocol of model.protocols) {
+    if (!protocol.server || !protocol.clients?.length) gaps.push(`protocols/${protocol.id} does not name its server and clients`);
+    for (const client of protocol.clients ?? []) if (protocol.server) shown.add(pair(protocol.server, client));
+    if (!protocol.messages?.length) gaps.push(`protocols/${protocol.id} lists no messages`);
+  }
+  for (const actor of model.actors) {
+    if (isFirstParty(actor) && !inFlows.has(actor.id)) gaps.push(`actors/${actor.id} takes part in no flow`);
+  }
+  const reported = new Set<string>();
+  for (const [a, others] of graph) {
+    for (const b of others) {
+      const key = pair(a, b);
+      if (shown.has(key) || reported.has(key)) continue;
+      reported.add(key);
+      gaps.push(`${key} talk, but no flow step or protocol shows how`);
+    }
+  }
+  for (const invariant of model.invariants) {
+    const frames = invariant.enforcedAt?.frames ?? [];
+    if (invariant.enforcement === "runtime" && frames.length < 2) {
+      gaps.push(`invariants/${invariant.id}: trace the call path from ${invariant.enforcedAt?.trigger ?? "its trigger"} to the check (enforcedAt.frames)`);
+    }
+  }
+  return gaps;
+}

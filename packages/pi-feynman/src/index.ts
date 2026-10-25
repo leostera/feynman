@@ -58,7 +58,7 @@ export default function feynman(pi: ExtensionAPI) {
   pi.on("tool_call", (event, ctx) => {
     if (event.toolName !== "write" && event.toolName !== "edit") return;
     if (current(ctx).isLedgerPath(ctx.cwd, String(event.input.path ?? ""))) {
-      return { block: true, reason: `Coverage ledgers are written by ${TOOLS.reviewed.name}; call it with the files you have read.` };
+      return { block: true, reason: `Coverage ledgers are written by Feynman: files are recorded once read in full, and ${TOOLS.skip.name} records vendored or generated ones.` };
     }
   });
 
@@ -93,24 +93,17 @@ export default function feynman(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TOOLS.reviewed.name,
-    label: TOOLS.reviewed.label,
-    description: TOOLS.reviewed.description,
-    promptSnippet: TOOLS.reviewed.snippet,
-    promptGuidelines: [TOOLS.reviewed.guideline],
+    name: TOOLS.skip.name,
+    label: TOOLS.skip.label,
+    description: TOOLS.skip.description,
+    promptSnippet: TOOLS.skip.snippet,
     parameters: Type.Object({
-      files: Type.Array(
-        Type.Object({
-          path: Type.String({ description: TOOLS.reviewed.params.path }),
-          outcome: StringEnum(TOOLS.reviewed.outcomes, { description: TOOLS.reviewed.params.outcome }),
-          note: Type.Optional(Type.String()),
-        }),
-        { minItems: 1 },
-      ),
-      summary: Type.Optional(Type.String({ description: TOOLS.reviewed.params.summary })),
+      paths: Type.Array(Type.String(), { minItems: 1, description: TOOLS.skip.params.paths }),
+      outcome: StringEnum(TOOLS.skip.outcomes, { description: TOOLS.skip.params.outcome }),
+      note: Type.String({ description: TOOLS.skip.params.note }),
     }),
     async execute(_id, params, _signal, _onUpdate, ctx) {
-      const result = current(ctx).review(params.files, params.summary);
+      const result = current(ctx).skip(params.paths, params.outcome, params.note);
       return { content: text(result.text), details: { recorded: result.recorded, rejected: result.rejected } };
     },
   });
@@ -140,7 +133,7 @@ export default function feynman(pi: ExtensionAPI) {
       },
     });
 
-  command("extract", "Start or resume extracting the Feynman model at HEAD, and keep the agent going until every file is reviewed", async (_args, ctx) => {
+  command("extract", "Start or resume extracting the Feynman model at HEAD, and guide the agent through its phases until the model is complete", async (_args, ctx) => {
     await pi.sendUserMessage(current(ctx).begin());
   });
 

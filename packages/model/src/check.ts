@@ -75,6 +75,7 @@ export function checkModel(modelDir: string, repository?: string): string[] {
     for (const message of protocol.messages ?? []) ref(`protocols/${protocol.id} ${message.name} from`, message.from, "actors");
   }
   for (const state of model.state) ref(`state/${state.id} owner`, state.owner, "actors");
+  for (const actor of model.actors) for (const id of actor.talksTo ?? []) ref(`actors/${actor.id} talksTo`, id, "actors");
   const known = new Set(KINDS.flatMap((kind) => model[kind.key].map((e) => `${kind.dir}/${e.id}`)));
   for (const key of ["claims", "limits"] as const) {
     for (const element of model[key]) {

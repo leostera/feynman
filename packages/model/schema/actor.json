@@ -58,6 +58,15 @@
     "footprint": {
       "$ref": "urn:feynman:common#/$defs/actorFootprint"
     },
+    "talksTo": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Ids of the actors this one communicates with, in either direction: the system's connection map, sketched before flows and protocols describe how."
+    },
     "sources": {
       "$ref": "urn:feynman:common#/$defs/sources"
     }
