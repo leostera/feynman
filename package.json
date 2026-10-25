@@ -2,12 +2,14 @@
   "name": "feynman",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "sites/*"
   ],
   "scripts": {
     "render": "bun run --cwd packages/renderer build",
     "model": "node packages/model/bin/feynman-model.ts",
-    "typecheck": "bun run --cwd packages/model typecheck && bun run --cwd packages/renderer typecheck && bun run --cwd packages/modeler typecheck && bun run --cwd packages/pi-feynman typecheck",
-    "test": "bun run --cwd packages/model test && bun run --cwd packages/modeler test && bun run --cwd packages/pi-feynman test"
+    "typecheck": "bun run --cwd packages/model typecheck && bun run --cwd packages/renderer typecheck && bun run --cwd packages/modeler typecheck && bun run --cwd packages/pi-feynman typecheck && bun run --cwd sites/feynman.leostera.dev typecheck",
+    "test": "bun run --cwd packages/model test && bun run --cwd packages/modeler test && bun run --cwd packages/pi-feynman test",
+    "site:deploy": "bun run --cwd sites/feynman.leostera.dev deploy"
   }
 }

@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.cloudflare/
+# Rendered by scripts/explainers.ts from the models it lists.
+public/explainers/

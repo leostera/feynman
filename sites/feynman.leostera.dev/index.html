@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Feynman: understand how software works</title>
+    <meta name="description" content="Feynman reads a repository, models how the system behaves, and renders an explainer you can read instead of the code." />
+    <script>
+      document.documentElement.setAttribute(
+        "data-mode",
+        localStorage.getItem("feynman.mode") ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+      );
+    </script>
+  </head>
+  <body class="bg-kumo-canvas">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

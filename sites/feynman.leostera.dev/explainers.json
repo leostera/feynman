@@ -1,0 +1,8 @@
+[
+  {
+    "name": "feynman",
+    "title": "Feynman",
+    "summary": "This project: how a repository becomes a model, and a model becomes an explainer.",
+    "model": "../../.feynman/model"
+  }
+]
