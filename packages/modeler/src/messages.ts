@@ -36,6 +36,8 @@ const SCOPE = [
   "- Tests are in scope: read them, and record what they check as invariants (with their tests), claims (with tests as evidence), and limits.",
   "- Files you read in full are recorded automatically. Skip vendored and generated files too, with their origin.",
   "",
+  "Write what a newcomer needs to understand the system, and stop there: fewer, essential elements explain better and are extracted faster. A few journeys for what the system exists to do; one flow per distinct behaviour behind a stage (variants that behave alike are one flow; error paths only when the user sees them differently); limits a user can hit (input sizes, timeouts, rates), not internal buffers or display caps; invariants the system's correctness depends on; one sentence per step.",
+  "",
   "How to work: Feynman checks each model file as you write it, and coverage, validity, and what is still thin whenever you stop; feynman_status shows the same. Don't run check, coverage, measure, tests, or your own scripts over the model. Write each element once, completely, rather than revising it. The schemas are fixed: if one cannot express something, say so in your last message instead of changing it. If a Feynman tool reports something that looks wrong, tell the user.",
 ].join("\n");
 

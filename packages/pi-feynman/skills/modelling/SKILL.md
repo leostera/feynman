@@ -85,8 +85,13 @@ drills down only where they care.
 - **Claims** are what we believe about the system ("terminal bytes never leave the
   host"), with evidence and the elements they are `about`, including beliefs the
   code contradicts.
-- **Limits** are bounds: sizes, counts, timeouts, intervals, rates. One per bound,
-  anchored to the line that sets it, `about` what it applies to.
+- **Limits** are bounds a user can hit: input sizes, counts, timeouts, intervals,
+  rates. One per bound, anchored to the line that sets it, `about` what it applies
+  to. Internal buffers and display caps are not limits.
+
+Write what a newcomer needs, and stop there: fewer, essential elements explain
+better than a catalogue. Variants of a command that behave alike are one flow; an
+error path is its own flow only when the user sees it differently.
 
 ## Process
 
