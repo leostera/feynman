@@ -119,7 +119,7 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
                 session={session}
                 setSession={setSession}
                 scenarios={{
-                  items: [{ value: "Empty world", label: "Empty world" }, ...(session.origin !== "Empty world" && !current.spec.scenarios.some((s) => s.name === session.origin) ? [{ value: session.origin, label: session.origin }] : []), ...current.spec.scenarios.map((s) => ({ value: s.name, label: s.name }))],
+                  items: [{ value: "Fresh start", label: "Fresh start" }, ...current.spec.scenarios.map((s) => ({ value: s.name, label: s.name }))],
                   onPick: (v) => {
                     const scenario = current.spec!.scenarios.find((s) => s.name === v);
                     setSession(scenario ? runScenarioSession(current.spec!, scenario) : freshSession(current.spec!));

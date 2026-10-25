@@ -111,7 +111,14 @@ function scriptFor(runner: Runner): Script {
       return runner.world.instances.find((i) => i.id === id)?.state as never;
     },
   });
+  const view = () => worldView(runner.spec, runner.world);
   return {
+    the(actor) {
+      return live(view().the(actor).id) as never;
+    },
+    all(actor) {
+      return view().all(actor).map((i) => live(i.id)) as never;
+    },
     spawn(actor, label) {
       const event = runner.spawn(actor.name, label);
       return live(event.instance) as never;

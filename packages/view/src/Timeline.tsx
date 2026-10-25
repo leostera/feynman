@@ -1,11 +1,11 @@
 // The timeline: the event log of a playground session. Hovering an event shows the world
 // as it was then; clicking rolls the session back to it. The focused event's detail sits
 // at the bottom, with its code.
-import { Badge, cn, Select } from "@cloudflare/kumo";
+import { Badge, cn } from "@cloudflare/kumo";
 import { useEffect, useRef } from "react";
 import type { Event } from "@feynman/spec";
-import { kindLabel, labelOf, stepTitle, time } from "./format";
-import type { ReactNodeMenu } from "./Playground";
+import { clock, kindLabel, labelOf, stepTitle } from "./format";
+import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
 
@@ -14,13 +14,11 @@ export function Timeline({
   preview,
   onPreview,
   onRollback,
-  scenarios,
 }: {
   session: Session;
   preview: number | null;
   onPreview: (index: number | null) => void;
   onRollback: (count: number) => void;
-  scenarios: ReactNodeMenu;
 }) {
   const { spec } = useExplorer();
   const list = useRef<HTMLDivElement>(null);
@@ -32,9 +30,9 @@ export function Timeline({
   const focused = focusIndex >= 0 ? session.steps[focusIndex] : null;
   return (
     <aside className="flex w-[22rem] shrink-0 flex-col border-l border-kumo-hairline bg-kumo-base">
-      <div className="flex items-center gap-2 border-b border-kumo-hairline px-3 py-2">
-        <Select size="sm" aria-label="Start from" className="min-w-0 flex-1" value={session.origin} onValueChange={(v) => scenarios.onPick(String(v))} items={scenarios.items} />
-        <span className="shrink-0 text-xs text-kumo-subtle">{steps.length} events</span>
+      <div className="flex items-baseline gap-2 px-4 pb-2 pt-3">
+        <span className="text-sm font-semibold">Timeline</span>
+        <span className="ml-auto text-xs text-kumo-subtle">{steps.length} events</span>
       </div>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto py-1" onMouseLeave={() => onPreview(null)}>
         <Row
@@ -42,8 +40,8 @@ export function Timeline({
           previewed={preview === -1}
           onEnter={() => onPreview(-1)}
           onClick={() => onRollback(0)}
-          time="0ms"
-          title="The start"
+          time="0.00s"
+          title={session.origin === "Fresh start" ? "The start" : `Start of “${session.origin}”`}
           subtitle={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
         />
         {steps.map(({ event, world, index }) => (
@@ -53,9 +51,9 @@ export function Timeline({
             previewed={preview === index}
             onEnter={() => onPreview(index)}
             onClick={() => onRollback(index + 1)}
-            time={time(event.at)}
-            title={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
-            subtitle={event.description}
+            time={clock(event.at)}
+            title={bubbleText(spec, event, world)}
+            subtitle={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
             kind={kindLabel(event)}
             bad={Boolean(event.error || event.violations.length)}
             fault={event.kind === "lose" || event.kind === "restart"}
@@ -101,11 +99,11 @@ function Row({
       onFocus={onEnter}
       onClick={onClick}
       title="Go back to this moment"
-      className={cn("flex w-full items-start gap-2 border-l-2 border-transparent px-3 py-1.5 text-left hover:bg-kumo-tint", active && "border-kumo-brand bg-kumo-tint", previewed && "bg-kumo-tint")}
+      className={cn("mx-2 flex w-[calc(100%-1rem)] items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-kumo-tint", active && "bg-kumo-tint ring-1 ring-kumo-line", previewed && "bg-kumo-tint")}
     >
-      <span className="w-12 shrink-0 pt-px text-right font-mono text-[10.5px] text-kumo-subtle">{time}</span>
+      <span className="w-11 shrink-0 pt-px text-right font-mono text-[10.5px] font-semibold text-kumo-subtle">{time}</span>
       <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-xs font-medium", bad && "text-kumo-danger")}>{title}</span>
+        <span className={cn("block text-[12.5px] font-medium leading-snug", bad && "text-kumo-danger")}>{title}</span>
         <span className="block truncate text-[11px] text-kumo-subtle">{subtitle}</span>
       </span>
       {kind && (fault || bad) && <Badge variant={bad ? "error" : "warning"}>{bad ? "broken" : kind}</Badge>}

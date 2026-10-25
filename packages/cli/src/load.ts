@@ -16,6 +16,7 @@ let counter = 0;
 
 export async function bundle(path: string, target: "bun" | "browser"): Promise<string> {
   const result = await Bun.build({
+    throw: false,
     entrypoints: [path],
     target,
     format: "esm",
@@ -28,8 +29,14 @@ export async function bundle(path: string, target: "bun" | "browser"): Promise<s
       },
     ],
   });
-  if (!result.success) throw new Error(result.logs.map((l) => String(l)).join("\n"));
+  if (!result.success) throw new Error(result.logs.map(describeLog).join("\n") || "the spec could not be bundled");
   return result.outputs[0].text();
+}
+
+/** A build message with where it happened: "specs/x.ts:12:4 Expected "}" but found ")"". */
+function describeLog(log: { message: string; position?: { file: string; line: number; column: number } | null }): string {
+  const at = log.position ? `${log.position.file}:${log.position.line}:${log.position.column} ` : "";
+  return `${at}${log.message}`;
 }
 
 /** Import a TypeScript module through a fresh bundle, so edits are always seen. */

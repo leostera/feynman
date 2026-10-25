@@ -2,9 +2,9 @@
 // declared, a missing input) before anything runs. A repository need not install anything:
 // tsc runs from this installation with a temporary config mapping `@feynman/spec` here.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const TSC = join(dirname(Bun.resolveSync("typescript/package.json", import.meta.dir)), "bin", "tsc");
 const SPEC = Bun.resolveSync("@feynman/spec", import.meta.dir);
@@ -26,7 +26,7 @@ export function typecheck(root: string, files: string[]): TypeError[] {
       strict: true,
       noEmit: true,
       target: "ES2022",
-      lib: ["ES2023"],
+      lib: ["ES2023", "DOM"],
       module: "ESNext",
       moduleResolution: "Bundler",
       skipLibCheck: true,
@@ -37,17 +37,25 @@ export function typecheck(root: string, files: string[]): TypeError[] {
     files: files.map((f) => join(root, f)),
   };
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify(config));
-  const out = spawnSync(TSC, ["-p", join(dir, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8" });
+  // tsc prints paths relative to its working directory: run it in the repository.
+  const out = spawnSync(TSC, ["-p", join(dir, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8", cwd: root });
   const errors: TypeError[] = [];
   let last: TypeError | null = null;
   for (const line of (out.stdout + out.stderr).split("\n")) {
     const m = /^(.+?)\((\d+),(\d+)\): error TS\d+: (.*)$/.exec(line);
     if (m) {
-      last = { file: relative(root, m[1]), line: Number(m[2]), column: Number(m[3]), message: m[4] };
+      last = { file: relative(realpathSync(root), realpathSync(resolve(root, m[1]))), line: Number(m[2]), column: Number(m[3]), message: hint(m[4]) };
       // Only the specs themselves: code they import may not type-check without its own setup.
       if (files.includes(last.file)) errors.push(last);
       else last = null;
     } else if (last && line.startsWith("  ")) last.message += `\n${line}`;
   }
   return errors;
+}
+
+/** Errors that have a known cause in specs get a line saying what to do. */
+function hint(message: string): string {
+  if (/referenced directly or indirectly in its own initializer/.test(message))
+    return `${message}\n  Two actors refer to each other in functions whose return type TypeScript must infer, usually input examples. Give that function a return type, like examples: (w): string[] => …`;
+  return message;
 }
