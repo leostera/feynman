@@ -13,7 +13,7 @@
 Feynman becomes a TypeScript library for writing **specs**: small, executable models of how
 part of a system behaves. A spec declares actors and the state they hold, the messages
 between them, the actions people take, the timers and limits that shape them, and the
-invariants that must hold. Each rule is anchored to the code it mirrors. Everything else is
+invariants that must hold. Each rule names the code it models. Everything else is
 derived from that one file:
 
 - a playground to run the system in the browser;
@@ -102,7 +102,7 @@ A **spec** is a small world:
 
 Feynman runs this world. Each step is an **event**: an action, a message delivery, a
 timer, or an injected fault. Every event records the transition that ran, the code that
-transition mirrors, what it sent, and exactly what state it changed.
+transition models, what it sent, and exactly what state it changed.
 
 ### Writing a spec
 
@@ -121,7 +121,7 @@ export default defineSpec("Remote access", (spec) => {
   const CODE_LIFETIME = spec.defineLimit({
     name: "Pairing code lifetime",
     value: 10 * MIN,
-    mirrors: "packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL",
+    models: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
   });
 
   const NewCode = spec.defineMessage<{ account: string }>({ name: "new pairing code", over: "https" });
@@ -134,22 +134,29 @@ export default defineSpec("Remote access", (spec) => {
     name: "Axo relay",
     zone: cloudflare,
     singleton: true,
-    initialState: {
+    initialState: () => ({
       codes: {} as Record<string, { account: string; used: boolean; expires: number }>,
       hosts: {} as Record<string, { account: string; verifier: string }>,
-    },
+    }),
     transitions: {
-      issueCode: spec.onMessage(NewCode, {
-        mirrors: "packages/axo-api-worker/src/auth/pairing.ts#issue",
+      [NewCode]: {
+        models: [
+          "packages/axo-api-worker/src/routes/pairing.ts#createPairing",
+          "packages/axo-api-worker/src/auth/pairing.ts:31-58",
+        ],
         sends: [Code],
         run(state, msg, ctx) {
           const code = ctx.fresh("code");
           state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
           ctx.reply(Code, { code }, "A one-time code, valid for 10 minutes.");
         },
-      }),
-      redeem: spec.onMessage(Redeem, {
-        mirrors: "packages/axo-api-worker/src/auth/pairing.ts#redeem",
+      },
+      [Redeem]: {
+        models: [
+          "packages/axo-api-worker/src/routes/pairing.ts#redeemPairing",
+          "packages/axo-api-worker/src/auth/pairing.ts#redeem",
+          "packages/axo-api-worker/src/auth/account-manager.ts:120-164",
+        ],
         sends: [Redeemed, Refused],
         run(state, msg, ctx) {
           const code = state.codes[ctx.hash(msg.code)];
@@ -160,40 +167,44 @@ export default defineSpec("Remote access", (spec) => {
           state.hosts[msg.host] = { account: code.account, verifier: ctx.hash(msg.credential) };
           ctx.reply(Redeemed, { account: code.account }, "The relay accepts the code and remembers the Mac.");
         },
-      }),
+      },
     },
   });
 
   const Person = spec.defineActor({
     name: "Person",
     zone: devices,
-    initialState: { account: "", codes: [] as string[] },
-    transitions: {
-      init: spec.onInit((state, ctx) => void (state.account = `acct-${ctx.label}`)),
-      pairHost: spec.onAction({
+    initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
+    actions: {
+      pairHost: {
         label: "Pair a host",
-        mirrors: "apps/web/src/settings/pair.tsx#createCode",
+        models: ["apps/web/src/settings/pair.tsx#createCode"],
         sends: [NewCode],
         run(state, _input, ctx) {
           ctx.send(ctx.the(Relay), NewCode, { account: state.account });
         },
-      }),
-      showCode: spec.onMessage(Code, {
-        mirrors: "apps/web/src/settings/pair.tsx#showCode",
+      },
+    },
+    transitions: {
+      [Code]: {
+        models: ["apps/web/src/settings/pair.tsx#showCode"],
         run: (state, msg) => void state.codes.push(msg.code),
-      }),
+      },
     },
   });
 
   const Mac = spec.defineActor({
     name: "Mac",
     zone: macs,
-    initialState: { link: { account: null as string | null, pending: null as string | null }, keychain: [] as string[] },
-    transitions: {
-      link: spec.onAction({
+    initialState: () => ({
+      link: { account: null as string | null, pending: null as string | null },
+      keychain: [] as string[],
+    }),
+    actions: {
+      link: {
         label: "Paste a pairing code",
         input: { code: "code" },
-        mirrors: "apps/macos/RemoteAccess.swift#link",
+        models: ["apps/macos/RemoteAccess.swift#link", "crates/axod/src/rpc/relay.rs#link"],
         sends: [Redeem],
         starts: ["redeemTimeout"],
         run(state, { code }, ctx) {
@@ -203,19 +214,21 @@ export default defineSpec("Remote access", (spec) => {
           ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id, credential });
           ctx.start("redeemTimeout", 5 * SEC);
         },
-      }),
-      linked: spec.onMessage(Redeemed, {
-        mirrors: "crates/axo-relay/src/pairing.rs#finish",
+      },
+    },
+    transitions: {
+      [Redeemed]: {
+        models: ["crates/axo-relay/src/pairing.rs#finish"],
         run(state, msg, ctx) {
           state.link = { account: msg.account, pending: null };
           ctx.cancel("redeemTimeout");
         },
-      }),
-      redeemTimeout: spec.onTimer({
-        mirrors: "crates/axo-relay/src/pairing.rs#retry",
+      },
+      redeemTimeout: {
+        models: ["crates/axo-relay/src/pairing.rs#retry"],
         sends: [Redeem],
         run(state, ctx) { /* resend the same redemption */ },
-      }),
+      },
     },
   });
 
@@ -252,22 +265,29 @@ Things to notice:
 - **`spec` is an object.** Everything is declared through `spec.define<Noun>` and kept
   in a variable, so later declarations can refer to it (`zone: cloudflare`,
   `ctx.the(Relay)`).
-- **An actor is a process, as in PlusCal.** Its `transitions` are a static object of
-  labelled steps, and each step says what triggers it:
-  - `onInit` when an instance is spawned;
-  - `onMessage` when a message arrives;
-  - `onAction` when a person takes an action;
-  - `onTimer` when a timer the actor started fires;
-  - `when(guard)` for a step that can happen whenever its guard holds.
-- **The labels are the vocabulary.** A timeline event, a flow step, a counterexample,
-  and a coverage report all name a transition as `Mac.link` or `Relay.redeem`.
+- **An actor is a process, as in PlusCal,** declared as plain data:
+  - **`initialState(ctx)`** returns the state of a new instance.
+  - **`actions`** are what a person can do to it. They become its click menu in the
+    playground and the steps scenarios script.
+  - **`transitions`** are what it does by itself. Each one is keyed in one of two ways:
+    - by a `Message`, when it runs because that message arrives (`[Redeem]: { … }`);
+    - by a label, when it is internal. An internal transition runs when a timer the
+      actor started fires (`ctx.start("redeemTimeout", 5 * SEC)`), or whenever its
+      `when` guard holds.
+- **The keys are the vocabulary.** A timeline event, a flow step, a counterexample, and
+  a coverage report all name a step the same way: `Mac.link` (an action),
+  `Relay.redeem` (a message), `Mac.redeemTimeout` (an internal transition).
 - **Transitions declare what they can cause:** `sends` lists the messages a step may
   send, and `starts` the timers it may start. Without running anything, Feynman knows
   every possible transition between actors. The canvas draws those edges, the checker
   uses them to plan its search, and the engine rejects a send that wasn't declared.
 - **`run` mutates `state` directly.** Feynman records each change as
   `field: before → after`; nobody logs changes by hand.
-- **`mirrors` is the anchor:** the code this step mirrors, as `path#symbol`.
+- **`models` is the trail of code a step models,** in the order the code runs: the entry
+  point first, then what it relies on. Each entry is a symbol (`path#symbol`) or a
+  range of lines (`path:120-164`). The first symbol is where the call stack starts;
+  together the entries say exactly which code the step stands for. When any of them
+  changes, the step is flagged as stale.
 - **The last argument of `send` and `reply` is optional text,** shown in the timeline in
   everyday words.
 - **Everything a step can observe comes from `state`, its input, and `ctx`:** the time
@@ -312,7 +332,7 @@ $ feynman check
         4 fault   lose "redeemed"          (the reply never arrives)
         5 Studio  redeem timeout           …
   coverage: 11 of 12 transitions reached; never ran: Mac.refused
-  stale: Relay.redeem mirrors packages/axo-api-worker/src/auth/pairing.ts#redeem, which changed since the spec was last checked
+  stale: Relay.redeem models packages/axo-api-worker/src/auth/pairing.ts#redeem, which changed since the spec was last checked
 ```
 
 Turning a proposal on checks it too: `feynman check --with "Unlink button"`.
@@ -361,14 +381,14 @@ survives moves to `@feynman/code`: snapshots, anchors, call trees, and source ve
 **Declarations.** These are plain data, available to every view, the checker, and the
 diff:
 
-- `Actor`: name, zone, singleton or spawnable, initial state, and `transitions`: a
-  static record from label to transition.
-- `Message<P>`: name, protocol (`over`), tone, and the payload type.
-- `Transition`: its label, its trigger (`init`, a message, an action with its input
-  types, a timer, or a guard), its anchor, what it `sends` and `starts`, and `run`.
-  Because transitions are declared statically, the possible communication between
-  actors is known before anything runs: an edge from actor A to actor B for every
-  message A's transitions send that one of B's transitions receives.
+- `Actor`: name, zone, singleton or spawnable, `initialState`, `actions`, and
+  `transitions`.
+- `Action`: its key, label, input types, models, what it `sends` and `starts`, and `run`.
+- `Transition`: its key (a message, or a label for internal transitions), an optional
+  `when` guard, models, `sends`, `starts`, and `run`. Because actions and transitions are
+  declared statically, the possible communication between actors is known before
+  anything runs: an edge from actor A to actor B for every message A can send that one of
+  B's transitions is keyed by.
 - `Limit`: name, value, unit, and anchor. `Zone`: id and label.
 - `Invariant`, `Liveness` (holds within N events, with fair timers), and `Forbidden`
   (an event pattern that must never occur), each from its own `spec.define<Noun>`.
@@ -395,13 +415,16 @@ diff:
 
 - Reads: `id`, `label`, `now`, `the(Actor)`, `all(Actor)`.
 - Messages: `send`, `reply`, `broadcast`.
-- Timers: `start(label, after)`, `cancel(label)`, for the actor's own `onTimer` transitions.
+- Timers: `start(label, after)`, `cancel(label)`, for the actor's own internal transitions.
 - Values: `fresh(prefix)`, `hash(value)`, `random()` (seeded), `proposal(name)`.
 - Failure: `fail(reason)`, which ends the event with a recorded refusal.
 
-**Anchors** are `path#symbol` or `path:line`, resolved with the existing anchor code.
-`feynman.lock` (generated, committed) records the git blob id of each anchored file when
-the spec was last checked. A transition is stale when the file it mirrors has changed since.
+**Models** are an ordered trail of anchors. Each is `path#symbol` or `path:start-end`,
+resolved with the existing anchor code. `feynman.lock` (generated, committed) records,
+for every entry, the content hash of the code it covers: the symbol's body or the line
+range, at the time the spec was last checked. A step is stale when the code under any of
+its entries has changed since, which is more precise than the whole file changing. A
+symbol that no longer resolves, or a range past the end of its file, is an error.
 
 ### The engine
 
@@ -420,11 +443,11 @@ the spec was last checked. A transition is stale when the file it mirrors has ch
 ### The checker
 
 - **Choices at each state** come from the static transitions of every instance:
-  - each `onAction` transition, with inputs drawn from values in the world (existing
-    codes, ids) plus one invalid value of each input type;
-  - each `when` transition whose guard holds;
-  - each pending delivery or timer that could fire next, which selects the `onMessage`
-    or `onTimer` transition that receives it;
+  - each action, with inputs drawn from values in the world (existing codes, ids) plus
+    one invalid value of each input type;
+  - each internal transition whose `when` guard holds;
+  - each pending delivery or timer that could fire next, which selects the transition
+    keyed by that message or timer;
   - every fault in the budget: lose a delivery, partition a zone, restart an instance
     (state declared `durable` survives).
 - **Time is ordering:** any due event may fire next, and timers keep their order among
@@ -544,9 +567,11 @@ covered path. `feynman diff` shows a real change between two axo commits.
 
 ### Proposed design
 
-Actors are declared like PlusCal processes: a static object of labelled transitions
-rather than handlers registered by calls. The set of steps an actor can take, what
-triggers each, and what each can cause are known without running anything. That is
+Actors are declared like PlusCal processes, as plain data rather than handlers
+registered by calls: the actions people can take, and the transitions the actor takes by
+itself, keyed by the message that triggers them or by a label. The set of steps an actor
+can take, what triggers each, and what each can cause are known without running
+anything. That is
 what the checker needs to enumerate choices and to reduce the search, what the canvas
 needs to draw every possible edge, and what makes labels usable everywhere: in the
 timeline, the flows, counterexamples, coverage, and diffs.
@@ -603,12 +628,13 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 
 - **Where specs live:** `feynman/*.ts` at the root, or `.feynman/specs/`. Specs are
   reviewed code, which argues for a visible `feynman/`.
-- **Transition keys:** this draft keys transitions by label and puts the trigger in the
-  value (`redeem: spec.onMessage(Redeem, …)`). The alternative keys message transitions
-  by the message (`[Redeem.received]: (state, msg) => …`), which is shorter but leaves
-  those steps without a name of their own, and makes TypeScript infer `msg` from a
-  computed key, which needs a registry of message types.
-- **Guards:** whether `onMessage` and `onAction` transitions also take a `when` guard,
+- **Typing message keys:** `[Redeem]: { run(state, msg) { … } }` needs TypeScript to know
+  `msg`'s type from a computed key. A `Message` would be a branded string (its key is
+  `"message:redeem"`), and `defineActor` looks up payload types in the spec's registry of
+  messages. That registry must be typed before the actors, for example by declaring
+  messages with one `spec.defineMessages({ … })` call, or by passing them to
+  `defineActor`. If that proves clumsy, the fallback is a field naming the message.
+- **Guards:** whether actions and message transitions also take a `when` guard,
   as PlusCal's `await` does, so that a message or action can wait until a state holds
   instead of being refused.
 - **Inputs for exploration:** how the checker enumerates action inputs. Values from the
