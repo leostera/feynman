@@ -234,7 +234,7 @@ export type InvariantDef =
   | { description: string; always: (world: World) => boolean }
   | {
       description: string;
-      /** Once `after` holds (always, by default), this holds within `within` events of the system running by itself. */
+      /** Once `after` holds (always, by default), the system running by itself gets here within `within` milliseconds. */
       eventually: (world: World) => boolean;
       after?: (world: World) => boolean;
       within: number;

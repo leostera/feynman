@@ -8,6 +8,7 @@ import { readConfig, type Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
 import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red } from "./format.ts";
 import { loadSpec } from "./load.ts";
+import { typecheck } from "./types.ts";
 
 export interface Context {
   cwd: string;
@@ -57,7 +58,11 @@ export async function list(ctx: Context): Promise<number> {
 
 export async function checkCommand(ctx: Context, named: string[], bounds: Partial<Bounds>): Promise<number> {
   let status = 0;
-  for (const { path, spec } of await loadSelected(ctx, named)) {
+  const selected = await loadSelected(ctx, named);
+  const typeErrors = typecheck(ctx.repository.root, selected.map((s) => s.path));
+  for (const e of typeErrors) console.log(red(`${e.file}:${e.line}:${e.column} ${e.message}`));
+  if (typeErrors.length) status = 1;
+  for (const { path, spec } of selected) {
     const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
     console.log(dim(path));
     const scenarios = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));

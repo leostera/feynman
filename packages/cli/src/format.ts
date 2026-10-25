@@ -68,7 +68,7 @@ export function formatSources(statuses: SourceStatus[]): string[] {
 export function formatReport(spec: Spec, report: Report): string {
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
-  const scope = [instances || "1 of each actor", `depth ${b.depth}`, `${b.faults} fault(s)`].join(", ");
+  const scope = [instances || "1 of each actor", `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
   ];
