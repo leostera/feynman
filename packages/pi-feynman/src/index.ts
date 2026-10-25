@@ -43,7 +43,13 @@ export default function feynman(pi: ExtensionAPI) {
   });
 
   pi.on("tool_result", (event, ctx) => {
-    if (event.toolName === "read" && !event.isError) noteRead(ctx, event.input, event.details);
+    if (event.isError) return;
+    if (event.toolName === "read") noteRead(ctx, event.input, event.details);
+    // Writes to the model come back with whether the file is valid.
+    if ((event.toolName === "write" || event.toolName === "edit") && typeof event.input.path === "string") {
+      const review = current(ctx).reviewWrite(ctx.cwd, event.input.path);
+      if (review) return { content: [...event.content, { type: "text" as const, text: review }] };
+    }
   });
 
   const noteRead = (ctx: ExtensionContext, input: Record<string, unknown>, details: unknown) => {

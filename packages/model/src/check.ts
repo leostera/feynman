@@ -1,5 +1,6 @@
 // Validate a model directory: each file against its JSON Schema, references between
 // elements, and (with a repository) that anchors exist in the modelled snapshot.
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { modelAnchors } from "./anchors.ts";
 import { readConfig } from "./config.ts";
@@ -19,6 +20,26 @@ export function checkModel(modelDir: string, repository?: string): string[] {
     return [(error as Error).message];
   }
   return [...checkFiles(modelDir, model), ...checkReferences(model), ...(repository ? checkAnchors(model, repository) : [])];
+}
+
+/**
+ * Problems with one file of the model (`file` relative to the model directory): its
+ * JSON, its schema, and its name. Null when the file is not part of the model.
+ * References to other elements are checked with the whole model.
+ */
+export function checkModelFile(modelDir: string, file: string): string[] | null {
+  const [dir, name, extra] = file.split("/");
+  const schema = file === "meta.json" ? "meta" : extra === undefined && name?.endsWith(".json") ? KINDS.find((kind) => kind.dir === dir)?.schema : undefined;
+  if (!schema) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(join(modelDir, file), "utf8"));
+  } catch (error) {
+    return [`not valid JSON: ${(error as Error).message}`];
+  }
+  const problems = schemaProblems(schema, value);
+  if (name && !/^[a-z0-9][a-z0-9-]*\.json$/.test(name)) problems.push("file name is not a kebab-case id");
+  return problems;
 }
 
 /** Every file against its schema, and element file names as ids. */

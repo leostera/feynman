@@ -64,10 +64,9 @@ const fullRun = (cwd: string) => {
     write("flows/post-note.json", FLOW),
     stop("Wrote the flow."),
     // The last group: files outside every footprint.
+    // Nothing is thin, so entering phase 3 finishes the extraction.
     call("read", { path: "README.md" }),
     stop("Read the rest."),
-    // Phase 3 starts with its instructions; nothing is thin, so the next stop finishes.
-    stop("The model is precise."),
   ];
 };
 
@@ -82,7 +81,7 @@ test("guides the agent through actors, groups of connected actors, and depth", a
   expect(kickoff).toContain("Phase 1: actors");
 
   const reports = harness.customMessages("feynman-coverage");
-  expect(reports).toHaveLength(6);
+  expect(reports).toHaveLength(5);
   expect(reports[0]).toContain("phase 1 of 3");
   expect(reports[0]).toContain("actors/server talks to no other actor");
   expect(reports[1]).toContain("Phase 2: flows");
@@ -91,9 +90,12 @@ test("guides the agent through actors, groups of connected actors, and depth", a
   expect(reports[2]).toContain("src/server.ts");
   expect(reports[3]).toContain("Last group: files outside every component's footprint");
   expect(reports[3]).toContain("README.md");
-  expect(reports[4]).toContain("Phase 3: depth");
-  expect(reports[5]).toContain("3 of 3 files covered");
-  expect(reports[5]).toContain("the model is valid");
+  expect(reports[4]).toContain("3 of 3 files covered");
+  expect(reports[4]).toContain("the model is valid");
+
+  // Every write to the model came back with whether the file is valid.
+  const writes = toolResults(harness).filter((r) => r.tool === "write");
+  expect(writes.every((r) => r.text.includes("is valid."))).toBe(true);
   expect(harness.pending()).toBe(0);
 
   const ledgers = readdirSync(join(cwd, ".feynman/model/coverage"));
@@ -172,6 +174,27 @@ test("extracts uncommitted work, recording what was read", async () => {
   const [ledger] = readdirSync(join(cwd, ".feynman/model/coverage"));
   const { files } = JSON.parse(readFileSync(join(cwd, ".feynman/model/coverage", ledger), "utf8"));
   expect(files).toEqual([{ path: "src/new.ts", outcome: "read", hash: expect.stringMatching(/^[0-9a-f]{40}$/) }]);
+});
+
+test("an invalid model file is reported in the write's result", async () => {
+  const cwd = repository(FILES);
+  harness = await startSession(cwd);
+  harness.respond([
+    call("feynman_extract", {}),
+    call("write", { path: ".feynman/model/limits/body.json", content: '{ "kind": "size",' }),
+    call("write", { path: ".feynman/model/limits/size.json", content: JSON.stringify({ kind: "vibes", subject: "body", value: 1, anchors: ["src/server.ts"] }) }),
+    call("write", { path: "notes.md", content: "not the model" }),
+    call("feynman_stop_now", {}),
+  ]);
+  harness.session.prompt("Extract.").catch(() => {});
+  while (harness.pending() > 0) await new Promise((resolve) => setTimeout(resolve, 10));
+  await harness.session.abort();
+
+  const [json, schema, other] = toolResults(harness).filter((r) => r.tool === "write");
+  expect(json.text).toContain("limits/body.json is not valid; fix it");
+  expect(json.text).toContain("not valid JSON");
+  expect(schema.text).toContain("/kind");
+  expect(other.text).not.toContain("Feynman");
 });
 
 test("blocks writing coverage ledgers directly", async () => {

@@ -7,6 +7,7 @@
 // `onStop` what to do whenever the agent is about to stop.
 import {
   checkModel,
+  checkModelFile,
   computeCoverage,
   describeCoverage,
   loadModel,
@@ -106,6 +107,19 @@ export class Extraction {
     if (!this.workspace) return;
     const file = this.seen().read(cwd, path, read);
     if (file && this.driving) this.recordRead([file]);
+  }
+
+  /**
+   * A line to add to the result of writing or editing `path`: whether the model file
+   * is valid, so the agent fixes it at once instead of running checks. Null for files
+   * outside the model.
+   */
+  reviewWrite(cwd: string, path: string): string | null {
+    if (!this.workspace) return null;
+    const file = within(this.workspace.modelDir, cwd, path);
+    const problems = file === null ? null : checkModelFile(this.workspace.modelDir, file);
+    if (problems === null) return null;
+    return problems.length ? `Feynman: ${file} is not valid; fix it:\n${problems.map((problem) => `  ${problem}`).join("\n")}` : `Feynman: ${file} is valid.`;
   }
 
   /** Ledgers are written only by the extraction; adapters should block other writes. */
@@ -279,9 +293,9 @@ function nextPhase(phase: Phase, { model, report, problems }: Assessment): Phase
   return phase;
 }
 
-/** Done in phase 3, after its instructions were shown, with nothing missing, wrong, or thin. */
-function isDone({ phase, entered, report, problems, gaps }: Situation): boolean {
-  return phase === 3 && !entered && report.missing.length === 0 && problems.length === 0 && gaps.length === 0;
+/** Done in phase 3 with nothing missing, wrong, or thin; the gaps are what phase 3 asks for. */
+function isDone({ phase, report, problems, gaps }: Situation): boolean {
+  return phase === 3 && report.missing.length === 0 && problems.length === 0 && gaps.length === 0;
 }
 
 function parseDriveState(saved: unknown): DriveState | null {

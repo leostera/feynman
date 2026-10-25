@@ -82,9 +82,14 @@ The extension drives three phases and says what each still lacks:
 1. **Actors.** Survey everything shallowly, then write `meta.json`, the actors,
    `talksTo`, and the components with footprints.
 2. **Flows.** Read groups of connected actors in full, one at a time, and write
-   the flows through them, with what you meet on the way. Fix the actor map when
-   the code disagrees.
-3. **Depth.** Make every element precise.
+   the flows through them, with what you meet on the way, each element complete
+   when first written. Fix the actor map when the code disagrees.
+3. **Depth.** Fix what the extension lists as still thin, then stop.
+
+Feynman checks each model file as it is written, and coverage, validity, and gaps
+at every stop. Don't run checks, measurements, tests, or scripts over the model
+yourself, and don't change the schemas; say in your last message what they could
+not express.
 
 A bootstrap covers every file in the snapshot. An update covers the files changed
 since the modelled commit plus the files of every element whose `sources` changed;

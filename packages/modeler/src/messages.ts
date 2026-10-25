@@ -34,7 +34,9 @@ const SCOPE = [
   "Scope: model how the system behaves as it runs, for the people and programs that use it; not how it is developed. First decide what ships and what runs when it is used.",
   "- Development files (CI, build, release and publishing scripts, tooling, project websites, contributor docs): set aside with feynman_skip as development, saying what each is for. They never become elements. Code that runs when the system is used is in scope wherever it lives.",
   "- Tests are in scope: read them, and record what they check as invariants (with their tests), claims (with tests as evidence), and limits.",
-  "- Files you read in full are recorded automatically. Skip vendored and generated files too, with their origin; feynman_status shows where you are.",
+  "- Files you read in full are recorded automatically. Skip vendored and generated files too, with their origin.",
+  "",
+  "How to work: Feynman checks each model file as you write it, and coverage, validity, and what is still thin whenever you stop; feynman_status shows the same. Don't run check, coverage, measure, tests, or your own scripts over the model. Write each element once, completely, rather than revising it. The schemas are fixed: if one cannot express something, say so in your last message instead of changing it. If a Feynman tool reports something that looks wrong, tell the user.",
 ].join("\n");
 
 const PHASE_1 = [
@@ -49,17 +51,11 @@ const PHASE_1 = [
 const PHASE_2 = [
   "Phase 2: flows. For each group of connected actors, read the listed files in full (continue truncated reads with offsets), including tests, then write the flows that run through them.",
   "A flow is a job the system does for an actor: a trigger, steps saying which actor does what to which (with component and protocol), and an outcome. Starting up or being built is not a flow.",
-  "Add the protocols, state, invariants, claims, and limits you meet; fix the actor map when the code disagrees. Stop when the group is done, and I will give you the next one.",
+  "Add the protocols, state, invariants, claims, and limits you meet, each complete when first written: protocols with their messages, fields, results, framing, and versioning; invariants with enforcement, the call path from trigger to check (enforcedAt), and their tests; claims with evidence; limits with where they are set. Include failure, retry, and recovery flows.",
+  "Fix the actor map when the code disagrees. Stop when the group is done, and I will give you the next one.",
 ].join("\n");
 
-const PHASE_3 = [
-  "Phase 3: depth. Every file is covered. Go over the model as a whole and make it precise, re-reading code where needed:",
-  "  - flows: every step's actor and target, cross-actor steps' protocol; failure, retry, and recovery flows;",
-  "  - protocols: messages with fields and results, framing, versioning, compatibility;",
-  "  - invariants: enforcement, the call path from trigger to check (enforcedAt), the tests that cover them;",
-  "  - claims with evidence and whether the code bears them out; limits and where they are set; state machines.",
-  "Stop when the model explains how the system works; I will point out what is still thin.",
-].join("\n");
+const PHASE_3 = "Phase 3: depth. Every file is covered. Fix what is listed below, re-reading code where needed, then stop; the extraction is done when nothing is listed. Don't polish beyond it.";
 
 function phase2(group: Group | null): string {
   return [PHASE_2, "", ...describeGroup(group)].join("\n");
@@ -108,7 +104,7 @@ export function continuation(situation: Situation, nudge = true): string {
 /** A new phase's instructions; otherwise what remains in the current one. */
 function progress({ phase, gaps, group, entered }: Situation, nudge: boolean): string[] {
   const more = nudge ? "; continue" : "";
-  if (entered && phase === 3) return ["", PHASE_3, ...(gaps.length ? ["", "To begin with, the model is thin here:", ...list(gaps)] : [])];
+  if (entered && phase === 3) return ["", PHASE_3, ...(gaps.length ? ["", "The model is thin here:", ...list(gaps)] : [])];
   if (entered) return ["", phase === 2 ? phase2(group) : PHASE_1];
   if (phase === 1) return gaps.length ? ["", `The actor map is not done${more}:`, ...list(gaps)] : [];
   // Files edited after they were read come back as a group in phase 3 too.
