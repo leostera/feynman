@@ -26,7 +26,7 @@ const ACTOR = {
 let harness: Harness | undefined;
 afterEach(() => harness?.dispose());
 
-const call = (name: string, args: Record<string, unknown>) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
+const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) => fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
 const stop = (text = "Done.") => fauxAssistantMessage(fauxText(text));
 const toolResults = (h: Harness) =>
   h.session.messages.filter((m) => m.role === "toolResult").map((m) => ({ tool: m.toolName, error: m.isError, text: JSON.stringify(m.content) }));
