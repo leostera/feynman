@@ -5,7 +5,8 @@
 // a search or listing does not count. Recording a file as reviewed requires having
 // read it; the agent is otherwise free to move between files in any order.
 import { readFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join } from "node:path";
+import { within } from "./paths.ts";
 
 /** One read: 1-based `offset`, at most `limit` lines, and how many came back if truncated. */
 export interface Read {
@@ -74,8 +75,6 @@ export class Evidence {
   }
 
   private toRepository(cwd: string, path: string): string | null {
-    const absolute = isAbsolute(path) ? path : resolve(cwd, path);
-    const file = relative(this.repository, absolute);
-    return file && !file.startsWith("..") && !isAbsolute(file) ? file : null;
+    return within(this.repository, cwd, path);
   }
 }

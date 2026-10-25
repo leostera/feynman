@@ -18,8 +18,9 @@ import {
   type LedgerEntry,
   type Outcome,
 } from "@feynman/model";
-import { join, resolve, sep } from "node:path";
+import { join } from "node:path";
 import { Evidence, type Read } from "./evidence.ts";
+import { within } from "./paths.ts";
 import { continuation, kickoff } from "./messages.ts";
 import { findWorkspace, startExtraction, type Workspace } from "./workspace.ts";
 
@@ -81,7 +82,7 @@ export class Extraction {
 
   /** Ledgers are written only through `review`; adapters should block other writes. */
   isLedgerPath(cwd: string, path: string): boolean {
-    return this.workspace !== null && resolve(cwd, path).startsWith(join(this.workspace.modelDir, "coverage") + sep);
+    return this.workspace !== null && within(join(this.workspace.modelDir, "coverage"), cwd, path) !== null;
   }
 
   // The agent's operations.
