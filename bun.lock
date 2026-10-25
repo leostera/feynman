@@ -16,6 +16,18 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/code": {
+      "name": "@feynman/code",
+      "version": "0.1.0",
+      "dependencies": {
+        "calldiff": "0.5.0",
+      },
+      "devDependencies": {
+        "@types/bun": "*",
+        "@types/node": "^24.0.0",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/model": {
       "name": "@feynman/model",
       "bin": {
@@ -208,6 +220,8 @@
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 
     "@feynman/check": ["@feynman/check@workspace:packages/check"],
+
+    "@feynman/code": ["@feynman/code@workspace:packages/code"],
 
     "@feynman/model": ["@feynman/model@workspace:packages/model"],
 
