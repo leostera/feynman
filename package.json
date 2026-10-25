@@ -5,5 +5,9 @@
   "scripts": {
     "render": "bun run --cwd renderer build",
     "typecheck": "bun run --cwd renderer typecheck"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
   }
 }

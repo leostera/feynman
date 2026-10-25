@@ -4,15 +4,40 @@
     "summary": "An agentic terminal harness: a native macOS app and a browser Workbench are clients of a per-user Rust daemon (axod) that owns PTYs, Pi agent processes and the session catalog; a Cloudflare Worker relays remote clients to linked hosts.",
     "source": {
       "repository": "../axo",
-      "commit": "66d8d86b7e90fc1478d56cf948a993a16692f0e7"
+      "commit": "66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+      "footprint": {
+        "files": 374,
+        "lines": 68323,
+        "excludes": [
+          "vendor/",
+          "third_party/",
+          ".agents/",
+          "*.lock",
+          "package-lock.json",
+          "*.lock.json"
+        ]
+      },
+      "committedAt": "2026-10-25T01:08:44Z",
+      "url": "https://github.com/leostera/axo",
+      "commitUrl": "https://github.com/leostera/axo/commit/66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+      "fileUrl": "https://github.com/leostera/axo/blob/66d8d86b7e90fc1478d56cf948a993a16692f0e7/{path}",
+      "main": {
+        "ref": "main",
+        "commit": "434b3a5cc7529f74e7b1c66d38d83363b96883b4",
+        "ahead": 0,
+        "behind": 2,
+        "checkedAt": "2026-10-25T02:03:31.084Z"
+      }
     },
     "extractedBy": "agent",
     "extraction": "bootstrap",
-    "coverage": "First pass. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only."
+    "coverage": "First pass. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only.",
+    "extractedAt": "2026-10-25T01:37:00Z"
   },
   "actors": [
     {
       "id": "axod",
+      "provenance": "first-party",
       "summary": "Per-user daemon. Authoritative owner of Workspaces, Sessions and Panes, their PTYs and Pi processes, the SQLite catalog, and the local JSON-RPC API. Keeps running when the app quits.",
       "transports": [
         "json-rpc-unix-socket",
@@ -20,6 +45,20 @@
         "pi-bridge-socket",
         "relay-websocket (outbound)"
       ],
+      "footprint": {
+        "paths": [
+          "crates/axod",
+          "crates/axo-server",
+          "crates/axo-pty",
+          "crates/axo-pi",
+          "crates/axo-ipc",
+          "crates/axo-relay",
+          "crates/axo-protocol",
+          "crates/axod-loadtest"
+        ],
+        "files": 67,
+        "lines": 21735
+      },
       "anchors": [
         "crates/axod/src/main.rs",
         "crates/axo-server/src/lib.rs",
@@ -28,11 +67,19 @@
     },
     {
       "id": "axo-mac",
+      "provenance": "first-party",
       "summary": "SwiftUI macOS app. Registers axod as a LaunchAgent, renders panes with libghostty surfaces, and drives the catalog through local RPC. Holds no authoritative session state.",
       "transports": [
         "json-rpc-unix-socket (client)",
         "pty-attach-socket (client via axod terminal-attach)"
       ],
+      "footprint": {
+        "paths": [
+          "apple"
+        ],
+        "files": 133,
+        "lines": 18335
+      },
       "anchors": [
         "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift",
         "apple/AxoRPC/Sources/AxoRPC/UnixSocketRPC.swift",
@@ -41,6 +88,7 @@
     },
     {
       "id": "launchd",
+      "provenance": "ambient",
       "summary": "macOS service manager. Owns axod's process lifetime once registered through SMAppService.",
       "transports": [
         "ServiceManagement"
@@ -52,19 +100,40 @@
     },
     {
       "id": "pi",
-      "summary": "The Pi agent CLI running interactively in an axod-owned PTY, with the first-party pi-axo extension. Sole writer of its JSONL conversation file.",
+      "provenance": "third-party",
+      "summary": "The Pi agent CLI, an external program axod runs interactively in a PTY. Sole writer of its JSONL conversation file.",
       "transports": [
-        "pty",
-        "pi-bridge-socket (server, inside Pi)"
+        "pty"
       ],
+      "anchors": [
+        "crates/axo-pi/src/launch.rs",
+        "crates/axo-pi/src/lock.rs"
+      ]
+    },
+    {
+      "id": "pi-axo",
+      "provenance": "first-party",
+      "summary": "First-party Pi extension loaded inside each Pi process. Verifies Pi's session file, serves the per-session bridge socket, forwards structured events and executes commands from axod through Pi's public APIs.",
+      "transports": [
+        "pi-bridge-socket (server)"
+      ],
+      "footprint": {
+        "paths": [
+          "packages/pi-axo"
+        ],
+        "files": 15,
+        "lines": 4014
+      },
       "anchors": [
         "packages/pi-axo/src/extension.ts",
         "packages/pi-axo/src/bridge-server.ts",
-        "crates/axo-pi/src/launch.rs"
+        "packages/pi-axo/src/protocol.ts",
+        "packages/pi-axo/src/title.ts"
       ]
     },
     {
       "id": "shell",
+      "provenance": "ambient",
       "summary": "The user's configured shell running in an axod-owned PTY.",
       "transports": [
         "pty"
@@ -76,11 +145,33 @@
     },
     {
       "id": "api-worker",
+      "provenance": "first-party",
       "summary": "Cloudflare Worker at axo.leostera.dev/api. OAuth sign-in, host pairing, and the relay between browser clients and linked hosts.",
       "transports": [
         "https",
         "websocket"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-api-worker/src/http",
+          "packages/axo-api-worker/src/index.ts",
+          "packages/axo-api-worker/src/access.ts",
+          "packages/axo-api-worker/src/observability.ts",
+          "packages/axo-api-worker/src/axo-host-directory.ts",
+          "packages/axo-api-worker/src/auth/cloudflare.ts",
+          "packages/axo-api-worker/src/auth/provider.ts",
+          "packages/axo-api-worker/src/auth/crypto.ts",
+          "packages/axo-api-worker/src/auth/pairing.ts",
+          "packages/axo-api-worker/tests",
+          "packages/axo-api-worker/testing",
+          "packages/axo-api-worker/scripts",
+          "packages/axo-api",
+          "schemas",
+          "sites"
+        ],
+        "files": 105,
+        "lines": 13867
+      },
       "anchors": [
         "packages/axo-api-worker/src/http/router.ts",
         "packages/axo-api-worker/src/index.ts"
@@ -88,11 +179,21 @@
     },
     {
       "id": "account-do",
+      "provenance": "first-party",
       "summary": "AxoAccountManager Durable Object, one per Axo account. Owns web sessions, pairings, host memberships and credential verifiers, and hosts the relay sockets for that account's hosts and clients.",
       "transports": [
         "durable-object-rpc",
         "hibernatable-websocket"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-api-worker/src/auth/account-manager.ts",
+          "packages/axo-api-worker/src/axo-host-relay.ts",
+          "packages/axo-api-worker/src/relay"
+        ],
+        "files": 5,
+        "lines": 1597
+      },
       "anchors": [
         "packages/axo-api-worker/src/auth/account-manager.ts",
         "packages/axo-api-worker/src/axo-host-relay.ts"
@@ -100,41 +201,74 @@
     },
     {
       "id": "identity-index-do",
+      "provenance": "first-party",
       "summary": "Maps an OAuth (issuer, subject) to an immutable Axo account ID.",
       "transports": [
         "durable-object-rpc"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-api-worker/src/auth/account.ts"
+        ],
+        "files": 1,
+        "lines": 26
+      },
       "anchors": [
         "packages/axo-api-worker/src/auth/account.ts"
       ]
     },
     {
       "id": "pairing-index-do",
+      "provenance": "first-party",
       "summary": "Short-lived index from a pairing code to its account, plus pairing rate limiting.",
       "transports": [
         "durable-object-rpc"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-api-worker/src/auth/pairing-directory.ts"
+        ],
+        "files": 1,
+        "lines": 123
+      },
       "anchors": [
         "packages/axo-api-worker/src/auth/pairing-directory.ts"
       ]
     },
     {
       "id": "session-history-do",
+      "provenance": "first-party",
       "summary": "AxoSessionDO, one per (account, host, session). Durable server-side copy of structured Pi events.",
       "transports": [
         "durable-object-rpc"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-api-worker/src/session-history.ts"
+        ],
+        "files": 1,
+        "lines": 190
+      },
       "anchors": [
         "packages/axo-api-worker/src/session-history.ts"
       ]
     },
     {
       "id": "web-app",
+      "provenance": "first-party",
       "summary": "Browser Workbench at /app. Lists hosts and sessions, drives remote terminals and shows Pi history.",
       "transports": [
         "https",
         "websocket (client)"
       ],
+      "footprint": {
+        "paths": [
+          "packages/axo-web-app",
+          "packages/axo-app"
+        ],
+        "files": 19,
+        "lines": 4683
+      },
       "anchors": [
         "packages/axo-web-app/src/remote-terminal-app.tsx",
         "packages/axo-web-app/src/pi-history-pane.tsx"
@@ -142,6 +276,7 @@
     },
     {
       "id": "cloudflare-oauth",
+      "provenance": "third-party",
       "summary": "External identity provider (dash.cloudflare.com OAuth2).",
       "transports": [
         "https"
@@ -152,6 +287,7 @@
     },
     {
       "id": "macos-keychain",
+      "provenance": "ambient",
       "summary": "Stores the host credential used by axod's relay connection.",
       "transports": [
         "security-framework"
@@ -235,7 +371,7 @@
       ]
     },
     {
-      "actor": "pi",
+      "actor": "pi-axo",
       "transport": "pi-bridge-socket",
       "summary": "Newline-delimited JSON over a per-session Unix socket. axod connects and authenticates with the session's bridge token; Pi answers with its identity, then streams events and answers commands.",
       "accepts": [
@@ -493,7 +629,7 @@
           "action": "on spawn failure, archive the Session (reason pi_spawn_failed)"
         },
         {
-          "actor": "pi",
+          "actor": "pi-axo",
           "action": "start pi-axo bridge server once Pi's actual session file matches the configured path"
         },
         {
@@ -772,11 +908,12 @@
         {
           "actor": "axod",
           "action": "authenticate with the session's bridge token",
-          "target": "pi"
+          "target": "pi-axo"
         },
         {
-          "actor": "pi",
-          "action": "reply with identity: Pi session ID, exact file path, Axo session and pane IDs, process ID"
+          "actor": "pi-axo",
+          "action": "reply with identity: Pi session ID, exact file path, Axo session and pane IDs, process ID",
+          "target": "axod"
         },
         {
           "actor": "axod",
@@ -788,8 +925,9 @@
           "action": "persist Pi session ID"
         },
         {
-          "actor": "pi",
-          "action": "stream events with strictly increasing sequence (≤60,000 bytes of data each)"
+          "actor": "pi-axo",
+          "action": "stream events with strictly increasing sequence (≤60,000 bytes of data each)",
+          "target": "axod"
         },
         {
           "actor": "axod",
@@ -878,7 +1016,7 @@
       "trigger": "pi-axo session.resume.requested (from session_before_switch)",
       "steps": [
         {
-          "actor": "pi",
+          "actor": "pi-axo",
           "action": "request resume with the target session file",
           "target": "axod"
         },
@@ -1092,7 +1230,8 @@
         },
         {
           "actor": "axod",
-          "action": "reply over the relay"
+          "action": "reply over the relay",
+          "target": "account-do"
         },
         {
           "actor": "account-do",
@@ -1957,7 +2096,11 @@
         "crates/axo-pty/src/output.rs",
         "crates/axod/tests/rpc.rs#terminal_attachments_share_output_and_shells_never_stall_unattached"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "terminal-attach"
+      ]
     },
     {
       "statement": "Long-polling for events never delays unrelated requests.",
@@ -1966,7 +2109,11 @@
         "crates/axo-ipc/src/server.rs",
         "crates/axod/tests/rpc.rs#long_polls_never_delay_unrelated_requests"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "event-subscription"
+      ]
     },
     {
       "statement": "Open tabs and shells are restored after a daemon restart, but terminal screen contents are not.",
@@ -1976,7 +2123,11 @@
         "crates/axod/tests/rpc.rs#daemon_starts_with_and_restores_a_default_pty_session_after_restart",
         "README.md"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "daemon-startup"
+      ]
     },
     {
       "statement": "New panes start at the latest client's viewport size, even across restarts.",
@@ -1985,7 +2136,11 @@
         "crates/axo-protocol/src/viewport.rs",
         "crates/axod/tests/rpc.rs#new_panes_start_at_the_latest_clients_viewport_across_restarts"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "split-pane"
+      ]
     },
     {
       "statement": "A daemon restart restores each Pi conversation against its own exact transcript and never replays prompts or shell input.",
@@ -1995,7 +2150,12 @@
         "crates/axo-pi/src/history.rs",
         "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "pi",
+        "pi-recovery"
+      ]
     },
     {
       "statement": "Automatic Pi recovery never forcibly stops a running Pi; only an explicit user restart may signal it.",
@@ -2005,7 +2165,12 @@
         "crates/axo-server/src/session.rs#register_rpc_methods",
         "docs/axod-recovery-hardening.md"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "pi",
+        "pi-recovery"
+      ]
     },
     {
       "statement": "The daemon keeps running when the menu-bar app quits, and is restarted when its build differs from the app's.",
@@ -2014,7 +2179,12 @@
         "README.md",
         "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift#checkBuildAndRestartIfNeeded"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axo-mac",
+        "launchd",
+        "daemon-registration"
+      ]
     },
     {
       "statement": "Cloudflare OAuth tokens are never given to axod or browser JavaScript.",
@@ -2024,7 +2194,11 @@
         "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md",
         "packages/axo-api-worker/tests/auth.test.ts"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "api-worker",
+        "web-sign-in"
+      ]
     },
     {
       "statement": "Terminal bytes never cross the host boundary.",
@@ -2036,7 +2210,12 @@
         "crates/axo-relay/src/relay.rs#host_notification",
         "packages/axo-web-app/src/remote-terminal-app.tsx"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "account-do",
+        "relay-connection"
+      ]
     },
     {
       "statement": "Project paths stay on the host; remote snapshots omit Pi panes and paths.",
@@ -2045,7 +2224,11 @@
         "crates/axo-protocol/src/model.rs#RemoteSessionSnapshot::from_record",
         "crates/axo-relay/src/relay.rs"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "relay-connection"
+      ]
     },
     {
       "statement": "The relay forwards at most one local event per loop iteration, and each iteration may wait up to 20 ms for an incoming frame, so with a quiet cloud side forwarding is bounded near 50 events per second; bursts of terminal output will lag the 128-event queue and fall back to snapshot resync.",
@@ -2055,6 +2238,10 @@
         "crates/axo-relay/src/relay.rs#relay_session",
         "crates/axo-relay/src/relay.rs#SOCKET_READ_TIMEOUT",
         "crates/axo-server/src/session.rs#MAX_QUEUED_EVENTS_PER_SUBSCRIPTION"
+      ],
+      "about": [
+        "axod",
+        "relay-connection"
       ]
     },
     {
@@ -2066,6 +2253,11 @@
         "crates/axo-pty/src/output.rs#READ_BUFFER_BYTES",
         "crates/axo-relay/src/relay.rs#send_json",
         "crates/axo-server/src/session.rs#write_terminal_input"
+      ],
+      "about": [
+        "axod",
+        "account-do",
+        "relay-connection"
       ]
     },
     {
@@ -2077,6 +2269,9 @@
         "crates/axo-server/src/session.rs#create_shell",
         "crates/axo-server/src/session.rs#write_terminal_input",
         "crates/axo-server/src/session.rs#lock_state"
+      ],
+      "about": [
+        "axod"
       ]
     },
     {
@@ -2089,7 +2284,11 @@
         "crates/axo-server/src/session.rs#ensure_open_workspace_sessions",
         "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "axod",
+        "create-workspace"
+      ]
     },
     {
       "statement": "A linked host can call the full current protocol; there are no per-method or per-session capability restrictions in v1.",
@@ -2098,7 +2297,11 @@
         "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md",
         "packages/axo-api-worker/src/axo-host-relay.ts#hostRemoteMethods"
       ],
-      "epistemic": "stated"
+      "epistemic": "stated",
+      "about": [
+        "account-do",
+        "remote-command"
+      ]
     }
   ]
 }

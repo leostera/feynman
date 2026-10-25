@@ -46,7 +46,16 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 ## What to extract
 
 - **Actors**: things that receive messages (HTTP, RPC, email, CLI, UI events, …)
-  and own state. Typically process or service boundaries.
+  and own state. Typically process or service boundaries. Give each a
+  **provenance**:
+  - `first-party`: implemented in this repository;
+  - `third-party`: external software or a service the system depends on;
+  - `ambient`: provided by the platform or environment (OS services, the user's shell).
+
+  When in-repo code runs inside an external program (a plugin or extension), model
+  it as its own first-party actor next to the third-party host. For first-party
+  actors, list the repository paths that implement them in `footprint.paths`,
+  without overlapping other actors.
 - **Messages**: what each actor accepts and emits, and over which transport. Find
   them in route tables, RPC method lists, CLI definitions, and event handlers.
 - **Flows**: named paths from a trigger message, through semantic actions (possibly
@@ -69,7 +78,8 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 - **Measurements**: quantities stated in code, tests, or benchmarks: limits, sizes,
   timeouts, retry counts, concurrency, cache policies.
 - **Claims**: statements about the system (for example, "all refunds are manually
-  approved"). Each lists the files that support it: code, tests, config, docs.
+  approved"). Each lists the files that support it (code, tests, config, docs) and
+  the elements it is `about` (actors, flows, invariants).
 
 ## Process
 
@@ -82,7 +92,7 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 5. Trace flows through their semantic actions.
 6. Extract state, state machines, boundaries, invariants, and contracts.
 7. Attach observability, measurements, and claims.
-8. Write `.feynman/model.json` and validate it (see Storage).
+8. Write `.feynman/model.json`, measure it, and validate it (see Tools).
 
 ### Update (per change)
 
@@ -91,7 +101,7 @@ Input: the existing `.feynman/model.json` and the code diff.
 2. **Edit** those elements, and add or remove elements as needed. Do not regenerate
    the whole model.
 3. Follow moved or renamed files and update anchors.
-4. Write the updated `.feynman/model.json` and validate it (see Storage).
+4. Write the updated `.feynman/model.json`, measure it, and validate it (see Tools).
 
 ## Storage
 
@@ -105,3 +115,14 @@ Anchors are repository-relative paths, optionally `path#symbol`. Element `id`s a
 readable slugs for cross-references within one model and need not be stable.
 
 When the vocabulary changes, update `schema.json` and this skill together.
+
+## Tools
+
+Mechanical facts come from tools, not from the agent:
+
+- `node tools/measure.mjs <repository> <model.json> [--main <ref>]` fills source links
+  (`url`, `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
+  main, and file and line counts for the repository and each actor's footprint.
+  Counts are taken at the modelled commit and skip `meta.source.footprint.excludes`.
+- `node tools/check-model.mjs <model.json> [<repository>]` validates the schema,
+  cross-references, and (with a repository) that every anchor path exists.
