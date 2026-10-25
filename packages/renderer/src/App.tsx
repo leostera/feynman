@@ -7,6 +7,7 @@ import {
   GitCommitIcon,
   HouseIcon,
   MoonIcon,
+  PackageIcon,
   ScalesIcon,
   ShieldCheckIcon,
   SunIcon,
@@ -16,6 +17,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { exists, href, type Index, type Kind } from "./model";
 import { ActorPage, ActorsPage } from "./pages/Actors";
 import { ClaimPage, ClaimsPage } from "./pages/Claims";
+import { ComponentPage, ComponentsPage } from "./pages/Components";
 import { ElementIndexPage, ElementPage, hasElementPages } from "./pages/Elements";
 import { FlowPage, FlowsPage } from "./pages/Flows";
 import { InvariantPage, InvariantsPage } from "./pages/Invariants";
@@ -34,15 +36,9 @@ export function App({ index }: { index: Index }) {
         <TopBar />
         <Sidebar.Provider defaultOpen collapsible="none" contained className="min-h-0 flex-1">
           <Navigation route={route} />
-          <main
-            id="main"
-            className="min-w-0 flex-1 overflow-y-auto bg-kumo-canvas"
-            style={{
-              backgroundImage: "radial-gradient(var(--color-kumo-hairline) 1px, transparent 1px)",
-              backgroundSize: "20px 20px",
-            }}
-          >
-            <Content route={route} />
+          <main id="main" className="min-w-0 flex-1 overflow-y-auto bg-kumo-base">
+            {/* Keyed by route, so each page starts on its first tab. */}
+            <Content key={JSON.stringify(route)} route={route} />
           </main>
         </Sidebar.Provider>
       </div>
@@ -57,6 +53,7 @@ function Content({ route }: { route: Route }) {
       return <OverviewPage />;
     case "index":
       if (route.kind === "actor") return <ActorsPage />;
+      if (route.kind === "component") return <ComponentsPage />;
       if (route.kind === "flow") return <FlowsPage />;
       if (route.kind === "protocol") return <ProtocolsPage />;
       if (route.kind === "invariant") return <InvariantsPage />;
@@ -67,6 +64,7 @@ function Content({ route }: { route: Route }) {
     case "detail": {
       if (!exists(index, route)) return <NotFound />;
       if (route.kind === "actor") return <ActorPage id={route.id} />;
+      if (route.kind === "component") return <ComponentPage id={route.id} />;
       if (route.kind === "flow") return <FlowPage id={route.id} />;
       if (route.kind === "protocol") return <ProtocolPage id={route.id} />;
       if (route.kind === "invariant") return <InvariantPage id={route.id} />;
@@ -162,6 +160,7 @@ function ModeToggle() {
 
 const SECTIONS: { kind: Kind; label: string; icon: typeof HouseIcon }[] = [
   { kind: "actor", label: "Actors", icon: UsersThreeIcon },
+  { kind: "component", label: "Components", icon: PackageIcon },
   { kind: "flow", label: "Flows", icon: ArrowsSplitIcon },
   { kind: "protocol", label: "Protocols", icon: BracketsCurlyIcon },
   { kind: "state", label: "State", icon: DatabaseIcon },
@@ -183,6 +182,8 @@ function Navigation({ route }: { route: Route }) {
     switch (kind) {
       case "actor":
         return model.actors.length;
+      case "component":
+        return model.components.length;
       case "flow":
         return model.flows.length;
       case "protocol":

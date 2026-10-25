@@ -11,7 +11,7 @@ export function FlowsPage() {
   return (
     <Page
       title="Flows"
-      summary="Named paths from a trigger, through semantic actions across actors, to their effects."
+      summary="What the system does: each flow runs from a trigger, through semantic actions across actors, to an outcome."
       sections={[
         {
           id: "flows",
@@ -66,6 +66,7 @@ export function FlowPage({ id }: { id: string }) {
       summary={flow.summary}
       facts={[
         ["Trigger", flow.trigger],
+        ...(flow.outcome ? ([["Outcome", flow.outcome]] as [string, React.ReactNode][]) : []),
         ["Actors", <IdRefs kind="actor" ids={flowParticipants(flow)} />],
       ]}
       sections={[
@@ -147,8 +148,13 @@ function StepList({ flow }: { flow: Flow }) {
               <span className="text-kumo-subtle">: </span>
               {step.action}
             </div>
-            {(step.ref || step.protocol || step.properties?.length) && (
+            {(step.ref || step.protocol || step.component || step.properties?.length) && (
               <div className="flex flex-wrap gap-1">
+                {step.component && (
+                  <Badge variant="neutral">
+                    in <IdRef kind="component" id={step.component} />
+                  </Badge>
+                )}
                 {step.ref && (
                   <Badge variant="purple">
                     calls <IdRef kind="flow" id={step.ref} />

@@ -1,5 +1,5 @@
 import { Table, Tabs } from "@cloudflare/kumo";
-import { connections, SystemGraph } from "../diagrams/SystemGraph";
+import { ComponentGraph, connections, SystemGraph } from "../diagrams/SystemGraph";
 import { href } from "../model";
 import { usePreference } from "../router";
 import { IdRef, IdRefs, Link, Page, STATUS_ORDER, useIndex } from "../ui";
@@ -15,8 +15,9 @@ export function OverviewPage() {
     .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
 
   const inventory: [string, string, number, string][] = [
-    ["Actors", href("actor"), model.actors.length, `${firstParty.length} in this repository, ${external.length} external`],
-    ["Flows", href("flow"), model.flows.length, "Paths from a trigger to its effects"],
+    ["Actors", href("actor"), model.actors.length, `${firstParty.length} run code from this repository, ${external.length} external`],
+    ["Components", href("component"), model.components.length, "Units of code, and the actors they run in"],
+    ["Flows", href("flow"), model.flows.length, "What the system does, from a trigger to an outcome"],
     ["Protocols", href("protocol"), model.protocols.length, "Shapes data must have to cross in, out, or rest"],
     ["State", href("state"), model.state.length, `${model.stateMachines.length} state machines`],
     ["Invariants", href("invariant"), model.invariants.length, "What the system makes sure always holds"],
@@ -29,6 +30,11 @@ export function OverviewPage() {
       title={model.meta.system}
       summary={model.meta.summary}
       sections={[
+        {
+          id: "system",
+          title: "System",
+          content: <SystemView />,
+        },
         {
           id: "inventory",
           title: "Inventory",
@@ -49,11 +55,6 @@ export function OverviewPage() {
           ),
         },
         {
-          id: "system",
-          title: "System",
-          content: <SystemView />,
-        },
-        {
           id: "attention",
           title: "Needs attention",
           count: attention.length,
@@ -71,21 +72,24 @@ export function OverviewPage() {
 
 function SystemView() {
   const index = useIndex();
-  const [view, setView] = usePreference<"graph" | "table">("systemView", "graph");
+  const [view, setView] = usePreference<"actors" | "components" | "table">("systemView", "actors");
   const edges = connections(index).sort((a, b) => b.flows.length - a.flows.length);
   return (
     <div className="flex flex-col gap-4">
       <Tabs
         size="sm"
         value={view}
-        onValueChange={(value) => setView(value as "graph" | "table")}
+        onValueChange={(value) => setView(value as "actors" | "components" | "table")}
         tabs={[
-          { value: "graph", label: "Graph" },
+          { value: "actors", label: "Actors" },
+          ...(index.model.components.length ? [{ value: "components", label: "Components" }] : []),
           { value: "table", label: "Interactions" },
         ]}
       />
-      {view === "graph" ? (
+      {view === "actors" || (view === "components" && !index.model.components.length) ? (
         <SystemGraph index={index} />
+      ) : view === "components" ? (
+        <ComponentGraph index={index} />
       ) : (
         <Table layout="auto">
           <Table.Header>

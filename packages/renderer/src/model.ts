@@ -1,4 +1,4 @@
-// Types mirror skills/modelling/schema/*.json, as bundled by tools/model.mjs.
+// Types mirror packages/model/schema/*.json, as bundled by loadModel in @feynman/model.
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -28,20 +28,39 @@ export type Provenance = "first-party" | "third-party" | "ambient";
 
 export type Location = "local" | "browser" | "remote" | "cloud";
 
+export type ActorKind = "person" | "program" | "service";
+
 export interface Actor {
   id: string;
+  kind?: ActorKind;
   provenance: Provenance;
   runsOn: { location: Location; provider?: string; platform?: string };
   summary: string;
-  footprint?: { paths: string[]; files?: number; lines?: number };
+  talksTo?: string[];
   anchors: Anchor[];
   confidence?: Confidence;
+}
+
+export interface Footprint {
+  paths: string[];
+  files?: number;
+  lines?: number;
+}
+
+export interface Component {
+  id: string;
+  summary: string;
+  actors: string[];
+  dependsOn?: string[];
+  footprint: Footprint;
+  anchors: Anchor[];
 }
 
 export interface Step {
   actor: string;
   action: string;
   target?: string;
+  component?: string;
   ref?: string;
   protocol?: string;
   properties?: string[];
@@ -51,6 +70,7 @@ export interface Flow {
   id: string;
   summary: string;
   trigger: string;
+  outcome?: string;
   steps: Step[];
   anchors: Anchor[];
   confidence?: Confidence;
@@ -151,6 +171,7 @@ export interface Claim {
 export interface Model {
   meta: Meta;
   actors: Actor[];
+  components: Component[];
   flows: Flow[];
   protocols: Protocol[];
   state: State[];
@@ -161,11 +182,12 @@ export interface Model {
 }
 
 /** Element kinds that have their own page. */
-export type Kind = "actor" | "flow" | "protocol" | "state" | "machine" | "invariant" | "claim" | "limit";
+export type Kind = "actor" | "component" | "flow" | "protocol" | "state" | "machine" | "invariant" | "claim" | "limit";
 
 /** URL segment for each kind's pages; also the model directory each kind is stored in. */
 export const SEGMENT: Record<Kind, string> = {
   actor: "actors",
+  component: "components",
   flow: "flows",
   protocol: "protocols",
   state: "state",
@@ -201,6 +223,7 @@ export function parsePath(path: string): Ref | null {
 export interface Index {
   model: Model;
   actors: Map<string, Actor>;
+  components: Map<string, Component>;
   flows: Map<string, Flow>;
   protocols: Map<string, Protocol>;
   state: Map<string, State>;
@@ -220,6 +243,7 @@ export function buildIndex(model: Model): Index {
   const index: Index = {
     model,
     actors: byId(model.actors),
+    components: byId(model.components),
     flows: byId(model.flows),
     protocols: byId(model.protocols),
     state: byId(model.state),
@@ -243,6 +267,7 @@ export function buildIndex(model: Model): Index {
 export function exists(index: Index, { kind, id }: Ref): boolean {
   const maps: Record<Kind, Map<string, unknown>> = {
     actor: index.actors,
+    component: index.components,
     flow: index.flows,
     protocol: index.protocols,
     state: index.state,
@@ -257,7 +282,9 @@ export function exists(index: Index, { kind, id }: Ref): boolean {
 export function loadModel(): Model {
   const element = document.getElementById("feynman-model");
   if (!element?.textContent) throw new Error("No embedded model found");
-  return JSON.parse(element.textContent) as Model;
+  const model = JSON.parse(element.textContent) as Model;
+  // Models written before components existed have none.
+  return { ...model, components: model.components ?? [] };
 }
 
 export type FlowRole = "initiates" | "acts" | "receives";
@@ -356,4 +383,20 @@ export function anchorUrl(source: Source, anchor: Anchor): string | null {
   const { file, span } = resolveAnchor(anchor);
   const end = span?.end && span.end.line !== span.start.line ? `-L${span.end.line}` : "";
   return source.fileUrl.replace("{path}", file) + (span ? `#L${span.start.line}${end}` : "");
+}
+
+/** Components running in an actor. */
+export function componentsOf(index: Index, actor: string): Component[] {
+  return index.model.components.filter((component) => component.actors.includes(actor));
+}
+
+/** Lines of code in an actor: its components' footprints, each counted once. */
+export function actorLines(index: Index, actor: string): number | undefined {
+  const components = componentsOf(index, actor).filter((component) => component.footprint.lines !== undefined);
+  return components.length ? components.reduce((n, component) => n + (component.footprint.lines ?? 0), 0) : undefined;
+}
+
+/** Flows with a step done by this component. */
+export function flowsOfComponent(index: Index, component: string): Flow[] {
+  return index.model.flows.filter((flow) => flow.steps.some((step) => step.component === component));
 }

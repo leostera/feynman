@@ -1,5 +1,5 @@
-import { Badge, TableOfContents, Text } from "@cloudflare/kumo";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { Badge, Tabs, Text } from "@cloudflare/kumo";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { anchorUrl, exists, href, parsePath, resolveAnchor, spanLabel, type Anchor, type ClaimStatus, type Index, type Kind, type Provenance } from "./model";
 
 const IndexContext = createContext<Index | null>(null);
@@ -123,8 +123,9 @@ export interface PageSection {
 }
 
 /**
- * A page: a header, then sections. Pages with more than one section get an
- * "On this page" rail on the right that tracks the section in view.
+ * A page: a header, then its sections. With more than one titled section, the
+ * sections become tabs along the top and one is shown at a time; untitled
+ * sections (a diagram, say) are always shown.
  */
 export function Page({
   title,
@@ -140,84 +141,47 @@ export function Page({
   sections: PageSection[];
 }) {
   const visible = sections.filter((section) => section.content !== null);
-  const outline = visible.filter((section) => section.title);
-  const active = useActiveSection(outline.map((section) => section.id));
+  const titled = visible.filter((section) => section.title);
+  const tabbed = titled.length > 1;
+  const [selected, setSelected] = useState<string | undefined>(undefined);
+  const active = titled.find((section) => section.id === selected)?.id ?? titled[0]?.id;
+  const shown = tabbed ? visible.filter((section) => !section.title || section.id === active) : visible;
   return (
-    <div className="mx-auto flex w-full max-w-[1200px] gap-10 px-8 py-8">
-      <article className="min-w-0 flex-1 rounded-xl bg-kumo-base px-8 py-7 shadow-sm ring ring-kumo-hairline">
-        <header className="flex flex-col gap-3 border-b border-kumo-hairline pb-6">
-          {badges && <div className="flex flex-wrap items-center gap-2">{badges}</div>}
-          <h1 className="text-2xl font-semibold tracking-tight text-balance text-kumo-default">{title}</h1>
-          {summary && <p className="max-w-[62ch] text-base leading-relaxed text-kumo-strong">{summary}</p>}
-          {facts && facts.length > 0 && <Facts rows={facts} />}
-        </header>
-        <div className="flex flex-col">
-          {visible.map((section) => (
-            <section key={section.id} id={section.id} className="scroll-mt-6 border-b border-kumo-hairline py-6 last:border-b-0 last:pb-0">
-              {section.title && (
-                <h2 className="mb-4 flex items-baseline gap-2 text-base font-semibold text-kumo-default">
-                  {section.title}
-                  {section.count !== undefined && (
-                    <span className="text-sm font-normal text-kumo-subtle tabular-nums">{section.count}</span>
-                  )}
-                </h2>
-              )}
-              {section.content}
-            </section>
-          ))}
+    <div className="mx-auto w-full max-w-[1200px] px-8 py-6">
+      <header className="flex flex-col gap-3 pb-5">
+        {badges && <div className="flex flex-wrap items-center gap-2">{badges}</div>}
+        <h1 className="text-2xl font-semibold tracking-tight text-balance text-kumo-default">{title}</h1>
+        {summary && <p className="max-w-[70ch] text-base leading-relaxed text-kumo-strong">{summary}</p>}
+        {facts && facts.length > 0 && <Facts rows={facts} />}
+      </header>
+      {tabbed && (
+        <div className="mb-5">
+          <Tabs
+            variant="underline"
+            value={active}
+            onValueChange={(value) => setSelected(value as string)}
+            tabs={titled.map((section) => ({
+              value: section.id,
+              label: section.count === undefined ? section.title : `${section.title} ${section.count}`,
+            }))}
+          />
         </div>
-      </article>
-      {outline.length > 1 && (
-        <aside className="sticky top-8 hidden w-52 shrink-0 self-start xl:block">
-          <TableOfContents>
-            <TableOfContents.Title>On this page</TableOfContents.Title>
-            <TableOfContents.List>
-              {outline.map((section) => (
-                <TableOfContents.Item
-                  key={section.id}
-                  active={active === section.id}
-                  render={<a href={`#${section.id}`} onClick={(event) => scrollToSection(event, section.id)} />}
-                >
-                  <span className="flex w-full justify-between gap-2">
-                    {section.title}
-                    {section.count !== undefined && <span className="text-kumo-subtle tabular-nums">{section.count}</span>}
-                  </span>
-                </TableOfContents.Item>
-              ))}
-            </TableOfContents.List>
-          </TableOfContents>
-        </aside>
       )}
+      <div className="flex flex-col gap-6">
+        {shown.map((section) => (
+          <section key={section.id} id={section.id}>
+            {section.title && !tabbed && (
+              <h2 className="mb-3 flex items-baseline gap-2 text-base font-semibold text-kumo-default">
+                {section.title}
+                {section.count !== undefined && <span className="text-sm font-normal text-kumo-subtle tabular-nums">{section.count}</span>}
+              </h2>
+            )}
+            {section.content}
+          </section>
+        ))}
+      </div>
     </div>
   );
-}
-
-/** Section links scroll within the page without replacing the route in the fragment. */
-function scrollToSection(event: React.MouseEvent, id: string) {
-  event.preventDefault();
-  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function useActiveSection(ids: string[]): string | undefined {
-  const [active, setActive] = useState<string | undefined>(ids[0]);
-  const key = ids.join(",");
-  useEffect(() => {
-    const root = document.getElementById("main");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((entry) => entry.isIntersecting).map((entry) => entry.target.id);
-        if (visible.length > 0) setActive(ids.find((id) => visible.includes(id)));
-      },
-      { root, rootMargin: "0px 0px -60% 0px" },
-    );
-    for (const id of ids) {
-      const element = document.getElementById(id);
-      if (element) observer.observe(element);
-    }
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return active;
 }
 
 export function Facts({ rows }: { rows: [string, ReactNode][] }) {
