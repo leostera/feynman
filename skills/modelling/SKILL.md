@@ -82,7 +82,7 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 5. Trace flows through their semantic actions.
 6. Extract state, state machines, boundaries, invariants, and contracts.
 7. Attach observability, measurements, and claims.
-8. Write `.feynman/model.json`.
+8. Write `.feynman/model.json` and validate it (see Storage).
 
 ### Update (per change)
 
@@ -91,9 +91,17 @@ Input: the existing `.feynman/model.json` and the code diff.
 2. **Edit** those elements, and add or remove elements as needed. Do not regenerate
    the whole model.
 3. Follow moved or renamed files and update anchors.
-4. Write the updated `.feynman/model.json`.
+4. Write the updated `.feynman/model.json` and validate it (see Storage).
 
 ## Storage
 
-Store the model as JSON at `.feynman/model.json` in the target repository. The
-schema is not fixed yet; it will settle after the first extractions.
+Store the model as JSON at `.feynman/model.json` in the target repository. It must
+validate against [`schema.json`](schema.json) (JSON Schema 2020-12), which is the
+contract that visualizations rely on. Also check that:
+- every `actor`, `target`, `ref`, `boundary`, and `owner` names an existing `id`;
+- every anchor path exists in the repository.
+
+Anchors are repository-relative paths, optionally `path#symbol`. Element `id`s are
+readable slugs for cross-references within one model and need not be stable.
+
+When the vocabulary changes, update `schema.json` and this skill together.
