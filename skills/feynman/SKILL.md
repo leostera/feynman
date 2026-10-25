@@ -26,19 +26,37 @@ from it:
 - **Develop:** write the spec first, check it, then write code that matches it. Point the
   sources at the code as it appears.
 
-Keep a spec small:
+A spec models **this** system, not a kind of system. Someone who knows the code should be
+able to point at every actor, message and step and say where it is.
 
-- 2 to 6 actors;
-- the messages between them;
-- the state that decides behaviour.
+- **An actor is something that runs separately or keeps its own state:** a process, a
+  service, an external API, a database you do not own, a person, a device. Never merge two
+  of them into one actor, and never split one process into several actors.
+- **Calls inside one process are steps, not messages.** If `pipeline.py` calls download,
+  then transcribe, then analyze, those are three steps of one actor, each with its own
+  `sources`, chained with `ctx.start("transcribe", 0)` or a `when` guard on the state. A
+  message means something crosses a process or network boundary.
+- **One step per stage the code has.** A step whose sources span several functions in
+  several files is hiding the system; split it.
+- **Use the system's own words** for actors, messages, steps, statuses, files and tables:
+  `READY`, `analysis.json`, "Pending folder". Don't invent generic roles such as
+  "processor", "pipeline" or "store" unless the code uses them. Keep names short; put the
+  tool list ("yt-dlp / Instaloader") in `description` or `look.status`, not the name.
+- **Scope follows the request.** "The whole pipeline" means all of it. If that is too much
+  for one spec, write several specs, one per behaviour. Never compress it into fewer,
+  vaguer steps.
 
-Leave out logging, metrics, retries the user can't observe, and plumbing. If a detail does
-not change what happens next, leave it out.
+What to leave out: logging, metrics, retries the user can't observe. Leave state out only
+if it never decides what happens next.
+
+Before you finish, go through the spec once more. For each actor, message and step, ask:
+"Could someone who knows this code point at it?" Rename or split anything that fails.
 
 ## Workflow
 
 1. **Read the code first.** Find:
-   - the actors: processes, services, people, devices;
+   - the actors: processes, services, people, devices (what runs separately);
+   - the stages inside each process, in the order the code runs them;
    - what each one stores;
    - what each one sends, and when;
    - the timeouts and limits.
@@ -52,7 +70,9 @@ not change what happens next, leave it out.
    - explores every interleaving within bounds, then checks the invariants and that every
      source resolves.
 
-   Fix what it reports.
+   Fix what it reports. "Stands for N pieces of code in M files" means one step is
+   hiding several stages: split it. "Never ran" means no scenario or explored path
+   reached those steps, so nothing about them was tested.
 4. **When a counterexample appears**, decide whether it is a bug in the spec (the model
    is wrong) or a finding in the system (the code really does this). Do not weaken an
    invariant to make a finding go away; report it.
@@ -101,12 +121,20 @@ export default defineSpec(
       singleton: true, // exactly one, present from the start
       initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean; expires: number }> }),
       durable: ["codes"], // survives a restart (it lives in a database)
+      // How it is drawn in the playground: an icon, a status, and its state as rows.
+      look: {
+        icon: "cloud",
+        status: (s) => `${Object.values(s.codes).filter((c) => !c.used).length} code(s) waiting`,
+        rows: (s) => Object.values(s.codes).map((c) => ({ group: `${c.account}'s account`, label: "pairing code", detail: c.used ? "used" : "unused", mood: c.used ? "off" : "info" })),
+      },
       transitions: {
         // Keyed by message: runs when the message is delivered.
         [NewCode]: {
           description: "Issues a one-time code for the account.",
           sources: ["packages/api/src/routes/pairing.ts#createPairing"],
           sends: [Code],
+          // The timeline's sentence for this event, from the state after it.
+          say: (_s, msg) => `Made a code for ${msg.account}, valid 10 minutes; only its hash is kept`,
           run(state, msg, ctx) {
             const code = ctx.fresh("code");
             state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
@@ -131,6 +159,7 @@ export default defineSpec(
       name: "Person",
       zone: devices,
       initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
+      look: { icon: "phone", status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in") },
       // Actions: what a person (or the outside world) can do. They are buttons in the playground,
       // and the checker tries them in every order.
       actions: {
@@ -151,12 +180,21 @@ export default defineSpec(
       name: "Mac",
       zone: devices,
       initialState: () => ({ account: null as string | null, pending: null as string | null }),
+      look: {
+        icon: "laptop",
+        status: (s) => (s.account ? "linked" : s.pending ? "linking" : "not linked"),
+        mood: (s) => (s.account ? "ok" : s.pending ? "busy" : "off"),
+      },
+      // The live connections it holds, drawn as lines; `to` is an instance id or label, or a singleton's name.
+      links: (s) => (s.pending ? [{ to: "Relay", kind: "https", style: "dotted" }] : []),
       actions: {
         link: {
           label: "Paste a pairing code",
           description: "Links this Mac to the account that issued the code.",
           // Inputs have a type; examples are what the playground offers and the checker tries.
-          inputs: { code: spec.defineInput(String, { examples: (w) => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"] }) },
+          // Examples are what the playground offers and the checker tries: a list, or a function of the world.
+          // Give such functions a return type when they name another actor (see "Types" below).
+          inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"] }) },
           when: (s) => s.account === null, // offered only while this holds
           sources: ["apps/macos/RemoteAccess.swift#RemoteAccess.link"],
           sends: [Redeem],
@@ -208,6 +246,8 @@ export default defineSpec(
         s.settle();
         s.act(studio, "link", { code: alice.state.codes[0] });
         s.settle();
+        // s.the(Actor) reaches singletons; s.world reads the whole world.
+        if (!s.the(Relay).state.codes) throw new Error("unreachable");
       },
     });
   },
@@ -232,6 +272,48 @@ export default defineSpec(
 - **Write descriptions in everyday words**, one sentence, about what happens and not how
   the code does it. Use `ctx.note(text)` or the `text` argument of `send`/`reply` for what
   is specific to one event.
+
+### Make the playground worth looking at
+
+The playground is drawn from the spec, so the spec decides how good it looks. For every
+actor, add:
+
+- **`look.icon`.** One of `person`, `people`, `phone`, `laptop`, `desktop`, `browser`,
+  `server`, `cloud`, `database`, `shield`, `key`, `lock`, `terminal`, `robot`, `queue`,
+  `folder`, `file`, `sheet`, `globe`, `gear`, `camera`, `video`, `mail`, `bell`, `clock`,
+  `cpu`, `box`, `plug`, `wifi`, `chat`, `router`, `storage`, `code`, `pipeline`, `eye` or
+  `card`.
+- **`look.status`:** a few words under the name, such as "connected", "not linked" or
+  "3 jobs queued".
+- **`look.mood`:** `ok`, `warn`, `bad`, `busy`, `off` or `info`, which colours the node.
+- **`look.rows`** for state worth seeing as structure, such as a service's accounts and
+  hosts, or a queue's jobs. Give each row a `label`, an optional `detail` and `mood`, and
+  a `group` to box rows together. Use it on hubs (singletons); on other actors, keep it to
+  one to three rows.
+- **`links`** for connections that come and go: sockets, sessions, subscriptions. Only
+  live links are drawn prominently.
+- **`say`** on the steps a reader cares about. It is the sentence the timeline and the
+  speech bubbles show, such as "Made code 19YP for alice, valid 10 minutes". Without it,
+  they show the `description`.
+
+These functions take only the actor's own state. Keep them cheap and total: a throw
+shows nothing rather than an error.
+
+### Types
+
+- `import { defineSpec, message, SEC, MIN } from "@feynman/spec"` is all a spec needs.
+  For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
+  `Link`, `Row`, `Icon` and `Mood`.
+- **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
+  'any' because it … is referenced directly or indirectly in its own initializer", two
+  actors refer to each other inside a function whose return type TypeScript has to infer.
+  This is usually input `examples`. Give that function a return type:
+  `examples: (w): string[] => …`.
+- To send to yourself, use `ctx.send(ctx.self, …)`. Avoid `ctx.the(ThisActor)`.
+- **Actions without inputs** leave out `inputs`. Scenarios call them as `s.act(x, "pair")`.
+- **Use one message per meaning.** If a refusal means different things in different
+  places, declare different messages. Don't add a field to tell them apart.
+- Write `durable` as a list of state fields, like `durable: ["codes"]`.
 
 ### Sources
 

@@ -6,8 +6,9 @@ import { checkSources, git, repositoryAt, withWorktree, writeLock, type Reposito
 import { diffRuns, runScenario, type RunDiff, type Spec } from "@feynman/spec";
 import { readConfig, type Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
-import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red } from "./format.ts";
+import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red, yellow } from "./format.ts";
 import { loadSpec } from "./load.ts";
+import { shapeWarnings } from "./shape.ts";
 import { typecheck } from "./types.ts";
 
 export interface Context {
@@ -77,6 +78,7 @@ export async function checkCommand(ctx: Context, named: string[], bounds: Partia
     console.log(formatReport(spec, report));
     const statuses = checkSources(ctx.repository.root, specSources(spec));
     for (const line of formatSources(statuses)) console.log(line);
+    for (const w of shapeWarnings(spec)) console.log(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));
     if (report.properties.some((p) => !p.holds) || report.errors.length || statuses.some((s) => s.status === "missing")) status = 1;
   }
   return status;
