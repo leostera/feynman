@@ -1,4 +1,4 @@
-# RFD0001 - Feynman specs: describe a system, then play, check, and diff it
+# RFD0002 - Feynman specs: describe a system, then play, check, and diff it
 
 - Feature Name: `feynman-specs`
 - Status: Draft
@@ -23,7 +23,8 @@ derived from that one file:
 - call stacks from each event down to the real code.
 
 Agents write and maintain specs; Feynman owns the engine, the checker, and every view. This
-replaces the extracted JSON model and its fixed renderer.
+replaces the extracted JSON model and its fixed renderer, described in
+[RFD0001](RFD0001-extracted-behavioural-model.md).
 
 ## Motivation
 
@@ -79,12 +80,14 @@ Use cases:
 ## Non-goals
 
 - Proofs, or unbounded model checking. The checker is bounded and says what it covered.
-- Translating TypeScript transitions to TLA+ or Quint, or depending on third-party checkers.
+- Depending on third-party checkers. Exporting to them as an oracle is a future
+  possibility.
 - Conformance against the running system, meaning replaying scenarios against real code.
   This is a future possibility.
 - Automatically modelling a whole repository. A spec covers the part someone wants to
   understand. Several specs can cover a system.
-- Keeping the JSON model, phases, and extraction driver. They are retired, not adapted.
+- An agent runtime plugin. Specs are code and the CLI does the rest, so a skill that
+  teaches the DSL and the commands is enough for any agent.
 
 ## Guide-level explanation
 
@@ -106,11 +109,13 @@ transition stands for, what it sent, and exactly what state it changed.
 
 ### Writing a spec
 
-Specs live in the repository under `feynman/`, one system per file, reviewed like any
-other code. (The anchors below are illustrative.)
+Specs live in a `specs/` directory next to a package's `package.json` (the repository
+root counts as a package), one system per file, reviewed like any other code. A
+top-level `feynman.config.ts` can point Feynman elsewhere. (The sources below are
+illustrative.)
 
 ```ts
-// feynman/remote-access.ts
+// specs/remote-access.ts
 import { defineSpec, MIN, SEC } from "@feynman/spec";
 
 export default defineSpec("Remote access", (spec) => {
@@ -326,7 +331,7 @@ Things to notice:
 $ feynman dev
   Remote access  http://localhost:4173/#/play
   3 actors · 1 limit · 5 messages · 3 invariants · 1 scenario
-  watching feynman/remote-access.ts
+  watching specs/remote-access.ts
 ```
 
 The playground opens:
@@ -378,10 +383,11 @@ reports as added or removed.
 
 ### With an agent
 
-In Pi, `/feynman-explain remote access` asks the agent to write or extend
-`feynman/remote-access.ts` for that topic. The agent reads the code it needs, writes the
-spec, and runs the `feynman_check` tool until it passes; then Feynman renders the
-explainer. The agent never writes UI code. Asking for a change to the explainer means a
+Feynman ships a skill, `feynman/SKILL.md`, that teaches an agent the DSL and the
+commands. No plugin is needed: specs are code, and everything else is the CLI. Asked
+"explain how remote access works", an agent with the skill writes or extends
+`specs/remote-access.ts`, reading the code it needs. It runs `feynman check` until the
+spec passes, and `feynman build` to produce the explainer. The agent never writes UI code. Asking for a change to the explainer means a
 change to the spec ("let me push from the git client" adds an action); a change to how
 something looks is a change to Feynman.
 
@@ -393,13 +399,14 @@ something looks is a change to Feynman.
 |---|---|---|
 | `@feynman/spec` | The DSL, the engine (world, events, clock, drafts), traces. Browser-safe, with no runtime dependencies. | nothing |
 | `@feynman/check` | Exploration, properties, shrinking, coverage, stale anchors. | spec |
-| `@feynman/code` | Snapshots, anchors, source versions, call trees through CallDiff, worktrees for other commits. Moved from `@feynman/model`. | git, calldiff |
+| `@feynman/code` | Snapshots, anchors, source versions, call trees through CallDiff, worktrees for other commits. | git, calldiff |
 | `@feynman/view` | React and Kumo views: Playground, Timeline, Flows, FlowDiff, CallStack, Reference. Layout. | spec |
 | `@feynman/cli` | `feynman dev`, `check`, `build`, `diff`, `open`. Single-file builds. | all |
-| `pi-feynman` | A thin adapter: `/feynman-explain`, plus the `feynman_check` and `feynman_render` tools, and the skill that teaches the DSL. | cli |
+| `feynman` skill | `SKILL.md`: the DSL, the commands, and how to write a good spec. For any agent. | cli |
 
-`@feynman/model`, `@feynman/modeler`, and `@feynman/renderer` are retired. What
-survives moves to `@feynman/code`: snapshots, anchors, call trees, and source versions.
+This is a new implementation. Nothing from RFD0001's packages is kept for compatibility.
+Code that does the same job (anchors, snapshots, call trees) may be reused while
+writing `@feynman/code`.
 
 ### Data model and interfaces
 
@@ -549,10 +556,23 @@ system is new.
 
 ### Compatibility and migration
 
-The JSON model (`.feynman/model/`), its schemas, the three-phase extraction, and the
-renderer are removed in one cutover, with no compatibility layer. Models already
-generated are not migrated: specs are written for the topics people care about. The
-`feynman.leostera.dev` site is rebuilt from specs.
+None. This is a new implementation, and everything from RFD0001 is deleted rather than
+migrated.
+
+### Configuration
+
+Without configuration, Feynman finds every `specs/*.ts` next to a `package.json` in the
+repository. A top-level `feynman.config.ts` changes that, and sets defaults for the
+checker:
+
+```ts
+import { defineConfig } from "@feynman/cli";
+
+export default defineConfig({
+  specs: ["docs/specs/*.ts", "services/*/specs/*.ts"],
+  check: { depth: 30, faults: 2, instances: 3 },
+});
+```
 
 ### Security, privacy, and observability
 
@@ -571,7 +591,10 @@ generated are not migrated: specs are written for the topics people care about. 
    spec by hand from the existing `sim.ts`, and compare it with the session's playground.
 3. `@feynman/check`: invariants, faults, shrinking, coverage, and stale anchors.
 4. `@feynman/code` and `feynman diff`: trace alignment and call-tree diffs.
-5. `pi-feynman`: `/feynman-explain <topic>`, the tools, and the skill.
+5. The `feynman` skill: the DSL, the commands, and what makes a good spec.
+6. The `feynman.leostera.dev` site, rebuilt for this design. It stays agent-first: a
+   short explanation, explainers built from specs, and a small call to action for
+   setting up your agent with the skill.
 
 **Acceptance:** an agent writes a remote-access spec for axo in under 10 minutes with no
 UI code. `feynman check` finds the lost-reply case, either as a counterexample or as a
@@ -654,8 +677,6 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 
 ### Before acceptance
 
-- **Where specs live:** `feynman/*.ts` at the root, or `.feynman/specs/`. Specs are
-  reviewed code, which argues for a visible `feynman/`.
 - **Typing `state`, `msg`, and `inputs`:** inside `[Redeem]: spec.defineTransition({ run(state, msg) })`,
   TypeScript must know `state` from the actor's `initialState` and `msg` from the
   message key. `defineTransition` and `defineAction` return values, so their parameter
@@ -680,7 +701,6 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 ### Out of scope
 
 - Conformance: replaying scenarios against the running system or its tests.
-- Export to Quint or TLA+.
 - Hosting, logins, and sharing explainers as a service.
 - Watch mode (Read and Watch narrations of a flow).
 
@@ -695,7 +715,11 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
   real trace is compared with the spec's.
 - **Specs from extraction:** an agent proposes a spec for a directory, guided by call
   trees, and the checker and the person refine it.
-- **Live review:** comments on a timeline event or a flow step go back to the Pi session
+- **Export to TLA+ or Lean, as an oracle for the checker:** translate small specs, or
+  the state graphs Feynman explores, and compare results with TLC or a Lean proof.
+  Agreement on reachable states and violations is a strong test of Feynman's own
+  checker while it is being built.
+- **Live review:** comments on a timeline event or a flow step go back to the agent session
   working on the code.
 - **Narrated flows:** Read and Watch versions written from traces, so they're grounded in
   the spec by construction.
