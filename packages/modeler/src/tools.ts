@@ -14,13 +14,14 @@ export const TOOLS = {
     name: "feynman_reviewed",
     label: "Feynman: reviewed",
     description:
-      "Record repository files as reviewed for the Feynman model, with what each contributed. Only files you have read (or named in a command) in this session are accepted. A directory ending in `/` may be recorded whole only as `vendored` or `generated`.",
+      "Record repository files as reviewed for the Feynman model, with what each contributed. `modelled` and `no-behaviour` files must have been read in full with the read tool in this session (continue with offsets when output is truncated), and `modelled` files must be anchored by at least one element. `vendored` and `generated` files (lockfiles, copies of third-party code, tool output) need a note naming their origin instead; a directory ending in `/` may be recorded whole with those outcomes.",
     snippet: "Record files as reviewed for the Feynman model",
     guideline:
       "While extracting a Feynman model, call feynman_reviewed for files once you have read them and reflected them in the model; batch several files per call.",
     params: {
       path: "Repository-relative path",
-      outcome: "modelled: the model reflects it. no-behaviour: nothing to model. vendored or generated: say the origin in note.",
+      outcome:
+        "modelled: the model reflects it and some element anchors it. no-behaviour: nothing to model (prose, formatting or lint config, assets, fixtures); source code almost always informs some element. vendored or generated: say the origin in note.",
       summary: "What this session has covered so far, in a phrase",
     },
     outcomes: OUTCOMES,

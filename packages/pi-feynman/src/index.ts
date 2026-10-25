@@ -22,29 +22,38 @@ export default function feynman(pi: ExtensionAPI) {
     });
   const current = (ctx: ExtensionContext): Extraction => (extraction ??= open(ctx));
 
-  // Rebuild from the active branch: the last drive state, and every file the agent
-  // read or named in a command, so a resumed session keeps its evidence.
+  // Rebuild from the active branch: the last drive state, and every read the agent
+  // made (with any truncation its result reported), so a resumed session keeps its evidence.
   pi.on("session_start", (_event, ctx) => {
     extraction = open(ctx);
     let state: DriveState | null = null;
+    const reads = new Map<string, Record<string, unknown>>();
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === "custom" && entry.customType === DRIVE_ENTRY) state = entry.data as DriveState;
-      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-      for (const part of entry.message.content) {
-        if (part.type !== "toolCall") continue;
-        const args = part.arguments as Record<string, unknown>;
-        if (part.name === "read" && typeof args.path === "string") extraction.noteRead(ctx.cwd, args.path);
-        if (part.name === "bash" && typeof args.command === "string") extraction.noteCommand(ctx.cwd, args.command);
+      if (entry.type !== "message") continue;
+      const message = entry.message;
+      if (message.role === "assistant") {
+        for (const part of message.content) if (part.type === "toolCall" && part.name === "read") reads.set(part.id, part.arguments);
+      } else if (message.role === "toolResult" && reads.has(message.toolCallId) && !message.isError) {
+        noteRead(ctx, reads.get(message.toolCallId)!, message.details);
       }
     }
     extraction.restore(state);
   });
 
   pi.on("tool_result", (event, ctx) => {
-    if (event.isError) return;
-    if (event.toolName === "read" && typeof event.input.path === "string") current(ctx).noteRead(ctx.cwd, event.input.path);
-    if (event.toolName === "bash" && typeof event.input.command === "string") current(ctx).noteCommand(ctx.cwd, event.input.command);
+    if (event.toolName === "read" && !event.isError) noteRead(ctx, event.input, event.details);
   });
+
+  const noteRead = (ctx: ExtensionContext, input: Record<string, unknown>, details: unknown) => {
+    if (typeof input.path !== "string") return;
+    const truncation = (details as { truncation?: { truncated: boolean; outputLines: number } } | undefined)?.truncation;
+    current(ctx).noteRead(ctx.cwd, input.path, {
+      offset: typeof input.offset === "number" ? input.offset : undefined,
+      limit: typeof input.limit === "number" ? input.limit : undefined,
+      returnedLines: truncation?.truncated ? truncation.outputLines : undefined,
+    });
+  };
 
   pi.on("tool_call", (event, ctx) => {
     if (event.toolName !== "write" && event.toolName !== "edit") return;

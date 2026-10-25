@@ -16,7 +16,8 @@ export function kickoff(start: Start, report: CoverageReport): string {
     `Extract the Feynman model of this repository, following the modelling skill. This is ${scope}.`,
     "",
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
-    "Work the way you would to understand the system: start from the entrypoints and follow the code across files, wherever it leads. As you go, write and refine model elements, and record the files you have read with feynman_reviewed. Use feynman_status to see what is left.",
+    "Work the way you would to understand the system: start from the entrypoints and follow the code across files, wherever it leads. Read each file in full; skimming a few lines does not count. As you go, write and refine model elements, anchor them to the files they come from, and record the files you have read with feynman_reviewed. Use feynman_status to see what is left.",
+    "The model is the point, not the count: every behaviour you read about (messages, flows, state, invariants, limits, protocols) belongs in it.",
     "Whenever you stop, I will check which files are still unreviewed and whether the model is valid, and ask you to continue until nothing is left.",
   ].join("\n");
 }

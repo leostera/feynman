@@ -119,7 +119,7 @@ repository does not ignore.
 
 Vendored copies of third-party code may be listed as a whole directory with
 outcome `vendored`, once you have confirmed that is what they are and noted the
-origin. Patches, wrappers, and build rules around them are first-party and are
+origin. Lockfiles and other tool output are `generated`, with their source named. Patches, wrappers, and build rules around them are first-party and are
 reviewed file by file. Generated trees are listed the same way, as `generated`,
 when the files they are generated from are reviewed.
 
@@ -190,9 +190,11 @@ Mechanical facts come from tools, not from the agent.
   there is no model, otherwise an update from the modelled commit (it sets
   `meta.source.base`, and drops ledgers for the old commit). Tracked files must
   match HEAD.
-- `feynman_reviewed` records files as reviewed, with their outcome. It accepts
-  only files read (or named in a shell command) in this session. Ledgers cannot
-  be written any other way.
+- `feynman_reviewed` records files as reviewed, with their outcome. `modelled`
+  and `no-behaviour` files must have been read in full with `read` in this
+  session (searching or listing does not count), and `modelled` files must be
+  anchored by some element. `vendored` and `generated` files and trees need a
+  note naming their origin instead. Ledgers cannot be written any other way.
 - `feynman_status` shows coverage and model problems.
 - Whenever the agent stops, the extension checks coverage and validity, and asks
   it to continue until both pass; then it measures the model. `/feynman-stop`

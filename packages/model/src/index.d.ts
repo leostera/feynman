@@ -40,6 +40,14 @@ export function readCoverage(modelDir: string): { batch: string; path: string; v
 
 export const SCHEMA_DIR: string;
 export function checkModel(modelDir: string, repository?: string): string[];
+export interface ParsedAnchor {
+  file: string;
+  start?: number;
+  end?: number;
+}
+export function parseAnchor(anchor: string | { file: string; span?: { start: { line: number }; end?: { line: number } } }): ParsedAnchor;
+export function modelAnchors(model: Model): ParsedAnchor[];
+export function anchoredFiles(model: Model): Set<string>;
 
 export const MODEL_ROOT: string;
 export class CoverageError extends Error {}

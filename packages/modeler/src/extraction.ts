@@ -5,10 +5,13 @@
 // did (files read, commands run), exposes `begin`, `review`, and `status` as the
 // agent's tools, and asks `onStop` what to do whenever the agent is about to stop.
 import {
+  anchoredFiles,
   checkModel,
   computeCoverage,
   describeCoverage,
+  loadModel,
   measureModel,
+  readCoverage,
   recordReviewed,
   trackedFiles,
   type CoverageReport,
@@ -16,7 +19,7 @@ import {
   type Outcome,
 } from "@feynman/model";
 import { join, resolve, sep } from "node:path";
-import { Evidence } from "./evidence.ts";
+import { Evidence, type Read } from "./evidence.ts";
 import { continuation, kickoff } from "./messages.ts";
 import { findWorkspace, startExtraction, type Workspace } from "./workspace.ts";
 
@@ -54,7 +57,6 @@ export class Extraction {
   readonly workspace: Workspace | null;
   private state: DriveState | null = null;
   private evidence: Evidence | null = null;
-  private headFiles: Set<string> | null = null;
   private last: { missing: number; problems: number } | null = null;
   private stalls = 0;
 
@@ -71,14 +73,10 @@ export class Extraction {
     this.state = state?.active ? state : null;
   }
 
-  // What the agent did. Files count as seen when read, or named in a command.
+  // What the agent did. A file counts as read once its reads cover every line.
 
-  noteRead(cwd: string, path: string) {
-    if (this.workspace) this.seen().read(cwd, path);
-  }
-
-  noteCommand(cwd: string, command: string) {
-    if (this.workspace) this.seen().bash(cwd, command, this.tracked());
+  noteRead(cwd: string, path: string, read?: Read) {
+    if (this.workspace) this.seen().read(cwd, path, read);
   }
 
   /** Ledgers are written only through `review`; adapters should block other writes. */
@@ -96,22 +94,34 @@ export class Extraction {
     return kickoff(start, computeCoverage(ws.repository, ws.modelDir));
   }
 
-  /** Record files as reviewed. Only files seen in this session are accepted. */
+  /**
+   * Record files as reviewed. `modelled` and `no-behaviour` files must have been read
+   * in full in this session, and `modelled` ones anchored by some element; `vendored`
+   * and `generated` files and trees need a note naming their origin instead.
+   */
   review(files: LedgerEntry[], summary?: string): { text: string; recorded: number; rejected: string[] } {
     const ws = this.requireWorkspace();
     const { commit } = computeCoverage(ws.repository, ws.modelDir);
     const tracked = new Set(trackedFiles(ws.repository, commit));
+    const anchored = anchoredFiles(loadModel(ws.modelDir));
     const accepted: LedgerEntry[] = [];
     const rejected: string[] = [];
     for (const entry of files) {
       const path = entry.path.replace(/^\.\//, "");
       if (path.endsWith("/")) {
         if (entry.outcome !== "vendored" && entry.outcome !== "generated") rejected.push(`${path}: only vendored or generated trees may be recorded whole`);
+        else if (!entry.note?.trim()) rejected.push(`${path}: ${entry.outcome} needs a note naming where it comes from`);
         else if (![...tracked].some((file) => file.startsWith(path))) rejected.push(`${path}: no tracked files under it`);
         else accepted.push({ ...entry, path });
       } else if (!tracked.has(path)) rejected.push(`${path}: not tracked at ${commit.slice(0, 7)}`);
-      else if (!this.seen().has(path)) rejected.push(`${path}: not read in this session; read it first`);
-      else accepted.push({ ...entry, path });
+      else if (entry.outcome === "vendored" || entry.outcome === "generated") {
+        // Copies and tool output need not be read in full, but their origin must be named.
+        if (!entry.note?.trim()) rejected.push(`${path}: ${entry.outcome} needs a note naming where it comes from`);
+        else accepted.push({ ...entry, path });
+      } else if (!this.seen().has(path)) rejected.push(`${path}: not read in full (${this.seen().progress(path)}); read all of it first`);
+      else if (entry.outcome === "modelled" && !anchored.has(path)) {
+        rejected.push(`${path}: marked modelled, but no element anchors it; anchor it from the elements it informs, or use no-behaviour if there is truly nothing to model`);
+      } else accepted.push({ ...entry, path });
     }
     if (accepted.length) recordReviewed(ws.modelDir, this.options.ledger, commit, summary ?? "Reviewed in an agent session.", accepted);
     const after = computeCoverage(ws.repository, ws.modelDir);
@@ -157,8 +167,13 @@ export class Extraction {
 
     if (report.missing.length === 0 && problems.length === 0) {
       const measured = measureModel(this.state.repository, this.state.modelDir);
+      const outcomes = new Map<string, number>();
+      for (const { value } of readCoverage(this.state.modelDir)) {
+        if (value.commit === report.commit) for (const entry of value.files) outcomes.set(entry.outcome, (outcomes.get(entry.outcome) ?? 0) + 1);
+      }
+      const breakdown = [...outcomes].map(([outcome, n]) => `${n} ${outcome}`).join(", ");
       this.stop();
-      return { kind: "done", message: `Feynman: ${describeCoverage(report)}, and the model is valid. ${measured}.` };
+      return { kind: "done", message: `Feynman: ${describeCoverage(report)} (${breakdown}), and the model is valid. ${measured}.` };
     }
 
     const progress = { missing: report.missing.length, problems: problems.length };
@@ -193,10 +208,5 @@ export class Extraction {
   private seen(): Evidence {
     this.evidence ??= new Evidence(this.requireWorkspace().repository);
     return this.evidence;
-  }
-
-  private tracked(): Set<string> {
-    this.headFiles ??= new Set(trackedFiles(this.requireWorkspace().repository, "HEAD"));
-    return this.headFiles;
   }
 }

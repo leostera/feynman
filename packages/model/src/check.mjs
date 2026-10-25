@@ -73,33 +73,46 @@ export function checkModel(modelDir, repository) {
   return problems;
 }
 
-/** Every anchor's file must exist at the modelled commit, and any span must fall inside it. */
-function checkAnchors(model, repository) {
-  const SHORTHAND = /^([^#:]+)(?::(\d+)(?::\d+)?(?:-(\d+)(?::\d+)?)?)?(?:#.+)?$/;
-  const parse = (anchor) => {
-    if (typeof anchor !== "string") return { file: anchor.file, start: anchor.span?.start.line, end: anchor.span?.end?.line };
-    const [, file, start, end] = SHORTHAND.exec(anchor) ?? [null, anchor];
-    return { file, start: start && Number(start), end: end && Number(end) };
-  };
+/** Parse either anchor form into `{ file, start?, end? }` (lines). */
+export function parseAnchor(anchor) {
+  if (typeof anchor !== "string") return { file: anchor.file, start: anchor.span?.start.line, end: anchor.span?.end?.line };
+  const match = /^([^#:]+)(?::(\d+)(?::\d+)?(?:-(\d+)(?::\d+)?)?)?(?:#.+)?$/.exec(anchor);
+  if (!match) return { file: anchor };
+  const [, file, start, end] = match;
+  return { file, start: start && Number(start), end: end && Number(end) };
+}
+
+/** Every anchor in the model (anchors, evidence, tests, definitions, call-path frames), parsed. */
+export function modelAnchors(model) {
   const anchors = [];
   const collect = (value) => {
     if (Array.isArray(value)) value.forEach(collect);
     else if (value && typeof value === "object") {
       for (const key of ["anchors", "evidence", "tests", "definitions"]) {
-        if (Array.isArray(value[key])) for (const anchor of value[key]) anchors.push(parse(anchor));
+        if (Array.isArray(value[key])) for (const anchor of value[key]) anchors.push(parseAnchor(anchor));
       }
-      if (value.anchor) anchors.push(parse(value.anchor));
-      for (const path of value.footprint?.paths ?? []) anchors.push({ file: path });
+      if (value.anchor) anchors.push(parseAnchor(value.anchor));
       Object.values(value).forEach(collect);
     }
   };
   collect(model);
+  return anchors.filter((anchor) => anchor.file);
+}
+
+/** Files some element anchors directly (footprints do not count). */
+export function anchoredFiles(model) {
+  return new Set(modelAnchors(model).map((anchor) => anchor.file));
+}
+
+/** Every anchor's file must exist at the modelled commit, and any span must fall inside it. */
+function checkAnchors(model, repository) {
+  const anchors = modelAnchors(model);
+  for (const actor of model.actors) for (const path of actor.footprint?.paths ?? []) anchors.push({ file: path });
 
   const commit = model.meta.source?.commit ?? "HEAD";
   const lineCounts = new Map();
   const found = new Set();
   for (const { file, start, end } of anchors) {
-    if (!file) continue;
     if (tryGit(repository, "cat-file", "-e", `${commit}:${file.replace(/\/$/, "")}`) === null) {
       found.add(`missing path ${file} at ${commit.slice(0, 7)}`);
       continue;
