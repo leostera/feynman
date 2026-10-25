@@ -264,7 +264,8 @@ Mechanical facts come from tools, not from the agent.
 - Whenever the agent stops, the extension checks where the extraction stands,
   moves to the next phase when the current one is done, and asks the agent to
   continue (with the next group of actors in phase 2) until every file is read,
-  the model is valid, and it is no longer thin; then it measures the model. `/feynman-stop`
+  the model is valid, and it is no longer thin; then it measures the model.
+  `/feynman-explain` does the same, then renders the model and opens it. `/feynman-stop`
   stops this; `/feynman-render` renders the model to `.feynman/index.html`.
 
 ### From the command line

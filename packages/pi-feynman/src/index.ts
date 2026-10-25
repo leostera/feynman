@@ -3,6 +3,7 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Extraction, renderModel, TOOLS, type DriveState } from "@feynman/modeler";
+import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
 import { Type } from "typebox";
 
@@ -64,7 +65,7 @@ export default function feynman(pi: ExtensionAPI) {
 
   // Not `event.context.canContinue`: that describes the context before our entry,
   // and the coverage message appended here is what the next request continues from.
-  pi.on("agent_before_settle", (event, ctx) => {
+  pi.on("agent_before_settle", async (event, ctx) => {
     if (event.outcome !== "completed") return;
     const decision = current(ctx).onStop();
     if (!decision) return;
@@ -72,7 +73,8 @@ export default function feynman(pi: ExtensionAPI) {
       ctx.ui.notify(`${decision.message} Run /feynman-extract to resume.`, "warning");
       return;
     }
-    const content = decision.kind === "done" ? `${decision.message} Render it with /feynman-render.` : decision.message;
+    let content = decision.message;
+    if (decision.kind === "done") content += decision.explain ? ` ${await explain(ctx)}` : " Render it with /feynman-render.";
     return {
       continue: decision.kind === "continue",
       entries: [{ type: "custom_message", customType: COVERAGE_MESSAGE, display: true, content }],
@@ -80,6 +82,26 @@ export default function feynman(pi: ExtensionAPI) {
   });
 
   const text = (value: string) => [{ type: "text" as const, text: value }];
+
+  /** Render the model to `out` (default .feynman/index.html). */
+  const render = async (ctx: ExtensionContext, out?: string): Promise<string> => {
+    const workspace = current(ctx).workspace;
+    if (!workspace) throw new Error("Not inside a git repository.");
+    const path = out ? resolve(ctx.cwd, out) : join(workspace.repository, ".feynman", "index.html");
+    await renderModel(workspace.modelDir, path);
+    return path;
+  };
+
+  /** Render the model and open it in the browser; returns what happened, for the transcript. */
+  const explain = async (ctx: ExtensionContext): Promise<string> => {
+    try {
+      const path = await render(ctx);
+      openInBrowser(path);
+      return `Rendered and opened ${path}.`;
+    } catch (error) {
+      return `Rendering failed: ${(error as Error).message}`;
+    }
+  };
 
   pi.registerTool({
     name: TOOLS.extract.name,
@@ -147,10 +169,17 @@ export default function feynman(pi: ExtensionAPI) {
   });
 
   command("render", "Render the Feynman model to HTML (default .feynman/index.html)", async (args, ctx) => {
-    const workspace = current(ctx).workspace;
-    if (!workspace) throw new Error("Not inside a git repository.");
-    const out = args ? resolve(ctx.cwd, args) : join(workspace.repository, ".feynman", "index.html");
-    await renderModel(workspace.modelDir, out);
-    ctx.ui.notify(`Rendered ${out}`, "info");
+    ctx.ui.notify(`Rendered ${await render(ctx, args || undefined)}`, "info");
   });
+
+  command("explain", "Extract the Feynman model at HEAD, then render it and open it in the browser", async (_args, ctx) => {
+    await pi.sendUserMessage(current(ctx).begin({ explain: true }));
+  });
+}
+
+/** Open a file with the platform's default handler (the browser, for HTML). */
+function openInBrowser(path: string) {
+  const [command, args] =
+    process.platform === "darwin" ? ["open", [path]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", path]] : ["xdg-open", [path]];
+  execFile(command, args, () => {});
 }

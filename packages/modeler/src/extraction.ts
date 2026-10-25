@@ -32,14 +32,16 @@ export interface DriveState {
   modelDir: string;
   /** Absent in states saved before phases existed: treated as phase 2. */
   phase?: Phase;
+  /** Render the model and show it once the extraction is done. */
+  explain?: boolean;
 }
 
 /** What the adapter should do when the agent is about to stop. */
 export type StopDecision =
   /** Show `message` to the agent and let it continue. */
   | { kind: "continue"; message: string }
-  /** The extraction is complete; show `message`. */
-  | { kind: "done"; message: string }
+  /** The extraction is complete; show `message`, and the rendered model when `explain`. */
+  | { kind: "done"; message: string; explain: boolean }
   /** Stopped driving (no progress, or an error); tell the user `message`. */
   | { kind: "paused"; message: string };
 
@@ -98,14 +100,17 @@ export class Extraction {
 
   // The agent's operations.
 
-  /** Prepare the model at HEAD, start driving, and return the agent's instructions. */
-  begin(): string {
+  /**
+   * Prepare the model at HEAD, start driving, and return the agent's instructions.
+   * With `explain`, the stop decision that finishes the extraction asks for it to be rendered and shown.
+   */
+  begin({ explain = false }: { explain?: boolean } = {}): string {
     const ws = this.requireWorkspace();
     const start = startExtraction(ws);
     // A fresh snapshot starts by mapping actors; with actors already modelled, by reading groups.
     const phase: Phase = loadModel(ws.modelDir).actors.some((actor) => actor.provenance === "first-party") ? 2 : 1;
     this.scope = null;
-    this.setState({ active: true, repository: ws.repository, modelDir: ws.modelDir, phase });
+    this.setState({ active: true, repository: ws.repository, modelDir: ws.modelDir, phase, explain });
     // Files read before the extraction started count too.
     this.recordRead(this.seen().files());
     const { report, group } = this.situation(ws, false);
@@ -170,10 +175,14 @@ export class Extraction {
     const { report, problems, gaps, phase } = situation;
 
     if (phase === 3 && !situation.entered && report.missing.length === 0 && problems.length === 0 && gaps.length === 0) {
-      const { repository, modelDir } = this.state;
+      const { repository, modelDir, explain = false } = this.state;
       const measured = measureModel(repository, modelDir);
       this.stop();
-      return { kind: "done", message: `Feynman: ${describeCoverage(report).replace("reviewed", "read")} (${breakdown(modelDir, report)}), and the model is valid. ${measured}.` };
+      return {
+        kind: "done",
+        explain,
+        message: `Feynman: ${describeCoverage(report).replace("reviewed", "read")} (${breakdown(modelDir, report)}), and the model is valid. ${measured}.`,
+      };
     }
 
     const progress = JSON.stringify([phase, report.missing.length, problems.length, gaps.length]);
