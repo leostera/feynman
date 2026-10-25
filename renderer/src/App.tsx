@@ -96,19 +96,14 @@ function TopBar() {
   const { source } = model.meta;
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-kumo-hairline bg-kumo-base px-4">
-      <a href="#/" className="text-sm font-semibold text-kumo-default">
-        {model.meta.system}
+      <a href="#/" className="text-sm font-semibold text-kumo-default" title={model.meta.system}>
+        {source.url ? source.url.replace(/^https:\/\//, "") : model.meta.system}
       </a>
       <SourceInfo />
       <div className="ml-4">
         <Tabs size="sm" value="current" tabs={[{ value: "current", label: "Current state" }]} />
       </div>
       <div className="ml-auto flex items-center gap-2">
-        {source.url && (
-          <a href={source.url} target="_blank" rel="noreferrer" className="text-xs text-kumo-subtle hover:text-kumo-link hover:underline">
-            {source.url.replace(/^https:\/\//, "")}
-          </a>
-        )}
         <ModeToggle />
       </div>
     </header>
