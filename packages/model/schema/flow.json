@@ -61,6 +61,14 @@
               "type": "string"
             },
             "description": "Guarantees and conditions: transactional, idempotent, retried, bounded, under a lock, etc."
+          },
+          "anchor": {
+            "$ref": "urn:feynman:common#/$defs/anchor",
+            "description": "Where the step happens in code: the function that does it, as `path#symbol` (`ClassName.method` for methods). Its call tree is measured from here."
+          },
+          "calls": {
+            "$ref": "urn:feynman:common#/$defs/callNode",
+            "description": "The call tree under `anchor`, filled in by measure."
           }
         }
       }

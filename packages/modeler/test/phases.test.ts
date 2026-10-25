@@ -1,14 +1,20 @@
 import { expect, test } from "bun:test";
 import type { Actor, Model } from "@feynman/model";
-import { actorGaps, depthGaps, isTestFile, nextGroup, owns, scopeGaps } from "../src/phases.ts";
+import { actorGaps, depthGaps, isTestFile, journeyGaps, nextGroup, owns, scopeGaps } from "../src/phases.ts";
 
 /** A model whose first-party actors each run one component, named after the actor, covering `paths`. */
 // Fixtures name only the fields the phases look at.
 type Fixture = Partial<Actor> & { id: string; paths?: string[] };
+// By default, one journey sets off every flow, and every step is anchored.
 const model = (parts: Record<string, unknown> & { actors: Fixture[] }): Model => {
   const components = parts.actors.filter((a) => a.paths).map((a) => ({ id: a.id, actors: [a.id], footprint: { paths: a.paths } }));
   const actors = parts.actors.map(({ paths: _, ...a }) => a);
-  return { meta: { summary: "x" }, flows: [], protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], components, ...parts, actors } as unknown as Model;
+  const flows = ((parts.flows ?? []) as { id: string; steps: Record<string, unknown>[] }[]).map((flow) => ({
+    ...flow,
+    steps: flow.steps.map((step) => ({ anchor: "src/app.ts#run", ...step })),
+  }));
+  const journeys = [{ id: "use", actor: "user", stages: [{ action: "uses it", flows: flows.map((flow) => flow.id) }] }];
+  return { meta: { summary: "x" }, protocols: [], state: [], stateMachines: [], invariants: [], claims: [], limits: [], components, journeys, ...parts, flows, actors } as unknown as Model;
 };
 const actor = (id: string, paths: string[] | null, talksTo: string[] = []): Fixture =>
   paths ? { id, kind: "program", provenance: "first-party", paths, talksTo } : { id, kind: "person", provenance: "third-party", talksTo };
@@ -98,4 +104,24 @@ test("the actor map keeps to the system: no connections between external actors,
   ]);
   const clean = model({ actors: [{ ...actor("extension", ["src/"], ["pi"]), host: "pi" }, actor("operator", null, ["pi"]), ext("pi")] });
   expect(scopeGaps(clean)).toEqual([]);
+});
+
+test("the story holds from journeys to code: journeys set off flows, flows serve journeys, first-party steps are anchored", () => {
+  const m = model({
+    actors: [actor("api", ["api/"], ["user"]), actor("user", null)],
+    flows: [
+      { id: "post", steps: [{ actor: "user", action: "posts", target: "api" }, { actor: "api", action: "stores", ref: "store" }] },
+      { id: "store", steps: [{ actor: "api", action: "writes", anchor: undefined }] },
+      { id: "orphan", steps: [{ actor: "api", action: "does something" }] },
+    ],
+    journeys: [
+      { id: "share", actor: "user", stages: [{ action: "posts a note", flows: ["post"] }] },
+      { id: "idle", actor: "user", stages: [{ action: "waits" }] },
+    ],
+  });
+  expect(journeyGaps(m)).toEqual([
+    "journeys/idle sets off no flow; list the flows each stage sets off",
+    "flows/store step 1 (api) has no anchor; name the function that does it, as path#symbol",
+    "flows/orphan serves no journey; add it to the stage it implements, or call it from a flow that does",
+  ]);
 });

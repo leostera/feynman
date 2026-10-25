@@ -71,6 +71,12 @@ function checkReferences(model: Model): string[] {
   const ref = (where: string, id: string | undefined, key: KindKey) => {
     if (id !== undefined && !ids[key].has(id)) problems.push(`${where} → unknown ${key} ${id}`);
   };
+  for (const journey of model.journeys) {
+    ref(`journeys/${journey.id} actor`, journey.actor, "actors");
+    journey.stages.forEach((stage, i) => {
+      for (const id of stage.flows ?? []) ref(`journeys/${journey.id} stage ${i + 1} flows`, id, "flows");
+    });
+  }
   for (const flow of model.flows) {
     (flow.steps ?? []).forEach((step, i) => {
       const at = `flows/${flow.id} step ${i + 1}`;

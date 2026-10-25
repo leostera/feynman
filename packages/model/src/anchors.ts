@@ -33,7 +33,7 @@ export function anchorUrl(source: Source, anchor: Anchor): string | null {
   return source.fileUrl.replace("{path}", file) + (span ? `#L${span.start.line}${end}` : "");
 }
 
-/** Every anchor in a model or element (anchors, evidence, tests, definitions, call-path frames), resolved. */
+/** Every anchor in a model or element (anchors, evidence, tests, definitions, step and frame anchors, stage entries), resolved. */
 export function modelAnchors(value: unknown): ResolvedAnchor[] {
   const anchors: ResolvedAnchor[] = [];
   const collect = (node: unknown): void => {
@@ -44,7 +44,7 @@ export function modelAnchors(value: unknown): ResolvedAnchor[] {
         const list = record[key];
         if (Array.isArray(list)) for (const anchor of list) anchors.push(resolveAnchor(anchor as Anchor));
       }
-      if (record.anchor) anchors.push(resolveAnchor(record.anchor as Anchor));
+      for (const key of ["anchor", "entry"]) if (record[key]) anchors.push(resolveAnchor(record[key] as Anchor));
       Object.values(record).forEach(collect);
     }
   };

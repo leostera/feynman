@@ -22,6 +22,7 @@ export interface Kind {
 
 /** Collections in display order. */
 export const KINDS: Kind[] = [
+  { key: "journeys", dir: "journeys", schema: "journey" },
   { key: "actors", dir: "actors", schema: "actor" },
   { key: "components", dir: "components", schema: "component" },
   { key: "flows", dir: "flows", schema: "flow" },

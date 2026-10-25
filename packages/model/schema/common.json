@@ -154,6 +154,39 @@
           "minimum": 0
         }
       }
+    },
+    "callNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "children"
+      ],
+      "description": "One call in a call tree, measured from the code (never written by hand). The root is the step's entry function; children are the calls it makes, at their call sites.",
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "The call as written, with the callee's parameters when it is defined in the repository: `loadModel(modelDir)`, `fs.readFileSync()`."
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Call site (the definition, for the root)."
+        },
+        "external": {
+          "type": "boolean",
+          "description": "The callee is not defined in the indexed code: a library, runtime, or system call."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/callNode"
+          }
+        }
+      }
     }
   }
 }

@@ -10,8 +10,9 @@ import { MODEL_ROOT } from "./coverage.ts";
 import { git, tryGit } from "./git.ts";
 import { KINDS, loadModel, writeElement, writeMeta } from "./model.ts";
 import { pathspecs, snapshotOf, type Snapshot } from "./snapshot.ts";
+import { measureCalls } from "./calls.ts";
 import { stampSources } from "./sources.ts";
-import type { Footprint, Source } from "./types.ts";
+import type { Footprint, Model, Source } from "./types.ts";
 
 /** Never counted as code: the model itself, dependency copies, and lockfiles. */
 const NOT_CODE = [MODEL_ROOT, "vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
@@ -35,12 +36,29 @@ export function measureModel(repository: string, modelDir: string, mainRef = "ma
     component.footprint = { ...component.footprint, ...count(component.footprint.paths) };
     writeElement(modelDir, components, component);
   }
+  const calls = measureFlowCalls(repository, modelDir, model);
   writeMeta(modelDir, model.meta);
   const stamped = stampSources(repository, modelDir);
   return (
-    `measured ${model.components.length} components; repository ${source.footprint.lines} lines; sources updated on ${stamped} elements` +
+    `measured ${model.components.length} components; repository ${source.footprint.lines} lines; call trees for ${calls.measured} steps` +
+    (calls.problems.length ? ` (${calls.problems.length} not found: ${calls.problems.slice(0, 3).join("; ")})` : "") +
+    `; sources updated on ${stamped} elements` +
     (main ? `; ${main.behind} behind / ${main.ahead} ahead of ${mainRef}` : "")
   );
+}
+
+/** Write each anchored step's call tree into its flow, and drop trees from steps without one. */
+function measureFlowCalls(repository: string, modelDir: string, model: Model): { measured: number; problems: string[] } {
+  const { trees, problems } = measureCalls(repository, model);
+  const flows = KINDS.find((kind) => kind.key === "flows")!;
+  for (const flow of model.flows) {
+    const steps = flow.steps.map(({ calls: _, ...step }, index) => {
+      const tree = trees.get(`${flow.id}#${index}`);
+      return tree ? { ...step, calls: tree } : step;
+    });
+    if (JSON.stringify(steps) !== JSON.stringify(flow.steps)) writeElement(modelDir, flows, { ...flow, steps });
+  }
+  return { measured: trees.size, problems };
 }
 
 /** Browsable links to the commit and its files, for remotes on common hosts. */

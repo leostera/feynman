@@ -47,12 +47,13 @@ const PHASE_1 = [
   "  - external services whose behaviour shapes what the system does: a database it stores in, an API it depends on, a program it exists to run.",
   "Keep the map to what you would draw explaining the system to a newcomer. Runtimes, the OS, shells, and tools the code merely calls (git, bun, a compiler) are how it is built, not actors: mention them in components or flow steps. Connect only actors where one end is first-party or a person; how two external programs talk is not this system.",
   "Packages and modules are components, not actors: each with footprint.paths, the actors it runs in, and what it dependsOn. Every first-party actor needs one.",
-  "Fill each actor's talksTo. No flows yet; stop when the map covers the whole system.",
+  "Fill each actor's talksTo. Then write the journeys: the jobs the system does for the people (or client programs) that use it, told from their side. Each names who it is for, their need, the value they end with, and the stages they go through: what they do and what they see (\"Runs /feynman-explain in Pi\", \"The explainer opens in the browser\"). Start from what the README, commands, CLIs, and routes offer; a few journeys that cover what the system is for beat many small ones.",
+  "No flows yet; stop when the map and the journeys cover the whole system.",
 ].join("\n");
 
 const PHASE_2 = [
   "Phase 2: flows. For each group of connected actors, read the listed files in full (continue truncated reads with offsets), including tests, then write the flows that run through them.",
-  "A flow is a job the system does for an actor: a trigger, steps saying which actor does what to which (with component and protocol), and an outcome. Starting up or being built is not a flow.",
+  "A flow is how the system carries out a journey stage: a trigger, steps saying which actor does what to which (with component and protocol), and an outcome. Add each flow to the stage it implements (stage.flows), or call it from a flow that does (step.ref). Anchor every step in a first-party actor to the function that does it, as path#symbol (ClassName.method for methods): its call tree is measured from there. Starting up or being built is not a flow.",
   "Add the protocols, state, invariants, claims, and limits you meet, each complete when first written: protocols with their messages, fields, results, framing, and versioning; invariants with enforcement, the call path from trigger to check (enforcedAt), and their tests; claims with evidence; limits with where they are set. Include failure, retry, and recovery flows.",
   "Fix the actor map when the code disagrees. Stop when the group is done, and I will give you the next one.",
 ].join("\n");

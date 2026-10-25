@@ -83,6 +83,17 @@ export interface Component {
   sources?: Sources;
 }
 
+/** One call in a measured call tree; the root is a step's entry function. */
+export interface CallNode {
+  label: string;
+  file?: string;
+  /** Call site; the definition, for the root. */
+  line?: number;
+  /** Not defined in the indexed code: a library, runtime, or system call. */
+  external?: boolean;
+  children: CallNode[];
+}
+
 export interface Step {
   actor: string;
   action: string;
@@ -91,6 +102,30 @@ export interface Step {
   ref?: string;
   protocol?: string;
   properties?: string[];
+  /** The function that does the step, `path#symbol`. */
+  anchor?: Anchor;
+  /** Measured from `anchor`. */
+  calls?: CallNode;
+}
+
+/** A job the system does for someone, as what they do and see. */
+export interface Journey {
+  id: string;
+  summary: string;
+  actor: string;
+  need: string;
+  value: string;
+  stages: Stage[];
+  anchors: Anchor[];
+  confidence?: Confidence;
+  sources?: Sources;
+}
+
+export interface Stage {
+  action: string;
+  sees?: string;
+  flows?: string[];
+  entry?: Anchor;
 }
 
 export interface Flow {
@@ -205,6 +240,7 @@ export interface Claim {
 /** A whole model, every collection sorted by id. */
 export interface Model {
   meta: Meta;
+  journeys: Journey[];
   actors: Actor[];
   components: Component[];
   flows: Flow[];

@@ -1,5 +1,6 @@
 export type * from "./types.ts";
 export * from "./anchors.ts";
+export * from "./calls.ts";
 export * from "./check.ts";
 export * from "./config.ts";
 export * from "./coverage.ts";

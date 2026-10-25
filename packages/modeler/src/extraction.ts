@@ -8,6 +8,7 @@
 import {
   checkModel,
   checkModelFile,
+  measureCalls,
   computeCoverage,
   describeCoverage,
   loadModel,
@@ -225,7 +226,7 @@ export class Extraction {
   /** What the agent is told in `phase`: the next group to read, or what the model lacks. */
   private situation(ws: Workspace, { model, report, problems }: Assessment, phase: Phase, entered: boolean): Situation {
     const group = phase >= 2 ? nextGroup(model, report.missing, fileSizes(ws.repository, report.missing)) : null;
-    const gaps = phase === 1 ? actorGaps(model) : phase === 3 ? depthGaps(model, report.required) : [];
+    const gaps = phase === 1 ? actorGaps(model) : phase === 3 ? [...depthGaps(model, report.required), ...callGaps(ws.repository, model)] : [];
     return { phase, report, problems, gaps, group, entered };
   }
 
@@ -283,6 +284,11 @@ export class Extraction {
     this.evidence ??= new Evidence(this.requireWorkspace().repository);
     return this.evidence;
   }
+}
+
+/** Step anchors whose function the call-tree tool cannot find. */
+function callGaps(repository: string, model: Model): string[] {
+  return measureCalls(repository, model).problems.map((problem) => `${problem}; anchor the function that does the step (path#symbol, ClassName.method for methods)`);
 }
 
 /** Phases only move forward: past actors once the map has no gaps, past flows once every file is covered. */

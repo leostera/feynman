@@ -26,10 +26,19 @@ const FLOW = {
   trigger: "The user saves a note.",
   steps: [
     { actor: "user", action: "saves a note", target: "client" },
-    { actor: "client", action: "POSTs the note", target: "server" },
-    { actor: "server", action: "rejects bodies over 1 KiB with 413, else answers 201", target: "client" },
+    { actor: "client", action: "POSTs the note", target: "server", anchor: "src/client.ts#send" },
+    { actor: "server", action: "rejects bodies over 1 KiB with 413, else answers 201", target: "client", anchor: "src/server.ts#handle" },
   ],
   anchors: ["src/client.ts#send", "src/server.ts#handle"],
+};
+
+const JOURNEY = {
+  summary: "Keep notes on a server",
+  actor: "user",
+  need: "Notes written on one machine are lost on another.",
+  value: "Every note is stored on the server.",
+  stages: [{ action: "Saves a note", sees: "The note is stored" }],
+  anchors: ["README.md"],
 };
 
 let harness: Harness | undefined;
@@ -53,6 +62,8 @@ const fullRun = (cwd: string) => {
     write("actors/user.json", { kind: "person", provenance: "third-party", runsOn: { location: "local" }, summary: "Writes notes.", talksTo: ["client"], anchors: ["README.md"] }),
     write("components/client.json", component("client")),
     write("components/server.json", component("server")),
+    // Journeys come with the actors; their stages get flows once flows exist.
+    write("journeys/share-notes.json", JOURNEY),
     stop("Mapped the actors."),
     write("actors/client.json", actor(["server"])),
     stop("Connected them."),
@@ -62,6 +73,7 @@ const fullRun = (cwd: string) => {
     stop("Read the group."),
     call("read", { path: "src/server.ts" }),
     write("flows/post-note.json", FLOW),
+    write("journeys/share-notes.json", { ...JOURNEY, stages: [{ ...JOURNEY.stages[0], flows: ["post-note"] }] }),
     stop("Wrote the flow."),
     // The last group: files outside every footprint.
     // Nothing is thin, so entering phase 3 finishes the extraction.

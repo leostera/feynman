@@ -99,6 +99,7 @@ export function actorGaps(model: Model): string[] {
   for (const actor of model.actors.filter(isFirstParty)) {
     if (!componentsOf(model, actor).length) gaps.push(`actors/${actor.id} is first-party, but no component runs in it; add components with footprints`);
   }
+  if (!model.journeys.length) gaps.push("no journeys yet: what jobs does the system do for the people or programs that use it? Write each as journeys/<id>.json");
   return [...gaps, ...scopeGaps(model)];
 }
 
@@ -165,6 +166,35 @@ export function unowned(model: Model, files: string[]): string[] {
   return files.filter((file) => !owns(paths, file));
 }
 
+/**
+ * Where the story from user value down to code is broken: journeys that set off no
+ * flow, flows that serve no journey (directly or through a flow that calls them), and
+ * steps in first-party actors without the function that does them.
+ */
+export function journeyGaps(model: Model): string[] {
+  const gaps: string[] = [];
+  const served = new Set(model.journeys.flatMap((journey) => journey.stages.flatMap((stage) => stage.flows ?? [])));
+  for (const journey of model.journeys) {
+    if (!journey.stages.some((stage) => stage.flows?.length)) gaps.push(`journeys/${journey.id} sets off no flow; list the flows each stage sets off`);
+  }
+  // Flows reached from a journey, following sub-flow refs.
+  const reached = new Set<string>();
+  const visit = (id: string) => {
+    if (reached.has(id)) return;
+    reached.add(id);
+    for (const step of model.flows.find((flow) => flow.id === id)?.steps ?? []) if (step.ref) visit(step.ref);
+  };
+  served.forEach(visit);
+  const firstParty = new Set(model.actors.filter(isFirstParty).map((actor) => actor.id));
+  for (const flow of model.flows) {
+    if (model.journeys.length && !reached.has(flow.id)) gaps.push(`flows/${flow.id} serves no journey; add it to the stage it implements, or call it from a flow that does`);
+    flow.steps.forEach((step, i) => {
+      if (firstParty.has(step.actor) && !step.anchor) gaps.push(`flows/${flow.id} step ${i + 1} (${step.actor}) has no anchor; name the function that does it, as path#symbol`);
+    });
+  }
+  return gaps;
+}
+
 /** Test files, by the usual conventions: test directories and `.test.`/`.spec.`/`_test.` names. */
 export function isTestFile(file: string): boolean {
   return /(^|\/)(tests?|specs?|__tests__|testing)\//i.test(file) || /[._-](test|spec)s?\.[a-z0-9]+$/i.test(file) || /(^|\/)test_[^/]+$/i.test(file);
@@ -218,6 +248,7 @@ export function depthGaps(model: Model, files: string[] = []): string[] {
       gaps.push(`${key} talk, but no flow step or protocol shows how`);
     }
   }
+  gaps.push(...journeyGaps(model));
   for (const invariant of model.invariants) {
     const traced = (invariant.enforcedAt ?? []).some((path) => path.frames.length >= 2);
     if (invariant.enforcement.includes("runtime") && !traced) {

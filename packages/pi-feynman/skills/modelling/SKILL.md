@@ -29,6 +29,18 @@ out" and the code itself.
 
 ## What to extract
 
+The model is layered, from what the system is for down to the code: **journeys**
+(the value, told from the user's side) are carried out by **flows** (which actors do
+what to each other), whose steps are anchored to the functions that do them; the
+**call trees** below those are measured, not written. A reader starts at the top and
+drills down only where they care.
+
+- **Journeys** are the jobs the system does for the people (or client programs)
+  that use it: who it is for (`actor`), their `need`, the `value` they end with, and
+  the `stages` they go through, each what they do and what they `see`, the `flows`
+  it sets off, and where it enters the code (`entry`). "Get an explainer of a
+  repository"; "keep a terminal session alive across disconnects". A few journeys
+  covering what the system is for beat many small ones.
 - **Actors** have a runtime identity: people, the processes this repository ships
   (a CLI, a daemon, a server, a browser page, a plugin), and the programs and
   services they call. Start from whoever uses the system and follow what it talks
@@ -53,7 +65,10 @@ out" and the code itself.
   from actor to `target` (with the `component` doing the work and the `protocol`
   spoken), and an `outcome`. "Build a model" and "accept an upload" are flows;
   loading a plugin or installing dependencies is not. Failure, retry, and recovery
-  paths are flows too. Flows are the main unit of explanation.
+  paths are flows too. Every flow serves a journey stage, directly or through a
+  flow that calls it (`ref`). Every step in a first-party actor names the function
+  that does it (`anchor`, `path#symbol`, `ClassName.method` for methods); `measure`
+  fills in its call tree (`calls`).
 - **Protocols** are the shapes data has entering, leaving, or resting in the
   system: APIs, socket protocols, event streams, files, database schemas. Enough
   to draw them without the code: each message (call, record, event, route, table)
@@ -87,8 +102,9 @@ around vendored code are first-party and read.
 
 The extension drives three phases and says what each still lacks:
 
-1. **Actors.** Survey everything shallowly, then write `meta.json`, the actors,
-   `talksTo`, and the components with footprints.
+1. **Actors and journeys.** Survey everything shallowly, then write `meta.json`,
+   the actors, `talksTo`, the components with footprints, and the journeys (their
+   stages get flows in phase 2).
 2. **Flows.** Read groups of connected actors in full, one at a time, and write
    the flows through them, with what you meet on the way, each element complete
    when first written. Fix the actor map when the code disagrees.
@@ -111,6 +127,7 @@ With uncommitted changes, the model describes the working tree.
   config.json           optional: { "exclude": ["examples/"] }, git pathspecs outside the system
   model/
     meta.json
+    journeys/<id>.json
     actors/<id>.json      components/<id>.json   flows/<id>.json   protocols/<id>.json
     state/<id>.json       state-machines/<id>.json
     invariants/<id>.json  claims/<id>.json       limits/<id>.json
@@ -129,8 +146,8 @@ With uncommitted changes, the model describes the working tree.
   `path:10:5-42:2`, or `{ "file", "symbol", "span": { "start": { "line", "column" }, "end": … } }`.
   Lines are 1-based and inclusive. Prefer a symbol; add a span for a few lines
   inside a larger body (a guard, a SQL statement, a lock scope).
-- `sources` (content hashes) and footprint counts are written by `measure`, never
-  by hand.
+- `sources` (content hashes), footprint counts, and step `calls` are written by
+  `measure`, never by hand.
 - Exclude only what is outside the system, never to finish faster.
 
 ## Tools
