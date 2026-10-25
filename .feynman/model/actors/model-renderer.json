@@ -1,0 +1,39 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "browser",
+    "platform": "Static React application embedded in HTML"
+  },
+  "summary": "The renderer embeds a bundled model into a self-contained HTML artifact and presents overview, indexes, and detail pages with navigation across actors, flows, protocols, state, invariants, claims, and limits.",
+  "footprint": {
+    "paths": [
+      "packages/renderer/"
+    ],
+    "files": 23,
+    "lines": 2658
+  },
+  "anchors": [
+    "packages/renderer/build.mjs",
+    "packages/renderer/src/main.tsx",
+    "packages/renderer/src/App.tsx",
+    "packages/renderer/src/model.ts",
+    "packages/renderer/package.json",
+    "packages/renderer/src/pages/Overview.tsx",
+    "packages/renderer/src/pages/Elements.tsx",
+    "packages/renderer/src/pages/Actors.tsx",
+    "packages/renderer/src/pages/Flows.tsx",
+    "packages/renderer/src/pages/Protocols.tsx",
+    "packages/renderer/src/pages/Invariants.tsx",
+    "packages/renderer/src/pages/Claims.tsx",
+    "packages/renderer/src/pages/Limits.tsx",
+    "packages/renderer/src/router.tsx",
+    "packages/renderer/src/ui.tsx",
+    "packages/renderer/src/theme.tsx",
+    "packages/renderer/vite.config.ts",
+    "packages/renderer/src/diagrams/SequenceDiagram.tsx",
+    "packages/renderer/src/diagrams/Swimlane.tsx",
+    "packages/renderer/src/diagrams/SystemGraph.tsx",
+    "packages/renderer/index.html",
+    "packages/renderer/src/index.css"
+  ]
+}

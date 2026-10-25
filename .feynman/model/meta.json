@@ -1,0 +1,29 @@
+{
+  "system": "feynman",
+  "summary": "Feynman extracts, validates, tracks, and renders behavioral models for software repositories, with a modeler library, CLI, renderer, and pi agent integration.",
+  "source": {
+    "repository": ".",
+    "commit": "6c4428280e3d53f568e72e26dd0a494d4282aa63",
+    "committedAt": "2026-10-25T04:11:39Z",
+    "main": {
+      "ref": "main",
+      "commit": "213c4a3477a8eead15b8e9cbdb05ac927b12abbb",
+      "ahead": 0,
+      "behind": 3,
+      "checkedAt": "2026-10-25T04:19:26.593Z"
+    },
+    "footprint": {
+      "files": 131,
+      "lines": 8437,
+      "excludes": [
+        "vendor/",
+        "third_party/",
+        "*.lock",
+        "package-lock.json",
+        "*.lock.json"
+      ]
+    }
+  },
+  "extractedBy": "feynman",
+  "extraction": "bootstrap"
+}

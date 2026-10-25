@@ -1,4 +1,5 @@
 export * from "./model.mjs";
+export * from "./config.mjs";
 export * from "./check.mjs";
 export * from "./coverage.mjs";
 export * from "./measure.mjs";

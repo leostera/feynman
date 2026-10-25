@@ -10,6 +10,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { git, lines, tryGit, trackedFiles } from "./git.mjs";
+import { excludePathspecs, readConfig } from "./config.mjs";
 import { loadModel, readCoverage } from "./model.mjs";
 
 export class CoverageError extends Error {}
@@ -18,12 +19,15 @@ export class CoverageError extends Error {}
 export const MODEL_ROOT = ".feynman/";
 
 /**
+ * Files under `exclude` in `.feynman/config.json` are never required.
+ *
  * @returns {{ mode: "bootstrap" | "update", commit: string, base?: string, required: string[],
  *   missing: string[], deleted: string[], stale: string[], unknown: string[], problems: string[] }}
  */
 export function computeCoverage(repository, modelDir) {
   if (!existsSync(join(modelDir, "meta.json"))) throw new CoverageError(`${modelDir}: no model. Bootstrap one first.`);
   const { meta } = loadModel(modelDir);
+  const { exclude } = readConfig(modelDir);
   const commit = tryGit(repository, "rev-parse", meta.source?.commit ?? "");
   if (!commit) throw new CoverageError(`meta.source.commit ${meta.source?.commit} is not a commit in ${repository}`);
 
@@ -40,13 +44,14 @@ export function computeCoverage(repository, modelDir) {
       throw new CoverageError(`base ${baseRef} is not an ancestor of ${commit.slice(0, 7)}.`);
     }
     required = [];
-    for (const row of lines(git(repository, "diff", "--name-status", "--no-renames", base, commit))) {
+    const pathspecs = exclude.length ? ["--", ...excludePathspecs(exclude)] : [];
+    for (const row of lines(git(repository, "diff", "--name-status", "--no-renames", base, commit, ...pathspecs))) {
       const [status, path] = row.split("\t");
       if (status === "D") deleted.push(path);
       else required.push(path);
     }
   } else {
-    required = trackedFiles(repository, commit);
+    required = trackedFiles(repository, commit, exclude);
   }
   // The model describes the repository; it is not part of what it describes.
   required = required.filter((path) => !path.startsWith(MODEL_ROOT));
@@ -67,7 +72,7 @@ export function computeCoverage(repository, modelDir) {
     }
   }
   const covered = (path) => files.has(path) || trees.some((tree) => path.startsWith(tree));
-  const known = new Set(trackedFiles(repository, commit));
+  const known = new Set(trackedFiles(repository, commit, exclude));
   return {
     mode,
     commit,
@@ -77,6 +82,7 @@ export function computeCoverage(repository, modelDir) {
     deleted,
     stale,
     unknown: [...files].filter((path) => !known.has(path)),
+    exclude,
     problems,
   };
 }
@@ -95,7 +101,8 @@ export function groupMissing(missing) {
 export function describeCoverage(report) {
   const where =
     report.mode === "update" ? `update ${report.base.slice(0, 7)}..${report.commit.slice(0, 7)}` : `bootstrap at ${report.commit.slice(0, 7)}`;
-  return `${where}: ${report.required.length - report.missing.length} of ${report.required.length} files reviewed`;
+  const excluding = report.exclude?.length ? ` (excluding ${report.exclude.join(", ")})` : "";
+  return `${where}: ${report.required.length - report.missing.length} of ${report.required.length} files reviewed${excluding}`;
 }
 
 /**

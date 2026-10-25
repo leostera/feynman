@@ -102,8 +102,8 @@ export class Extraction {
    */
   review(files: LedgerEntry[], summary?: string): { text: string; recorded: number; rejected: string[] } {
     const ws = this.requireWorkspace();
-    const { commit } = computeCoverage(ws.repository, ws.modelDir);
-    const tracked = new Set(trackedFiles(ws.repository, commit));
+    const { commit, exclude } = computeCoverage(ws.repository, ws.modelDir);
+    const tracked = new Set(trackedFiles(ws.repository, commit, exclude));
     const anchored = anchoredFiles(loadModel(ws.modelDir));
     const accepted: LedgerEntry[] = [];
     const rejected: string[] = [];
@@ -114,7 +114,7 @@ export class Extraction {
         else if (!entry.note?.trim()) rejected.push(`${path}: ${entry.outcome} needs a note naming where it comes from`);
         else if (![...tracked].some((file) => file.startsWith(path))) rejected.push(`${path}: no tracked files under it`);
         else accepted.push({ ...entry, path });
-      } else if (!tracked.has(path)) rejected.push(`${path}: not tracked at ${commit.slice(0, 7)}`);
+      } else if (!tracked.has(path)) rejected.push(`${path}: not tracked at ${commit.slice(0, 7)}, or excluded by .feynman/config.json`);
       else if (entry.outcome === "vendored" || entry.outcome === "generated") {
         // Copies and tool output need not be read in full, but their origin must be named.
         if (!entry.note?.trim()) rejected.push(`${path}: ${entry.outcome} needs a note naming where it comes from`);

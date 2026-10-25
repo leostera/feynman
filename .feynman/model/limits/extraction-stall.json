@@ -1,0 +1,8 @@
+{
+  "subject": "Consecutive completions with no change in missing-file or model-problem counts before the Pi driver pauses extraction",
+  "value": 3,
+  "kind": "count",
+  "epistemic": "stated",
+  "about": ["flows/extraction-lifecycle"],
+  "anchors": ["packages/modeler/src/extraction.ts#MAX_STALLS"]
+}

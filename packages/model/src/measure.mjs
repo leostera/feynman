@@ -3,17 +3,19 @@
 //
 // Agents decide which paths belong to an actor (`actors/<id>.json` → `footprint.paths`);
 // this only counts. Counts are taken at the model's commit, not the working tree.
+import { readConfig } from "./config.mjs";
 import { git, tryGit } from "./git.mjs";
 import { KINDS, loadModel, writeElement, writeMeta } from "./model.mjs";
 
 // Paths never counted, unless the model lists its own `meta.source.footprint.excludes`.
+// Paths excluded in `.feynman/config.json` are never counted either.
 const DEFAULT_EXCLUDES = ["vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
 
 /** Measure the model in place; returns a one-line summary. */
 export function measureModel(repository, modelDir, mainRef = "main") {
   const model = loadModel(modelDir);
   const source = model.meta.source;
-  const excludes = source.footprint?.excludes ?? DEFAULT_EXCLUDES;
+  const excludes = [...new Set([...(source.footprint?.excludes ?? DEFAULT_EXCLUDES), ...readConfig(modelDir).exclude])];
   const pathspecExcludes = excludes.map((pattern) => `:!${pattern}`);
   const commit = git(repository, "rev-parse", source.commit);
   source.commit = commit;

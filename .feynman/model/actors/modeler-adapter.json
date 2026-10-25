@@ -1,0 +1,24 @@
+{
+  "provenance": "first-party",
+  "runsOn": {
+    "location": "local",
+    "platform": "Node.js and agent runtime adapter"
+  },
+  "summary": "The modeler package coordinates extraction sessions independently of a particular agent runtime: it finds the repository, initializes/resumes model metadata, tracks read evidence, records reviews, computes coverage and validity, and renders through the renderer package.",
+  "footprint": {
+    "paths": [
+      "packages/modeler/"
+    ],
+    "files": 9,
+    "lines": 484
+  },
+  "anchors": [
+    "packages/modeler/src/extraction.ts",
+    "packages/modeler/src/evidence.ts",
+    "packages/modeler/src/workspace.ts",
+    "packages/modeler/src/index.ts",
+    "packages/modeler/src/tools.ts",
+    "packages/modeler/src/messages.ts",
+    "packages/modeler/package.json"
+  ]
+}

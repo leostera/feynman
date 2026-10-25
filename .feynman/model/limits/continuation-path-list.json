@@ -1,0 +1,8 @@
+{
+  "subject": "Unreviewed paths listed by name in each continuation message",
+  "value": 40,
+  "kind": "count",
+  "epistemic": "stated",
+  "about": ["flows/extraction-lifecycle"],
+  "anchors": ["packages/modeler/src/messages.ts#LISTED_PATHS"]
+}

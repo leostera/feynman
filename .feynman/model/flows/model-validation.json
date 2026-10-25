@@ -1,0 +1,10 @@
+{
+  "summary": "The CLI loads a model, validates every element and coverage ledger against Draft 2020-12 schemas, checks cross-references, and optionally verifies anchors against the modelled Git commit.",
+  "trigger": "Developer runs feynman-model check <model-dir> [repository]",
+  "steps": [
+    { "actor": "model-library", "action": "load meta and per-kind JSON files from the model directory", "protocol": "model-files" },
+    { "actor": "model-library", "action": "validate schemas, references, and optionally repository anchors", "target": "model-library", "protocol": "model-files" },
+    { "actor": "model-library", "action": "report all problems and exit nonzero, or print collection counts on success" }
+  ],
+  "anchors": ["packages/model/bin/feynman-model.mjs", "packages/model/src/check.mjs"]
+}

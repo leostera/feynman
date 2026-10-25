@@ -60,6 +60,8 @@ export interface CoverageReport {
   deleted: string[];
   stale: string[];
   unknown: string[];
+  /** Pathspecs excluded by .feynman/config.json. */
+  exclude: string[];
   problems: string[];
 }
 export function computeCoverage(repository: string, modelDir: string): CoverageReport;
@@ -72,4 +74,12 @@ export function indexModel(modelDir: string, only?: string[]): string;
 
 export function git(repository: string, ...args: string[]): string;
 export function tryGit(repository: string, ...args: string[]): string | null;
-export function trackedFiles(repository: string, commit: string): string[];
+export function trackedFiles(repository: string, commit: string, exclude?: string[]): string[];
+
+export interface Config {
+  /** Git pathspecs that are not part of the modelled system. */
+  exclude: string[];
+}
+export function configPath(modelDir: string): string;
+export function readConfig(modelDir: string): Config;
+export function excludePathspecs(exclude: string[]): string[];

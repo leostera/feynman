@@ -8,6 +8,6 @@
     "render": "bun run --cwd packages/renderer build",
     "model": "node packages/model/bin/feynman-model.mjs",
     "typecheck": "bun run --cwd packages/renderer typecheck && bun run --cwd packages/modeler typecheck && bun run --cwd packages/pi-feynman typecheck",
-    "test": "bun run --cwd packages/pi-feynman test"
+    "test": "bun run --cwd packages/model test && bun run --cwd packages/pi-feynman test"
   }
 }

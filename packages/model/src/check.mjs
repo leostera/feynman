@@ -5,6 +5,8 @@ import { join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { tryGit } from "./git.mjs";
+import { existsSync } from "node:fs";
+import { configPath } from "./config.mjs";
 import { KINDS, loadModel, readCoverage, readElements } from "./model.mjs";
 
 export const SCHEMA_DIR = join(import.meta.dirname, "../schema");
@@ -41,6 +43,13 @@ export function checkModel(modelDir, repository) {
     }
   }
   for (const { path, value } of readCoverage(modelDir)) check("coverage", path, value);
+  if (existsSync(configPath(modelDir))) {
+    try {
+      check("config", configPath(modelDir), JSON.parse(readFileSync(configPath(modelDir), "utf8")));
+    } catch (error) {
+      problems.push(`${configPath(modelDir)}: ${error.message}`);
+    }
+  }
 
   // Cross-references, each to the collection it must name.
   const ids = Object.fromEntries(KINDS.map((kind) => [kind.key, new Set(model[kind.key].map((e) => e.id))]));

@@ -1,0 +1,6 @@
+{
+  "owner": "modeler-adapter",
+  "summary": "During an extraction session, successful read-tool line ranges are merged per repository-relative path. A file is review-eligible only when the observed ranges cover every line; Pi reconstructs this evidence from its conversation branch on session start.",
+  "lifetime": "In-memory for a modeler Extraction instance; reconstructed from persisted Pi session messages when a session resumes.",
+  "anchors": ["packages/modeler/src/evidence.ts", "packages/modeler/src/extraction.ts", "packages/pi-feynman/src/index.ts"]
+}

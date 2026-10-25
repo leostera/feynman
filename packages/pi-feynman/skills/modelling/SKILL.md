@@ -109,7 +109,7 @@ extraction to a separate agent, subagent, or background process.
 ### Bootstrap (first snapshot)
 
 Responsible for: **every file git tracks at the commit**, that is, every file the
-repository does not ignore.
+repository does not ignore, except paths excluded in `.feynman/config.json`.
 
 1. Survey the README, docs, build graph, and entrypoints.
 2. Identify actors and where they run.
@@ -163,6 +163,19 @@ one means moving its file. Fields that name a specific kind use a bare id
 (`actor`, `target`, `owner`, `server`, `clients`, `from` name actors; `ref` names
 a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
 path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`.
+
+`.feynman/config.json` (optional, next to the model directory) configures how the
+repository is modelled. `exclude` lists git pathspecs that are not part of the
+system being modelled, such as generated examples or fixtures checked in for other
+purposes:
+
+```json
+{ "exclude": ["examples/"] }
+```
+
+Excluded files are never required for coverage and are not counted in code
+footprints. Exclude only what is genuinely outside the system; it is a statement
+about scope, not a way to finish faster.
 
 Coverage ledgers record what each extraction pass reviewed, at which commit:
 one file per batch, listing every reviewed file with its outcome: `modelled`

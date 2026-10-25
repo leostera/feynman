@@ -22,7 +22,14 @@ export function lines(text) {
   return text ? text.split("\n") : [];
 }
 
-/** Every file git tracks at `commit`, i.e. every file the repository does not ignore. */
-export function trackedFiles(repository, commit) {
-  return lines(git(repository, "ls-tree", "-r", "--name-only", commit));
+/**
+ * Every file git tracks at `commit`, i.e. every file the repository does not ignore,
+ * leaving out paths matching the `exclude` pathspecs.
+ */
+export function trackedFiles(repository, commit, exclude = []) {
+  if (!exclude.length) return lines(git(repository, "-c", "core.quotePath=false", "ls-tree", "-r", "--full-tree", "--name-only", commit));
+  // ls-tree does not take pathspec magic such as :(exclude); a diff against the empty tree does.
+  const empty = git(repository, "hash-object", "-t", "tree", "/dev/null");
+  const pathspecs = [":/", ...exclude.map((pattern) => `:(top,exclude)${pattern}`)];
+  return lines(git(repository, "-c", "core.quotePath=false", "diff", "--name-only", "--no-renames", empty, commit, "--", ...pathspecs));
 }
