@@ -96,8 +96,12 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 Every extraction accounts for every file it is responsible for. Reading only the
 files that look important is how models miss behaviour (a patch to a dependency,
 a script that installs a service, a config that changes a limit). Record what you
-reviewed in coverage ledgers (see Storage), and do not finish until
-`tools/coverage.mjs` passes.
+reviewed in coverage ledgers (see Storage), and do not finish until coverage
+passes and the model is valid.
+
+One agent does the whole extraction, following the code across files the way it
+would to understand the system, rather than reviewing files one at a time in
+isolation. Connections between files are much of what the model records.
 
 ### Bootstrap (first snapshot)
 
@@ -106,15 +110,12 @@ repository does not ignore.
 
 1. Survey the README, docs, build graph, and entrypoints.
 2. Identify actors and where they run.
-3. Run `tools/coverage.mjs --missing` for the list of files, and split it into
-   batches (by directory or subsystem). Batches can go to separate agents; agree
-   on actor ids first, since other elements refer to them.
-4. For each batch, read every file and model what it contributes: protocols,
-   flows and their semantic actions, state, state machines, invariants with their
-   enforcement paths, claims, and limits. Record each file in the batch's ledger
-   with its outcome.
-5. Write the files, measure, validate, and run coverage (see Tools). Repeat 3–4
-   until coverage passes.
+3. Follow the code from the entrypoints: protocols, flows and their semantic
+   actions, state, state machines, invariants with their enforcement paths,
+   claims, and limits. Write and refine elements as understanding grows.
+4. Record files as reviewed once the model reflects them, with their outcome.
+5. Check what is still unreviewed and keep going until coverage passes; then
+   measure and validate (see Tools).
 
 Vendored copies of third-party code may be listed as a whole directory with
 outcome `vendored`, once you have confirmed that is what they are and noted the
@@ -132,8 +133,8 @@ modelled commit and the new one.
 2. Set `meta.extraction` to `update`, `meta.source.base.commit` to the previously
    modelled commit, and `meta.source.commit` to the new one. Remove the ledgers
    for the old commit (history keeps them).
-3. Run `tools/coverage.mjs --missing` for the changed files, and
-   `tools/index-model.mjs` for an overview of the model.
+3. List the changed files (coverage `--missing`) and get an overview of the
+   model (`index`).
 4. Read every changed file, find the elements it affects, and **edit** them; add
    or remove elements as needed. Do not regenerate the whole model. For deleted
    or moved files, update the anchors that pointed at them.
@@ -165,8 +166,8 @@ one file per batch, listing every reviewed file with its outcome: `modelled`
 (the model reflects what it contributes), `no-behaviour` (read; nothing to model),
 `vendored`, or `generated`. Ledgers are not rendered.
 
-Each file must validate against its schema in [`schema/`](schema/) (JSON Schema
-2020-12; shared definitions in `schema/common.json`). Together they are the
+Each file must validate against its schema in `packages/model/schema/` of the
+Feynman repository (JSON Schema 2020-12; shared definitions in `common.json`). Together they are the
 contract that rendering relies on.
 
 Anchors are repository-relative paths, narrowed by symbol, by span, or both:
@@ -177,23 +178,41 @@ Lines and columns are 1-based and inclusive, at the modelled commit. Prefer a
 symbol when one exists, and add a span when the behaviour is a few lines inside
 a larger body (a guard, a SQL statement, a lock scope).
 
-When the vocabulary changes, update `schema/` and this skill together.
+When the vocabulary changes, update the schemas and this skill together.
 
 ## Tools
 
-Mechanical facts come from tools, not from the agent:
+Mechanical facts come from tools, not from the agent.
 
-- `node tools/index-model.mjs <model-dir> [<kind>…]` prints one line per element,
-  for finding what exists without loading every file.
-- `node tools/measure.mjs <repository> <model-dir> [--main <ref>]` fills source links
-  (`url`, `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
+### In Pi, with the `pi-feynman` package
+
+- `feynman_extract` starts or resumes an extraction at HEAD: a bootstrap when
+  there is no model, otherwise an update from the modelled commit (it sets
+  `meta.source.base`, and drops ledgers for the old commit). Tracked files must
+  match HEAD.
+- `feynman_reviewed` records files as reviewed, with their outcome. It accepts
+  only files read (or named in a shell command) in this session. Ledgers cannot
+  be written any other way.
+- `feynman_status` shows coverage and model problems.
+- Whenever the agent stops, the extension checks coverage and validity, and asks
+  it to continue until both pass; then it measures the model. `/feynman stop`
+  stops this; `/feynman render` renders the model to `.feynman/index.html`.
+
+### From the command line
+
+`node packages/model/bin/feynman-model.mjs <command>` in the Feynman repository
+(or `bun run model <command>`):
+
+- `index <model-dir> [<kind>…]` prints one line per element, for finding what
+  exists without loading every file.
+- `coverage <repository> <model-dir> [--missing]` computes the files this
+  extraction is responsible for (all tracked files for a bootstrap, the changed
+  files for an update; never `.feynman/` itself), compares them with the ledgers
+  for the modelled commit, and fails while any are unreviewed. `--missing` lists
+  them one per line.
+- `check <model-dir> [<repository>]` validates every file against its schema and
+  checks cross-references. With a repository, it checks that every anchor exists
+  at the modelled commit and that spans fall inside their files.
+- `measure <repository> <model-dir> [--main <ref>]` fills source links (`url`,
+  `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
   main, and file and line counts for the repository and each actor's footprint.
-  Counts are taken at the modelled commit and skip `meta.source.footprint.excludes`.
-- `node tools/coverage.mjs <repository> <model-dir> [--missing]` computes the files
-  this extraction is responsible for (all tracked files for a bootstrap, the
-  changed files for an update), compares them with the ledgers for the modelled
-  commit, and fails while any are unreviewed. `--missing` lists them one per line.
-- `node tools/check-model.mjs <model-dir> [<repository>]` validates every file
-  against its schema and checks cross-references. With a repository, it checks
-  that every anchor exists at the modelled commit and that spans fall inside
-  their files.

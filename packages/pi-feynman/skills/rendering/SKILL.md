@@ -70,17 +70,17 @@ from an overview down to the files behind any element.
 
 ## Process
 
-1. Validate the model: `node tools/check-model.mjs <model-dir> <repository>`.
-2. Render it (paths are relative to `renderer/`):
-   `bun run render ../examples/axo/model ../examples/axo/index.html`.
-   The build bundles the directory with `tools/model.mjs` (collections sorted by
-   id), so the output is byte-identical for the same model.
+1. Validate the model: `bun run model check <model-dir> <repository>`.
+2. Render it: `/feynman render` in Pi, or from the Feynman repository
+   `bun run render <model-dir> <out.html>` (relative paths resolve from
+   `packages/renderer/`). The build bundles the directory with `@feynman/model`
+   (collections sorted by id), so the output is byte-identical for the same model.
 3. Check the output visually, for example with headless Chrome:
    `chrome --headless=new --screenshot=out.png --window-size=1440,1000 "file://<out.html>#/flows/<id>"`.
 
 ## Implementation
 
-`renderer/` is a Vite + React + Kumo app (bun workspace) bundled into a single HTML
+`packages/renderer/` is a Vite + React + Kumo app (bun workspace) bundled into a single HTML
 file with `vite-plugin-singlefile`. The model directory is bundled into one object
 and embedded as
 `<script type="application/json" id="feynman-model">`. The renderer relies only on

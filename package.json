@@ -1,13 +1,12 @@
 {
   "name": "feynman",
   "private": true,
-  "workspaces": ["renderer"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "render": "bun run --cwd renderer build",
-    "typecheck": "bun run --cwd renderer typecheck"
-  },
-  "devDependencies": {
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1"
+    "render": "bun run --cwd packages/renderer build",
+    "model": "node packages/model/bin/feynman-model.mjs",
+    "typecheck": "bun run --cwd packages/renderer typecheck && bun run --cwd packages/pi-feynman typecheck"
   }
 }

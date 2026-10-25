@@ -17,6 +17,7 @@
     "vite-plugin-singlefile": "^2.3.4"
   },
   "dependencies": {
+    "@feynman/model": "workspace:*",
     "@cloudflare/kumo": "^2.15.0",
     "@phosphor-icons/react": "^2.1.10",
     "echarts": "^6.1.0",

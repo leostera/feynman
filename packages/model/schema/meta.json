@@ -12,10 +12,12 @@
   ],
   "properties": {
     "system": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "summary": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "source": {
       "type": "object",
@@ -106,7 +108,8 @@
       "enum": [
         "bootstrap",
         "update"
-      ]
+      ],
+      "description": "bootstrap: the first snapshot, covering every tracked file. update: edited from the model at meta.source.base, covering the files changed since."
     },
     "coverage": {
       "type": "string",

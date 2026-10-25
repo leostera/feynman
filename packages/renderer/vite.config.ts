@@ -2,8 +2,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
-// @ts-expect-error: plain ESM shared with the command-line tools.
-import { loadModel } from "../tools/model.mjs";
+import { loadModel } from "@feynman/model";
 
 /** Bundles the model directory named by FEYNMAN_MODEL and inlines it into index.html. */
 function embedModel(): Plugin {

@@ -1,0 +1,20 @@
+{
+  "name": "@feynman/model",
+  "private": true,
+  "type": "module",
+  "description": "The Feynman model: JSON Schemas, a loader for model directories, and checking, coverage, and measuring tools.",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    },
+    "./schema/*": "./schema/*"
+  },
+  "bin": {
+    "feynman-model": "./bin/feynman-model.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1"
+  }
+}
