@@ -1,21 +1,29 @@
-import { Badge, Table } from "@cloudflare/kumo";
+import { Badge } from "@cloudflare/kumo";
 import { connections, locationLabel, SystemGraph } from "../diagrams/SystemGraph";
-import { actorLines, claimsAbout, componentsOf, href, limitsAbout, protocolsOf, roleIn, type Actor, type ActorKind, type FlowRole } from "../model";
-import { Anchors, Empty, IdRef, IdRefs, Link, Page, ProvenanceBadge, provenanceDescription, Share, useIndex } from "../ui";
+import { actorLines, claimsAbout, componentsOf, limitsAbout, protocolsOf, roleIn, type Actor, type ActorKind, type FlowRole, type Index } from "../model";
+import { Anchors, CELL, idColumn, IdRef, IdRefs, Page, ProvenanceBadge, provenanceDescription, Rows, Share, useIndex, type Column } from "../ui";
 import { ClaimRows } from "./Claims";
 import { LimitRows } from "./Limits";
 
+const KIND_LABEL: Record<ActorKind, string> = { person: "Person", program: "Program", service: "Service" };
+
+const ROLE: Record<FlowRole, { label: string; variant: "purple" | "blue" | "neutral" }> = {
+  initiates: { label: "Initiates", variant: "purple" },
+  acts: { label: "Takes part", variant: "blue" },
+  receives: { label: "Receives", variant: "neutral" },
+};
+
 export function ActorsPage() {
   const index = useIndex();
-  const actors = index.model.actors;
-  const total = index.model.meta.source.footprint?.lines ?? 0;
+  const { actors } = index.model;
   const firstParty = actors
     .filter((actor) => actor.provenance === "first-party")
     .sort((a, b) => (actorLines(index, b.id) ?? 0) - (actorLines(index, a.id) ?? 0));
   const external = actors
     .filter((actor) => actor.provenance !== "first-party")
     .sort((a, b) => a.provenance.localeCompare(b.provenance) || a.id.localeCompare(b.id));
-  const flowCount = (actor: Actor) => index.model.flows.filter((flow) => roleIn(flow, actor.id) !== null).length;
+  const flowCount: Column<Actor> = { head: "Flows", className: CELL.number, cell: (actor) => index.model.flows.filter((flow) => roleIn(flow, actor.id)).length };
+  const runsOn: Column<Actor> = { head: "Runs on", className: CELL.fact, cell: locationLabel };
   return (
     <Page
       title="Actors"
@@ -27,34 +35,18 @@ export function ActorsPage() {
           title: "In this repository",
           count: firstParty.length,
           content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Actor</Table.Head>
-                  <Table.Head>Summary</Table.Head>
-                  <Table.Head>Runs on</Table.Head>
-                  <Table.Head>Components</Table.Head>
-                  <Table.Head>Share of code</Table.Head>
-                  <Table.Head className="text-right">Flows</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {firstParty.map((actor) => (
-                  <Table.Row key={actor.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("actor", actor.id)}>{actor.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[52ch] align-top text-kumo-strong">{actor.summary}</Table.Cell>
-                    <Table.Cell className="align-top text-sm text-kumo-strong">{locationLabel(actor)}</Table.Cell>
-                    <Table.Cell className="align-top text-sm">
-                      <IdRefs kind="component" ids={componentsOf(index, actor.id).map((component) => component.id)} />
-                    </Table.Cell>
-                    <Table.Cell className="align-top">{lines(index, actor) !== undefined ? <Share lines={lines(index, actor)!} total={total} /> : "—"}</Table.Cell>
-                    <Table.Cell className="text-right align-top tabular-nums">{flowCount(actor)}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
+            <Rows
+              rows={firstParty}
+              rowKey={(actor) => actor.id}
+              columns={[
+                idColumn("actor", "Actor"),
+                { head: "Summary", className: CELL.prose, cell: (actor) => actor.summary },
+                runsOn,
+                { head: "Components", className: "align-top text-sm", cell: (actor) => <IdRefs kind="component" ids={componentsOf(index, actor.id).map((c) => c.id)} /> },
+                { head: "Share of code", cell: (actor) => <CodeShare index={index} actor={actor.id} /> },
+                flowCount,
+              ]}
+            />
           ),
         },
         {
@@ -62,34 +54,18 @@ export function ActorsPage() {
           title: "External",
           count: external.length,
           content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Actor</Table.Head>
-                  <Table.Head>Kind</Table.Head>
-                  <Table.Head>Provenance</Table.Head>
-                  <Table.Head>Summary</Table.Head>
-                  <Table.Head>Runs on</Table.Head>
-                  <Table.Head className="text-right">Flows</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {external.map((actor) => (
-                  <Table.Row key={actor.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("actor", actor.id)}>{actor.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="align-top text-sm text-kumo-strong">{actor.kind ? KIND_LABEL[actor.kind] : "—"}</Table.Cell>
-                    <Table.Cell className="align-top">
-                      <ProvenanceBadge provenance={actor.provenance} />
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[60ch] align-top text-kumo-strong">{actor.summary}</Table.Cell>
-                    <Table.Cell className="align-top text-sm text-kumo-strong">{locationLabel(actor)}</Table.Cell>
-                    <Table.Cell className="text-right align-top tabular-nums">{flowCount(actor)}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
+            <Rows
+              rows={external}
+              rowKey={(actor) => actor.id}
+              columns={[
+                idColumn("actor", "Actor"),
+                { head: "Kind", className: CELL.fact, cell: (actor) => KIND_LABEL[actor.kind] },
+                { head: "Provenance", cell: (actor) => <ProvenanceBadge provenance={actor.provenance} /> },
+                { head: "Summary", className: CELL.prose, cell: (actor) => actor.summary },
+                runsOn,
+                flowCount,
+              ]}
+            />
           ),
         },
         { id: "interactions", title: "Interactions", count: connections(index).length, content: <Interactions /> },
@@ -98,30 +74,24 @@ export function ActorsPage() {
   );
 }
 
-const KIND_LABEL: Record<ActorKind, string> = { person: "Person", program: "Program", service: "Service" };
-
-const lines = (index: ReturnType<typeof useIndex>, actor: Actor) => actorLines(index, actor.id);
-
-const ROLE_LABEL: Record<FlowRole, string> = {
-  initiates: "Initiates",
-  acts: "Takes part",
-  receives: "Receives",
-};
+function CodeShare({ index, actor }: { index: Index; actor: string }) {
+  const lines = actorLines(index, actor);
+  return lines === undefined ? "—" : <Share lines={lines} total={index.model.meta.source.footprint?.lines ?? 0} />;
+}
 
 export function ActorPage({ id }: { id: string }) {
   const index = useIndex();
   const actor = index.actors.get(id);
   if (!actor) return null;
-  const total = index.model.meta.source.footprint?.lines ?? 0;
-  const flows = index.model.flows
-    .map((flow) => ({ flow, role: roleIn(flow, id) }))
-    .filter((entry): entry is { flow: typeof entry.flow; role: FlowRole } => entry.role !== null);
+  const flows = index.model.flows.flatMap((flow) => {
+    const role = roleIn(flow, id);
+    return role ? [{ flow, role }] : [];
+  });
   const protocols = protocolsOf(index, id);
   const owned = index.model.state.filter((state) => state.owner === id);
   const claims = claimsAbout(index, { kind: "actor", id });
   const limits = limitsAbout(index, { kind: "actor", id });
   const components = componentsOf(index, id);
-  const code = actorLines(index, id);
 
   return (
     <Page
@@ -129,126 +99,71 @@ export function ActorPage({ id }: { id: string }) {
       badges={<ProvenanceBadge provenance={actor.provenance} />}
       summary={actor.summary}
       facts={[
-        ...(actor.kind ? ([["Kind", KIND_LABEL[actor.kind]]] as [string, React.ReactNode][]) : []),
+        ["Kind", KIND_LABEL[actor.kind]],
         ["Provenance", provenanceDescription(actor.provenance)],
         ["Runs on", locationLabel(actor)],
-        ...(actor.talksTo?.length ? ([["Talks to", <IdRefs kind="actor" ids={actor.talksTo} />]] as [string, React.ReactNode][]) : []),
-        ...(code !== undefined ? ([["Share of code", <Share lines={code} total={total} />]] as [string, React.ReactNode][]) : []),
+        ["Talks to", actor.talksTo?.length ? <IdRefs kind="actor" ids={actor.talksTo} /> : null],
+        ["Share of code", actorLines(index, id) === undefined ? null : <CodeShare index={index} actor={id} />],
       ]}
       sections={[
         {
           id: "flows",
           title: "Flows",
           count: flows.length,
-          content:
-            flows.length === 0 ? (
-              <Empty>Not part of any modelled flow.</Empty>
-            ) : (
-              <Table layout="auto">
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head>Flow</Table.Head>
-                    <Table.Head>Role</Table.Head>
-                    <Table.Head>Summary</Table.Head>
-                    <Table.Head className="text-right whitespace-nowrap">Own steps</Table.Head>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {flows.map(({ flow, role }) => (
-                    <Table.Row key={flow.id}>
-                      <Table.Cell className="align-top font-medium whitespace-nowrap">
-                        <Link to={href("flow", flow.id)}>{flow.id}</Link>
-                      </Table.Cell>
-                      <Table.Cell className="align-top whitespace-nowrap">
-                        <Badge variant={role === "receives" ? "neutral" : role === "initiates" ? "purple" : "blue"}>
-                          {ROLE_LABEL[role]}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell className="max-w-[56ch] align-top text-kumo-strong">{flow.summary}</Table.Cell>
-                      <Table.Cell className="text-right align-top tabular-nums">
-                        {flow.steps.filter((step) => step.actor === id).length} / {flow.steps.length}
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            ),
+          content: (
+            <Rows
+              rows={flows}
+              rowKey={({ flow }) => flow.id}
+              empty="Not part of any modelled flow."
+              columns={[
+                { head: "Flow", className: CELL.id, cell: ({ flow }) => <IdRef kind="flow" id={flow.id} /> },
+                { head: "Role", className: "align-top whitespace-nowrap", cell: ({ role }) => <Badge variant={ROLE[role].variant}>{ROLE[role].label}</Badge> },
+                { head: "Summary", className: CELL.prose, cell: ({ flow }) => flow.summary },
+                { head: "Own steps", className: CELL.number, cell: ({ flow }) => `${flow.steps.filter((step) => step.actor === id).length} / ${flow.steps.length}` },
+              ]}
+            />
+          ),
         },
         {
           id: "protocols",
           title: "Protocols",
           count: protocols.length,
-          content: protocols.length ? (
-            <Table layout="auto">
-              <Table.Body>
-                {protocols.map(({ protocol, role }) => (
-                  <Table.Row key={protocol.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("protocol", protocol.id)}>{protocol.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="align-top text-sm whitespace-nowrap text-kumo-subtle">{role}</Table.Cell>
-                    <Table.Cell className="max-w-[56ch] align-top text-kumo-strong">{protocol.summary}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ) : null,
+          content: (
+            <Rows
+              rows={protocols}
+              rowKey={({ protocol }) => protocol.id}
+              columns={[
+                { className: CELL.id, cell: ({ protocol }) => <IdRef kind="protocol" id={protocol.id} /> },
+                { className: "align-top text-sm whitespace-nowrap text-kumo-subtle", cell: ({ role }) => role },
+                { className: CELL.prose, cell: ({ protocol }) => protocol.summary },
+              ]}
+            />
+          ),
         },
         {
           id: "owns",
           title: "Owns",
           count: owned.length,
-          content:
-            owned.length === 0 ? (
-              <Empty>Owns no modelled state.</Empty>
-            ) : (
-              <Table layout="auto">
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head>State</Table.Head>
-                    <Table.Head>Summary</Table.Head>
-                    <Table.Head>Lifetime</Table.Head>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {owned.map((state) => (
-                    <Table.Row key={state.id}>
-                      <Table.Cell className="align-top font-medium whitespace-nowrap">
-                        <Link to={href("state", state.id)}>{state.id}</Link>
-                      </Table.Cell>
-                      <Table.Cell className="max-w-[56ch] align-top text-kumo-strong">{state.summary}</Table.Cell>
-                      <Table.Cell className="align-top text-kumo-strong">{state.lifetime}</Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            ),
+          content: (
+            <Rows
+              rows={owned}
+              rowKey={(state) => state.id}
+              empty="Owns no modelled state."
+              columns={[
+                idColumn("state", "State"),
+                { head: "Summary", className: CELL.prose, cell: (state) => state.summary },
+                { head: "Lifetime", className: "align-top text-kumo-strong", cell: (state) => state.lifetime },
+              ]}
+            />
+          ),
         },
-        {
-          id: "claims",
-          title: "Claims",
-          count: claims.length,
-          content: claims.length ? <ClaimRows claims={claims} /> : null,
-        },
+        { id: "claims", title: "Claims", count: claims.length, content: claims.length ? <ClaimRows claims={claims} /> : null },
         { id: "limits", title: "Limits", count: limits.length, content: limits.length ? <LimitRows limits={limits} /> : null },
         {
           id: "components",
           title: "Components",
           count: components.length,
-          content: components.length ? (
-            <Table layout="auto">
-              <Table.Body>
-                {components.map((component) => (
-                  <Table.Row key={component.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("component", component.id)}>{component.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[60ch] align-top text-kumo-strong">{component.summary}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ) : null,
+          content: <Rows rows={components} rowKey={(c) => c.id} columns={[idColumn("component", ""), { className: CELL.prose, cell: (c) => c.summary }]} />,
         },
         { id: "anchors", title: "Anchors", count: actor.anchors.length, content: <Anchors anchors={actor.anchors} /> },
       ]}
@@ -261,29 +176,18 @@ function Interactions() {
   const index = useIndex();
   const edges = connections(index).sort((a, b) => b.flows.length - a.flows.length);
   return (
-    <Table layout="auto">
-      <Table.Header>
-        <Table.Row>
-          <Table.Head>Actor</Table.Head>
-          <Table.Head>Actor</Table.Head>
-          <Table.Head>Flows</Table.Head>
-        </Table.Row>
-      </Table.Header>
-      <Table.Body>
-        {edges.map((edge) => (
-          <Table.Row key={`${edge.from}-${edge.to}`}>
-            <Table.Cell className="align-top whitespace-nowrap">
-              <IdRef kind="actor" id={edge.from} />
-            </Table.Cell>
-            <Table.Cell className="align-top whitespace-nowrap">
-              <IdRef kind="actor" id={edge.to} />
-            </Table.Cell>
-            <Table.Cell className="align-top text-sm">
-              {edge.flows.length ? <IdRefs kind="flow" ids={edge.flows} /> : <span className="text-kumo-subtle">talk; no flow shows how yet</span>}
-            </Table.Cell>
-          </Table.Row>
-        ))}
-      </Table.Body>
-    </Table>
+    <Rows
+      rows={edges}
+      rowKey={(edge) => `${edge.from}-${edge.to}`}
+      columns={[
+        { head: "Actor", className: "align-top whitespace-nowrap", cell: (edge) => <IdRef kind="actor" id={edge.from} /> },
+        { head: "Actor", className: "align-top whitespace-nowrap", cell: (edge) => <IdRef kind="actor" id={edge.to} /> },
+        {
+          head: "Flows",
+          className: "align-top text-sm",
+          cell: (edge) => (edge.flows.length ? <IdRefs kind="flow" ids={edge.flows} /> : <span className="text-kumo-subtle">talk; no flow shows how yet</span>),
+        },
+      ]}
+    />
   );
 }

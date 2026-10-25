@@ -1,7 +1,6 @@
-import { Table } from "@cloudflare/kumo";
 import type { ReactNode } from "react";
-import { claimsAbout, href, limitsAbout, type Field, type Message, type MessageKind, type Protocol } from "../model";
-import { Anchors, Empty, IdRef, IdRefs, Link, Page, useIndex } from "../ui";
+import { claimsAbout, limitsAbout, type Field, type Message, type MessageKind, type Protocol } from "../model";
+import { Anchors, CELL, Empty, idColumn, IdRef, IdRefs, Page, Rows, useIndex } from "../ui";
 import { ClaimRows } from "./Claims";
 import { LimitRows } from "./Limits";
 
@@ -25,32 +24,17 @@ export function ProtocolsPage() {
           id: "protocols",
           title: "",
           content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Name</Table.Head>
-                  <Table.Head>Description</Table.Head>
-                  <Table.Head>Style</Table.Head>
-                  <Table.Head>Owner</Table.Head>
-                  <Table.Head className="text-right">Messages</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {index.model.protocols.map((protocol) => (
-                  <Table.Row key={protocol.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("protocol", protocol.id)}>{protocol.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[56ch] align-top text-kumo-strong">{protocol.summary}</Table.Cell>
-                    <Table.Cell className="align-top text-sm whitespace-nowrap text-kumo-strong">{protocol.style}</Table.Cell>
-                    <Table.Cell className="align-top text-sm whitespace-nowrap">
-                      {protocol.server ? <IdRef kind="actor" id={protocol.server} /> : "—"}
-                    </Table.Cell>
-                    <Table.Cell className="text-right align-top tabular-nums">{protocol.messages.length}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
+            <Rows
+              rows={index.model.protocols}
+              rowKey={(protocol) => protocol.id}
+              columns={[
+                idColumn("protocol", "Name"),
+                { head: "Description", className: CELL.prose, cell: (protocol) => protocol.summary },
+                { head: "Style", className: `${CELL.fact} whitespace-nowrap`, cell: (protocol) => protocol.style },
+                { head: "Owner", className: "align-top text-sm whitespace-nowrap", cell: (protocol) => (protocol.server ? <IdRef kind="actor" id={protocol.server} /> : "—") },
+                { head: "Messages", className: CELL.number, cell: (protocol) => protocol.messages.length },
+              ]}
+            />
           ),
         },
       ]}

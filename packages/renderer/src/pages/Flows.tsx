@@ -1,9 +1,9 @@
-import { Badge, Table, Tabs } from "@cloudflare/kumo";
+import { Badge, Tabs } from "@cloudflare/kumo";
 import { SequenceDiagram } from "../diagrams/SequenceDiagram";
 import { Swimlane } from "../diagrams/Swimlane";
-import { claimsAbout, flowParticipants, href, type Flow } from "../model";
+import { claimsAbout, flowParticipants, type Flow } from "../model";
 import { usePreference } from "../router";
-import { Anchors, Empty, IdRef, IdRefs, Link, Page, useIndex } from "../ui";
+import { Anchors, CELL, Empty, idColumn, IdRef, IdRefs, Page, Rows, useIndex } from "../ui";
 import { ClaimRows } from "./Claims";
 
 export function FlowsPage() {
@@ -18,30 +18,16 @@ export function FlowsPage() {
           title: "All flows",
           count: index.model.flows.length,
           content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Flow</Table.Head>
-                  <Table.Head>Summary</Table.Head>
-                  <Table.Head>Actors</Table.Head>
-                  <Table.Head className="text-right">Steps</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {index.model.flows.map((flow) => (
-                  <Table.Row key={flow.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("flow", flow.id)}>{flow.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[48ch] align-top text-kumo-strong">{flow.summary}</Table.Cell>
-                    <Table.Cell className="max-w-[28ch] align-top text-sm">
-                      <IdRefs kind="actor" ids={flowParticipants(flow)} />
-                    </Table.Cell>
-                    <Table.Cell className="text-right align-top tabular-nums">{flow.steps.length}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
+            <Rows
+              rows={index.model.flows}
+              rowKey={(flow) => flow.id}
+              columns={[
+                idColumn("flow", "Flow"),
+                { head: "Summary", className: "max-w-[48ch] align-top text-kumo-strong", cell: (flow) => flow.summary },
+                { head: "Actors", className: "max-w-[28ch] align-top text-sm", cell: (flow) => <IdRefs kind="actor" ids={flowParticipants(flow)} /> },
+                { head: "Steps", className: CELL.number, cell: (flow) => flow.steps.length },
+              ]}
+            />
           ),
         },
       ]}
@@ -66,7 +52,7 @@ export function FlowPage({ id }: { id: string }) {
       summary={flow.summary}
       facts={[
         ["Trigger", flow.trigger],
-        ...(flow.outcome ? ([["Outcome", flow.outcome]] as [string, React.ReactNode][]) : []),
+        ["Outcome", flow.outcome],
         ["Actors", <IdRefs kind="actor" ids={flowParticipants(flow)} />],
       ]}
       sections={[

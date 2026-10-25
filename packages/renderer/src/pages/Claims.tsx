@@ -1,7 +1,7 @@
-import { Badge, Table, Tabs } from "@cloudflare/kumo";
+import { Badge, Tabs } from "@cloudflare/kumo";
 import { useState } from "react";
 import { href, type Claim, type ClaimStatus } from "../model";
-import { Anchors, Empty, Link, Page, PathRef, PathRefs, STATUS_ORDER, StatusBadge, statusLabel, useIndex } from "../ui";
+import { Anchors, Empty, Link, Page, PathRefs, Rows, STATUS_ORDER, StatusBadge, statusLabel, useIndex } from "../ui";
 
 export function ClaimsPage() {
   const index = useIndex();
@@ -72,37 +72,22 @@ export function ClaimPage({ id }: { id: string }) {
 
 export function ClaimRows({ claims }: { claims: Claim[] }) {
   return (
-    <Table layout="auto">
-      <Table.Header>
-        <Table.Row>
-          <Table.Head>Status</Table.Head>
-          <Table.Head>Claim</Table.Head>
-          <Table.Head>About</Table.Head>
-        </Table.Row>
-      </Table.Header>
-      <Table.Body>
-        {claims.map((claim) => (
-          <Table.Row key={claim.id}>
-            <Table.Cell className="align-top whitespace-nowrap">
-              <StatusBadge status={claim.status} />
-            </Table.Cell>
-            <Table.Cell className="max-w-[64ch] align-top">
-              <Link to={href("claim", claim.id)} className="text-kumo-default!">
-                {claim.statement}
-              </Link>
-            </Table.Cell>
-            <Table.Cell className="align-top text-sm">
-              {claim.about && (
-                <span className="flex flex-col gap-0.5">
-                  {claim.about.map((path) => (
-                    <PathRef key={path} path={path} />
-                  ))}
-                </span>
-              )}
-            </Table.Cell>
-          </Table.Row>
-        ))}
-      </Table.Body>
-    </Table>
+    <Rows
+      rows={claims}
+      rowKey={(claim) => claim.id}
+      columns={[
+        { head: "Status", className: "align-top whitespace-nowrap", cell: (claim) => <StatusBadge status={claim.status} /> },
+        {
+          head: "Claim",
+          className: "max-w-[64ch] align-top",
+          cell: (claim) => (
+            <Link to={href("claim", claim.id)} className="text-kumo-default!">
+              {claim.statement}
+            </Link>
+          ),
+        },
+        { head: "About", className: "align-top text-sm", cell: (claim) => claim.about && <PathRefs paths={claim.about} /> },
+      ]}
+    />
   );
 }

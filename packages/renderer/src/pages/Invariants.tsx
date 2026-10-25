@@ -1,6 +1,5 @@
-import { Table } from "@cloudflare/kumo";
-import { claimsAbout, href, type Enforcement, type Frame, type Invariant } from "../model";
-import { AnchorLink, Anchors, Empty, Link, Page, useIndex } from "../ui";
+import { claimsAbout, type Enforcement, type Frame, type Invariant } from "../model";
+import { AnchorLink, Anchors, Empty, idColumn, Page, Rows, useIndex } from "../ui";
 import { ClaimRows } from "./Claims";
 
 const ENFORCEMENT_ORDER: Enforcement[] = ["compile-time", "runtime", "test-time", "documented"];
@@ -39,28 +38,15 @@ export function InvariantsPage() {
           id: "invariants",
           title: "",
           content: (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Name</Table.Head>
-                  <Table.Head>Description</Table.Head>
-                  <Table.Head>Enforced</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {invariants.map((invariant) => (
-                  <Table.Row key={invariant.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("invariant", invariant.id)}>{invariant.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[64ch] align-top text-kumo-strong">{invariant.statement}</Table.Cell>
-                    <Table.Cell className="align-top">
-                      <EnforcementLabel enforcement={invariant.enforcement} />
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
+            <Rows
+              rows={invariants}
+              rowKey={(invariant) => invariant.id}
+              columns={[
+                idColumn("invariant", "Name"),
+                { head: "Description", className: "max-w-[64ch] align-top text-kumo-strong", cell: (invariant) => invariant.statement },
+                { head: "Enforced", cell: (invariant) => <EnforcementLabel enforcement={invariant.enforcement} /> },
+              ]}
+            />
           ),
         },
       ]}
@@ -79,7 +65,7 @@ export function InvariantPage({ id }: { id: string }) {
       summary={invariant.statement}
       facts={[
         ["Enforced", <EnforcementLabel enforcement={invariant.enforcement} />],
-        ...(invariant.consequence ? ([["If it breaks", invariant.consequence]] as [string, React.ReactNode][]) : []),
+        ["If it breaks", invariant.consequence],
       ]}
       sections={[
         {

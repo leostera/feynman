@@ -1,4 +1,4 @@
-import { Badge, Tabs, Text } from "@cloudflare/kumo";
+import { Badge, Table, Tabs, Text } from "@cloudflare/kumo";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { anchorUrl, exists, href, parsePath, resolveAnchor, spanLabel, type Anchor, type ClaimStatus, type Index, type Kind, type Provenance } from "./model";
 
@@ -137,9 +137,11 @@ export function Page({
   title: string;
   badges?: ReactNode;
   summary?: ReactNode;
+  /** Label and value; facts whose value is null or undefined are left out. */
   facts?: [string, ReactNode][];
   sections: PageSection[];
 }) {
+  const known = (facts ?? []).filter(([, value]) => value !== null && value !== undefined);
   const visible = sections.filter((section) => section.content !== null);
   const titled = visible.filter((section) => section.title);
   const tabbed = titled.length > 1;
@@ -155,7 +157,7 @@ export function Page({
         {badges && <div className="flex flex-wrap items-center gap-2">{badges}</div>}
         <h1 className="text-2xl font-semibold tracking-tight text-balance text-kumo-default">{title}</h1>
         {summary && <p className="max-w-[70ch] text-base leading-relaxed text-kumo-strong">{summary}</p>}
-        {facts && facts.length > 0 && <Facts rows={facts} />}
+        {known.length > 0 && <Facts rows={known} />}
       </header>
       {lead.map((section) => (
         <section key={section.id} id={section.id} className="mb-6">
@@ -207,6 +209,57 @@ export function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 export function Empty({ children }: { children: ReactNode }) {
   return <Text variant="secondary">{children}</Text>;
+}
+
+/** Cell styles shared by every table: an element's id, prose, a short fact, a number. */
+export const CELL = {
+  id: "align-top font-medium whitespace-nowrap",
+  prose: "max-w-[56ch] align-top text-kumo-strong",
+  fact: "align-top text-sm text-kumo-strong",
+  number: "text-right align-top tabular-nums",
+} as const;
+
+export interface Column<T> {
+  /** Header text; a table without any header text has no header row. */
+  head?: string;
+  cell: (row: T) => ReactNode;
+  className?: string;
+}
+
+/** A table with one row per item; `empty` is shown instead when there are none. */
+export function Rows<T>({ rows, rowKey, columns, empty }: { rows: T[]; rowKey: (row: T) => string; columns: Column<T>[]; empty?: ReactNode }) {
+  if (!rows.length) return empty ? <Empty>{empty}</Empty> : null;
+  return (
+    <Table layout="auto">
+      {columns.some((column) => column.head) && (
+        <Table.Header>
+          <Table.Row>
+            {columns.map((column, i) => (
+              <Table.Head key={i} className={column.className === CELL.number ? "text-right" : undefined}>
+                {column.head}
+              </Table.Head>
+            ))}
+          </Table.Row>
+        </Table.Header>
+      )}
+      <Table.Body>
+        {rows.map((row) => (
+          <Table.Row key={rowKey(row)}>
+            {columns.map((column, i) => (
+              <Table.Cell key={i} className={column.className ?? "align-top"}>
+                {column.cell(row)}
+              </Table.Cell>
+            ))}
+          </Table.Row>
+        ))}
+      </Table.Body>
+    </Table>
+  );
+}
+
+/** First column of an element table: its id, linking to its page. */
+export function idColumn<T extends { id: string }>(kind: Kind, head: string): Column<T> {
+  return { head, className: CELL.id, cell: (row) => <Link to={href(kind, row.id)}>{row.id}</Link> };
 }
 
 // Content blocks.

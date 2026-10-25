@@ -1,16 +1,9 @@
-import { Table } from "@cloudflare/kumo";
 import type { ReactNode } from "react";
-import { claimsAbout, href, type Anchor, type Index, type Kind } from "../model";
-import { Anchors, Chips, Empty, IdRef, Link, Page, useIndex } from "../ui";
+import { claimsAbout, type Anchor, type Index, type Kind } from "../model";
+import { Anchors, Chips, Empty, idColumn, IdRef, Page, Rows, useIndex, type Column, type PageSection } from "../ui";
 import { ClaimRows } from "./Claims";
 
 /** Index and detail pages for the simpler element kinds. */
-
-interface Column<T> {
-  title: string;
-  render: (item: T) => ReactNode;
-  className?: string;
-}
 
 interface KindSpec<T extends { id: string; anchors: Anchor[] }> {
   title: string;
@@ -19,7 +12,7 @@ interface KindSpec<T extends { id: string; anchors: Anchor[] }> {
   describe: (item: T) => string | undefined;
   columns: Column<T>[];
   facts?: (item: T) => [string, ReactNode][];
-  sections?: (item: T, index: Index) => { id: string; title: string; count?: number; content: ReactNode }[];
+  sections?: (item: T) => PageSection[];
 }
 
 const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
@@ -29,8 +22,8 @@ const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
     items: (index) => index.model.state,
     describe: (item) => item.summary,
     columns: [
-      { title: "Owner", render: (item) => <IdRef kind="actor" id={item.owner} />, className: "whitespace-nowrap" },
-      { title: "Lifetime", render: (item) => item.lifetime },
+      { head: "Owner", className: "align-top whitespace-nowrap", cell: (item) => <IdRef kind="actor" id={item.owner} /> },
+      { head: "Lifetime", cell: (item) => item.lifetime },
     ],
     facts: (item) => [
       ["Owner", <IdRef kind="actor" id={item.owner} />],
@@ -42,7 +35,7 @@ const SPECS: Partial<Record<Kind, KindSpec<any>>> = {
     summary: "Domain states and the transitions between them.",
     items: (index) => index.model.stateMachines ?? [],
     describe: (item) => item.summary,
-    columns: [{ title: "States", render: (item) => (item.states ? item.states.length : "—"), className: "text-right tabular-nums" }],
+    columns: [{ head: "States", className: "text-right align-top tabular-nums", cell: (item) => item.states?.length ?? "—" }],
     sections: (item) => [
       { id: "states", title: "States", count: item.states?.length, content: item.states ? <Chips items={item.states} /> : <Empty>No states listed.</Empty> },
       {
@@ -79,37 +72,18 @@ export function ElementIndexPage({ kind }: { kind: Kind }) {
         {
           id: "all",
           title: "",
-          content:
-            items.length === 0 ? (
-              <Empty>None recorded.</Empty>
-            ) : (
-              <Table layout="auto">
-                <Table.Header>
-                  <Table.Row>
-                    <Table.Head>Name</Table.Head>
-                    <Table.Head>Description</Table.Head>
-                    {spec.columns.map((column) => (
-                      <Table.Head key={column.title}>{column.title}</Table.Head>
-                    ))}
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {items.map((item) => (
-                    <Table.Row key={item.id}>
-                      <Table.Cell className="align-top font-medium whitespace-nowrap">
-                        <Link to={href(kind, item.id)}>{item.id}</Link>
-                      </Table.Cell>
-                      <Table.Cell className="max-w-[60ch] align-top text-kumo-strong">{spec.describe(item) ?? "—"}</Table.Cell>
-                      {spec.columns.map((column) => (
-                        <Table.Cell key={column.title} className={`align-top ${column.className ?? ""}`}>
-                          {column.render(item)}
-                        </Table.Cell>
-                      ))}
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table>
-            ),
+          content: (
+            <Rows
+              rows={items}
+              rowKey={(item) => item.id}
+              empty="None recorded."
+              columns={[
+                idColumn(kind, "Name"),
+                { head: "Description", className: "max-w-[60ch] align-top text-kumo-strong", cell: (item) => spec.describe(item) ?? "—" },
+                ...spec.columns,
+              ]}
+            />
+          ),
         },
       ]}
     />
@@ -128,8 +102,8 @@ export function ElementPage({ kind, id }: { kind: Kind; id: string }) {
       summary={spec.describe(item)}
       facts={spec.facts?.(item)}
       sections={[
-        ...(spec.sections?.(item, index) ?? []),
-        ...(claims.length > 0 ? [{ id: "claims", title: "Claims", count: claims.length, content: <ClaimRows claims={claims} /> }] : []),
+        ...(spec.sections?.(item) ?? []),
+        { id: "claims", title: "Claims", count: claims.length, content: claims.length ? <ClaimRows claims={claims} /> : null },
         { id: "anchors", title: "Anchors", count: item.anchors.length, content: <Anchors anchors={item.anchors} /> },
       ]}
     />

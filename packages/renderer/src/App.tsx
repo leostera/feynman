@@ -13,8 +13,8 @@ import {
   SunIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useState, type ReactNode } from "react";
-import { exists, href, type Index, type Kind } from "./model";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { countOf, exists, href, type Index, type Kind } from "./model";
 import { ActorPage, ActorsPage } from "./pages/Actors";
 import { ClaimPage, ClaimsPage } from "./pages/Claims";
 import { ComponentPage, ComponentsPage } from "./pages/Components";
@@ -45,35 +45,39 @@ export function App({ index }: { index: Index }) {
   );
 }
 
+/** Kinds with their own pages; the others (state, state machines) use the generic element pages. */
+const INDEX_PAGES: Partial<Record<Kind, ComponentType>> = {
+  actor: ActorsPage,
+  component: ComponentsPage,
+  flow: FlowsPage,
+  protocol: ProtocolsPage,
+  invariant: InvariantsPage,
+  claim: ClaimsPage,
+  limit: LimitsPage,
+};
+const DETAIL_PAGES: Partial<Record<Kind, ComponentType<{ id: string }>>> = {
+  actor: ActorPage,
+  component: ComponentPage,
+  flow: FlowPage,
+  protocol: ProtocolPage,
+  invariant: InvariantPage,
+  claim: ClaimPage,
+  limit: LimitPage,
+};
+
 function Content({ route }: { route: Route }) {
   const index = useIndex();
-  switch (route.page) {
-    case "overview":
-      return <ActorsPage />;
-    case "index":
-      if (route.kind === "actor") return <ActorsPage />;
-      if (route.kind === "component") return <ComponentsPage />;
-      if (route.kind === "flow") return <FlowsPage />;
-      if (route.kind === "protocol") return <ProtocolsPage />;
-      if (route.kind === "invariant") return <InvariantsPage />;
-      if (route.kind === "claim") return <ClaimsPage />;
-      if (route.kind === "limit") return <LimitsPage />;
-      if (hasElementPages(route.kind)) return <ElementIndexPage kind={route.kind} />;
-      return <NotFound />;
-    case "detail": {
-      if (!exists(index, route)) return <NotFound />;
-      if (route.kind === "actor") return <ActorPage id={route.id} />;
-      if (route.kind === "component") return <ComponentPage id={route.id} />;
-      if (route.kind === "flow") return <FlowPage id={route.id} />;
-      if (route.kind === "protocol") return <ProtocolPage id={route.id} />;
-      if (route.kind === "invariant") return <InvariantPage id={route.id} />;
-      if (route.kind === "claim") return <ClaimPage id={route.id} />;
-      if (route.kind === "limit") return <LimitPage id={route.id} />;
-      return <ElementPage kind={route.kind} id={route.id} />;
-    }
-    case "missing":
-      return <NotFound />;
+  if (route.page === "overview") return <ActorsPage />;
+  if (route.page === "index") {
+    const Index = INDEX_PAGES[route.kind];
+    if (Index) return <Index />;
+    return hasElementPages(route.kind) ? <ElementIndexPage kind={route.kind} /> : <NotFound />;
   }
+  if (route.page === "detail" && exists(index, route)) {
+    const Detail = DETAIL_PAGES[route.kind];
+    return Detail ? <Detail id={route.id} /> : <ElementPage kind={route.kind} id={route.id} />;
+  }
+  return <NotFound />;
 }
 
 function NotFound() {
@@ -180,30 +184,11 @@ function sectionOf(route: Route): Kind | null {
 }
 
 function Navigation({ route }: { route: Route }) {
-  const { model } = useIndex();
+  const index = useIndex();
+  const { model } = index;
   const current = sectionOf(route);
-  const count = (kind: Kind): number => {
-    switch (kind) {
-      case "actor":
-        return model.actors.length;
-      case "component":
-        return model.components.length;
-      case "flow":
-        return model.flows.length;
-      case "protocol":
-        return model.protocols.length;
-      case "state":
-        return model.state.length + model.stateMachines.length;
-      case "machine":
-        return model.stateMachines.length;
-      case "invariant":
-        return model.invariants.length;
-      case "claim":
-        return model.claims.length;
-      case "limit":
-        return model.limits.length;
-    }
-  };
+  // The State section lists state machines too.
+  const count = (kind: Kind) => countOf(index, kind) + (kind === "state" ? countOf(index, "machine") : 0);
   const activeFlow = route.page === "detail" && route.kind === "flow" ? route.id : null;
 
   return (

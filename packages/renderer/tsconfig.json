@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -9,7 +13,12 @@
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ],
+    "noUnusedLocals": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -1,53 +1,39 @@
-import { Table } from "@cloudflare/kumo";
 import { ComponentGraph } from "../diagrams/SystemGraph";
-import { flowsOfComponent, href, limitsAbout, type Component } from "../model";
-import { Anchors, Empty, IdRefs, Link, Page, Share, useIndex } from "../ui";
+import { flowsOfComponent, limitsAbout, type Component } from "../model";
+import { Anchors, CELL, idColumn, IdRefs, Page, Rows, Share, useIndex } from "../ui";
 import { LimitRows } from "./Limits";
+
+/** A component's lines as a share of the repository's, or "—" before measuring. */
+function CodeShare({ component }: { component: Component }) {
+  const total = useIndex().model.meta.source.footprint?.lines ?? 0;
+  return component.footprint.lines === undefined ? "—" : <Share lines={component.footprint.lines} total={total} />;
+}
 
 export function ComponentsPage() {
   const index = useIndex();
-  const total = index.model.meta.source.footprint?.lines ?? 0;
   const components = [...index.model.components].sort((a, b) => (b.footprint.lines ?? 0) - (a.footprint.lines ?? 0));
+  const hasDependencies = components.some((component) => component.dependsOn?.length);
   return (
     <Page
       title="Components"
       summary="The code in this repository, by unit: what each part does, which actors it runs in, and what it depends on."
       sections={[
-        ...(components.some((component) => component.dependsOn?.length)
-          ? [{ id: "graph", title: "", content: <ComponentGraph index={index} height={420} /> }]
-          : []),
+        { id: "graph", title: "", content: hasDependencies ? <ComponentGraph index={index} height={420} /> : null },
         {
           id: "components",
           title: "",
-          content: components.length ? (
-            <Table layout="auto">
-              <Table.Header>
-                <Table.Row>
-                  <Table.Head>Component</Table.Head>
-                  <Table.Head>Summary</Table.Head>
-                  <Table.Head>Runs in</Table.Head>
-                  <Table.Head>Share of code</Table.Head>
-                </Table.Row>
-              </Table.Header>
-              <Table.Body>
-                {components.map((component) => (
-                  <Table.Row key={component.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("component", component.id)}>{component.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[56ch] align-top text-kumo-strong">{component.summary}</Table.Cell>
-                    <Table.Cell className="align-top text-sm">
-                      <IdRefs kind="actor" ids={component.actors} />
-                    </Table.Cell>
-                    <Table.Cell className="align-top">
-                      {component.footprint.lines !== undefined ? <Share lines={component.footprint.lines} total={total} /> : "—"}
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ) : (
-            <Empty>This model has no components.</Empty>
+          content: (
+            <Rows
+              rows={components}
+              rowKey={(component) => component.id}
+              empty="This model has no components."
+              columns={[
+                idColumn("component", "Component"),
+                { head: "Summary", className: CELL.prose, cell: (component) => component.summary },
+                { head: "Runs in", className: "align-top text-sm", cell: (component) => <IdRefs kind="actor" ids={component.actors} /> },
+                { head: "Share of code", cell: (component) => <CodeShare component={component} /> },
+              ]}
+            />
           ),
         },
       ]}
@@ -59,8 +45,7 @@ export function ComponentPage({ id }: { id: string }) {
   const index = useIndex();
   const component = index.components.get(id);
   if (!component) return null;
-  const total = index.model.meta.source.footprint?.lines ?? 0;
-  const usedBy = index.model.components.filter((other: Component) => other.dependsOn?.includes(id)).map((other) => other.id);
+  const usedBy = index.model.components.filter((other) => other.dependsOn?.includes(id)).map((other) => other.id);
   const flows = flowsOfComponent(index, id);
   const limits = limitsAbout(index, { kind: "component", id });
 
@@ -70,32 +55,22 @@ export function ComponentPage({ id }: { id: string }) {
       summary={component.summary}
       facts={[
         ["Runs in", <IdRefs kind="actor" ids={component.actors} />],
-        ...(component.dependsOn?.length ? ([["Depends on", <IdRefs kind="component" ids={component.dependsOn} />]] as [string, React.ReactNode][]) : []),
-        ...(usedBy.length ? ([["Used by", <IdRefs kind="component" ids={usedBy} />]] as [string, React.ReactNode][]) : []),
-        ...(component.footprint.lines !== undefined
-          ? ([["Share of code", <Share lines={component.footprint.lines} total={total} />]] as [string, React.ReactNode][])
-          : []),
+        ["Depends on", component.dependsOn?.length ? <IdRefs kind="component" ids={component.dependsOn} /> : null],
+        ["Used by", usedBy.length ? <IdRefs kind="component" ids={usedBy} /> : null],
+        ["Share of code", component.footprint.lines === undefined ? null : <CodeShare component={component} />],
       ]}
       sections={[
         {
           id: "flows",
           title: "Flows",
           count: flows.length,
-          content: flows.length ? (
-            <Table layout="auto">
-              <Table.Body>
-                {flows.map((flow) => (
-                  <Table.Row key={flow.id}>
-                    <Table.Cell className="align-top font-medium whitespace-nowrap">
-                      <Link to={href("flow", flow.id)}>{flow.id}</Link>
-                    </Table.Cell>
-                    <Table.Cell className="max-w-[60ch] align-top text-kumo-strong">{flow.summary}</Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table>
-          ) : (
-            <Empty>No flow step names this component.</Empty>
+          content: (
+            <Rows
+              rows={flows}
+              rowKey={(flow) => flow.id}
+              empty="No flow step names this component."
+              columns={[idColumn("flow", ""), { className: CELL.prose, cell: (flow) => flow.summary }]}
+            />
           ),
         },
         { id: "limits", title: "Limits", count: limits.length, content: limits.length ? <LimitRows limits={limits} /> : null },
