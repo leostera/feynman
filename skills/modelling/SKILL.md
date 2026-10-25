@@ -93,30 +93,51 @@ with what guarantees (transactional, idempotent, retried, bounded) does.
 
 ## Process
 
-### Bootstrap (first time)
+Every extraction accounts for every file it is responsible for. Reading only the
+files that look important is how models miss behaviour (a patch to a dependency,
+a script that installs a service, a config that changes a limit). Record what you
+reviewed in coverage ledgers (see Storage), and do not finish until
+`tools/coverage.mjs` passes.
 
-1. Respect the repository's `.gitignore`: skip anything git ignores.
-2. Survey the README, docs, build graph, and entrypoints.
-3. Identify actors and where they run.
-4. Extract the protocols between them, and the files and schemas they persist.
-5. Trace flows through their semantic actions.
-6. Extract state, state machines, and invariants with their enforcement paths.
-7. Record claims and limits.
-8. Write the files, measure, and validate (see Tools).
+### Bootstrap (first snapshot)
 
-Large systems can be split across agents: one per subsystem, protocol, or group
-of flows, each writing its own files. Agree on actor ids first, since other
-elements refer to them.
+Responsible for: **every file git tracks at the commit**, that is, every file the
+repository does not ignore.
 
-### Update (per change)
+1. Survey the README, docs, build graph, and entrypoints.
+2. Identify actors and where they run.
+3. Run `tools/coverage.mjs --missing` for the list of files, and split it into
+   batches (by directory or subsystem). Batches can go to separate agents; agree
+   on actor ids first, since other elements refer to them.
+4. For each batch, read every file and model what it contributes: protocols,
+   flows and their semantic actions, state, state machines, invariants with their
+   enforcement paths, claims, and limits. Record each file in the batch's ledger
+   with its outcome.
+5. Write the files, measure, validate, and run coverage (see Tools). Repeat 3–4
+   until coverage passes.
 
-Input: the existing `.feynman/model/` and the code diff.
-1. Run `tools/index-model.mjs` for an overview, then find the elements whose
-   anchored files the diff touches, and any new behaviour. Load only those files.
-2. **Edit** those elements, and add or remove elements as needed. Do not regenerate
-   the whole model.
-3. Follow moved or renamed files and update anchors.
-4. Write the changed files, measure, and validate (see Tools).
+Vendored copies of third-party code may be listed as a whole directory with
+outcome `vendored`, once you have confirmed that is what they are and noted the
+origin. Patches, wrappers, and build rules around them are first-party and are
+reviewed file by file. Generated trees are listed the same way, as `generated`,
+when the files they are generated from are reviewed.
+
+### Update (diff snapshot)
+
+Responsible for: **every file added, modified, or renamed** between the previously
+modelled commit and the new one.
+
+1. Make sure the first snapshot exists: `.feynman/model/` with a `meta.json` whose
+   commit is an ancestor of the new commit. If not, bootstrap instead.
+2. Set `meta.extraction` to `update`, `meta.source.base.commit` to the previously
+   modelled commit, and `meta.source.commit` to the new one. Remove the ledgers
+   for the old commit (history keeps them).
+3. Run `tools/coverage.mjs --missing` for the changed files, and
+   `tools/index-model.mjs` for an overview of the model.
+4. Read every changed file, find the elements it affects, and **edit** them; add
+   or remove elements as needed. Do not regenerate the whole model. For deleted
+   or moved files, update the anchors that pointed at them.
+5. Record each changed file in a ledger, then measure, validate, and run coverage.
 
 ## Storage
 
@@ -129,6 +150,7 @@ file per element so that no agent has to hold the whole model at once:
   actors/<id>.json      flows/<id>.json        protocols/<id>.json
   state/<id>.json       state-machines/<id>.json
   invariants/<id>.json  claims/<id>.json       limits/<id>.json
+  coverage/<batch>.json
 ```
 
 An element's id is its file name (a readable kebab-case slug) and is not repeated
@@ -137,6 +159,11 @@ one means moving its file. Fields that name a specific kind use a bare id
 (`actor`, `target`, `owner`, `server`, `clients`, `from` name actors; `ref` names
 a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
 path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`.
+
+Coverage ledgers record what each extraction pass reviewed, at which commit:
+one file per batch, listing every reviewed file with its outcome: `modelled`
+(the model reflects what it contributes), `no-behaviour` (read; nothing to model),
+`vendored`, or `generated`. Ledgers are not rendered.
 
 Each file must validate against its schema in [`schema/`](schema/) (JSON Schema
 2020-12; shared definitions in `schema/common.json`). Together they are the
@@ -162,6 +189,10 @@ Mechanical facts come from tools, not from the agent:
   (`url`, `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
   main, and file and line counts for the repository and each actor's footprint.
   Counts are taken at the modelled commit and skip `meta.source.footprint.excludes`.
+- `node tools/coverage.mjs <repository> <model-dir> [--missing]` computes the files
+  this extraction is responsible for (all tracked files for a bootstrap, the
+  changed files for an update), compares them with the ledgers for the modelled
+  commit, and fails while any are unreviewed. `--missing` lists them one per line.
 - `node tools/check-model.mjs <model-dir> [<repository>]` validates every file
   against its schema and checks cross-references. With a repository, it checks
   that every anchor exists at the modelled commit and that spans fall inside

@@ -1,0 +1,294 @@
+{
+  "commit": "66d8d86b7e90fc1478d56cf948a993a16692f0e7",
+  "summary": "Files read in depth during the first pass and anchored by the model. The rest of the repository has not been reviewed yet.",
+  "files": [
+    {
+      "path": "README.md",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/DaemonController.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/RegistrationDecision.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoDaemonManager/Sources/AxoDaemonManager/RestartMethod.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Sessions/TerminalSessionsModel.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoMac/Sources/AxoMac/Settings/RemoteAccessSettingsView.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/TerminalAttachment.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "apple/AxoRPC/Sources/AxoRPC/UnixSocketRPC.swift",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-ipc/src/event_queue.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-ipc/src/server.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/activity.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/bridge.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/command.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/connection.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/history.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/launch.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/lock.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/protocol.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/takeover.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pi/src/worker.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/conformance.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/event.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/layout.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/model.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/relay.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/rpc.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-protocol/src/viewport.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pty/src/attach.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pty/src/command.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pty/src/output.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-pty/src/process.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-relay/src/credential.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-relay/src/pairing.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-relay/src/relay.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-server/src/lib.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-server/src/session.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axo-server/src/workspace_access.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axod/src/main.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "crates/axod/tests/rpc.rs",
+      "outcome": "modelled"
+    },
+    {
+      "path": "docs/axod-recovery-hardening.md",
+      "outcome": "modelled"
+    },
+    {
+      "path": "docs/rfds/RFD0013-cloudflare-oauth-and-host-pairing.md",
+      "outcome": "modelled"
+    },
+    {
+      "path": "docs/rfds/RFD0014-workspaces-and-agent-led-sessions.md",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/access.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/account-manager.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/account.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/cloudflare.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/pairing-directory.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/pairing.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/auth/provider.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/axo-host-directory.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/axo-host-relay.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/account-hosts.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/body.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/http/router.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/index.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/relay/records.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/src/session-history.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/tests/account-manager.test.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api-worker/tests/auth.test.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api/src/contracts.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-api/src/v1.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-web-app/src/pi-history-pane.tsx",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/axo-web-app/src/remote-terminal-app.tsx",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/pi-axo/src/bridge-server.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/pi-axo/src/extension.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/pi-axo/src/protocol.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "packages/pi-axo/src/title.ts",
+      "outcome": "modelled"
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/common.schema.json",
+      "outcome": "modelled"
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/events.schema.json",
+      "outcome": "modelled"
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/host-relay.schema.json",
+      "outcome": "modelled"
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/local-rpc.schema.json",
+      "outcome": "modelled"
+    },
+    {
+      "path": "schemas/axo.leostera.dev/v1/pairing.schema.json",
+      "outcome": "modelled"
+    }
+  ]
+}

@@ -30,6 +30,6 @@
   },
   "extractedBy": "agent",
   "extraction": "bootstrap",
-  "coverage": "First pass. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only.",
+  "coverage": "First pass; see coverage/ for the files reviewed. Daemon (axo-server, axo-pty, axo-pi, axo-ipc, axo-relay, axo-protocol), API Worker and pi-axo read in depth; Mac app and web app read at the level of their RPC usage only.",
   "extractedAt": "2026-10-25T01:37:00Z"
 }

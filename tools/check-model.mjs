@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import { KINDS, loadModel, readElements } from "./model.mjs";
+import { KINDS, loadModel, readCoverage, readElements } from "./model.mjs";
 
 const [modelDir, repository] = process.argv.slice(2);
 if (!modelDir) {
@@ -41,6 +41,8 @@ for (const kind of KINDS) {
     check(kind.schema, path, value);
   }
 }
+
+for (const { path, value } of readCoverage(modelDir)) check("coverage", path, value);
 
 // Cross-references, each to the collection it must name.
 const ids = Object.fromEntries(KINDS.map((kind) => [kind.key, new Set(model[kind.key].map((e) => e.id))]));

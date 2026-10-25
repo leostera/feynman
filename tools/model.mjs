@@ -72,3 +72,13 @@ export function writeModel(modelDir, model) {
     for (const element of model[kind.key] ?? []) writeElement(modelDir, kind, element);
   }
 }
+
+/** Coverage ledgers (`coverage/<batch>.json`), as `{ batch, path, value }`. */
+export function readCoverage(modelDir) {
+  const dir = join(modelDir, "coverage");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .sort()
+    .map((name) => ({ batch: name.slice(0, -".json".length), path: join(dir, name), value: readJson(join(dir, name)) }));
+}

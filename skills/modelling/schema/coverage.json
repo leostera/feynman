@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:coverage",
+  "title": "Coverage ledger",
+  "description": "model/coverage/<batch>.json: the files one extraction pass reviewed at one commit. tools/coverage.mjs checks that the ledgers for the modelled commit account for every required file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commit",
+    "summary",
+    "files"
+  ],
+  "properties": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full commit the files were read at; must equal meta.source.commit."
+    },
+    "summary": {
+      "type": "string",
+      "description": "What this batch covered, e.g. `crates/axo-pty and crates/axo-ipc`."
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "outcome"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A file. A directory (ending in `/`) is allowed only for `vendored` and `generated`."
+          },
+          "outcome": {
+            "enum": [
+              "modelled",
+              "no-behaviour",
+              "vendored",
+              "generated"
+            ],
+            "description": "modelled: read, and the model reflects what it contributes. no-behaviour: read, and it has nothing to model (prose, formatting config, assets). vendored: a copy of third-party code, identified by its origin. generated: produced by a tool from files that are themselves reviewed."
+          },
+          "note": {
+            "type": "string",
+            "description": "Required in spirit for vendored and generated: where it comes from."
+          }
+        }
+      }
+    }
+  }
+}

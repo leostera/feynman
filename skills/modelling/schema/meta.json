@@ -82,6 +82,20 @@
         },
         "footprint": {
           "$ref": "urn:feynman:common#/$defs/repositoryFootprint"
+        },
+        "base": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit"
+          ],
+          "description": "For an update: the previously modelled commit this model was updated from. Coverage then requires the files changed between base and commit.",
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{7,40}$"
+            }
+          }
         }
       }
     },
