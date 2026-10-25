@@ -15,10 +15,21 @@
         "ajv-formats": "^3.0.1",
       },
     },
+    "packages/modeler": {
+      "name": "@feynman/modeler",
+      "dependencies": {
+        "@feynman/model": "workspace:*",
+        "@feynman/renderer": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/pi-feynman": {
       "name": "@feynman/pi-feynman",
       "dependencies": {
-        "@feynman/model": "workspace:*",
+        "@feynman/modeler": "workspace:*",
       },
       "devDependencies": {
         "@earendil-works/pi-ai": "1.3.0",
@@ -121,6 +132,8 @@
     "@earendil-works/pi-tui": ["@earendil-works/pi-tui@1.3.0", "", { "dependencies": { "get-east-asian-width": "1.6.0", "marked": "18.0.11" } }, "sha512-AlKvEwEWyVtnuw7SVb4N/mUhlfIohyFslUNWarZVdLHHSdt3ca5EhMLwTzblBpDpaofSz+f+tAHie6CfxVrWKA=="],
 
     "@feynman/model": ["@feynman/model@workspace:packages/model"],
+
+    "@feynman/modeler": ["@feynman/modeler@workspace:packages/modeler"],
 
     "@feynman/pi-feynman": ["@feynman/pi-feynman@workspace:packages/pi-feynman"],
 

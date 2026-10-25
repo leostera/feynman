@@ -184,7 +184,7 @@ When the vocabulary changes, update the schemas and this skill together.
 
 Mechanical facts come from tools, not from the agent.
 
-### In Pi, with the `pi-feynman` package
+### In Pi, with the `pi-feynman` package (an adapter over `@feynman/modeler`)
 
 - `feynman_extract` starts or resumes an extraction at HEAD: a bootstrap when
   there is no model, otherwise an update from the modelled commit (it sets

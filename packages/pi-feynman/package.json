@@ -2,17 +2,23 @@
   "name": "@feynman/pi-feynman",
   "private": true,
   "type": "module",
-  "description": "Pi package: drives one agent through extracting a Feynman model until every file is reviewed, plus the modelling and rendering skills.",
-  "keywords": ["pi-package"],
+  "description": "Pi adapter for Feynman: exposes @feynman/modeler as Pi tools, commands, and lifecycle hooks, and ships the modelling and rendering skills.",
+  "keywords": [
+    "pi-package"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"],
-    "skills": ["./skills"]
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@feynman/model": "workspace:*"
+    "@feynman/modeler": "workspace:*"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

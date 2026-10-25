@@ -1,0 +1,20 @@
+{
+  "name": "@feynman/modeler",
+  "private": true,
+  "type": "module",
+  "description": "Drives one agent through extracting a Feynman model until every file is reviewed and the model is valid. Independent of any agent runtime.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@feynman/model": "workspace:*",
+    "@feynman/renderer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  }
+}

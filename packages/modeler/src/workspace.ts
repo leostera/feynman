@@ -1,5 +1,5 @@
 // Where the repository and its model are, and how an extraction starts.
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { git, tryGit } from "@feynman/model";
 
@@ -42,7 +42,7 @@ export function startExtraction({ repository, modelDir }: Workspace): Start {
       system: basename(repository),
       summary: "",
       source: { repository: ".", commit },
-      extractedBy: "pi-feynman",
+      extractedBy: "feynman",
       extraction: "bootstrap",
     };
     writeFileSync(metaPath, JSON.stringify(meta, null, 2) + "\n");
