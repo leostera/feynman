@@ -27,11 +27,11 @@
         "@feynman/code": "workspace:*",
         "@feynman/spec": "workspace:*",
         "@feynman/view": "workspace:*",
+        "typescript": "^7.0.2",
       },
       "devDependencies": {
         "@types/bun": "*",
         "@types/node": "^24.0.0",
-        "typescript": "^7.0.2",
       },
     },
     "packages/code": {

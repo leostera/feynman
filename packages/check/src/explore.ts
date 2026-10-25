@@ -35,9 +35,11 @@ export interface Bounds {
   maxStates: number;
   /** Stop after this long, in milliseconds. */
   timeLimit: number;
+  /** Times one instance may take the same action on one path. */
+  repeats: number;
 }
 
-export const DEFAULT_BOUNDS: Bounds = { instances: {}, depth: 14, faults: 1, maxStates: 100_000, timeLimit: 20_000 };
+export const DEFAULT_BOUNDS: Bounds = { instances: {}, depth: 14, faults: 1, maxStates: 100_000, timeLimit: 20_000, repeats: 2 };
 
 export type Choice =
   | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }
@@ -86,14 +88,22 @@ interface Node {
   event: Event | null;
   depth: number;
   faults: number;
+  /** Actions taken on this path, by `instance.key`. */
+  acts: Record<string, number>;
+}
+
+/** A search state: the world, plus how many times each action was taken on the way. */
+function stateKey(world: World, acts: Record<string, number>): string {
+  const counts = Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1));
+  return canonical(world) + JSON.stringify(counts);
 }
 
 export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
   const started = Date.now();
   const initial = initialWorld(spec, b);
-  const nodes: Node[] = [{ parent: -1, choice: null, event: null, depth: 0, faults: 0 }];
-  const seen = new Set<string>([canonical(initial)]);
+  const nodes: Node[] = [{ parent: -1, choice: null, event: null, depth: 0, faults: 0, acts: {} }];
+  const seen = new Set<string>([stateKey(initial, {})]);
   let frontier: { node: number; world: World }[] = [{ node: 0, world: initial }];
   const failures = new Map<string, number>();
   const errors = new Map<string, number>();
@@ -139,12 +149,18 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
           stoppedBy = "timeLimit";
           break search;
         }
+        let acts = node.acts;
+        if (choice.kind === "act") {
+          const id = `${choice.instance}.${choice.key}`;
+          if ((acts[id] ?? 0) >= b.repeats) continue;
+          acts = { ...acts, [id]: (acts[id] ?? 0) + 1 };
+        }
         const step = apply(spec, world, choice);
-        const key = canonical(step.world);
+        const key = stateKey(step.world, acts);
         if (seen.has(key)) continue;
         seen.add(key);
         const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
-        nodes.push({ parent: index, choice, event: step.event, depth: node.depth + 1, faults });
+        nodes.push({ parent: index, choice, event: step.event, depth: node.depth + 1, faults, acts });
         depthReached = Math.max(depthReached, node.depth + 1);
         examine(nodes.length - 1, step.world);
         if (!step.event.error) next.push({ node: nodes.length - 1, world: step.world });
@@ -253,14 +269,21 @@ function inputCombinations(spec: Spec, world: World, inputs: Record<string, { ty
   return combos;
 }
 
-/** Run the system by itself (no actions, no faults) for up to `within` events; the events, if `predicate` never holds. */
+/** Most events one run by itself may take, so a looping spec cannot hang the checker. */
+const SETTLE_LIMIT = 1000;
+
+/**
+ * Run the system by itself (no actions, no faults) for `within` milliseconds of simulated
+ * time; the events, if `predicate` never holds in that time.
+ */
 function settles(spec: Spec, world: World, predicate: (w: never) => boolean, within: number): Event[] | null {
   const events: Event[] = [];
+  const deadline = world.clock + within;
   let current = world;
-  for (let n = 0; n < within; n++) {
+  for (let n = 0; n < SETTLE_LIMIT; n++) {
     const { guards, pending } = choices(spec, current);
-    const step = guards.length ? guard(spec, current, guards[0].instance, guards[0].key) : pending.length ? fire(spec, current, pending[0].id) : null;
-    if (!step) break;
+    if (!guards.length && (!pending.length || pending[0].at > deadline)) break;
+    const step = guards.length ? guard(spec, current, guards[0].instance, guards[0].key) : fire(spec, current, pending[0].id);
     events.push(step.event);
     current = step.world;
     if (holdsIn(spec, current, predicate as never)) return null;

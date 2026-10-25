@@ -164,7 +164,7 @@ export default defineSpec(
         after: (world) =>
           world.all(Mac).some((mac) => mac.state.link.pending !== null && world.all(Person).some((p) => p.state.codes.includes(mac.state.code ?? ""))),
         eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
-        within: 20,
+        within: 30 * SEC,
       },
       codeRedeemedOnce: {
         description: "A pairing code is never redeemed twice.",

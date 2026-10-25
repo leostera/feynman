@@ -128,3 +128,12 @@ test("diff: every scenario's trace compared with another commit", async () => {
   expect(diff.out).toContain("~ Server.say");
   expect(diff.out).toContain("- Client.heard");
 }, 60_000);
+
+test("check type-checks specs: a send that is not declared is an error before anything runs", async () => {
+  const { root, commit } = repo();
+  writeFileSync(join(root, "specs/echo.ts"), SPEC(false).replace("sends: [Heard],", "sends: [],"));
+  commit("echo");
+  const check = await capture(["check", "--depth", "2"], root);
+  expect(check.status).toBe(1);
+  expect(check.out).toMatch(/specs\/echo\.ts:\d+:\d+ /);
+}, 60_000);

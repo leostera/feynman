@@ -17,7 +17,7 @@ Commands:
   run [spec] [--scenario]  Run scenarios and print their traces.
   check [spec]             Explore every interleaving within bounds; check invariants,
                            scenarios, and that every source still resolves.
-      --depth N --faults N --max-states N --time-limit SECONDS
+      --depth N --faults N --repeats N --max-states N --time-limit SECONDS
       --instances Actor=N,Actor=N
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
@@ -39,6 +39,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       scenario: { type: "string" },
       depth: { type: "string" },
       faults: { type: "string" },
+      repeats: { type: "string" },
       "max-states": { type: "string" },
       "time-limit": { type: "string" },
       instances: { type: "string" },
@@ -83,6 +84,7 @@ function bounds(values: Record<string, string | boolean | undefined>): Partial<B
   };
   if (int("depth") !== undefined) out.depth = int("depth");
   if (int("faults") !== undefined) out.faults = int("faults");
+  if (int("repeats") !== undefined) out.repeats = int("repeats");
   if (int("max-states") !== undefined) out.maxStates = int("max-states");
   if (int("time-limit") !== undefined) out.timeLimit = int("time-limit")! * 1000;
   if (typeof values.instances === "string") {
