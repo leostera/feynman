@@ -1,0 +1,16 @@
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+@source "./**/*.{ts,tsx}";
+@import "@cloudflare/kumo/styles";
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@keyframes feynman-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-kumo-brand) 45%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--color-kumo-brand) 0%, transparent); }
+}
+.feynman-pulse { animation: feynman-pulse 1.6s ease-in-out infinite; }
