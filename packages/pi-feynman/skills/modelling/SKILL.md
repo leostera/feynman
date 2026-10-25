@@ -251,8 +251,10 @@ Mechanical facts come from tools, not from the agent.
 
 - `feynman_extract` starts or resumes an extraction at HEAD: a bootstrap when
   there is no model, otherwise an update from the modelled commit (it sets
-  `meta.source.base`, and drops ledgers for the old commit). Tracked files must
-  match HEAD.
+  `meta.source.base`, and drops ledgers for the old commit). With uncommitted
+  changes, the model describes the working tree (`meta.source.worktree`): HEAD
+  plus those changes, untracked files included. Reads then record the content
+  hash of what was read, and a file edited afterwards counts as unread again.
 - Files read in full with `read` (continuing truncated output with offsets) are
   recorded automatically; searching or listing does not count. Ledgers cannot be
   written any other way.

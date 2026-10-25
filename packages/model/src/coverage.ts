@@ -11,10 +11,11 @@
 // `commit` is the modelled commit.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { git, lines, tryGit, trackedFiles } from "./git.ts";
-import { excludePathspecs, readConfig } from "./config.ts";
+import { tryGit } from "./git.ts";
+import { readConfig } from "./config.ts";
+import { changedFiles, snapshotBlobIds, snapshotFiles, snapshotOf } from "./snapshot.ts";
 import { loadModel, readCoverage, type Ledger, type LedgerEntry } from "./model.ts";
-import { outdatedElements, type OutdatedElement } from "./sources.ts";
+import { blobIds, outdatedElements, type OutdatedElement } from "./sources.ts";
 
 export class CoverageError extends Error {}
 
@@ -24,6 +25,8 @@ export const MODEL_ROOT = ".feynman/";
 export interface CoverageReport {
   mode: "bootstrap" | "update";
   commit: string;
+  /** Whether the model includes uncommitted changes on top of `commit`. */
+  worktree: boolean;
   /** Update only: the previously modelled commit. */
   base?: string;
   required: string[];
@@ -40,13 +43,20 @@ export interface CoverageReport {
   problems: string[];
 }
 
-/** Files under `exclude` in `.feynman/config.json` are never required. */
+/**
+ * Files under `exclude` in `.feynman/config.json` are never required. For a model
+ * of the working tree, a file counts as read only while it still has the content
+ * that was read: the hash its ledger entry records, or its content at the commit
+ * when the entry records none.
+ */
 export function computeCoverage(repository: string, modelDir: string): CoverageReport {
   if (!existsSync(join(modelDir, "meta.json"))) throw new CoverageError(`${modelDir}: no model. Bootstrap one first.`);
   const { meta } = loadModel(modelDir);
   const { exclude } = readConfig(modelDir);
   const commit = tryGit(repository, "rev-parse", meta.source?.commit ?? "");
   if (!commit) throw new CoverageError(`meta.source.commit ${meta.source?.commit} is not a commit in ${repository}`);
+  const snapshot = snapshotOf(repository, { ...meta.source, commit });
+  const present = new Set(snapshotFiles(snapshot, exclude));
 
   let mode: CoverageReport["mode"] = "bootstrap";
   let base: string | undefined;
@@ -62,16 +72,11 @@ export function computeCoverage(repository: string, modelDir: string): CoverageR
     if (!resolved || tryGit(repository, "merge-base", "--is-ancestor", resolved, commit) === null) {
       throw new CoverageError(`base ${baseRef} is not an ancestor of ${commit.slice(0, 7)}.`);
     }
-    required = [];
-    const pathspecs = exclude.length ? ["--", ...excludePathspecs(exclude)] : [];
-    for (const row of lines(git(repository, "diff", "--name-status", "--no-renames", resolved, commit, ...pathspecs))) {
-      const [status, path] = row.split("\t");
-      if (status === "D") deleted.push(path);
-      else required.push(path);
-    }
+    const diff = changedFiles(snapshot, resolved, exclude);
+    required = diff.changed;
+    deleted.push(...diff.deleted);
     // Hashes catch what the diff cannot, e.g. a base rewritten by a rebase.
-    outdated = outdatedElements(repository, modelDir, commit);
-    const present = new Set(trackedFiles(repository, commit, exclude));
+    outdated = outdatedElements(repository, modelDir, snapshot.worktree ? null : commit);
     for (const { files } of outdated) {
       for (const file of files) {
         if (present.has(file)) {
@@ -80,12 +85,12 @@ export function computeCoverage(repository: string, modelDir: string): CoverageR
       }
     }
   } else {
-    required = trackedFiles(repository, commit, exclude);
+    required = [...present];
   }
   // The model describes the repository; it is not part of what it describes.
   required = required.filter((path) => !path.startsWith(MODEL_ROOT));
 
-  const files = new Set<string>();
+  const entries = new Map<string, LedgerEntry>();
   const trees: string[] = [];
   const stale: string[] = [];
   const problems: string[] = [];
@@ -95,22 +100,30 @@ export function computeCoverage(repository: string, modelDir: string): CoverageR
       continue;
     }
     for (const entry of value.files ?? []) {
-      if (!entry.path.endsWith("/")) files.add(entry.path);
+      if (!entry.path.endsWith("/")) entries.set(entry.path, entry);
       else if (entry.outcome === "vendored" || entry.outcome === "generated" || entry.outcome === "development") trees.push(entry.path);
       else problems.push(`coverage/${batch}: ${entry.path} is a directory; only development, vendored, or generated trees may be listed whole`);
     }
   }
-  const covered = (path: string) => files.has(path) || trees.some((tree) => path.startsWith(tree));
-  const known = new Set(trackedFiles(repository, commit, exclude));
+  // In the working tree, a read only counts for the content that was read.
+  const current = snapshot.worktree ? snapshotBlobIds(snapshot, [...entries.keys()].filter((path) => present.has(path))) : null;
+  const committed = snapshot.worktree ? blobIds(repository, commit) : null;
+  const unchanged = (entry: LedgerEntry) =>
+    !current || entry.outcome !== "read" || (entry.hash ?? committed!.get(entry.path)) === current.get(entry.path);
+  const covered = (path: string) => {
+    const entry = entries.get(path);
+    return (entry !== undefined && unchanged(entry)) || trees.some((tree) => path.startsWith(tree));
+  };
   return {
     mode,
     commit,
+    worktree: snapshot.worktree,
     base,
     required,
     missing: required.filter((path) => !covered(path)),
     deleted,
     stale,
-    unknown: [...files].filter((path) => !known.has(path)),
+    unknown: [...entries.keys()].filter((path) => !present.has(path)),
     exclude,
     outdated,
     problems,
@@ -129,8 +142,8 @@ export function groupMissing(missing: string[]): [string, number][] {
 
 /** One line: "bootstrap at 66d8d86: 514 of 956 files reviewed". */
 export function describeCoverage(report: CoverageReport): string {
-  const where =
-    report.mode === "update" ? `update ${report.base!.slice(0, 7)}..${report.commit.slice(0, 7)}` : `bootstrap at ${report.commit.slice(0, 7)}`;
+  const at = `${report.commit.slice(0, 7)}${report.worktree ? " with uncommitted changes" : ""}`;
+  const where = report.mode === "update" ? `update ${report.base!.slice(0, 7)}..${at}` : `bootstrap at ${at}`;
   const excluding = report.exclude?.length ? ` (excluding ${report.exclude.join(", ")})` : "";
   return `${where}: ${report.required.length - report.missing.length} of ${report.required.length} files reviewed${excluding}`;
 }

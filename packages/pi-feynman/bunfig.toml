@@ -1,0 +1,3 @@
+[test]
+# Integration tests drive whole Pi sessions, with many git calls each.
+timeout = 30000

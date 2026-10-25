@@ -34,6 +34,10 @@
           "type": "string",
           "pattern": "^[0-9a-f]{7,40}$"
         },
+        "worktree": {
+          "type": "boolean",
+          "description": "The model describes the working tree on top of `commit`: the commit plus uncommitted changes, including untracked files."
+        },
         "url": {
           "type": "string",
           "description": "Browsable repository URL."

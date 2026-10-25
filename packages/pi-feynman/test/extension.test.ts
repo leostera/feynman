@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText, fauxToolCall, repository, startSession, type Harness } from "./harness.ts";
 
@@ -119,6 +119,22 @@ test("sets aside development, vendored, and generated files without reading them
   expect(development.text).toContain("Recorded 1 path(s) as development");
   expect(development.text).toContain("3 of 6 files read"); // vendor/lib.js, bun.lock, scripts/publish.sh
   expect(rejected.text).toContain("src/server.ts: say in note where it comes from");
+});
+
+test("extracts uncommitted work, recording what was read", async () => {
+  const cwd = repository(FILES);
+  writeFileSync(join(cwd, "src/server.ts"), "export const handle = () => 201;\n");
+  writeFileSync(join(cwd, "src/new.ts"), "export const fresh = true;\n");
+  harness = await startSession(cwd);
+  harness.respond([call("feynman_extract", {}), call("read", { path: "src/new.ts" }), stop()]);
+  await harness.session.prompt("Extract.");
+
+  expect(toolResults(harness)[0].text).toContain("with your uncommitted changes, covering 4 files");
+  const meta = JSON.parse(readFileSync(join(cwd, ".feynman/model/meta.json"), "utf8"));
+  expect(meta.source.worktree).toBe(true);
+  const [ledger] = readdirSync(join(cwd, ".feynman/model/coverage"));
+  const { files } = JSON.parse(readFileSync(join(cwd, ".feynman/model/coverage", ledger), "utf8"));
+  expect(files).toEqual([{ path: "src/new.ts", outcome: "read", hash: expect.stringMatching(/^[0-9a-f]{40}$/) }]);
 });
 
 test("blocks writing coverage ledgers directly", async () => {

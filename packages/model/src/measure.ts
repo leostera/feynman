@@ -3,7 +3,8 @@
 // and each element's `sources` (content hashes of the files it anchors).
 //
 // Agents decide which paths belong to a component (`components/<id>.json` → `footprint.paths`);
-// this only counts. Counts are taken at the model's commit, not the working tree.
+// this only counts. Counts are taken at the model's commit, or from the working tree
+// when the model includes uncommitted changes.
 import { readConfig } from "./config.ts";
 import { git, tryGit } from "./git.ts";
 import { KINDS, loadModel, writeElement, writeMeta } from "./model.ts";
@@ -38,8 +39,10 @@ export function measureModel(repository: string, modelDir: string, mainRef = "ma
 
   /** Text files and lines under `paths` at the model's commit. */
   const count = (paths: string[]) => {
-    // `git grep -c ''` prints `<commit>:<path>:<lines>` for every non-binary file.
-    const out = tryGit(repository, "grep", "-I", "-c", "", commit, "--", ...paths, ...pathspecExcludes) ?? "";
+    // `git grep -c ''` prints `[<commit>:]<path>:<lines>` for every non-binary file,
+    // at the commit or, for a model of the working tree, on disk (untracked files included).
+    const target = source.worktree ? ["--untracked"] : [commit];
+    const out = tryGit(repository, "grep", "-I", "-c", "", ...target, "--", ...paths, ...pathspecExcludes) ?? "";
     let files = 0;
     let lines = 0;
     for (const row of out.split("\n")) {

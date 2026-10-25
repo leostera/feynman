@@ -5,7 +5,7 @@ import { join, relative } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { existsSync } from "node:fs";
-import { tryGit } from "./git.ts";
+import { existsInSnapshot, readInSnapshot, snapshotOf } from "./snapshot.ts";
 import { modelAnchors, type ParsedAnchor } from "./anchors.ts";
 export { anchoredFiles, modelAnchors, parseAnchor } from "./anchors.ts";
 import { configPath } from "./config.ts";
@@ -97,16 +97,17 @@ function checkAnchors(model: Model, repository: string): string[] {
   const anchors: ParsedAnchor[] = modelAnchors(model);
   for (const component of model.components) for (const path of component.footprint?.paths ?? []) anchors.push({ file: path });
 
-  const commit: string = model.meta.source?.commit ?? "HEAD";
+  const snapshot = snapshotOf(repository, { commit: model.meta.source?.commit ?? "HEAD", worktree: model.meta.source?.worktree });
+  const where = `${snapshot.commit.slice(0, 7)}${snapshot.worktree ? " with uncommitted changes" : ""}`;
   const lineCounts = new Map<string, number>();
   const found = new Set<string>();
   for (const { file, start, end } of anchors) {
-    if (tryGit(repository, "cat-file", "-e", `${commit}:${file.replace(/\/$/, "")}`) === null) {
-      found.add(`missing path ${file} at ${commit.slice(0, 7)}`);
+    if (!existsInSnapshot(snapshot, file)) {
+      found.add(`missing path ${file} at ${where}`);
       continue;
     }
     if (!start) continue;
-    if (!lineCounts.has(file)) lineCounts.set(file, (tryGit(repository, "show", `${commit}:${file}`) ?? "").split("\n").length);
+    if (!lineCounts.has(file)) lineCounts.set(file, (readInSnapshot(snapshot, file) ?? "").split("\n").length);
     const last = end ?? start;
     if (last < start || last > lineCounts.get(file)!) found.add(`span ${start}-${last} outside ${file} (${lineCounts.get(file)} lines)`);
   }

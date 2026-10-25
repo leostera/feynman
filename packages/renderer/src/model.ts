@@ -5,6 +5,8 @@ export type Confidence = "high" | "medium" | "low";
 export interface Source {
   repository: string;
   commit: string;
+  /** The model includes uncommitted changes on top of `commit`. */
+  worktree?: boolean;
   url?: string;
   commitUrl?: string;
   /** URL template; `{path}` is replaced by an anchor path. */

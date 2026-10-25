@@ -50,6 +50,11 @@
           "note": {
             "type": "string",
             "description": "Required in spirit for vendored and generated: where it comes from."
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$",
+            "description": "For reads of a model of the working tree: the content hash (git blob id) of what was read. The read counts only while the file still has this content."
           }
         }
       }

@@ -9,15 +9,16 @@ import {
   checkModel,
   computeCoverage,
   describeCoverage,
-  git,
-  lines,
   loadModel,
   measureModel,
   readCoverage,
   recordReviewed,
+  workingTreeBlobIds,
   type CoverageReport,
+  type Snapshot,
   type LedgerEntry,
 } from "@feynman/model";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { Evidence, type Read } from "./evidence.ts";
 import { continuation, kickoff, type Situation } from "./messages.ts";
@@ -65,8 +66,8 @@ export class Extraction {
   readonly workspace: Workspace | null;
   private state: DriveState | null = null;
   private evidence: Evidence | null = null;
-  /** Files required at the modelled commit, and that commit; computed once per drive. */
-  private scope: { commit: string; required: Set<string> } | null = null;
+  /** What is modelled and the files required; computed once per drive. */
+  private scope: { snapshot: Snapshot; required: Set<string> } | null = null;
   private last: string | null = null;
   private stalls = 0;
 
@@ -120,7 +121,7 @@ export class Extraction {
   /** Record development, vendored, or generated files or trees (a path ending in `/`), which need not be read. */
   skip(paths: string[], outcome: SkipOutcome, note: string): { text: string; recorded: number; rejected: string[] } {
     const ws = this.requireWorkspace();
-    const { commit, required } = this.requireScope(ws);
+    const { snapshot, required } = this.requireScope(ws);
     const accepted: LedgerEntry[] = [];
     const rejected: string[] = [];
     for (const raw of paths) {
@@ -130,7 +131,7 @@ export class Extraction {
         rejected.push(`${path}: not a file this extraction needs (untracked, excluded by .feynman/config.json, or unchanged)`);
       } else accepted.push({ path, outcome, note });
     }
-    if (accepted.length) recordReviewed(ws.modelDir, this.options.ledger, commit, "Recorded in an agent session.", accepted);
+    if (accepted.length) recordReviewed(ws.modelDir, this.options.ledger, snapshot.commit, "Recorded in an agent session.", accepted);
     const report = computeCoverage(ws.repository, ws.modelDir);
     const text = [
       `Recorded ${accepted.length} path(s) as ${outcome}. ${describeCoverage(report).replace("reviewed", "read")}.`,
@@ -216,22 +217,26 @@ export class Extraction {
         this.setState({ ...this.state, phase });
       }
     }
-    const group = phase >= 2 ? nextGroup(model, report.missing, fileSizes(ws.repository, report.commit)) : null;
+    const group = phase >= 2 ? nextGroup(model, report.missing, fileSizes(ws.repository, report.missing)) : null;
     const gaps = phase === 1 ? actorGaps(model) : phase === 3 ? depthGaps(model) : [];
     return { phase, report, problems, gaps, group, entered };
   }
 
   private recordRead(files: string[]) {
     const ws = this.requireWorkspace();
-    const { commit, required } = this.requireScope(ws);
-    const entries = files.filter((file) => required.has(file)).map((path): LedgerEntry => ({ path, outcome: "read" }));
-    if (entries.length) recordReviewed(ws.modelDir, this.options.ledger, commit, "Read in an agent session.", entries);
+    const { snapshot, required } = this.requireScope(ws);
+    const read = files.filter((file) => required.has(file));
+    if (!read.length) return;
+    // In the working tree, record what was read, so later edits make the file unread again.
+    const hashes = snapshot.worktree ? workingTreeBlobIds(ws.repository, read) : null;
+    const entries = read.map((path): LedgerEntry => ({ path, outcome: "read", ...(hashes?.has(path) ? { hash: hashes.get(path) } : {}) }));
+    recordReviewed(ws.modelDir, this.options.ledger, snapshot.commit, "Read in an agent session.", entries);
   }
 
   private requireScope(ws: Workspace) {
     if (!this.scope) {
       const report = computeCoverage(ws.repository, ws.modelDir);
-      this.scope = { commit: report.commit, required: new Set(report.required) };
+      this.scope = { snapshot: { repository: ws.repository, commit: report.commit, worktree: report.worktree }, required: new Set(report.required) };
     }
     return this.scope;
   }
@@ -254,13 +259,15 @@ export class Extraction {
   }
 }
 
-/** Size in bytes of every file at `commit`. */
-function fileSizes(repository: string, commit: string): Map<string, number> {
+/** Size in bytes of each file on disk, which is what the agent reads. */
+function fileSizes(repository: string, files: string[]): Map<string, number> {
   const sizes = new Map<string, number>();
-  for (const row of lines(git(repository, "-c", "core.quotePath=false", "ls-tree", "-r", "-l", "--full-tree", commit))) {
-    const tab = row.indexOf("\t");
-    const size = Number(row.slice(0, tab).trim().split(/\s+/)[3]);
-    if (!Number.isNaN(size)) sizes.set(row.slice(tab + 1), size);
+  for (const file of files) {
+    try {
+      sizes.set(file, statSync(join(repository, file)).size);
+    } catch {
+      // Gone from disk; it counts as empty.
+    }
   }
   return sizes;
 }

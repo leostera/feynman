@@ -127,6 +127,11 @@ function SourceInfo() {
     <div className="flex items-center gap-2 text-xs text-kumo-subtle">
       <GitCommitIcon size={14} />
       {commit}
+      {source.worktree && (
+        <span title="Modelled from the working tree: this commit plus uncommitted changes. Source links show the commit.">
+          <Badge variant="warning">+ uncommitted changes</Badge>
+        </span>
+      )}
       {source.committedAt && <span title={source.committedAt}>committed {relativeTime(source.committedAt)}</span>}
       {position && main && (
         <span title={`Compared with ${main.ref} (${main.commit.slice(0, 7)}) ${relativeTime(main.checkedAt)}`}>

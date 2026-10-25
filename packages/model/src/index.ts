@@ -7,3 +7,4 @@ export * from "./index-model.ts";
 export { git, lines, tryGit, trackedFiles } from "./git.ts";
 export * from "./anchors.ts";
 export * from "./sources.ts";
+export * from "./snapshot.ts";

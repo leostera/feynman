@@ -92,6 +92,8 @@ export interface LedgerEntry {
   path: string;
   outcome: Outcome;
   note?: string;
+  /** For reads of the working tree: the content hash (git blob id) that was read. */
+  hash?: string;
 }
 export interface Ledger {
   commit: string;

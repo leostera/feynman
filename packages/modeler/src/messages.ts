@@ -11,12 +11,13 @@ const list = (items: string[], limit = LISTED) => [
 ];
 
 export function kickoff(start: Start, report: CoverageReport, phase: Phase, group: Group | null): string {
+  const at = `${start.commit.slice(0, 7)}${start.worktree ? " with your uncommitted changes" : ""}`;
   const scope =
     start.kind === "update"
-      ? `an update from ${start.base.slice(0, 7)} to ${start.commit.slice(0, 7)}, covering the ${report.required.length} files changed since`
+      ? `an update from ${start.base.slice(0, 7)} to ${at}, covering the ${report.required.length} files changed since`
       : start.kind === "bootstrap"
-        ? `a first snapshot at ${start.commit.slice(0, 7)}, covering ${report.required.length} tracked files`
-        : `resuming the ${start.mode} at ${start.commit.slice(0, 7)}; ${report.missing.length} of ${report.required.length} files are still unread`;
+        ? `a first snapshot at ${at}, covering ${report.required.length} files`
+        : `resuming the ${start.mode} at ${at}; ${report.missing.length} of ${report.required.length} files are still unread`;
   return [
     `Extract the Feynman model of this repository, following the modelling skill. This is ${scope}.`,
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
