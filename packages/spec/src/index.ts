@@ -23,3 +23,4 @@ export type {
 export * from "./engine.ts";
 export { Runner, runScenario } from "./run.ts";
 export type * from "./spec.ts";
+export { diffRuns, type RunDiff, type StepDiff, type StepStatus } from "./diff.ts";
