@@ -2,19 +2,19 @@
 // Fill the mechanical parts of a model from git: source links, commit age, position
 // relative to main, and code footprints (files and lines) for actors and the repository.
 //
-// Usage: node tools/measure.mjs <repository> <model.json> [--main <ref>]
+// Usage: node tools/measure.mjs <repository> <model-dir> [--main <ref>]
 //
-// Agents decide which paths belong to an actor (`actors[].footprint.paths`); this tool
+// Agents decide which paths belong to an actor (`actors/<id>.json` → `footprint.paths`); this tool
 // only counts. Counts are taken at the model's commit, not the working tree.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { KINDS, loadModel, writeElement, writeMeta } from "./model.mjs";
 
 // Paths never counted, unless the model lists its own `meta.source.footprint.excludes`.
 const DEFAULT_EXCLUDES = ["vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
 
-const [repository, modelPath, ...rest] = process.argv.slice(2);
-if (!repository || !modelPath) {
-  console.error("usage: measure <repository> <model.json> [--main <ref>]");
+const [repository, modelDir, ...rest] = process.argv.slice(2);
+if (!repository || !modelDir) {
+  console.error("usage: measure <repository> <model-dir> [--main <ref>]");
   process.exit(2);
 }
 const mainRef = rest[0] === "--main" && rest[1] ? rest[1] : "main";
@@ -28,7 +28,7 @@ const tryGit = (...args) => {
   }
 };
 
-const model = JSON.parse(readFileSync(modelPath, "utf8"));
+const model = loadModel(modelDir);
 const source = model.meta.source;
 const excludes = source.footprint?.excludes ?? DEFAULT_EXCLUDES;
 const EXCLUDES = excludes.map((pattern) => `:!${pattern}`);
@@ -55,7 +55,9 @@ for (const actor of model.actors) {
   Object.assign(actor.footprint, count(actor.footprint.paths));
 }
 
-writeFileSync(modelPath, JSON.stringify(model, null, 2) + "\n");
+writeMeta(modelDir, model.meta);
+const actorKind = KINDS.find((kind) => kind.key === "actors");
+for (const actor of model.actors) if (actor.footprint) writeElement(modelDir, actorKind, actor);
 console.log(
   `measured ${model.actors.filter((actor) => actor.footprint).length} actors; repository ${source.footprint.lines} lines` +
     (source.main ? `; ${source.main.behind} behind / ${source.main.ahead} ahead of ${mainRef}` : ""),

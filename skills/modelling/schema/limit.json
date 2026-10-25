@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:limit",
+  "title": "Limit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject",
+    "value",
+    "kind",
+    "anchors"
+  ],
+  "properties": {
+    "subject": {
+      "type": "string"
+    },
+    "value": {
+      "type": [
+        "string",
+        "number"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "size",
+        "count",
+        "timeout",
+        "interval",
+        "rate",
+        "latency",
+        "depth"
+      ]
+    },
+    "anchors": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    },
+    "about": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:feynman:common#/$defs/path"
+      },
+      "description": "Actors, protocols, or flows the limit applies to."
+    },
+    "epistemic": {
+      "enum": [
+        "stated",
+        "measured"
+      ],
+      "description": "stated: a constant in the code. measured: observed by running it."
+    }
+  },
+  "description": "model/limits/<id>.json: a bound the system imposes or was observed to hit."
+}

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:flow",
+  "title": "Flow",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "trigger",
+    "steps",
+    "anchors"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actor",
+          "action"
+        ],
+        "description": "One semantic action in a flow, performed by `actor`, optionally directed at `target`.",
+        "properties": {
+          "actor": {
+            "$ref": "urn:feynman:common#/$defs/ref"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "urn:feynman:common#/$defs/ref"
+          },
+          "ref": {
+            "$ref": "urn:feynman:common#/$defs/ref",
+            "description": "A sub-flow this step delegates to."
+          },
+          "protocol": {
+            "$ref": "urn:feynman:common#/$defs/ref",
+            "description": "The protocol this step speaks or parses."
+          },
+          "properties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Guarantees and conditions: transactional, idempotent, retried, bounded, under a lock, etc."
+          }
+        }
+      }
+    },
+    "anchors": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    },
+    "confidence": {
+      "$ref": "urn:feynman:common#/$defs/confidence"
+    }
+  }
+}

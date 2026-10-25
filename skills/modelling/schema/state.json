@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:state",
+  "title": "State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "owner",
+    "summary",
+    "lifetime",
+    "anchors"
+  ],
+  "properties": {
+    "owner": {
+      "$ref": "urn:feynman:common#/$defs/ref"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "lifetime": {
+      "type": "string"
+    },
+    "anchors": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    }
+  }
+}

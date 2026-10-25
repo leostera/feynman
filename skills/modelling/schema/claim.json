@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:claim",
+  "title": "Claim",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "statement",
+    "status",
+    "epistemic",
+    "evidence"
+  ],
+  "properties": {
+    "statement": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "supported",
+        "partially-supported",
+        "contradicted",
+        "unverified"
+      ],
+      "description": "How the evidence relates to the statement."
+    },
+    "epistemic": {
+      "enum": [
+        "stated",
+        "inferred",
+        "measured"
+      ],
+      "description": "stated: written in code, docs or tests; inferred: derived by reading code; measured: observed at runtime."
+    },
+    "note": {
+      "type": "string"
+    },
+    "evidence": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    },
+    "about": {
+      "type": "array",
+      "items": {
+        "$ref": "urn:feynman:common#/$defs/path"
+      },
+      "description": "Elements the claim is about (actors, flows, invariants, …)."
+    }
+  },
+  "description": "model/claims/<id>.json: a statement believed about the system, with the evidence and how it was established."
+}

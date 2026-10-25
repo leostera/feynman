@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:state-machine",
+  "title": "State machine",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "anchors"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "anchors": {
+      "$ref": "urn:feynman:common#/$defs/anchors"
+    }
+  }
+}

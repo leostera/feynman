@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:feynman:meta",
+  "title": "Model metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "system",
+    "summary",
+    "source",
+    "extraction"
+  ],
+  "properties": {
+    "system": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "url": {
+          "type": "string",
+          "description": "Browsable repository URL."
+        },
+        "commitUrl": {
+          "type": "string",
+          "description": "Browsable URL of the modelled commit."
+        },
+        "fileUrl": {
+          "type": "string",
+          "description": "Browsable URL template for a file at the modelled commit; `{path}` is replaced by an anchor path."
+        },
+        "committedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "main": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref",
+            "commit",
+            "ahead",
+            "behind",
+            "checkedAt"
+          ],
+          "description": "Position of the modelled commit relative to the main branch when last measured.",
+          "properties": {
+            "ref": {
+              "type": "string"
+            },
+            "commit": {
+              "type": "string"
+            },
+            "ahead": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "behind": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "checkedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "footprint": {
+          "$ref": "urn:feynman:common#/$defs/repositoryFootprint"
+        }
+      }
+    },
+    "extractedBy": {
+      "type": "string"
+    },
+    "extraction": {
+      "enum": [
+        "bootstrap",
+        "update"
+      ]
+    },
+    "coverage": {
+      "type": "string",
+      "description": "What was and was not read in depth."
+    },
+    "extractedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "description": "model/meta.json: what was modelled, from where, and how."
+}
