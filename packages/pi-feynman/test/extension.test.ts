@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, fauxText, fauxToolCall, repository, startSession, type Harness } from "./harness.ts";
 
@@ -40,11 +41,10 @@ const stop = (text = "Done.") => fauxAssistantMessage(fauxText(text));
 const toolResults = (h: Harness) =>
   h.session.messages.filter((m) => m.role === "toolResult").map((m) => ({ tool: m.toolName, error: m.isError, text: JSON.stringify(m.content) }));
 
-test("guides the agent through actors, groups of connected actors, and depth", async () => {
-  const cwd = repository(FILES);
-  harness = await startSession(cwd);
+/** A whole extraction of FILES, as the agent would run it, starting with the feynman_extract tool. */
+const fullRun = (cwd: string) => {
   const meta = () => JSON.parse(readFileSync(join(cwd, ".feynman/model/meta.json"), "utf8"));
-  harness.respond([
+  return [
     call("feynman_extract", {}),
     // Phase 1: an actor map, but the server talks to nobody yet.
     () => write("meta.json", { ...meta(), summary: "Posts notes to a size-limited server." }),
@@ -68,7 +68,13 @@ test("guides the agent through actors, groups of connected actors, and depth", a
     stop("Read the rest."),
     // Phase 3 starts with its instructions; nothing is thin, so the next stop finishes.
     stop("The model is precise."),
-  ]);
+  ];
+};
+
+test("guides the agent through actors, groups of connected actors, and depth", async () => {
+  const cwd = repository(FILES);
+  harness = await startSession(cwd);
+  harness.respond(fullRun(cwd));
 
   await harness.session.prompt("Extract the Feynman model.");
 
@@ -98,6 +104,37 @@ test("guides the agent through actors, groups of connected actors, and depth", a
     { path: "src/client.ts", outcome: "read" },
     { path: "src/server.ts", outcome: "read" },
   ]);
+});
+
+test("/feynman-explain renders the model and opens it once the extraction is done", async () => {
+  const cwd = repository(FILES);
+  // A fake `open` (and `xdg-open`) that records what it was asked to open.
+  const bin = mkdtempSync(join(tmpdir(), "feynman-bin-"));
+  const opened = join(bin, "opened");
+  for (const name of ["open", "xdg-open"]) {
+    writeFileSync(join(bin, name), `#!/bin/sh\necho "$1" >> "${opened}"\n`);
+    chmodSync(join(bin, name), 0o755);
+  }
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}:${path}`;
+  try {
+    harness = await startSession(cwd);
+    // The agent also calls feynman_extract after the command's kickoff; that must not drop the request to explain.
+    harness.respond(fullRun(cwd));
+    await harness.session.prompt("/feynman-explain");
+    // The command queues its kickoff as a user message; wait for the agent to finish with it.
+    while (harness.pending() > 0) await new Promise((resolve) => setTimeout(resolve, 10));
+    await harness.session.waitForIdle();
+
+    const done = harness.customMessages("feynman-coverage").at(-1)!;
+    const html = join(realpathSync(cwd), ".feynman/index.html");
+    expect(done).toContain(`Rendered and opened ${html}`);
+    expect(readFileSync(html, "utf8")).toContain('id="feynman-model"');
+    for (let i = 0; i < 100 && !existsSync(opened); i++) await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(readFileSync(opened, "utf8").trim()).toBe(html);
+  } finally {
+    process.env.PATH = path;
+  }
 });
 
 test("sets aside development, vendored, and generated files without reading them", async () => {

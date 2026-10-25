@@ -70,7 +70,7 @@ export default function feynman(pi: ExtensionAPI) {
     const decision = current(ctx).onStop();
     if (!decision) return;
     if (decision.kind === "paused") {
-      ctx.ui.notify(`${decision.message} Run /feynman-extract to resume.`, "warning");
+      ctx.ui.notify(`${decision.message} Run /feynman-extract or /feynman-explain to resume.`, "warning");
       return;
     }
     let content = decision.message;

@@ -117,9 +117,12 @@ export class Extraction {
 
   /**
    * Prepare the model at HEAD, start driving, and return the agent's instructions.
-   * With `explain`, finishing asks the adapter to render and show the model.
+   * With `explain`, finishing asks the adapter to render and show the model. Beginning
+   * again while driving (the agent calls the extract tool after `/feynman-explain`)
+   * keeps that request.
    */
   begin({ explain = false }: { explain?: boolean } = {}): string {
+    explain ||= this.state?.explain ?? false;
     const ws = this.requireWorkspace();
     const start = startExtraction(ws);
     // A fresh model starts by mapping actors; with actors already modelled, by reading groups.
@@ -283,7 +286,9 @@ function isDone({ phase, entered, report, problems, gaps }: Situation): boolean 
 
 function parseDriveState(saved: unknown): DriveState | null {
   if (!saved || typeof saved !== "object") return null;
-  const { repository, modelDir, phase, explain } = saved as Record<string, unknown>;
+  const { repository, modelDir, phase, explain, active } = saved as Record<string, unknown>;
+  // Entries written before the state became null when stopped say `active: false`.
+  if (active === false) return null;
   if (typeof repository !== "string" || typeof modelDir !== "string" || (phase !== 1 && phase !== 2 && phase !== 3)) return null;
   return { repository, modelDir, phase, explain: explain === true };
 }
