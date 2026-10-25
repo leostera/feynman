@@ -58,5 +58,17 @@
     "footprint": {
       "$ref": "urn:feynman:common#/$defs/actorFootprint"
     }
+  },
+  "if": {
+    "properties": {
+      "provenance": {
+        "const": "first-party"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "footprint"
+    ]
   }
 }
