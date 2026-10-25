@@ -4,15 +4,17 @@
 //
 // Agents decide which paths belong to a component (`footprint.paths`); this only
 // counts, in the modelled snapshot.
+import { spawnSync } from "node:child_process";
 import { readConfig } from "./config.ts";
+import { MODEL_ROOT } from "./coverage.ts";
 import { git, tryGit } from "./git.ts";
 import { KINDS, loadModel, writeElement, writeMeta } from "./model.ts";
 import { pathspecs, snapshotOf, type Snapshot } from "./snapshot.ts";
 import { stampSources } from "./sources.ts";
 import type { Footprint, Source } from "./types.ts";
 
-/** Never counted as code: dependency copies and lockfiles. */
-const NOT_CODE = ["vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
+/** Never counted as code: the model itself, dependency copies, and lockfiles. */
+const NOT_CODE = [MODEL_ROOT, "vendor/", "third_party/", "*.lock", "package-lock.json", "*.lock.json"];
 
 /** Measure the model in place; returns a one-line summary. */
 export function measureModel(repository: string, modelDir: string, mainRef = "main"): string {
@@ -57,9 +59,12 @@ function mainPosition(repository: string, commit: string, ref: string): Source["
 /** Text files and lines under `paths` in the snapshot. */
 function countLines(snapshot: Snapshot, paths: string[], excludes: string[]): Pick<Footprint, "files" | "lines"> {
   // `git grep -c ''` prints `[<commit>:]<path>:<lines>` for every non-binary file.
-  const target = snapshot.worktree ? ["--untracked"] : [snapshot.commit];
+  // Options go before the pattern and the revision after it; exit status 1 means no files matched.
+  const [options, revision] = snapshot.worktree ? [["--untracked"], []] : [[], [snapshot.commit]];
   const scope = [...paths, ...pathspecs(excludes).slice(1)];
-  const out = tryGit(snapshot.repository, "grep", "-I", "-c", "", ...target, "--", ...scope) ?? "";
+  const grep = spawnSync("git", ["-C", snapshot.repository, "grep", "-I", "-c", ...options, "", ...revision, "--", ...scope], { encoding: "utf8", maxBuffer: 1 << 28 });
+  if (grep.status !== 0 && grep.status !== 1) throw new Error(`git grep failed: ${grep.stderr.trim()}`);
+  const out = grep.stdout;
   let files = 0;
   let lines = 0;
   for (const row of out.split("\n")) {
