@@ -226,7 +226,19 @@ function runStep(spec: Spec, before: World, run: Running): Step {
   }
   const changes = diff(self.id, self.state, state);
   self.state = state;
-  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes });
+  const text = sentence(run.step, state, run.kind === "action" ? run.inputs : run.delivery?.payload);
+  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}) });
+}
+
+/** The step's `say` for this event; a `say` that throws is left out rather than failing the step. */
+function sentence(step: StepInfo, state: unknown, payload: unknown): string | undefined {
+  if (!step.say) return undefined;
+  try {
+    const text = step.say(state, payload);
+    return typeof text === "string" && text ? text : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo, step: StepInfo, effects: { sent: Sent[]; started: { timer: string; at: number }[]; cancelled: string[]; notes: string[] }, from?: InstanceState) {
@@ -245,6 +257,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
   return {
     id: self.id,
     label: self.label,
+    self: view.instance(self),
     now: world.clock,
     from: from ? view.instance(from) : undefined,
     the: view.the,
@@ -287,7 +300,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
 }
 
 /** Number the event, and check every `always` invariant on the world after it. */
-function finish(spec: Spec, before: World, after: World, partial: Omit<Event, "index" | "at" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes">>): Step {
+function finish(spec: Spec, before: World, after: World, partial: Omit<Event, "index" | "at" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes" | "text">>): Step {
   const world = { ...after, seq: Math.max(after.seq, before.seq) + 1 };
   const event: Event = {
     index: world.seq,

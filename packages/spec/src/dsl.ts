@@ -3,6 +3,7 @@
 import type {
   ActionInfo,
   ActorInfo,
+  InputInfo,
   InvariantInfo,
   LimitInfo,
   MessageInfo,
@@ -19,6 +20,50 @@ export const MIN = 60 * SEC;
 export type Source = `${string}#${string}` | `${string}:${number}-${number}`;
 
 export type Tone = "request" | "reply" | "refused" | "stream";
+
+// How things look -----------------------------------------------------------------------------
+//
+// Presentation is data on the actor, read by the explorer: an icon, a status line, a mood that
+// colours it, rows that show its state as structure, and the live links it holds. These
+// functions read only the actor's own state, so actors never need each other's types here.
+
+/** What an actor is drawn as. */
+export type Icon =
+  | "person" | "people" | "phone" | "laptop" | "desktop" | "browser" | "server" | "cloud" | "database"
+  | "shield" | "key" | "lock" | "terminal" | "robot" | "queue" | "folder" | "file" | "sheet" | "globe"
+  | "gear" | "camera" | "video" | "mail" | "bell" | "clock" | "cpu" | "box" | "plug" | "wifi" | "chat"
+  | "router" | "storage" | "code" | "pipeline" | "eye" | "card";
+
+/** How things are going: colours a node, a row, or a link. */
+export type Mood = "ok" | "warn" | "bad" | "busy" | "off" | "info";
+
+/** One line of an actor's state, shown as structure: a host, an account, a file. */
+export interface Row {
+  label: string;
+  detail?: string;
+  mood?: Mood;
+  /** Rows with the same group are boxed together under it: "Alice's account". */
+  group?: string;
+}
+
+export interface Look<S> {
+  icon?: Icon;
+  /** A few words under the name: "connected", "not linked", "watching Studio". */
+  status?: (state: Readonly<S>) => string;
+  mood?: (state: Readonly<S>) => Mood;
+  rows?: (state: Readonly<S>) => Row[];
+}
+
+/** A live connection an instance holds: a socket, a session, a subscription. */
+export interface Link {
+  /** An instance id, an instance label, or the name of a singleton actor. */
+  to: string;
+  /** What it is: "websocket", "session"; links of one kind share a style. */
+  kind?: string;
+  label?: string;
+  mood?: Mood;
+  style?: "solid" | "dashed" | "dotted";
+}
 
 // Messages ----------------------------------------------------------------------------------
 
@@ -82,9 +127,10 @@ export interface World {
 // What a step can do ------------------------------------------------------------------------------
 
 export interface Ctx<M extends Registry, Sends extends MessageKey<M>, Starts extends string> {
-  /** This instance's id and label. */
+  /** This instance's id and label, and the instance itself, to send to yourself. */
   readonly id: string;
   readonly label: string;
+  readonly self: Instance<unknown, unknown>;
   /** Simulated time, in milliseconds. */
   readonly now: number;
   the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
@@ -113,7 +159,7 @@ export interface ReplyCtx<M extends Registry, Sends extends MessageKey<M>, Start
 // Transitions and actions -------------------------------------------------------------------------
 
 interface StepFields<M extends Registry, Sends extends MessageKey<M>, Starts extends string> {
-  /** In everyday words, what the step does. */
+  /** In everyday words, what the step does, in general. */
   description: string;
   sources: Source[];
   sends?: Sends[];
@@ -123,6 +169,8 @@ interface StepFields<M extends Registry, Sends extends MessageKey<M>, Starts ext
 export interface MessageTransition<M extends Registry, S, P, Sends extends MessageKey<M> = never, Starts extends string = never>
   extends StepFields<M, Sends, Starts> {
   run(state: S, msg: P, ctx: ReplyCtx<M, Sends, Starts>): void;
+  /** What happened this time, as the timeline says it, from the state after the step: "Made code 19YP for alice". */
+  say?: (state: Readonly<S>, msg: P) => string;
 }
 
 export interface InternalTransition<M extends Registry, S, Sends extends MessageKey<M> = never, Starts extends string = never>
@@ -130,6 +178,8 @@ export interface InternalTransition<M extends Registry, S, Sends extends Message
   /** When set, the transition can run whenever this holds, not only as a timer. */
   when?: (state: Readonly<S>) => boolean;
   run(state: S, ctx: Ctx<M, Sends, Starts>): void;
+  /** What happened this time, as the timeline says it, from the state after the step. */
+  say?: (state: Readonly<S>) => string;
 }
 
 // Inputs --------------------------------------------------------------------------------------------
@@ -142,7 +192,7 @@ declare const INPUT: unique symbol;
 export interface InputDef<T = InputType> {
   readonly [INPUT]: true;
   type: T;
-  examples?: (world: World) => ValueOf<T>[];
+  examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[];
 }
 
 type ValueOf<T> = T extends StringConstructor
@@ -166,6 +216,8 @@ export interface ActionDef<M extends Registry, S, I, Sends extends MessageKey<M>
   /** When set, the action is offered only while this holds. */
   when?: (state: Readonly<S>) => boolean;
   run(state: S, inputs: InputsOf<I>, ctx: Ctx<M, Sends, Starts>): void;
+  /** What happened this time, as the timeline says it, from the state after the step. */
+  say?: (state: Readonly<S>, inputs: InputsOf<I>) => string;
 }
 
 // Declarations ----------------------------------------------------------------------------------------
@@ -206,6 +258,9 @@ interface ActorDef<M extends Registry, S, A, T> {
   initialState: (ctx: { id: string; label: string }) => S;
   /** State that survives a restart; everything else returns to its initial value. */
   durable?: (keyof S & string)[];
+  look?: Look<NoInfer<S>>;
+  /** The live connections an instance holds now, from its own state. */
+  links?: (state: Readonly<NoInfer<S>>, self: { id: string; label: string }) => Link[];
   actions?: ActionsFor<M, NoInfer<S>, A>;
   transitions?: TransitionsFor<M, NoInfer<S>, T>;
 }
@@ -251,8 +306,11 @@ type ActionsWithoutInputs<A> = [NoInputs<A>] extends [never]
 
 export interface Script {
   spawn<X extends Actor<any, any>>(actor: X, label: string): Instance<StateOf<X>, ActionsOf<X>>;
+  /** The one instance of an actor (a singleton, or the only one spawned). */
+  the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
+  all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
   /** Take an action that has no inputs. */
-  act<S, A>(who: Instance<S, A>, action: ActionsWithoutInputs<A>): void;
+  act<S, A>(who: Instance<S, A>, action: ActionsWithoutInputs<A>, inputs?: Record<string, never>): void;
   /** Take an action with its inputs. */
   act<S, A, K extends ActionsWithInputs<A>>(who: Instance<S, A>, action: K, inputs: ActionInputs<A, K>): void;
   /** Run what is due within `horizon` milliseconds (a minute by default), in time order. */
@@ -275,7 +333,7 @@ export interface SpecBuilder<M extends Registry> {
   defineLimit(def: { name: string; value: number; unit?: string; sources: Source[] }): Limit;
   defineActor<S, A = {}, T = {}>(def: ActorDef<M, S, A, T>): Actor<S, A>;
   /** An action input: its type, and the example values the playground offers and the checker tries. */
-  defineInput<const T extends InputType>(type: T, options?: { examples?: (world: World) => ValueOf<T>[] }): InputDef<T>;
+  defineInput<const T extends InputType>(type: T, options?: { examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[] }): InputDef<T>;
   defineInvariants(defs: Record<string, InvariantDef>): void;
   defineScenario(def: { name: string; description?: string; run(script: Script): void }): void;
 }
@@ -346,6 +404,7 @@ interface RawStep {
   starts?: string[];
   when?: (state: unknown) => boolean;
   run: (...args: never[]) => void;
+  say?: (state: unknown, payload: unknown) => string;
 }
 
 interface RawActor {
@@ -355,12 +414,15 @@ interface RawActor {
   singleton?: boolean;
   initialState: ActorInfo["initialState"];
   durable?: string[];
+  look?: ActorInfo["look"];
+  links?: ActorInfo["links"];
   actions?: Record<string, RawStep & { label: string; inputs?: Record<string, { type: InputType; examples?: unknown }> }>;
   transitions?: Record<string, RawStep>;
 }
 
 function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
   if (spec.actors.some((actor) => actor.name === raw.name)) throw new Error(`Two actors are named "${raw.name}"`);
+  if (raw.durable !== undefined && !Array.isArray(raw.durable)) throw new Error(`${raw.name}: durable lists state fields, like durable: ["codes"]`);
   const actions: Record<string, ActionInfo> = {};
   for (const [key, step] of Object.entries(raw.actions ?? {})) {
     actions[key] = {
@@ -371,10 +433,11 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       sends: step.sends ?? [],
       starts: step.starts ?? [],
       when: step.when,
+      say: step.say,
       inputs: Object.fromEntries(
         Object.entries(step.inputs ?? {}).map(([name, input]) => [
           name,
-          { type: inputKind(input.type), values: Array.isArray(input.type) ? [...input.type] : undefined, examples: typeof input.examples === "function" ? (input.examples as never) : undefined },
+          { type: inputKind(input.type), values: Array.isArray(input.type) ? [...input.type] : undefined, examples: examplesOf(input.examples) },
         ]),
       ),
       run: step.run as ActionInfo["run"],
@@ -392,6 +455,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       sends: step.sends ?? [],
       starts: step.starts ?? [],
       when: step.when,
+      say: step.say,
       run: step.run as TransitionInfo["run"],
     };
   }
@@ -402,9 +466,17 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
     singleton: raw.singleton ?? false,
     initialState: raw.initialState,
     durable: raw.durable ?? [],
+    look: raw.look ?? {},
+    links: raw.links,
     actions,
     transitions,
   };
+}
+
+function examplesOf(examples: unknown): InputInfo["examples"] {
+  if (typeof examples === "function") return examples as never;
+  if (Array.isArray(examples)) return () => [...examples];
+  return undefined;
 }
 
 function inputKind(type: InputType): "string" | "number" | "boolean" | "choice" {

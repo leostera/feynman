@@ -3,11 +3,38 @@
 // Nothing is placed by hand; the layout depends only on which instances exist.
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk.bundled.js";
-import type { Spec, World } from "@feynman/spec";
+import { appearance, type Spec, type World } from "@feynman/spec";
 
-export const NODE_W = 216;
-export const NODE_H = 112;
-export const GHOST_H = 44;
+/** The icon column of every node. */
+export const ICON_W = 136;
+export const NODE_H = 116;
+/** A card beside the icon, for actors with rows that are not singletons (a Mac's host_link). */
+export const SIDE_W = 168;
+/** A card under the icon, for singletons with rows (the relay's accounts). */
+export const HUB_W = 340;
+export const HUB_H = 180;
+
+export type NodeShape = "plain" | "side" | "hub";
+
+export function shapeOf(actor: { singleton: boolean; look: { rows?: unknown } }): NodeShape {
+  if (!actor.look.rows) return "plain";
+  return actor.singleton ? "hub" : "side";
+}
+
+/** A hub grows with its rows: the icon, then each group's header and up to six rows. */
+export function hubHeight(rows: { group?: string }[]): number {
+  const groups = new Map<string, number>();
+  for (const r of rows) groups.set(r.group ?? "", (groups.get(r.group ?? "") ?? 0) + 1);
+  let h = 132;
+  for (const [group, n] of groups) h += (group ? 34 : 0) + Math.min(n, 6) * 31 + (n > 6 ? 20 : 0) + 10;
+  return Math.max(HUB_H, h);
+}
+
+export function sizeOf(shape: NodeShape, rows: { group?: string }[] = []): { width: number; height: number } {
+  if (shape === "hub") return { width: HUB_W, height: hubHeight(rows) };
+  if (shape === "side") return { width: ICON_W + SIDE_W, height: NODE_H };
+  return { width: ICON_W, height: NODE_H };
+}
 
 export interface Box {
   x: number;
@@ -20,7 +47,7 @@ export interface Layout {
   width: number;
   height: number;
   zones: (Box & { name: string })[];
-  /** Instances by id; ghosts (to add an instance of an actor) by `+Actor`. */
+  /** Instances by id. */
   nodes: Map<string, Box>;
   /** By `a|b`, sorted ids: the route between them. */
   edges: Map<string, { x: number; y: number }[]>;
@@ -45,45 +72,43 @@ export function edgeKey(a: string, b: string): string {
   return [a, b].sort().join("|");
 }
 
+/** What the layout depends on: which instances exist, and how tall each hub is. */
 export function layoutKey(spec: Spec, world: World): string {
-  return `${spec.name}:${world.instances.map((i) => i.id).join(",")}`;
+  const hubs = world.instances.filter((i) => shapeOf(spec.actors.find((a) => a.name === i.actor)!) === "hub").map((i) => hubHeight(appearance(spec, world, i.id).rows));
+  return `${spec.name}:${world.instances.map((i) => i.id).join(",")}:${hubs.join(",")}`;
 }
 
 export async function layout(spec: Spec, world: World): Promise<Layout> {
   const links = actorLinks(spec);
   const byActor = new Map<string, string[]>();
   for (const i of world.instances) byActor.set(i.actor, [...(byActor.get(i.actor) ?? []), i.id]);
-  const ghosts = spec.actors.filter((a) => !a.singleton);
 
   const zones: ElkNode[] = spec.zones.map((zone) => ({
     id: `zone:${zone.name}`,
-    layoutOptions: { "elk.padding": "[top=40,left=20,bottom=20,right=20]", "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.spacing.nodeNode": "24" },
-    children: [
-      ...world.instances.filter((i) => zoneOf(spec, i.actor) === zone.name).map((i) => ({ id: i.id, width: NODE_W, height: NODE_H })),
-      ...ghosts.filter((a) => a.zone === zone.name).map((a) => ({ id: `+${a.name}`, width: NODE_W, height: GHOST_H })),
-    ],
+    layoutOptions: { "elk.padding": "[top=48,left=28,bottom=28,right=28]", "elk.algorithm": "layered", "elk.direction": "DOWN", "elk.spacing.nodeNode": "28" },
+    children: world.instances
+      .filter((i) => zoneOf(spec, i.actor) === zone.name)
+      .map((i) => {
+        const shape = shapeOf(spec.actors.find((a) => a.name === i.actor)!);
+        return { id: i.id, ...sizeOf(shape, shape === "hub" ? appearance(spec, world, i.id).rows : []) };
+      }),
   }));
   const edges: ElkExtendedEdge[] = [];
   for (const [a, b] of links) {
     // Lay out left to right in the order zones were declared.
     const [from, to] = zoneIndex(spec, a) <= zoneIndex(spec, b) ? [a, b] : [b, a];
     for (const x of byActor.get(from) ?? []) for (const y of byActor.get(to) ?? []) edges.push({ id: `${x}->${y}`, sources: [x], targets: [y] });
-    // Ghosts sit beside the instances they would talk to.
-    for (const actor of [from, to]) {
-      const ghost = ghosts.find((g) => g.name === actor);
-      const other = actor === from ? to : from;
-      if (ghost) for (const y of byActor.get(other) ?? []) edges.push({ id: `+${actor}->${y}`, sources: actor === from ? [`+${actor}`] : [y], targets: actor === from ? [y] : [`+${actor}`] });
-    }
   }
   const graph: ElkNode = {
     id: "root",
     layoutOptions: {
+      "elk.padding": "[top=28,left=12,bottom=12,right=12]",
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "96",
-      "elk.spacing.nodeNode": "48",
-      "elk.edgeRouting": "SPLINES",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "120",
+      "elk.spacing.nodeNode": "56",
+      "elk.edgeRouting": "POLYLINE",
       "elk.json.shapeCoords": "ROOT",
       "elk.json.edgeCoords": "ROOT",
     },
@@ -98,7 +123,7 @@ export async function layout(spec: Spec, world: World): Promise<Layout> {
   }
   for (const edge of out.edges ?? []) {
     const [section] = edge.sections ?? [];
-    if (!section || edge.sources[0].startsWith("+") || edge.targets[0].startsWith("+")) continue;
+    if (!section) continue;
     result.edges.set(edgeKey(edge.sources[0], edge.targets[0]), [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]);
   }
   return result;

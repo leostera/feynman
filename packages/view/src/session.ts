@@ -3,14 +3,15 @@
 // the (possibly edited) spec.
 import { act, fire, guard, lose, pendingInOrder, restart, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "@feynman/spec";
 
-export type Op =
+/** What a person did in the playground; `at` is when, so time spent watching counts. */
+export type Op = (
   | { op: "spawn"; actor: string; label: string }
   | { op: "act"; instance: string; key: string; inputs: Record<string, unknown> }
   | { op: "fire"; pending: number }
   | { op: "lose"; pending: number }
   | { op: "guard"; instance: string; key: string }
   | { op: "restart"; instance: string }
-  | { op: "wait"; until: number };
+) & { at?: number };
 
 export interface Step {
   event: Event | null;
@@ -28,7 +29,7 @@ export interface Session {
 
 export function freshSession(spec: Spec): Session {
   const steps = startWorld(spec);
-  return { initial: steps.at(-1)?.world ?? emptyWorld(), steps: [], ops: [], origin: "Empty world" };
+  return { initial: steps.at(-1)?.world ?? emptyWorld(), steps: [], ops: [], origin: "Fresh start" };
 }
 
 export function sessionFromRun(run: Pick<Run, "initial" | "events" | "worlds">, origin: string): Session {
@@ -41,7 +42,8 @@ export function current(session: Session): World {
 
 /** Apply one operation; the engine records spec bugs on the event rather than throwing. */
 export function apply(spec: Spec, session: Session, op: Op): Session {
-  const world = current(session);
+  const now = current(session);
+  const world = op.at !== undefined && op.at > now.clock ? { ...now, clock: op.at } : now;
   const step = run(spec, world, op);
   return { ...session, steps: [...session.steps, step], ops: session.ops ? [...session.ops, op] : null };
 }
@@ -60,8 +62,6 @@ function run(spec: Spec, world: World, op: Op): Step {
       return guard(spec, world, op.instance, op.key);
     case "restart":
       return restart(spec, world, op.instance);
-    case "wait":
-      return { event: null, world: { ...world, clock: Math.max(world.clock, op.until) } };
   }
 }
 

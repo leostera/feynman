@@ -1,6 +1,6 @@
 // What a spec is at runtime, and what the engine produces: plain data that views, the
 // checker, and diffs read. Functions (initial state, run, predicates) are the only code.
-import type { Script, Trace, TraceEvent, World as WorldView } from "./dsl.ts";
+import type { Link, Look, Script, Trace, TraceEvent, World as WorldView } from "./dsl.ts";
 
 export interface Spec {
   name: string;
@@ -43,6 +43,8 @@ export interface LimitInfo {
 export interface StepInfo {
   key: string;
   description: string;
+  /** The sentence for one event, from the state after it and the step's payload. */
+  say?: (state: unknown, payload: unknown) => string;
   sources: string[];
   sends: string[];
   starts: string[];
@@ -75,6 +77,8 @@ export interface ActorInfo {
   singleton: boolean;
   initialState: (ctx: { id: string; label: string }) => unknown;
   durable: string[];
+  look: Look<unknown>;
+  links?: (state: unknown, self: { id: string; label: string }) => Link[];
   actions: Record<string, ActionInfo>;
   transitions: Record<string, TransitionInfo>;
 }
@@ -183,6 +187,8 @@ export interface Event {
   cancelled: string[];
   /** Notes and send texts, in everyday words. */
   notes: string[];
+  /** What happened this time, in a sentence, from the step's `say`. */
+  text?: string;
   /** A spec bug at this step, such as an undeclared send; the step's effects are discarded. */
   error?: string;
   /** Invariants (`always`) that do not hold after this event. */

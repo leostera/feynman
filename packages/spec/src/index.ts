@@ -19,7 +19,13 @@ export type {
   World as WorldView,
   Zone,
   Limit,
+  Icon,
+  Mood,
+  Row,
+  Look,
+  Link,
 } from "./dsl.ts";
+export { appearance, declaresLinks, liveLinks, type Appearance, type LiveLink } from "./look.ts";
 export * from "./engine.ts";
 export { Runner, runScenario } from "./run.ts";
 export type * from "./spec.ts";
