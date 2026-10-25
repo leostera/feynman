@@ -160,7 +160,9 @@ export default defineSpec(
           world.all(Relay).every((relay) => Object.values(relay.state.hosts).every((host) => host.verifier.startsWith("hash:"))),
       },
       macWithValidCodeLinks: {
-        description: "A Mac given a valid code ends up linked.",
+        description: "A Mac given a code that was really issued ends up linked.",
+        after: (world) =>
+          world.all(Mac).some((mac) => mac.state.link.pending !== null && world.all(Person).some((p) => p.state.codes.includes(mac.state.code ?? ""))),
         eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
         within: 20,
       },
