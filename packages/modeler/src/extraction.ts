@@ -22,12 +22,12 @@ import {
   type Snapshot,
 } from "@feynman/model";
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Evidence, type Read } from "./evidence.ts";
 import { continuation, kickoff, type Situation } from "./messages.ts";
-import { within } from "./paths.ts";
+import { canonical, within } from "./paths.ts";
 import { actorGaps, depthGaps, nextGroup, type Phase } from "./phases.ts";
-import { findWorkspace, startExtraction, type Workspace } from "./workspace.ts";
+import { findWorkspace, repositoriesBelow, startExtraction, type Workspace } from "./workspace.ts";
 
 /** An extraction being driven; persisted by the adapter so a resumed session carries on. */
 export interface DriveState {
@@ -79,16 +79,23 @@ interface Progress {
 }
 
 export class Extraction {
-  readonly workspace: Workspace | null;
+  /** The repository being modelled: the one around the working directory, or the one chosen in `begin`. */
+  private ws: Workspace | null;
   private state: DriveState | null = null;
   private evidence: Evidence | null = null;
+  /** Every read this session, so evidence can be rebuilt when the repository changes. */
+  private reads: { cwd: string; path: string; read?: Read }[] = [];
   /** What is modelled and the files required; computed once per drive. */
   private scope: { snapshot: Snapshot; required: Set<string> } | null = null;
   private last: Progress | null = null;
   private stalls = 0;
 
   constructor(private readonly options: ExtractionOptions) {
-    this.workspace = findWorkspace(options.cwd);
+    this.ws = findWorkspace(options.cwd);
+  }
+
+  get workspace(): Workspace | null {
+    return this.ws;
   }
 
   get driving(): boolean {
@@ -98,6 +105,7 @@ export class Extraction {
   /** Restore persisted state, e.g. when a session is resumed. Anything unrecognised means not driving. */
   restore(saved: unknown) {
     this.state = parseDriveState(saved);
+    if (this.state) this.use({ repository: this.state.repository, modelDir: this.state.modelDir });
     this.scope = null;
   }
 
@@ -105,7 +113,8 @@ export class Extraction {
 
   /** A read; once a required file has been read in full, it is recorded in the ledger. */
   noteRead(cwd: string, path: string, read?: Read) {
-    if (!this.workspace) return;
+    this.reads.push({ cwd, path, read });
+    if (!this.ws) return;
     const file = this.seen().read(cwd, path, read);
     if (file && this.driving) this.recordRead([file]);
   }
@@ -136,7 +145,14 @@ export class Extraction {
    * again while driving (the agent calls the extract tool after `/feynman-explain`)
    * keeps that request.
    */
-  begin({ explain = false }: { explain?: boolean } = {}): string {
+  begin({ explain = false, repository }: { explain?: boolean; repository?: string } = {}): string {
+    if (repository) {
+      const chosen = findWorkspace(resolve(this.options.cwd, repository));
+      if (!chosen) throw new Error(`${repository} is not inside a git repository.${this.offerRepositories()}`);
+      // Choosing another repository ends the drive of the previous one.
+      if (this.state && this.state.repository !== chosen.repository) this.stop();
+      this.use(chosen);
+    }
     explain ||= this.state?.explain ?? false;
     const ws = this.requireWorkspace();
     const start = startExtraction(ws);
@@ -147,7 +163,7 @@ export class Extraction {
     // Files read before the extraction started count too.
     this.recordRead(this.seen().files());
     const situation = this.situation(ws, this.assess(ws), phase, false);
-    return kickoff(start, situation.report, phase, situation.group);
+    return kickoff(start, situation.report, phase, situation.group, canonical(this.options.cwd));
   }
 
   /** Record development, vendored, or generated files or trees (a path ending in `/`), which need not be read. */
@@ -275,9 +291,25 @@ export class Extraction {
     this.options.onStateChange?.(state);
   }
 
+  /** Model `ws` from now on; reads made so far count toward it. */
+  private use(ws: Workspace) {
+    if (this.ws?.repository === ws.repository) return;
+    this.ws = ws;
+    this.scope = null;
+    this.evidence = new Evidence(ws.repository);
+    for (const { cwd, path, read } of this.reads) this.evidence.read(cwd, path, read);
+  }
+
   private requireWorkspace(): Workspace {
-    if (!this.workspace) throw new Error("Not inside a git repository.");
-    return this.workspace;
+    if (!this.ws) throw new Error(`${this.options.cwd} is not inside a git repository.${this.offerRepositories()}`);
+    return this.ws;
+  }
+
+  /** " Pass the repository to model …", listing the repositories below the working directory. */
+  private offerRepositories(): string {
+    const found = repositoriesBelow(this.options.cwd);
+    const how = " Pass the repository to model: the feynman_extract tool's repository, or /feynman-explain <path>.";
+    return found.length ? `${how} Git repositories under ${this.options.cwd}:\n${found.map((path) => `  ${path}`).join("\n")}` : how;
   }
 
   private seen(): Evidence {

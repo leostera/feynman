@@ -7,8 +7,9 @@ export const TOOLS = {
     name: "feynman_extract",
     label: "Feynman: extract",
     description:
-      "Start or resume extracting the Feynman model of this repository at HEAD: a first snapshot, or an update from the modelled commit. Returns what to do; coverage is checked whenever you stop.",
-    snippet: "Start or resume extracting the Feynman model of this repository",
+      "Start or resume extracting the Feynman model of a repository at HEAD: a first snapshot, or an update from the modelled commit. Returns what to do; coverage is checked whenever you stop.",
+    snippet: "Start or resume extracting the Feynman model of a repository",
+    params: { repository: "The repository to model, as a path; defaults to the one around the working directory" },
   },
   skip: {
     name: "feynman_skip",

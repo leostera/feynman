@@ -114,9 +114,9 @@ export default function feynman(pi: ExtensionAPI) {
     label: TOOLS.extract.label,
     description: TOOLS.extract.description,
     promptSnippet: TOOLS.extract.snippet,
-    parameters: Type.Object({}),
-    async execute(_id, _params, _signal, _onUpdate, ctx) {
-      return { content: text(current(ctx).begin()), details: undefined };
+    parameters: Type.Object({ repository: Type.Optional(Type.String({ description: TOOLS.extract.params.repository })) }),
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      return { content: text(current(ctx).begin({ repository: params.repository })), details: undefined };
     },
   });
 
@@ -161,8 +161,8 @@ export default function feynman(pi: ExtensionAPI) {
       },
     });
 
-  command("extract", "Start or resume extracting the Feynman model at HEAD, and guide the agent through its phases until the model is complete", async (_args, ctx) => {
-    await pi.sendUserMessage(current(ctx).begin());
+  command("extract", "Start or resume extracting the Feynman model at HEAD (of the repository at [path]), and guide the agent through its phases until the model is complete", async (args, ctx) => {
+    await pi.sendUserMessage(current(ctx).begin({ repository: args || undefined }));
   });
 
   command("status", "Show Feynman model coverage and validity", (_args, ctx) => {
@@ -178,8 +178,8 @@ export default function feynman(pi: ExtensionAPI) {
     ctx.ui.notify(`Rendered ${await render(ctx, args || undefined)}`, "info");
   });
 
-  command("explain", "Extract the Feynman model at HEAD, then render it and open it in the browser", async (_args, ctx) => {
-    await pi.sendUserMessage(current(ctx).begin({ explain: true }));
+  command("explain", "Extract the Feynman model at HEAD (of the repository at [path]), then render it and open it in the browser", async (args, ctx) => {
+    await pi.sendUserMessage(current(ctx).begin({ explain: true, repository: args || undefined }));
   });
 }
 

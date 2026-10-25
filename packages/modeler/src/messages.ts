@@ -10,7 +10,8 @@ const list = (items: string[], limit = LISTED) => [
   ...(items.length > limit ? [`  … and ${items.length - limit} more`] : []),
 ];
 
-export function kickoff(start: Start, report: CoverageReport, phase: Phase, group: Group | null): string {
+/** `cwd` is where the agent works: when it is not the repository root, paths are said to be relative to the root. */
+export function kickoff(start: Start, report: CoverageReport, phase: Phase, group: Group | null, cwd: string): string {
   const at = describeSnapshot(report.snapshot);
   const scope =
     start.kind === "update"
@@ -20,6 +21,7 @@ export function kickoff(start: Start, report: CoverageReport, phase: Phase, grou
         : `resuming the ${start.mode} at ${at}; ${report.missing.length} of ${report.required.length} files are not covered yet`;
   return [
     `Extract the Feynman model of this repository, following the modelling skill. This is ${scope}.`,
+    ...(cwd === report.snapshot.repository ? [] : [`The repository is ${report.snapshot.repository}; every path below and in later messages is relative to it.`]),
     `The model lives in ${MODEL_DIR}/, one JSON file per element; each kind's JSON Schema is in ${SCHEMA_DIR}.`,
     "It runs in three phases (actors, flows, depth), and I will tell you when each is done.",
     "",

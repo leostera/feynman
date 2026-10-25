@@ -41,6 +41,9 @@ const JOURNEY = {
   anchors: ["README.md"],
 };
 
+/** Each test drives a whole Pi session (git, rendering, call trees); bunfig timeouts are not applied. */
+const SESSION_TIMEOUT = 60_000;
+
 let harness: Harness | undefined;
 afterEach(() => harness?.dispose());
 
@@ -118,7 +121,7 @@ test("guides the agent through actors, groups of connected actors, and depth", a
     { path: "src/client.ts", outcome: "read" },
     { path: "src/server.ts", outcome: "read" },
   ]);
-});
+}, SESSION_TIMEOUT);
 
 test("/feynman-explain renders the model and opens it once the extraction is done", async () => {
   const cwd = repository(FILES);
@@ -149,7 +152,7 @@ test("/feynman-explain renders the model and opens it once the extraction is don
   } finally {
     process.env.PATH = path;
   }
-});
+}, SESSION_TIMEOUT);
 
 test("sets aside development, vendored, and generated files without reading them", async () => {
   const cwd = repository({ ...FILES, "vendor/lib.js": "/* third party */\n", "bun.lock": "{}\n", "scripts/publish.sh": "npm publish\n" });
@@ -170,7 +173,7 @@ test("sets aside development, vendored, and generated files without reading them
   expect(development.text).toContain("Recorded 1 path(s) as development");
   expect(development.text).toContain("3 of 6 files covered"); // vendor/lib.js, bun.lock, scripts/publish.sh
   expect(rejected.text).toContain("src/server.ts: say in note where it comes from");
-});
+}, SESSION_TIMEOUT);
 
 test("extracts uncommitted work, recording what was read", async () => {
   const cwd = repository(FILES);
@@ -186,7 +189,7 @@ test("extracts uncommitted work, recording what was read", async () => {
   const [ledger] = readdirSync(join(cwd, ".feynman/model/coverage"));
   const { files } = JSON.parse(readFileSync(join(cwd, ".feynman/model/coverage", ledger), "utf8"));
   expect(files).toEqual([{ path: "src/new.ts", outcome: "read", hash: expect.stringMatching(/^[0-9a-f]{40}$/) }]);
-});
+}, SESSION_TIMEOUT);
 
 test("an invalid model file is reported in the write's result", async () => {
   const cwd = repository(FILES);
@@ -207,7 +210,33 @@ test("an invalid model file is reported in the write's result", async () => {
   expect(json.text).toContain("not valid JSON");
   expect(schema.text).toContain("/kind");
   expect(other.text).not.toContain("Feynman");
-});
+}, SESSION_TIMEOUT);
+
+test("in a directory holding several repositories, the agent is offered them and models the one it names", async () => {
+  const parent = mkdtempSync(join(tmpdir(), "feynman-workspace-"));
+  const app = repository(FILES, join(parent, "services", "app"));
+  repository({ "README.md": "# other\n" }, join(parent, "other"));
+  harness = await startSession(parent);
+  harness.respond([
+    call("feynman_extract", {}),
+    call("feynman_extract", { repository: "services/app" }),
+    call("read", { path: "services/app/README.md" }),
+    call("feynman_stop_now", {}),
+  ]);
+  harness.session.prompt("Explain the app.").catch(() => {});
+  while (harness.pending() > 0) await new Promise((resolve) => setTimeout(resolve, 10));
+  await harness.session.abort();
+
+  const [offered, started] = toolResults(harness).filter((r) => r.tool === "feynman_extract");
+  expect(offered.error).toBe(true);
+  expect(offered.text).toContain("is not inside a git repository. Pass the repository to model");
+  expect(offered.text).toContain("other");
+  expect(offered.text).toContain("services/app");
+  expect(started.text).toContain(`The repository is ${realpathSync(app)}; every path below and in later messages is relative to it.`);
+  // A read from the parent directory counts toward the chosen repository.
+  const [ledger] = readdirSync(join(app, ".feynman/model/coverage"));
+  expect(JSON.parse(readFileSync(join(app, ".feynman/model/coverage", ledger), "utf8")).files).toEqual([{ path: "README.md", outcome: "read" }]);
+}, SESSION_TIMEOUT);
 
 test("blocks writing coverage ledgers directly", async () => {
   const cwd = repository(FILES);
@@ -219,4 +248,4 @@ test("blocks writing coverage ledgers directly", async () => {
   expect(forged?.error).toBe(true);
   expect(forged?.text).toContain("Coverage ledgers are written by Feynman");
   expect(existsSync(join(cwd, ".feynman/model/coverage/forged.json"))).toBe(false);
-});
+}, SESSION_TIMEOUT);

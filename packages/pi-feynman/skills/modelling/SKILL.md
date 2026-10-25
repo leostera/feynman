@@ -157,7 +157,8 @@ With uncommitted changes, the model describes the working tree.
 
 ## Tools
 
-In Pi: `feynman_extract` starts or resumes, `feynman_skip` sets files aside,
+In Pi: `feynman_extract` starts or resumes (in the repository around the working
+directory, or the one its `repository` names), `feynman_skip` sets files aside,
 `feynman_status` shows where things stand; `/feynman-stop` and `/feynman-render`.
 
 Command line, in the Feynman repository (`bun run model <command>`):

@@ -1,6 +1,6 @@
 // Where the repository and its model are, and how an extraction starts.
-import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { basename, join, relative } from "node:path";
 import { git, loadModel, tryGit, writeMeta, type Meta } from "@feynman/model";
 
 export const MODEL_DIR = ".feynman/model";
@@ -16,6 +16,37 @@ export interface Workspace {
 export function findWorkspace(cwd: string): Workspace | null {
   const repository = tryGit(cwd, "rev-parse", "--show-toplevel");
   return repository ? { repository, modelDir: join(repository, MODEL_DIR) } : null;
+}
+
+/** Directories never searched for repositories. */
+const SKIP = new Set(["node_modules", ".git", "target", "dist", "build", "vendor"]);
+
+/**
+ * Git repositories below `dir`, as paths relative to it, up to `depth` levels down
+ * and stopping at the first repository on each path: what to offer when the agent
+ * works in a directory that holds several repositories.
+ */
+export function repositoriesBelow(dir: string, depth = 3, limit = 20): string[] {
+  const found: string[] = [];
+  const walk = (path: string, level: number) => {
+    if (found.length >= limit) return;
+    if (level > 0 && existsSync(join(path, ".git"))) {
+      found.push(relative(dir, path));
+      return;
+    }
+    if (level === depth) return;
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = readdirSync(path, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isDirectory() && !entry.name.startsWith(".") && !SKIP.has(entry.name)) walk(join(path, entry.name), level + 1);
+    }
+  };
+  walk(dir, 0);
+  return found;
 }
 
 export type Start = (

@@ -23,8 +23,8 @@ export { fauxAssistantMessage, fauxText, fauxToolCall };
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "../src/index.ts");
 
 /** A throwaway git repository with `files` committed. */
-export function repository(files: Record<string, string>): string {
-  const root = mkdtempSync(join(tmpdir(), "feynman-test-"));
+/** A git repository with `files` committed, in a new temporary directory or at `root`. */
+export function repository(files: Record<string, string>, root = mkdtempSync(join(tmpdir(), "feynman-test-"))): string {
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
