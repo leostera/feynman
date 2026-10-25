@@ -1,0 +1,21 @@
+{
+  "name": "@feynman/code",
+  "version": "0.1.0",
+  "description": "Tie a Feynman spec to code: resolve sources, detect stale ones, measure call trees, and read files at any commit.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "calldiff": "0.5.0"
+  },
+  "devDependencies": {
+    "@types/bun": "*",
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}
