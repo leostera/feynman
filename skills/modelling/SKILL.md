@@ -111,7 +111,13 @@ contract that visualizations rely on. Also check that:
 - every `actor`, `target`, `ref`, `boundary`, and `owner` names an existing `id`;
 - every anchor path exists in the repository.
 
-Anchors are repository-relative paths, optionally `path#symbol`. Element `id`s are
+Anchors are repository-relative paths, narrowed by symbol, by span, or both:
+- shorthand strings: `path`, `path#symbol`, `path:10-42`, `path:10:5-42:2`;
+- objects: `{ "file": "path", "symbol": "name", "span": { "start": { "line": 10, "column": 5 }, "end": { "line": 42 } } }`.
+
+Lines and columns are 1-based and inclusive, at the modelled commit. Prefer a
+symbol when one exists, and add a span when the behaviour is a few lines inside
+a larger body (a guard, a SQL statement, a lock scope). Element `id`s are
 readable slugs for cross-references within one model and need not be stable.
 
 When the vocabulary changes, update `schema.json` and this skill together.

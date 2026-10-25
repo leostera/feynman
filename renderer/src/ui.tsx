@@ -1,6 +1,6 @@
 import { Badge, TableOfContents, Text } from "@cloudflare/kumo";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { anchorUrl, href, type ClaimStatus, type Index, type Provenance } from "./model";
+import { anchorUrl, href, resolveAnchor, spanLabel, type Anchor, type ClaimStatus, type Index, type Provenance } from "./model";
 
 const IndexContext = createContext<Index | null>(null);
 export const IndexProvider = IndexContext.Provider;
@@ -199,21 +199,24 @@ export function Empty({ children }: { children: ReactNode }) {
 
 // Content blocks.
 
-export function Anchors({ anchors }: { anchors: string[] }) {
+export function Anchors({ anchors }: { anchors: Anchor[] }) {
   const index = useIndex();
   return (
     <ul className="flex flex-col gap-1.5">
       {anchors.map((anchor) => {
-        const [path, symbol] = anchor.split("#");
+        const { file, symbol, span } = resolveAnchor(anchor);
+        const lines = spanLabel(span);
         const url = anchorUrl(index.model.meta.source, anchor);
+        const key = typeof anchor === "string" ? anchor : JSON.stringify(anchor);
         const label = (
           <>
-            {path}
+            {file}
+            {lines && <span className="text-kumo-subtle">:{lines}</span>}
             {symbol && <span className="text-kumo-subtle">#{symbol}</span>}
           </>
         );
         return (
-          <li key={anchor} className="font-mono text-[13px] text-kumo-strong">
+          <li key={key} className="font-mono text-[13px] text-kumo-strong">
             {url ? (
               <a href={url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:text-kumo-link hover:underline">
                 {label}

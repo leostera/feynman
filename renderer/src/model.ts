@@ -32,7 +32,7 @@ export interface Actor {
   summary: string;
   footprint?: { paths: string[]; files?: number; lines?: number };
   transports?: string[];
-  anchors: string[];
+  anchors: Anchor[];
   confidence?: Confidence;
 }
 
@@ -42,7 +42,7 @@ export interface MessageSet {
   summary?: string;
   accepts?: string[];
   emits?: string[];
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Step {
@@ -59,7 +59,7 @@ export interface Flow {
   summary: string;
   trigger: string;
   steps: Step[];
-  anchors: string[];
+  anchors: Anchor[];
   confidence?: Confidence;
 }
 
@@ -68,7 +68,7 @@ export interface State {
   owner: string;
   summary: string;
   lifetime: string;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface StateMachine {
@@ -76,7 +76,7 @@ export interface StateMachine {
   summary?: string;
   states?: string[];
   transitions?: string[];
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Boundary {
@@ -84,7 +84,7 @@ export interface Boundary {
   summary: string;
   parsesInto?: string;
   effectsAfterParse?: boolean;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Invariant {
@@ -92,13 +92,13 @@ export interface Invariant {
   statement: string;
   enforcedBy: string[];
   consequence?: string;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Contract {
   id: string;
   summary?: string;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Observability {
@@ -106,14 +106,14 @@ export interface Observability {
   summary?: string;
   flows?: string[];
   confidence?: Confidence;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export interface Measurement {
   subject: string;
   value: string | number;
   kind: string;
-  anchors: string[];
+  anchors: Anchor[];
 }
 
 export type ClaimStatus = "supported" | "partially-supported" | "contradicted" | "unverified";
@@ -123,7 +123,7 @@ export interface Claim {
   status: ClaimStatus;
   epistemic: "stated" | "inferred" | "measured";
   note?: string;
-  evidence: string[];
+  evidence: Anchor[];
   about?: string[];
 }
 
@@ -257,12 +257,57 @@ export function flowParticipants(flow: Flow): string[] {
   return seen;
 }
 
-/** Path part of an anchor (`path#symbol`). */
-export function anchorPath(anchor: string): string {
-  return anchor.split("#")[0];
+export interface Position {
+  line: number;
+  column?: number;
 }
 
-/** Browsable URL for an anchor at the modelled commit, when the source has one. */
-export function anchorUrl(source: Source, anchor: string): string | null {
-  return source.fileUrl ? source.fileUrl.replace("{path}", anchorPath(anchor)) : null;
+export interface ResolvedAnchor {
+  file: string;
+  symbol?: string;
+  span?: { start: Position; end?: Position };
+}
+
+/** A location at the modelled commit: shorthand string or explicit object. */
+export type Anchor = string | ResolvedAnchor;
+
+const SHORTHAND = /^([^#:]+)(?::(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?)?(?:#(.+))?$/;
+
+/** Normalize either anchor form to `{ file, symbol?, span? }`. */
+export function resolveAnchor(anchor: Anchor): ResolvedAnchor {
+  if (typeof anchor !== "string") return anchor;
+  const match = SHORTHAND.exec(anchor);
+  if (!match) return { file: anchor };
+  const [, file, startLine, startColumn, endLine, endColumn, symbol] = match;
+  const position = (line: string, column?: string): Position => ({
+    line: Number(line),
+    ...(column ? { column: Number(column) } : {}),
+  });
+  return {
+    file,
+    ...(symbol ? { symbol } : {}),
+    ...(startLine
+      ? { span: { start: position(startLine, startColumn), ...(endLine ? { end: position(endLine, endColumn) } : {}) } }
+      : {}),
+  };
+}
+
+/** Path part of an anchor. */
+export function anchorPath(anchor: Anchor): string {
+  return resolveAnchor(anchor).file;
+}
+
+/** `10-42` or `10:5-42:2`, for display. */
+export function spanLabel(span: ResolvedAnchor["span"]): string | null {
+  if (!span) return null;
+  const at = (p: Position) => (p.column ? `${p.line}:${p.column}` : `${p.line}`);
+  return span.end ? `${at(span.start)}-${at(span.end)}` : at(span.start);
+}
+
+/** Browsable URL for an anchor at the modelled commit, with a line range when known. */
+export function anchorUrl(source: Source, anchor: Anchor): string | null {
+  if (!source.fileUrl) return null;
+  const { file, span } = resolveAnchor(anchor);
+  const end = span?.end && span.end.line !== span.start.line ? `-L${span.end.line}` : "";
+  return source.fileUrl.replace("{path}", file) + (span ? `#L${span.start.line}${end}` : "");
 }

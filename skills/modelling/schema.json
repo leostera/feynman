@@ -99,9 +99,49 @@
       "description": "The id of another element in this model."
     },
     "anchor": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Repository-relative file or directory path, optionally followed by #symbol."
+      "description": "Where an element lives in the repository at the modelled commit. Shorthand string: `path`, `path#symbol`, `path:10-42`, or `path:10:5-42:2` (1-based, inclusive). The object form says the same thing explicitly.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^#:]+(:[0-9]+(:[0-9]+)?(-[0-9]+(:[0-9]+)?)?)?(#.+)?$"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "file"
+          ],
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Repository-relative file or directory path."
+            },
+            "symbol": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Function, type, method, or table the anchor points at."
+            },
+            "span": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start"
+              ],
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/position"
+                },
+                "end": {
+                  "$ref": "#/$defs/position"
+                }
+              },
+              "description": "1-based, inclusive line (and optional column) range."
+            }
+          }
+        }
+      ]
     },
     "anchors": {
       "type": "array",
@@ -657,6 +697,23 @@
         "lines": {
           "type": "integer",
           "minimum": 0
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
         }
       }
     }
