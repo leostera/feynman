@@ -13,7 +13,7 @@
 Feynman becomes a TypeScript library for writing **specs**: small, executable models of how
 part of a system behaves. A spec declares actors and the state they hold, the messages
 between them, the actions people take, the timers and limits that shape them, and the
-invariants that must hold. Each rule names the code it models. Everything else is
+invariants that must hold. Each rule names the source code it stands for. Everything else is
 derived from that one file:
 
 - a playground to run the system in the browser;
@@ -58,7 +58,7 @@ Use cases:
 - **Onboard:** "show me how remote access works": open the playground, then read the
   flows.
 - **Develop:** spec a feature before or while building it, play with it, and check its
-  invariants. Try proposed changes as switches.
+  invariants. Compare the spec before and after a change with `feynman diff`.
 - **Review:** a merge request changes code and its spec; the explainer shows which flows
   changed ("this used to do this, now it does that"), which call stacks changed, and
   whether the invariants still hold.
@@ -97,12 +97,12 @@ A **spec** is a small world:
 - Each actor holds **state** and offers **actions** that a person can take on it.
 - It **handles** messages and timers.
 - **Time** is simulated. Messages take time to arrive, and timers fire later.
-- **Invariants** say what must always hold, and **scenarios** are named stories.
-- **Proposals** are switches for changes under consideration.
+- **Invariants** say what must always, eventually, or never happen, and **scenarios**
+  are named stories.
 
 Feynman runs this world. Each step is an **event**: an action, a message delivery, a
 timer, or an injected fault. Every event records the transition that ran, the code that
-transition models, what it sent, and exactly what state it changed.
+transition stands for, what it sent, and exactly what state it changed.
 
 ### Writing a spec
 
@@ -121,7 +121,7 @@ export default defineSpec("Remote access", (spec) => {
   const CODE_LIFETIME = spec.defineLimit({
     name: "Pairing code lifetime",
     value: 10 * MIN,
-    models: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
+    sources: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
   });
 
   const NewCode = spec.defineMessage<{ account: string }>({ name: "new pairing code", over: "https" });
@@ -139,8 +139,9 @@ export default defineSpec("Remote access", (spec) => {
       hosts: {} as Record<string, { account: string; verifier: string }>,
     }),
     transitions: {
-      [NewCode]: {
-        models: [
+      [NewCode]: spec.defineTransition({
+        description: "The relay issues a one-time pairing code for the account.",
+        sources: [
           "packages/axo-api-worker/src/routes/pairing.ts#createPairing",
           "packages/axo-api-worker/src/auth/pairing.ts:31-58",
         ],
@@ -148,11 +149,12 @@ export default defineSpec("Remote access", (spec) => {
         run(state, msg, ctx) {
           const code = ctx.fresh("code");
           state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
-          ctx.reply(Code, { code }, "A one-time code, valid for 10 minutes.");
+          ctx.reply(Code, { code });
         },
-      },
-      [Redeem]: {
-        models: [
+      }),
+      [Redeem]: spec.defineTransition({
+        description: "The relay checks the code and, if it is valid, remembers the Mac.",
+        sources: [
           "packages/axo-api-worker/src/routes/pairing.ts#redeemPairing",
           "packages/axo-api-worker/src/auth/pairing.ts#redeem",
           "packages/axo-api-worker/src/auth/account-manager.ts:120-164",
@@ -165,9 +167,9 @@ export default defineSpec("Remote access", (spec) => {
           }
           code.used = true;
           state.hosts[msg.host] = { account: code.account, verifier: ctx.hash(msg.credential) };
-          ctx.reply(Redeemed, { account: code.account }, "The relay accepts the code and remembers the Mac.");
+          ctx.reply(Redeemed, { account: code.account });
         },
-      },
+      }),
     },
   });
 
@@ -176,20 +178,22 @@ export default defineSpec("Remote access", (spec) => {
     zone: devices,
     initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
     actions: {
-      pairHost: {
+      pairHost: spec.defineAction({
         label: "Pair a host",
-        models: ["apps/web/src/settings/pair.tsx#createCode"],
+        description: "Ask the relay for a pairing code to type on a Mac.",
+        sources: ["apps/web/src/settings/pair.tsx#createCode"],
         sends: [NewCode],
-        run(state, _input, ctx) {
+        run(state, _inputs, ctx) {
           ctx.send(ctx.the(Relay), NewCode, { account: state.account });
         },
-      },
+      }),
     },
     transitions: {
-      [Code]: {
-        models: ["apps/web/src/settings/pair.tsx#showCode"],
+      [Code]: spec.defineTransition({
+        description: "The code appears on screen.",
+        sources: ["apps/web/src/settings/pair.tsx#showCode"],
         run: (state, msg) => void state.codes.push(msg.code),
-      },
+      }),
     },
   });
 
@@ -201,10 +205,18 @@ export default defineSpec("Remote access", (spec) => {
       keychain: [] as string[],
     }),
     actions: {
-      link: {
+      link: spec.defineAction({
         label: "Paste a pairing code",
-        input: { code: "code" },
-        models: ["apps/macos/RemoteAccess.swift#link", "crates/axod/src/rpc/relay.rs#link"],
+        description: "Link this Mac to the account that issued the code.",
+        inputs: {
+          code: {
+            type: String,
+            // What the playground offers, and what the checker tries: every code a
+            // person has on screen, plus one that was never issued.
+            examples: (world) => [...world.all(Person).flatMap((p) => p.state.codes), "never-issued"],
+          },
+        },
+        sources: ["apps/macos/RemoteAccess.swift#link", "crates/axod/src/rpc/relay.rs#link"],
         sends: [Redeem],
         starts: ["redeemTimeout"],
         run(state, { code }, ctx) {
@@ -214,37 +226,42 @@ export default defineSpec("Remote access", (spec) => {
           ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id, credential });
           ctx.start("redeemTimeout", 5 * SEC);
         },
-      },
+      }),
     },
     transitions: {
-      [Redeemed]: {
-        models: ["crates/axo-relay/src/pairing.rs#finish"],
+      [Redeemed]: spec.defineTransition({
+        description: "The Mac is now linked to the account.",
+        sources: ["crates/axo-relay/src/pairing.rs#finish"],
         run(state, msg, ctx) {
           state.link = { account: msg.account, pending: null };
           ctx.cancel("redeemTimeout");
         },
-      },
-      redeemTimeout: {
-        models: ["crates/axo-relay/src/pairing.rs#retry"],
+      }),
+      redeemTimeout: spec.defineTransition({
+        description: "No answer in time; the Mac sends the same redemption again.",
+        sources: ["crates/axo-relay/src/pairing.rs#retry"],
         sends: [Redeem],
         run(state, ctx) { /* resend the same redemption */ },
-      },
+      }),
     },
   });
 
-  spec.defineInvariant({
-    name: "The relay never stores a secret",
-    holds: (world) => world.all(Relay).every((relay) =>
-      Object.values(relay.state.hosts).every((host) => host.verifier.startsWith("hash:"))),
+  spec.defineInvariants({
+    relayNeverStoresSecrets: {
+      description: "The relay never stores a secret, only hashes of it.",
+      always: (world) => world.all(Relay).every((relay) =>
+        Object.values(relay.state.hosts).every((host) => host.verifier.startsWith("hash:"))),
+    },
+    macWithValidCodeLinks: {
+      description: "A Mac given a valid code ends up linked.",
+      eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
+      within: 20,
+    },
+    codeRedeemedOnce: {
+      description: "A pairing code is never redeemed twice.",
+      never: (trace) => trace.count((event) => event.is(Relay, Redeem) && event.replied(Redeemed)) > 1,
+    },
   });
-
-  spec.defineLiveness({
-    name: "A Mac with a valid code ends up linked",
-    within: 20,
-    holds: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
-  });
-
-  spec.defineProposal({ name: "Unlink button", description: "Macs can unlink themselves from Settings." });
 
   spec.defineScenario({
     name: "Link a Mac",
@@ -267,39 +284,48 @@ Things to notice:
   `ctx.the(Relay)`).
 - **An actor is a process, as in PlusCal,** declared as plain data:
   - **`initialState(ctx)`** returns the state of a new instance.
-  - **`actions`** are what a person can do to it. They become its click menu in the
-    playground and the steps scenarios script.
-  - **`transitions`** are what it does by itself. Each one is keyed in one of two ways:
-    - by a `Message`, when it runs because that message arrives (`[Redeem]: { … }`);
+  - **`actions`** are what a person can do to it, each a `spec.defineAction`. They become
+    its menu in the playground, with a form for their `inputs`, and the steps that
+    scenarios script.
+  - **`transitions`** are what it does by itself, each a `spec.defineTransition`, keyed in
+    one of two ways:
+    - by a `Message`, when it runs because that message arrives (`[Redeem]`);
     - by a label, when it is internal. An internal transition runs when a timer the
       actor started fires (`ctx.start("redeemTimeout", 5 * SEC)`), or whenever its
       `when` guard holds.
 - **The keys are the vocabulary.** A timeline event, a flow step, a counterexample, and
   a coverage report all name a step the same way: `Mac.link` (an action),
-  `Relay.redeem` (a message), `Mac.redeemTimeout` (an internal transition).
-- **Transitions declare what they can cause:** `sends` lists the messages a step may
-  send, and `starts` the timers it may start. Without running anything, Feynman knows
-  every possible transition between actors. The canvas draws those edges, the checker
-  uses them to plan its search, and the engine rejects a send that wasn't declared.
+  `Relay.redeem` (a message), `Mac.redeemTimeout` (an internal transition). The
+  `description` says in everyday words what the step does.
+- **Inputs have a schema.** The playground renders a form from it, and the checker
+  generates values from it. `examples` says which values matter: the codes people have
+  on screen, plus one that was never issued.
+- **Steps declare what they can cause:** `sends` lists the messages a step may send, and
+  `starts` the timers it may start. Without running anything, Feynman knows every
+  possible transition between actors. The canvas draws those edges, the checker uses
+  them to plan its search, and the engine rejects a send that wasn't declared.
 - **`run` mutates `state` directly.** Feynman records each change as
   `field: before → after`; nobody logs changes by hand.
-- **`models` is the trail of code a step models,** in the order the code runs: the entry
-  point first, then what it relies on. Each entry is a symbol (`path#symbol`) or a
-  range of lines (`path:120-164`). The first symbol is where the call stack starts;
-  together the entries say exactly which code the step stands for. When any of them
-  changes, the step is flagged as stale.
-- **The last argument of `send` and `reply` is optional text,** shown in the timeline in
-  everyday words.
-- **Everything a step can observe comes from `state`, its input, and `ctx`:** the time
+- **`sources` is the trail of code a step stands for,** in the order the code runs: the
+  entry point first, then what it relies on. Each entry is a symbol (`path#symbol`) or a
+  range of lines (`path:120-164`). The first symbol is where the call stack starts. When
+  the code under any entry changes, the step is flagged as stale.
+- **Invariants are one block, keyed by name.** The field says what kind of property it
+  is:
+  - `always`: holds in every state;
+  - `eventually`: holds within `within` events on every path, with fair timers;
+  - `never`: a pattern that must not occur in any trace.
+- **Everything a step can observe comes from `state`, its inputs, and `ctx`:** the time
   (`ctx.now`), fresh ids, hashing, and randomness. That is what makes runs replayable and
-  checkable.
+  checkable. `send` and `reply` take an optional last argument, text for that one event,
+  when the transition's description is not enough.
 
 ### Running it
 
 ```console
 $ feynman dev
   Remote access  http://localhost:4173/#/play
-  2 actors · 1 limit · 3 messages · 1 invariant · 1 scenario · 1 proposal
+  3 actors · 1 limit · 5 messages · 3 invariants · 1 scenario
   watching feynman/remote-access.ts
 ```
 
@@ -314,7 +340,7 @@ The playground opens:
   - clicking an event rolls back to it;
   - opening an event shows its call stack and code.
 - **The sidebar** holds Playground, Flows (one page per scenario, plus flows found by the
-  checker), and Reference (actors, messages, limits, invariants, proposals).
+  checker), and Reference (actors, messages, limits, invariants).
 
 Saving the spec reloads the page and replays your current session.
 
@@ -332,10 +358,9 @@ $ feynman check
         4 fault   lose "redeemed"          (the reply never arrives)
         5 Studio  redeem timeout           …
   coverage: 11 of 12 transitions reached; never ran: Mac.refused
-  stale: Relay.redeem models packages/axo-api-worker/src/auth/pairing.ts#redeem, which changed since the spec was last checked
+  stale: Relay.redeem: its source packages/axo-api-worker/src/auth/pairing.ts#redeem, which changed since the spec was last checked
 ```
 
-Turning a proposal on checks it too: `feynman check --with "Unlink button"`.
 
 ### Comparing commits
 
@@ -383,18 +408,21 @@ diff:
 
 - `Actor`: name, zone, singleton or spawnable, `initialState`, `actions`, and
   `transitions`.
-- `Action`: its key, label, input types, models, what it `sends` and `starts`, and `run`.
+- `Action`: its key, label, description, `inputs`, sources, what it `sends` and
+  `starts`, and `run`.
 - `Transition`: its key (a message, or a label for internal transitions), an optional
-  `when` guard, models, `sends`, `starts`, and `run`. Because actions and transitions are
+  `when` guard, description, sources, `sends`, `starts`, and `run`. Because actions and transitions are
   declared statically, the possible communication between actors is known before
   anything runs: an edge from actor A to actor B for every message A can send that one of
   B's transitions is keyed by.
 - `Limit`: name, value, unit, and anchor. `Zone`: id and label.
-- `Invariant`, `Liveness` (holds within N events, with fair timers), and `Forbidden`
-  (an event pattern that must never occur), each from its own `spec.define<Noun>`.
-- `Scenario`: a name and a script against the scenario API.
-- `Proposal`: a name and a description. Transitions read it with
-  `ctx.proposal("Unlink button")`.
+- `Invariants`: one block per spec, a record from name to `{ description, always | eventually | never }`.
+  `always` is a predicate on a world, checked on every state. `eventually` is a
+  predicate that must hold within `within` events on every path, with fair timers.
+  `never` is a predicate on a trace, for patterns of events that must not occur.
+- `Input`: `{ type, examples? }`, where `type` is `String`, `Number`, `Boolean`, or a list
+  of allowed values, and `examples(world)` returns the values worth offering and
+  trying.
 
 **Runtime.**
 
@@ -402,7 +430,6 @@ diff:
   - instances, with their state;
   - the queue of pending deliveries and timers, each with its due time;
   - the clock, the seed, and the id counters;
-  - the proposals that are on.
 
   It is plain data, so it can be serialized, hashed, and copied cheaply.
 - `Event`:
@@ -416,10 +443,10 @@ diff:
 - Reads: `id`, `label`, `now`, `the(Actor)`, `all(Actor)`.
 - Messages: `send`, `reply`, `broadcast`.
 - Timers: `start(label, after)`, `cancel(label)`, for the actor's own internal transitions.
-- Values: `fresh(prefix)`, `hash(value)`, `random()` (seeded), `proposal(name)`.
+- Values: `fresh(prefix)`, `hash(value)`, `random()` (seeded).
 - Failure: `fail(reason)`, which ends the event with a recorded refusal.
 
-**Models** are an ordered trail of anchors. Each is `path#symbol` or `path:start-end`,
+**Sources** are an ordered trail of anchors. Each is `path#symbol` or `path:start-end`,
 resolved with the existing anchor code. `feynman.lock` (generated, committed) records,
 for every entry, the content hash of the code it covers: the symbol's body or the line
 range, at the time the spec was last checked. A step is stale when the code under any of
@@ -443,8 +470,9 @@ symbol that no longer resolves, or a range past the end of its file, is an error
 ### The checker
 
 - **Choices at each state** come from the static transitions of every instance:
-  - each action, with inputs drawn from values in the world (existing codes, ids) plus
-    one invalid value of each input type;
+  - each action, with inputs generated from its schema: the values its `examples`
+    return, or else a small fixed set per type (an empty string, a short one, 0, 1, -1,
+    `true`, `false`, every allowed value);
   - each internal transition whose `when` guard holds;
   - each pending delivery or timer that could fire next, which selects the transition
     keyed by that message or timer;
@@ -628,17 +656,17 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 
 - **Where specs live:** `feynman/*.ts` at the root, or `.feynman/specs/`. Specs are
   reviewed code, which argues for a visible `feynman/`.
-- **Typing message keys:** `[Redeem]: { run(state, msg) { … } }` needs TypeScript to know
-  `msg`'s type from a computed key. A `Message` would be a branded string (its key is
-  `"message:redeem"`), and `defineActor` looks up payload types in the spec's registry of
-  messages. That registry must be typed before the actors, for example by declaring
-  messages with one `spec.defineMessages({ … })` call, or by passing them to
-  `defineActor`. If that proves clumsy, the fallback is a field naming the message.
+- **Typing `state`, `msg`, and `inputs`:** inside `[Redeem]: spec.defineTransition({ run(state, msg) })`,
+  TypeScript must know `state` from the actor's `initialState` and `msg` from the
+  message key. `defineTransition` and `defineAction` return values, so their parameter
+  types have to come from the context they are written in, through the `defineActor`
+  call. A `Message` would be a branded string (its key is `"message:redeem"`) whose
+  payload is looked up in the spec's message registry. This needs a prototype against
+  TypeScript's inference before the API is fixed. Fallbacks: `spec.defineActor<State>()`
+  to name the state type, or passing the message to `defineTransition`.
 - **Guards:** whether actions and message transitions also take a `when` guard,
   as PlusCal's `await` does, so that a message or action can wait until a state holds
   instead of being refused.
-- **Inputs for exploration:** how the checker enumerates action inputs. Values from the
-  world plus one invalid value per type may be too narrow for numeric inputs.
 - **Several specs for one system:** whether they share actors, through imports from a
   common file, or stay independent.
 
@@ -657,6 +685,11 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 - Watch mode (Read and Watch narrations of a flow).
 
 ## Future possibilities
+
+- **Proposals:** switches in a spec for changes under consideration (the axo session
+  had an "Unlink button" switch), so that one spec can be played and checked with and
+  without a change. Until there is a need that a branch and `feynman diff` don't
+  cover, this stays out.
 
 - **Conformance tests:** a scenario drives the real system through adapters, and the
   real trace is compared with the spec's.
