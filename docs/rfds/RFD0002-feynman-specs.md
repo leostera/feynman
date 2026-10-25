@@ -116,183 +116,193 @@ illustrative.)
 
 ```ts
 // specs/remote-access.ts
-import { defineSpec, MIN, SEC } from "@feynman/spec";
+import { defineSpec, message, MIN, SEC } from "@feynman/spec";
 
-export default defineSpec("Remote access", (spec) => {
-  const devices = spec.defineZone({ name: "People's devices" });
-  const cloudflare = spec.defineZone({ name: "Cloudflare" });
-  const macs = spec.defineZone({ name: "Macs" });
-
-  const CODE_LIFETIME = spec.defineLimit({
-    name: "Pairing code lifetime",
-    value: 10 * MIN,
-    sources: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
-  });
-
-  const NewCode = spec.defineMessage<{ account: string }>({ name: "new pairing code", over: "https" });
-  const Code = spec.defineMessage<{ code: string }>({ name: "pairing code", over: "https", tone: "reply" });
-  const Redeem = spec.defineMessage<{ code: string; host: string; credential: string }>({ name: "redeem", over: "https" });
-  const Redeemed = spec.defineMessage<{ account: string }>({ name: "redeemed", over: "https", tone: "reply" });
-  const Refused = spec.defineMessage<{ status: 403 | 404 }>({ name: "refused", tone: "refused" });
-
-  const Relay = spec.defineActor({
-    name: "Axo relay",
-    zone: cloudflare,
-    singleton: true,
-    initialState: () => ({
-      codes: {} as Record<string, { account: string; used: boolean; expires: number }>,
-      hosts: {} as Record<string, { account: string; verifier: string }>,
-    }),
-    transitions: {
-      [NewCode]: spec.defineTransition({
-        description: "The relay issues a one-time pairing code for the account.",
-        sources: [
-          "packages/axo-api-worker/src/routes/pairing.ts#createPairing",
-          "packages/axo-api-worker/src/auth/pairing.ts:31-58",
-        ],
-        sends: [Code],
-        run(state, msg, ctx) {
-          const code = ctx.fresh("code");
-          state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
-          ctx.reply(Code, { code });
-        },
-      }),
-      [Redeem]: spec.defineTransition({
-        description: "The relay checks the code and, if it is valid, remembers the Mac.",
-        sources: [
-          "packages/axo-api-worker/src/routes/pairing.ts#redeemPairing",
-          "packages/axo-api-worker/src/auth/pairing.ts#redeem",
-          "packages/axo-api-worker/src/auth/account-manager.ts:120-164",
-        ],
-        sends: [Redeemed, Refused],
-        run(state, msg, ctx) {
-          const code = state.codes[ctx.hash(msg.code)];
-          if (!code || code.used || code.expires < ctx.now) {
-            return ctx.reply(Refused, { status: 404 }, "The code is unknown, used, or expired.");
-          }
-          code.used = true;
-          state.hosts[msg.host] = { account: code.account, verifier: ctx.hash(msg.credential) };
-          ctx.reply(Redeemed, { account: code.account });
-        },
-      }),
+export default defineSpec(
+  "Remote access",
+  {
+    messages: {
+      NewCode: message<{ account: string }>({ name: "new pairing code", over: "https" }),
+      Code: message<{ code: string }>({ name: "pairing code", over: "https", tone: "reply" }),
+      Redeem: message<{ code: string; host: string; credential: string }>({ name: "redeem", over: "https" }),
+      Redeemed: message<{ account: string }>({ name: "redeemed", over: "https", tone: "reply" }),
+      Refused: message<{ status: 403 | 404 }>({ name: "refused", tone: "refused" }),
     },
-  });
+  },
+  (spec) => {
+    const { NewCode, Code, Redeem, Redeemed, Refused } = spec.messages;
 
-  const Person = spec.defineActor({
-    name: "Person",
-    zone: devices,
-    initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
-    actions: {
-      pairHost: spec.defineAction({
-        label: "Pair a host",
-        description: "Ask the relay for a pairing code to type on a Mac.",
-        sources: ["apps/web/src/settings/pair.tsx#createCode"],
-        sends: [NewCode],
-        run(state, _inputs, ctx) {
-          ctx.send(ctx.the(Relay), NewCode, { account: state.account });
-        },
-      }),
-    },
-    transitions: {
-      [Code]: spec.defineTransition({
-        description: "The code appears on screen.",
-        sources: ["apps/web/src/settings/pair.tsx#showCode"],
-        run: (state, msg) => void state.codes.push(msg.code),
-      }),
-    },
-  });
+    const devices = spec.defineZone({ name: "People's devices" });
+    const cloudflare = spec.defineZone({ name: "Cloudflare" });
+    const macs = spec.defineZone({ name: "Macs" });
 
-  const Mac = spec.defineActor({
-    name: "Mac",
-    zone: macs,
-    initialState: () => ({
-      link: { account: null as string | null, pending: null as string | null },
-      keychain: [] as string[],
-    }),
-    actions: {
-      link: spec.defineAction({
-        label: "Paste a pairing code",
-        description: "Link this Mac to the account that issued the code.",
-        inputs: {
-          code: {
-            type: String,
-            // What the playground offers, and what the checker tries: every code a
-            // person has on screen, plus one that was never issued.
-            examples: (world) => [...world.all(Person).flatMap((p) => p.state.codes), "never-issued"],
+    const CODE_LIFETIME = spec.defineLimit({
+      name: "Pairing code lifetime",
+      value: 10 * MIN,
+      sources: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
+    });
+
+    const Relay = spec.defineActor({
+      name: "Axo relay",
+      zone: cloudflare,
+      singleton: true,
+      initialState: () => ({
+        codes: {} as Record<string, { account: string; used: boolean; expires: number }>,
+        hosts: {} as Record<string, { account: string; verifier: string }>,
+      }),
+      transitions: {
+        [NewCode]: {
+          description: "The relay issues a one-time pairing code for the account.",
+          sources: [
+            "packages/axo-api-worker/src/routes/pairing.ts#createPairing",
+            "packages/axo-api-worker/src/auth/pairing.ts:31-58",
+          ],
+          sends: [Code],
+          run(state, msg, ctx) {
+            const code = ctx.fresh("code");
+            state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
+            ctx.reply(Code, { code });
           },
         },
-        sources: ["apps/macos/RemoteAccess.swift#link", "crates/axod/src/rpc/relay.rs#link"],
-        sends: [Redeem],
-        starts: ["redeemTimeout"],
-        run(state, { code }, ctx) {
-          const credential = ctx.fresh("cred");
-          state.link.pending = credential;
-          state.keychain.push(credential);
-          ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id, credential });
-          ctx.start("redeemTimeout", 5 * SEC);
+        [Redeem]: {
+          description: "The relay checks the code and, if it is valid, remembers the Mac.",
+          sources: [
+            "packages/axo-api-worker/src/routes/pairing.ts#redeemPairing",
+            "packages/axo-api-worker/src/auth/pairing.ts#redeem",
+            "packages/axo-api-worker/src/auth/account-manager.ts:120-164",
+          ],
+          sends: [Redeemed, Refused],
+          run(state, msg, ctx) {
+            const code = state.codes[ctx.hash(msg.code)];
+            if (!code || code.used || code.expires < ctx.now) {
+              return ctx.reply(Refused, { status: 404 }, "The code is unknown, used, or expired.");
+            }
+            code.used = true;
+            state.hosts[msg.host] = { account: code.account, verifier: ctx.hash(msg.credential) };
+            ctx.reply(Redeemed, { account: code.account });
+          },
         },
-      }),
-    },
-    transitions: {
-      [Redeemed]: spec.defineTransition({
-        description: "The Mac is now linked to the account.",
-        sources: ["crates/axo-relay/src/pairing.rs#finish"],
-        run(state, msg, ctx) {
-          state.link = { account: msg.account, pending: null };
-          ctx.cancel("redeemTimeout");
+      },
+    });
+
+    const Person = spec.defineActor({
+      name: "Person",
+      zone: devices,
+      initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
+      actions: {
+        pairHost: {
+          label: "Pair a host",
+          description: "Ask the relay for a pairing code to type on a Mac.",
+          sources: ["apps/web/src/settings/pair.tsx#createCode"],
+          sends: [NewCode],
+          run(state, _inputs, ctx) {
+            ctx.send(ctx.the(Relay), NewCode, { account: state.account });
+          },
         },
-      }),
-      redeemTimeout: spec.defineTransition({
-        description: "No answer in time; the Mac sends the same redemption again.",
-        sources: ["crates/axo-relay/src/pairing.rs#retry"],
-        sends: [Redeem],
-        run(state, ctx) { /* resend the same redemption */ },
-      }),
-    },
-  });
+      },
+      transitions: {
+        [Code]: {
+          description: "The code appears on screen.",
+          sources: ["apps/web/src/settings/pair.tsx#showCode"],
+          run: (state, msg) => void state.codes.push(msg.code),
+        },
+      },
+    });
 
-  spec.defineInvariants({
-    relayNeverStoresSecrets: {
-      description: "The relay never stores a secret, only hashes of it.",
-      always: (world) => world.all(Relay).every((relay) =>
-        Object.values(relay.state.hosts).every((host) => host.verifier.startsWith("hash:"))),
-    },
-    macWithValidCodeLinks: {
-      description: "A Mac given a valid code ends up linked.",
-      eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
-      within: 20,
-    },
-    codeRedeemedOnce: {
-      description: "A pairing code is never redeemed twice.",
-      never: (trace) => trace.count((event) => event.is(Relay, Redeem) && event.replied(Redeemed)) > 1,
-    },
-  });
+    const Mac = spec.defineActor({
+      name: "Mac",
+      zone: macs,
+      initialState: () => ({
+        link: { account: null as string | null, pending: null as string | null },
+        keychain: [] as string[],
+      }),
+      actions: {
+        link: {
+          label: "Paste a pairing code",
+          description: "Link this Mac to the account that issued the code.",
+          inputs: {
+            code: spec.defineInput(String, {
+              examples: (world) => [...world.all(Person).flatMap((p) => p.state.codes), "never-issued"],
+            }),
+          },
+          sources: ["apps/macos/RemoteAccess.swift#link", "crates/axod/src/rpc/relay.rs#link"],
+          sends: [Redeem],
+          starts: ["redeemTimeout"],
+          run(state, { code }, ctx) {
+            const credential = ctx.fresh("cred");
+            state.link.pending = credential;
+            state.keychain.push(credential);
+            ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id, credential });
+            ctx.start("redeemTimeout", 5 * SEC);
+          },
+        },
+      },
+      transitions: {
+        [Redeemed]: {
+          description: "The Mac is now linked to the account.",
+          sources: ["crates/axo-relay/src/pairing.rs#finish"],
+          run(state, msg, ctx) {
+            state.link = { account: msg.account, pending: null };
+            ctx.cancel("redeemTimeout");
+          },
+        },
+        redeemTimeout: {
+          description: "No answer in time; the Mac sends the same redemption again.",
+          sources: ["crates/axo-relay/src/pairing.rs#retry"],
+          sends: [Redeem],
+          run(state, ctx) {
+            // resend the same redemption
+          },
+        },
+      },
+    });
 
-  spec.defineScenario({
-    name: "Link a Mac",
-    run(s) {
-      const alice = s.spawn(Person, "Alice");
-      const studio = s.spawn(Mac, "Studio");
-      s.act(alice, "pairHost");
-      s.settle();
-      s.act(studio, "link", { code: alice.state.codes[0] });
-      s.settle();
-    },
-  });
-});
+    spec.defineInvariants({
+      relayNeverStoresSecrets: {
+        description: "The relay never stores a secret, only hashes of it.",
+        always: (world) =>
+          world.all(Relay).every((relay) => Object.values(relay.state.hosts).every((host) => host.verifier.startsWith("hash:"))),
+      },
+      macWithValidCodeLinks: {
+        description: "A Mac given a valid code ends up linked.",
+        eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
+        within: 20,
+      },
+      codeRedeemedOnce: {
+        description: "A pairing code is never redeemed twice.",
+        never: (trace) => trace.count((event) => event.is(Relay, Redeem) && event.replied(Redeemed)) > 1,
+      },
+    });
+
+    spec.defineScenario({
+      name: "Link a Mac",
+      run(s) {
+        const alice = s.spawn(Person, "Alice");
+        const studio = s.spawn(Mac, "Studio");
+        s.act(alice, "pairHost");
+        s.settle();
+        s.act(studio, "link", { code: alice.state.codes[0] });
+        s.settle();
+      },
+    });
+  },
+);
 ```
 
 Things to notice:
 
-- **`spec` is an object.** Everything is declared through `spec.define<Noun>` and kept
-  in a variable, so later declarations can refer to it (`zone: cloudflare`,
+- **Messages come first.** They are declared in `defineSpec`'s `messages` block, so
+  that their payload types are known before any actor refers to them, and read back
+  with `const { Redeem } = spec.messages`.
+- **`spec` is an object.** Everything else is declared through `spec.define<Noun>` and
+  kept in a variable, so later declarations can refer to it (`zone: cloudflare`,
   `ctx.the(Relay)`).
 - **An actor is a process, as in PlusCal,** declared as plain data:
   - **`initialState(ctx)`** returns the state of a new instance.
-  - **`actions`** are what a person can do to it, each a `spec.defineAction`. They become
+  - **`actions`** are what a person can do to it, as plain objects. They become
     its menu in the playground, with a form for their `inputs`, and the steps that
     scenarios script.
-  - **`transitions`** are what it does by itself, each a `spec.defineTransition`, keyed in
+  - **`transitions`** are what it does by itself, as plain objects, keyed in
     one of two ways:
     - by a `Message`, when it runs because that message arrives (`[Redeem]`);
     - by a label, when it is internal. An internal transition runs when a timer the
@@ -302,9 +312,14 @@ Things to notice:
   a coverage report all name a step the same way: `Mac.link` (an action),
   `Relay.redeem` (a message), `Mac.redeemTimeout` (an internal transition). The
   `description` says in everyday words what the step does.
-- **Inputs have a schema.** The playground renders a form from it, and the checker
-  generates values from it. `examples` says which values matter: the codes people have
-  on screen, plus one that was never issued.
+- **Inputs have a schema:** `{ type: String }`, or `spec.defineInput(String, { examples })`
+  when some values matter more than others (the codes people have on screen, plus one
+  that was never issued). The playground renders a form from it, and the checker
+  generates values from it.
+- **Nothing in an actor needs a type annotation.** `state` comes from `initialState`,
+  `msg` from the message key, and `inputs` from the schema. A misspelled field, a
+  wrong payload, or a `send` of a message a transition doesn't declare is a type
+  error, with a message that says what to do.
 - **Steps declare what they can cause:** `sends` lists the messages a step may send, and
   `starts` the timers it may start. Without running anything, Feynman knows every
   possible transition between actors. The canvas draws those edges, the checker uses
@@ -427,9 +442,11 @@ diff:
   `always` is a predicate on a world, checked on every state. `eventually` is a
   predicate that must hold within `within` events on every path, with fair timers.
   `never` is a predicate on a trace, for patterns of events that must not occur.
-- `Input`: `{ type, examples? }`, where `type` is `String`, `Number`, `Boolean`, or a list
-  of allowed values, and `examples(world)` returns the values worth offering and
-  trying.
+- `Input`: `{ type }`, or `spec.defineInput(type, { examples })`, where `type` is `String`,
+  `Number`, `Boolean`, or a list of allowed values, and `examples(world)` returns the
+  values worth offering and trying.
+- `Message`: declared in the `messages` block as `message<Payload>({ name, over, tone })`.
+  Its key, `"message:<Name>"`, is what transitions are keyed by and what `send` takes.
 
 **Runtime.**
 
@@ -596,6 +613,10 @@ export default defineConfig({
    short explanation, explainers built from specs, and a small call to action for
    setting up your agent with the skill.
 
+**Typing:** [`prototypes/spec-typing/`](../../prototypes/spec-typing/README.md) shows that
+TypeScript 7 types this DSL without annotations, and rejects 17 likely mistakes with
+messages an agent can act on. The API in this RFD is the one that prototype checks.
+
 **Acceptance:** an agent writes a remote-access spec for axo in under 10 minutes with no
 UI code. `feynman check` finds the lost-reply case, either as a counterexample or as a
 covered path. `feynman diff` shows a real change between two axo commits.
@@ -677,14 +698,6 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
 
 ### Before acceptance
 
-- **Typing `state`, `msg`, and `inputs`:** inside `[Redeem]: spec.defineTransition({ run(state, msg) })`,
-  TypeScript must know `state` from the actor's `initialState` and `msg` from the
-  message key. `defineTransition` and `defineAction` return values, so their parameter
-  types have to come from the context they are written in, through the `defineActor`
-  call. A `Message` would be a branded string (its key is `"message:redeem"`) whose
-  payload is looked up in the spec's message registry. This needs a prototype against
-  TypeScript's inference before the API is fixed. Fallbacks: `spec.defineActor<State>()`
-  to name the state type, or passing the message to `defineTransition`.
 - **Guards:** whether actions and message transitions also take a `when` guard,
   as PlusCal's `await` does, so that a message or action can wait until a state holds
   instead of being refused.
@@ -692,6 +705,10 @@ understand one part keep asking agents for throwaway simulators, at about 30 min
   common file, or stay independent.
 
 ### During implementation
+
+- Undeclared sends from actions. The compiler catches them in transitions but not in
+  actions (see [the typing prototype](../../prototypes/spec-typing/README.md)), so the
+  engine must reject them at runtime.
 
 - The copy-on-write draft: Immer, Mutative, or our own Proxy.
 - Snapshot interval and memory budget for long playground sessions.
