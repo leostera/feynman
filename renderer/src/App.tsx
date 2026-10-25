@@ -1,137 +1,151 @@
-import { Button, Empty, Sidebar, Text } from "@cloudflare/kumo";
+import { Badge, Button, Sidebar, Tabs } from "@cloudflare/kumo";
 import {
   ArrowsSplitIcon,
-  CheckCircleIcon,
   CubeIcon,
   DatabaseIcon,
   EyeIcon,
   FileTextIcon,
   GaugeIcon,
+  GitCommitIcon,
   HouseIcon,
   MoonIcon,
   ScalesIcon,
   ShieldCheckIcon,
   SunIcon,
   UsersThreeIcon,
-  XCircleIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
-import { Card } from "./cards";
-import { formatAddress, type Address, type Index } from "./model";
-import { NavigationProvider, useNavigation } from "./navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { href, type Index, type Kind } from "./model";
+import { ActorPage, ActorsPage } from "./pages/Actors";
+import { ClaimPage, ClaimsPage, MeasurementsPage } from "./pages/Claims";
+import { ElementIndexPage, ElementPage, hasElementPages } from "./pages/Elements";
+import { FlowPage, FlowsPage } from "./pages/Flows";
+import { OverviewPage } from "./pages/Overview";
+import { useRoute, type Route } from "./router";
 import { initialMode, setMode, type Mode } from "./theme";
+import { IndexProvider, Page, relativeTime, useIndex } from "./ui";
 
 export function App({ index }: { index: Index }) {
+  const route = useRoute();
   return (
-    <NavigationProvider index={index}>
-      <Sidebar.Provider defaultOpen collapsible="none" className="h-full">
-        <Navigation />
-        <main className="h-full min-w-0 flex-1 overflow-y-auto">
-          <Story />
-        </main>
-      </Sidebar.Provider>
-    </NavigationProvider>
+    <IndexProvider value={index}>
+      <div className="flex h-full flex-col">
+        <TopBar />
+        <Sidebar.Provider defaultOpen collapsible="none" contained className="min-h-0 flex-1">
+          <Navigation route={route} />
+          <main
+            id="main"
+            className="min-w-0 flex-1 overflow-y-auto bg-kumo-canvas"
+            style={{
+              backgroundImage: "radial-gradient(var(--color-kumo-hairline) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          >
+            <Content route={route} />
+          </main>
+        </Sidebar.Provider>
+      </div>
+    </IndexProvider>
   );
 }
 
-const SECTIONS: { id: string; label: string; icon: typeof HouseIcon }[] = [
-  { id: "actors", label: "Actors", icon: UsersThreeIcon },
-  { id: "flows", label: "Flows", icon: ArrowsSplitIcon },
-  { id: "state", label: "State", icon: DatabaseIcon },
-  { id: "invariants", label: "Invariants", icon: ShieldCheckIcon },
-  { id: "boundaries", label: "Boundaries", icon: CubeIcon },
-  { id: "contracts", label: "Contracts", icon: FileTextIcon },
-  { id: "observability", label: "Observability", icon: EyeIcon },
-  { id: "measurements", label: "Measurements", icon: GaugeIcon },
-  { id: "claims", label: "Claims", icon: ScalesIcon },
-];
+function Content({ route }: { route: Route }) {
+  const index = useIndex();
+  switch (route.page) {
+    case "overview":
+      return <OverviewPage />;
+    case "measurements":
+      return <MeasurementsPage />;
+    case "index":
+      if (route.kind === "actor") return <ActorsPage />;
+      if (route.kind === "flow") return <FlowsPage />;
+      if (route.kind === "claim") return <ClaimsPage />;
+      if (hasElementPages(route.kind)) return <ElementIndexPage kind={route.kind} />;
+      return <NotFound />;
+    case "detail": {
+      const exists = route.kind === "claim" ? index.claims.has(route.id) : index.kindOf.get(route.id) === route.kind;
+      if (!exists) return <NotFound />;
+      if (route.kind === "actor") return <ActorPage id={route.id} />;
+      if (route.kind === "flow") return <FlowPage id={route.id} />;
+      if (route.kind === "claim") return <ClaimPage id={route.id} />;
+      return <ElementPage kind={route.kind} id={route.id} />;
+    }
+    case "missing":
+      return <NotFound />;
+  }
+}
 
-function Navigation() {
-  const { index, open, story } = useNavigation();
-  const top = story[0];
-  const isTop = (address: Address) => top !== undefined && formatAddress(top) === formatAddress(address);
+function NotFound() {
   return (
-    <Sidebar>
-      <Sidebar.Header>
-        <div className="flex items-center justify-between gap-2 px-2 py-1">
-          <div className="min-w-0">
-            <Text variant="heading" truncate>
-              {index.model.meta.system}
-            </Text>
-            <p className="font-mono text-xs text-kumo-subtle">{index.model.meta.source.commit.slice(0, 7)}</p>
-          </div>
-          <ModeToggle />
-        </div>
-      </Sidebar.Header>
-      <Sidebar.Content>
-        <Sidebar.Group>
-          <Sidebar.Menu>
-            <Sidebar.MenuButton
-              icon={HouseIcon}
-              active={isTop({ kind: "overview", id: "system" })}
-              onClick={() => open({ kind: "overview", id: "system" })}
-            >
-              Overview
-            </Sidebar.MenuButton>
-          </Sidebar.Menu>
-        </Sidebar.Group>
-        <Sidebar.Group>
-          <Sidebar.GroupLabel>Model</Sidebar.GroupLabel>
-          <Sidebar.Menu>
-            {SECTIONS.map((section) => (
-              <Sidebar.MenuButton
-                key={section.id}
-                icon={section.icon}
-                active={isTop({ kind: "index", id: section.id })}
-                onClick={() => open({ kind: "index", id: section.id })}
-              >
-                {section.label}
-              </Sidebar.MenuButton>
-            ))}
-          </Sidebar.Menu>
-        </Sidebar.Group>
-        <Sidebar.Group>
-          <Sidebar.GroupLabel>Flows</Sidebar.GroupLabel>
-          <Sidebar.Menu>
-            {index.model.flows.map((flow) => (
-              <Sidebar.MenuButton
-                key={flow.id}
-                size="sm"
-                active={isTop({ kind: "flow", id: flow.id })}
-                onClick={() => open({ kind: "flow", id: flow.id })}
-              >
-                {flow.id}
-              </Sidebar.MenuButton>
-            ))}
-          </Sidebar.Menu>
-        </Sidebar.Group>
-      </Sidebar.Content>
-      <Sidebar.Footer>
-        <ClaimSummary />
-      </Sidebar.Footer>
-    </Sidebar>
+    <Page
+      title="Not in this model"
+      summary={
+        <>
+          Nothing in the model matches this address. <a className="text-kumo-link hover:underline" href="#/">Go to the overview</a>.
+        </>
+      }
+      sections={[]}
+    />
   );
 }
 
-function ClaimSummary() {
-  const { index, open } = useNavigation();
-  const claims = index.model.claims;
-  const supported = claims.filter((claim) => claim.status === "supported").length;
-  const other = claims.length - supported;
+// Top bar: what this artifact describes, and which view of it you are in.
+
+function TopBar() {
+  const { model } = useIndex();
+  const { source } = model.meta;
   return (
-    <button
-      type="button"
-      onClick={() => open({ kind: "index", id: "claims" })}
-      className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 text-xs text-kumo-subtle hover:bg-kumo-tint"
-    >
-      <span className="flex items-center gap-1">
-        <CheckCircleIcon className="text-kumo-success" size={14} /> {supported} supported
-      </span>
-      <span className="flex items-center gap-1">
-        <XCircleIcon className="text-kumo-warning" size={14} /> {other} to review
-      </span>
-    </button>
+    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-kumo-hairline bg-kumo-base px-4">
+      <a href="#/" className="text-sm font-semibold text-kumo-default">
+        {model.meta.system}
+      </a>
+      <SourceInfo />
+      <div className="ml-4">
+        <Tabs size="sm" value="current" tabs={[{ value: "current", label: "Current state" }]} />
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        {source.url && (
+          <a href={source.url} target="_blank" rel="noreferrer" className="text-xs text-kumo-subtle hover:text-kumo-link hover:underline">
+            {source.url.replace(/^https:\/\//, "")}
+          </a>
+        )}
+        <ModeToggle />
+      </div>
+    </header>
   );
+}
+
+function SourceInfo() {
+  const { source, extractedAt } = useIndex().model.meta;
+  const short = source.commit.slice(0, 7);
+  const commit: ReactNode = source.commitUrl ? (
+    <a href={source.commitUrl} target="_blank" rel="noreferrer" className="font-mono text-kumo-link hover:underline">
+      {short}
+    </a>
+  ) : (
+    <span className="font-mono">{short}</span>
+  );
+  const main = source.main;
+  const position = main ? mainPosition(main) : null;
+  return (
+    <div className="flex items-center gap-2 text-xs text-kumo-subtle">
+      <GitCommitIcon size={14} />
+      {commit}
+      {source.committedAt && <span title={source.committedAt}>committed {relativeTime(source.committedAt)}</span>}
+      {position && main && (
+        <span title={`Compared with ${main.ref} (${main.commit.slice(0, 7)}) ${relativeTime(main.checkedAt)}`}>
+          <Badge variant={main.behind > 0 ? "warning" : "neutral"}>{position}</Badge>
+        </span>
+      )}
+      {extractedAt && <span title={extractedAt}>· modelled {relativeTime(extractedAt)}</span>}
+    </div>
+  );
+}
+
+/** "2 behind main", "1 ahead, 3 behind main", or "at main". */
+function mainPosition(main: { ref: string; ahead: number; behind: number }): string {
+  const parts = [main.ahead > 0 ? `${main.ahead} ahead` : null, main.behind > 0 ? `${main.behind} behind` : null].filter(Boolean);
+  return parts.length === 0 ? `at ${main.ref}` : `${parts.join(", ")} ${main.ref}`;
 }
 
 function ModeToggle() {
@@ -139,41 +153,101 @@ function ModeToggle() {
   useEffect(() => setMode(mode), [mode]);
   const next = mode === "dark" ? "light" : "dark";
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      shape="square"
-      aria-label={`Switch to ${next} mode`}
-      onClick={() => setModeState(next)}
-    >
+    <Button variant="ghost" size="sm" shape="square" aria-label={`Switch to ${next} mode`} onClick={() => setModeState(next)}>
       {mode === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
     </Button>
   );
 }
 
-function Story() {
-  const { story, closeAll, open } = useNavigation();
-  if (story.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center p-8">
-        <Empty
-          title="Nothing open"
-          description="Pick something from the sidebar, or start from the overview."
-          contents={<Button onClick={() => open({ kind: "overview", id: "system" })}>Open overview</Button>}
-        />
-      </div>
-    );
-  }
+// Left navigation: the inventory's structure.
+
+const SECTIONS: { kind: Kind | "measurements"; label: string; icon: typeof HouseIcon }[] = [
+  { kind: "actor", label: "Actors", icon: UsersThreeIcon },
+  { kind: "flow", label: "Flows", icon: ArrowsSplitIcon },
+  { kind: "state", label: "State", icon: DatabaseIcon },
+  { kind: "invariant", label: "Invariants", icon: ShieldCheckIcon },
+  { kind: "boundary", label: "Boundaries", icon: CubeIcon },
+  { kind: "contract", label: "Contracts", icon: FileTextIcon },
+  { kind: "observability", label: "Observability", icon: EyeIcon },
+  { kind: "measurements", label: "Measurements", icon: GaugeIcon },
+  { kind: "claim", label: "Claims", icon: ScalesIcon },
+];
+
+function sectionOf(route: Route): Kind | "measurements" | "overview" | null {
+  if (route.page === "overview") return "overview";
+  if (route.page === "measurements") return "measurements";
+  if (route.page === "index" || route.page === "detail") return route.kind === "machine" ? "state" : route.kind;
+  return null;
+}
+
+function Navigation({ route }: { route: Route }) {
+  const { model } = useIndex();
+  const current = sectionOf(route);
+  const count = (kind: Kind | "measurements"): number => {
+    switch (kind) {
+      case "actor":
+        return model.actors.length;
+      case "flow":
+        return model.flows.length;
+      case "state":
+        return model.state.length + (model.stateMachines?.length ?? 0);
+      case "invariant":
+        return model.invariants.length;
+      case "boundary":
+        return model.boundaries?.length ?? 0;
+      case "contract":
+        return model.contracts?.length ?? 0;
+      case "observability":
+        return model.observability?.length ?? 0;
+      case "measurements":
+        return model.measurements?.length ?? 0;
+      case "claim":
+        return model.claims.length;
+      case "machine":
+        return model.stateMachines?.length ?? 0;
+    }
+  };
+  const activeFlow = route.page === "detail" && route.kind === "flow" ? route.id : null;
+
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
-      <div className="flex justify-end">
-        <Button variant="ghost" size="sm" onClick={closeAll}>
-          Close all
-        </Button>
-      </div>
-      {story.map((address) => (
-        <Card key={formatAddress(address)} address={address} />
-      ))}
-    </div>
+    <Sidebar>
+      <Sidebar.Content>
+        <Sidebar.Group>
+          <Sidebar.Menu>
+            <Sidebar.MenuButton icon={HouseIcon} href="#/" active={current === "overview"}>
+              Overview
+            </Sidebar.MenuButton>
+          </Sidebar.Menu>
+        </Sidebar.Group>
+        <Sidebar.Group>
+          <Sidebar.GroupLabel>Inventory</Sidebar.GroupLabel>
+          <Sidebar.Menu>
+            {SECTIONS.map((section) => (
+              <Sidebar.MenuButton
+                key={section.kind}
+                icon={section.icon}
+                href={section.kind === "measurements" ? "#/measurements" : href(section.kind)}
+                active={current === section.kind}
+              >
+                <span className="flex w-full items-center justify-between">
+                  {section.label}
+                  <span className="text-xs text-kumo-subtle tabular-nums">{count(section.kind)}</span>
+                </span>
+              </Sidebar.MenuButton>
+            ))}
+          </Sidebar.Menu>
+        </Sidebar.Group>
+        <Sidebar.Group>
+          <Sidebar.GroupLabel>Flows</Sidebar.GroupLabel>
+          <Sidebar.Menu>
+            {model.flows.map((flow) => (
+              <Sidebar.MenuButton key={flow.id} size="sm" href={href("flow", flow.id)} active={activeFlow === flow.id}>
+                {flow.id}
+              </Sidebar.MenuButton>
+            ))}
+          </Sidebar.Menu>
+        </Sidebar.Group>
+      </Sidebar.Content>
+    </Sidebar>
   );
 }

@@ -2,18 +2,35 @@
 
 export type Confidence = "high" | "medium" | "low";
 
+export interface Source {
+  repository: string;
+  commit: string;
+  url?: string;
+  commitUrl?: string;
+  /** URL template; `{path}` is replaced by an anchor path. */
+  fileUrl?: string;
+  committedAt?: string;
+  main?: { ref: string; commit: string; ahead: number; behind: number; checkedAt: string };
+  footprint?: { files?: number; lines?: number; excludes?: string[] };
+}
+
 export interface Meta {
   system: string;
   summary: string;
-  source: { repository: string; commit: string };
+  source: Source;
+  extractedAt?: string;
   extractedBy?: string;
   extraction: "bootstrap" | "update";
   coverage?: string;
 }
 
+export type Provenance = "first-party" | "third-party" | "ambient";
+
 export interface Actor {
   id: string;
+  provenance: Provenance;
   summary: string;
+  footprint?: { paths: string[]; files?: number; lines?: number };
   transports?: string[];
   anchors: string[];
   confidence?: Confidence;
@@ -107,6 +124,7 @@ export interface Claim {
   epistemic: "stated" | "inferred" | "measured";
   note?: string;
   evidence: string[];
+  about?: string[];
 }
 
 export interface Model {
@@ -124,38 +142,28 @@ export interface Model {
   claims: Claim[];
 }
 
-/** Element kinds that get their own card. */
-export type Kind =
-  | "overview"
-  | "actor"
-  | "flow"
-  | "state"
-  | "machine"
-  | "boundary"
-  | "invariant"
-  | "contract"
-  | "observability"
-  | "claim"
-  | "index";
+/** Element kinds that have their own page. */
+export type Kind = "actor" | "flow" | "state" | "machine" | "boundary" | "invariant" | "contract" | "observability" | "claim";
 
-/** A card address: `kind:id`, used in the URL fragment. */
-export interface Address {
-  kind: Kind;
-  id: string;
-}
+/** URL segment for each kind's index and detail pages. */
+export const SEGMENT: Record<Kind, string> = {
+  actor: "actors",
+  flow: "flows",
+  state: "state",
+  machine: "machines",
+  boundary: "boundaries",
+  invariant: "invariants",
+  contract: "contracts",
+  observability: "observability",
+  claim: "claims",
+};
 
-export function formatAddress(address: Address): string {
-  return `${address.kind}:${address.id}`;
-}
-
-export function parseAddress(raw: string): Address | null {
-  const colon = raw.indexOf(":");
-  if (colon <= 0) return null;
-  return { kind: raw.slice(0, colon) as Kind, id: decodeURIComponent(raw.slice(colon + 1)) };
+export function href(kind: Kind, id?: string): string {
+  return id === undefined ? `#/${SEGMENT[kind]}` : `#/${SEGMENT[kind]}/${encodeURIComponent(id)}`;
 }
 
 export function claimId(index: number): string {
-  return `claim-${index + 1}`;
+  return `${index + 1}`;
 }
 
 export interface Index {
@@ -222,6 +230,22 @@ export function loadModel(): Model {
   return JSON.parse(element.textContent) as Model;
 }
 
+export type FlowRole = "initiates" | "acts" | "receives";
+
+/** How an actor takes part in a flow: starts it, performs steps in it, or only receives. */
+export function roleIn(flow: Flow, actor: string): FlowRole | null {
+  if (flow.steps[0]?.actor === actor) return "initiates";
+  if (flow.steps.some((step) => step.actor === actor)) return "acts";
+  if (flow.steps.some((step) => step.target === actor)) return "receives";
+  return null;
+}
+
+export function claimsAbout(index: Index, id: string): { id: string; claim: Claim }[] {
+  return index.model.claims
+    .map((claim, i) => ({ id: claimId(i), claim }))
+    .filter(({ claim }) => claim.about?.includes(id));
+}
+
 /** Actors in the order they first take part in a flow. */
 export function flowParticipants(flow: Flow): string[] {
   const seen: string[] = [];
@@ -236,4 +260,9 @@ export function flowParticipants(flow: Flow): string[] {
 /** Path part of an anchor (`path#symbol`). */
 export function anchorPath(anchor: string): string {
   return anchor.split("#")[0];
+}
+
+/** Browsable URL for an anchor at the modelled commit, when the source has one. */
+export function anchorUrl(source: Source, anchor: string): string | null {
+  return source.fileUrl ? source.fileUrl.replace("{path}", anchorPath(anchor)) : null;
 }

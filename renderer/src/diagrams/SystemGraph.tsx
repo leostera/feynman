@@ -4,8 +4,7 @@ import { TooltipComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useEffect, useMemo, useRef } from "react";
-import type { Index } from "../model";
-import { useNavigation } from "../navigation";
+import { href, type Index } from "../model";
 import { useDarkMode } from "../theme";
 
 echarts.use([GraphChart, TooltipComponent, CanvasRenderer]);
@@ -34,7 +33,6 @@ export function interactions(index: Index): Interaction[] {
 /** Actors as nodes, sized by how many flows they take part in; edges are interactions. */
 export function SystemGraph({ index }: { index: Index }) {
   const element = useRef<HTMLDivElement>(null);
-  const { open } = useNavigation();
   const dark = useDarkMode();
 
   const option = useMemo(() => {
@@ -84,7 +82,7 @@ export function SystemGraph({ index }: { index: Index }) {
     const chart = echarts.init(element.current);
     chart.setOption(option);
     chart.on("click", (params) => {
-      if (params.dataType === "node") open({ kind: "actor", id: (params.data as { name: string }).name });
+      if (params.dataType === "node") window.location.hash = href("actor", (params.data as { name: string }).name);
     });
     const resize = new ResizeObserver(() => chart.resize());
     resize.observe(element.current);
@@ -92,7 +90,7 @@ export function SystemGraph({ index }: { index: Index }) {
       resize.disconnect();
       chart.dispose();
     };
-  }, [option, open]);
+  }, [option]);
 
   return <div ref={element} className="h-[420px] w-full rounded-lg bg-kumo-recessed" />;
 }
