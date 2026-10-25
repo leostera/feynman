@@ -157,10 +157,25 @@ export interface Message {
   returns?: Field[];
 }
 
+export type ProtocolStyle =
+  | "json-rpc"
+  | "ndjson"
+  | "binary"
+  | "http"
+  | "websocket"
+  | "grpc"
+  | "graphql"
+  | "database"
+  | "file"
+  | "cli"
+  | "stdio"
+  | "in-process"
+  | "local-storage";
+
 export interface Protocol {
   id: string;
   summary: string;
-  style: string;
+  style: ProtocolStyle;
   transport: string;
   server?: string;
   clients?: string[];

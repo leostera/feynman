@@ -226,7 +226,6 @@ export function depthGaps(model: Model, files: string[] = []): string[] {
       if (step.actor && step.target && step.actor !== step.target) shown.add(pair(step.actor, step.target));
     }
     for (const id of involved) inFlows.add(id);
-    if (involved.size < 2) gaps.push(`flows/${flow.id} involves only ${[...involved].join("") || "no actor"}; name each step's target`);
   }
   for (const protocol of model.protocols) {
     if (!protocol.server || !protocol.clients?.length) gaps.push(`protocols/${protocol.id} does not name its server and clients`);

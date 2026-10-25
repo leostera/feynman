@@ -54,7 +54,7 @@ test("groups gather connected actors within the budget, split large actors, and 
   expect(nextGroup(m, [], sizes)).toBeNull();
 });
 
-test("depth gaps: one-actor flows, unexplained connections, actors in no flow, shallow call paths", () => {
+test("depth gaps: unexplained connections, actors in no flow, shallow call paths", () => {
   const m = model({
     actors: [actor("api", ["api/"], ["db", "user"]), actor("db", ["db/"]), actor("user", null)],
     flows: [
@@ -65,7 +65,6 @@ test("depth gaps: one-actor flows, unexplained connections, actors in no flow, s
     invariants: [{ id: "limit", enforcement: ["runtime"], enforcedAt: [{ trigger: "a request", frames: [{ symbol: "check" }] }] }],
   });
   expect(depthGaps(m)).toEqual([
-    "flows/think involves only api; name each step's target",
     "api ↔ user talk, but no flow step or protocol shows how",
     "invariants/limit is enforced at runtime; trace the call path from its trigger to the check (enforcedAt frames)",
   ]);

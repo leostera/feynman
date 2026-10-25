@@ -26,9 +26,13 @@
         "grpc",
         "graphql",
         "database",
-        "file"
+        "file",
+        "cli",
+        "stdio",
+        "in-process",
+        "local-storage"
       ],
-      "description": "Encoding family; database and file describe persisted formats."
+      "description": "Encoding family. database, file, and local-storage describe persisted formats; cli is a command line (arguments, output, exit status); stdio is messages over a child process's standard input and output; in-process is an API between a host program and code it loads (plugin hooks, registered tools and commands)."
     },
     "transport": {
       "type": "string",

@@ -38,7 +38,7 @@ const SCOPE = [
   "",
   "Write what a newcomer needs to understand the system, and stop there: fewer, essential elements explain better and are extracted faster. A few journeys for what the system exists to do; one flow per distinct behaviour behind a stage (variants that behave alike are one flow; error paths only when the user sees them differently); limits a user can hit (input sizes, timeouts, rates), not internal buffers or display caps; invariants the system's correctness depends on; one sentence per step.",
   "",
-  "How to work: Feynman checks each model file as you write it, and coverage, validity, and what is still thin whenever you stop; feynman_status shows the same. Don't run check, coverage, measure, tests, or your own scripts over the model. Write each element once, completely, rather than revising it. The schemas are fixed: if one cannot express something, say so in your last message instead of changing it. If a Feynman tool reports something that looks wrong, tell the user.",
+  "How to work: Feynman checks each model file as you write it, and coverage, validity, and what is still thin whenever you stop; to find out what comes next, stop rather than calling feynman_status. Don't run check, coverage, measure, tests, or your own scripts over the model. Write each element once, completely, rather than revising it. The schemas are fixed: if one cannot express something, say so in your last message instead of changing it. If a Feynman tool reports something that looks wrong, tell the user.",
 ].join("\n");
 
 const PHASE_1 = [
@@ -55,7 +55,7 @@ const PHASE_1 = [
 
 const PHASE_2 = [
   "Phase 2: flows. For each group of connected actors, read the listed files in full (continue truncated reads with offsets), including tests, then write the flows that run through them.",
-  "A flow is how the system carries out a journey stage: a trigger, steps saying which actor does what to which (with component and protocol), and an outcome. Add each flow to the stage it implements (stage.flows), or call it from a flow that does (step.ref). Anchor every step in a first-party actor to the function that does it, as path#symbol (ClassName.method for methods): its call tree is measured from there. Starting up or being built is not a flow.",
+  "A flow is how the system carries out a journey stage: a trigger, steps saying which actor does what (and to which other actor, when it acts on one, with the protocol), and an outcome. A flow inside one actor is fine: its depth is in the call stacks. Add each flow to the stage it implements (stage.flows), or call it from a flow that does (step.ref). Anchor every step in a first-party actor to the function that does it, as path#symbol (ClassName.method for methods): its call tree is measured from there. Starting up or being built is not a flow.",
   "Add the protocols, state, invariants, claims, and limits you meet, each complete when first written: protocols with their messages, fields, results, framing, and versioning; invariants with enforcement, the call path from trigger to check (enforcedAt), and their tests; claims with evidence; limits with where they are set. Include failure, retry, and recovery flows.",
   "Fix the actor map when the code disagrees. Stop when the group is done, and I will give you the next one.",
 ].join("\n");

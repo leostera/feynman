@@ -116,7 +116,7 @@
     },
     "path": {
       "type": "string",
-      "pattern": "^(actors|flows|protocols|state|state-machines|invariants|claims|limits)/[a-z0-9][a-z0-9-]*$",
+      "pattern": "^(journeys|actors|components|flows|protocols|state|state-machines|invariants|claims|limits)/[a-z0-9][a-z0-9-]*$",
       "description": "Any element, named by its file path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`."
     },
     "sources": {
