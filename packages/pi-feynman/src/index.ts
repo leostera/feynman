@@ -10,7 +10,7 @@ import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   checkModel,
   computeCoverage,
@@ -136,7 +136,7 @@ export default function feynman(pi: ExtensionAPI) {
             type: "custom_message",
             customType: "feynman-coverage",
             display: true,
-            content: `Feynman: ${describeCoverage(report)}, and the model is valid. ${measured}. Render it with /feynman render.`,
+            content: `Feynman: ${describeCoverage(report)}, and the model is valid. ${measured}. Render it with /feynman-render.`,
           },
         ],
       };
@@ -147,7 +147,7 @@ export default function feynman(pi: ExtensionAPI) {
     last = progress;
     if (stalls >= MAX_STALLS) {
       setDrive({ ...drive, active: false });
-      ctx.ui.notify(`Feynman paused: no progress after ${MAX_STALLS} reminders. ${describeCoverage(report)}. Run /feynman extract to resume.`, "warning");
+      ctx.ui.notify(`Feynman paused: no progress after ${MAX_STALLS} reminders. ${describeCoverage(report)}. Run /feynman-extract to resume.`, "warning");
       return;
     }
     return {
@@ -244,59 +244,39 @@ export default function feynman(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("feynman", {
-    description: "Feynman model: extract | status | stop | render [out.html]",
-    getArgumentCompletions: (prefix) =>
-      ["extract", "status", "stop", "render"].filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
-    handler: async (args, ctx) => {
-      const [sub = "status", ...rest] = args.trim().split(/\s+/);
-      let ws: Workspace;
-      try {
-        ws = ensureWorkspace(ctx);
-      } catch (error) {
-        ctx.ui.notify((error as Error).message, "error");
-        return;
-      }
-      switch (sub) {
-        case "extract": {
-          let instructions: string;
-          try {
-            instructions = begin(ctx);
-          } catch (error) {
-            ctx.ui.notify((error as Error).message, "error");
-            return;
-          }
-          await pi.sendUserMessage(instructions);
-          return;
+  /** Register `/feynman-<name>`; failures are reported, not thrown. */
+  const command = (name: string, description: string, run: (args: string, ctx: ExtensionCommandContext, ws: Workspace) => Promise<void> | void) =>
+    pi.registerCommand(`feynman-${name}`, {
+      description,
+      handler: async (args, ctx) => {
+        try {
+          await run(args.trim(), ctx, ensureWorkspace(ctx));
+        } catch (error) {
+          ctx.ui.notify((error as Error).message, error instanceof CoverageError ? "warning" : "error");
         }
-        case "status": {
-          try {
-            const report = computeCoverage(ws.repository, ws.modelDir);
-            ctx.ui.notify(`${describeCoverage(report)}${drive?.active ? " (driving)" : ""}`, "info");
-          } catch (error) {
-            ctx.ui.notify((error as Error).message, error instanceof CoverageError ? "warning" : "error");
-          }
-          return;
-        }
-        case "stop": {
-          if (drive) setDrive({ ...drive, active: false });
-          ctx.ui.notify("Feynman stopped driving the extraction.", "info");
-          return;
-        }
-        case "render": {
-          const out = rest[0] ? join(ctx.cwd, rest[0]) : join(ws.repository, ".feynman", "index.html");
-          try {
-            await render(ws.modelDir, out);
-            ctx.ui.notify(`Rendered ${out}`, "info");
-          } catch (error) {
-            ctx.ui.notify(`Render failed: ${(error as Error).message}`, "error");
-          }
-          return;
-        }
-        default:
-          ctx.ui.notify(`Unknown subcommand ${sub}. Use extract, status, stop, or render.`, "warning");
-      }
-    },
+      },
+    });
+
+  command("extract", "Start or resume extracting the Feynman model at HEAD, and keep the agent going until every file is reviewed", async (_args, ctx) => {
+    await pi.sendUserMessage(begin(ctx));
+  });
+
+  command("status", "Show Feynman model coverage and validity", (_args, ctx, ws) => {
+    const report = computeCoverage(ws.repository, ws.modelDir);
+    const problems = [...report.problems, ...checkModel(ws.modelDir, ws.repository)];
+    const validity = problems.length ? `${problems.length} model problem(s)` : "model valid";
+    ctx.ui.notify(`${describeCoverage(report)}; ${validity}${drive?.active ? "; driving" : ""}`, "info");
+  });
+
+  command("stop", "Stop asking the agent to continue the Feynman extraction", (_args, ctx) => {
+    if (drive) setDrive({ ...drive, active: false });
+    ctx.ui.notify("Feynman stopped driving the extraction.", "info");
+  });
+
+  command("render", "Render the Feynman model to HTML (default .feynman/index.html)", async (args, ctx, ws) => {
+    const out = args ? resolve(ctx.cwd, args) : join(ws.repository, ".feynman", "index.html");
+    await render(ws.modelDir, out);
+    ctx.ui.notify(`Rendered ${out}`, "info");
   });
 }
 

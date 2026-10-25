@@ -71,7 +71,7 @@ from an overview down to the files behind any element.
 ## Process
 
 1. Validate the model: `bun run model check <model-dir> <repository>`.
-2. Render it: `/feynman render` in Pi, or from the Feynman repository
+2. Render it: `/feynman-render` in Pi, or from the Feynman repository
    `bun run render <model-dir> <out.html>` (relative paths resolve from
    `packages/renderer/`). The build bundles the directory with `@feynman/model`
    (collections sorted by id), so the output is byte-identical for the same model.

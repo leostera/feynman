@@ -195,8 +195,8 @@ Mechanical facts come from tools, not from the agent.
   be written any other way.
 - `feynman_status` shows coverage and model problems.
 - Whenever the agent stops, the extension checks coverage and validity, and asks
-  it to continue until both pass; then it measures the model. `/feynman stop`
-  stops this; `/feynman render` renders the model to `.feynman/index.html`.
+  it to continue until both pass; then it measures the model. `/feynman-stop`
+  stops this; `/feynman-render` renders the model to `.feynman/index.html`.
 
 ### From the command line
 
