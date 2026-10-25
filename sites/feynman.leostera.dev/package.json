@@ -18,8 +18,6 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "beta",
-    "@feynman/model": "workspace:*",
-    "@feynman/modeler": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.3.0",
