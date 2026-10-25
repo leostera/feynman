@@ -143,6 +143,17 @@
       "type": "string",
       "pattern": "^(actors|flows|protocols|state|state-machines|invariants|claims|limits)/[a-z0-9][a-z0-9-]*$",
       "description": "Any element, named by its file path without `.json`: `flows/pi-recovery`, `protocols/pi-bridge`."
+    },
+    "sources": {
+      "type": "object",
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+      },
+      "description": "Written by tools, not agents: the git blob id (content hash) of every file this element anchors, at meta.source.commit. When any of these files changes, the element must be re-examined."
     }
   }
 }

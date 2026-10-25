@@ -129,7 +129,10 @@ when the files they are generated from are reviewed.
 ### Update (diff snapshot)
 
 Responsible for: **every file added, modified, or renamed** between the previously
-modelled commit and the new one.
+modelled commit and the new one, and **every element derived from a changed file**.
+Each element records `sources`, the content hash (git blob id) of every file it
+anchors, so elements whose files changed are known exactly, even when history was
+rewritten.
 
 1. Make sure the first snapshot exists: `.feynman/model/` with a `meta.json` whose
    commit is an ancestor of the new commit. If not, bootstrap instead.
@@ -138,8 +141,8 @@ modelled commit and the new one.
    for the old commit (history keeps them).
 3. List the changed files (coverage `--missing`) and get an overview of the
    model (`index`).
-4. Read every changed file, find the elements it affects, and **edit** them; add
-   or remove elements as needed. Do not regenerate the whole model. For deleted
+4. Read every changed file and re-examine the outdated elements listed for it;
+   **edit** them, and add or remove elements as needed. Do not regenerate the whole model. For deleted
    or moved files, update the anchors that pointed at them.
 5. Record each changed file in a ledger, then measure, validate, and run coverage.
 
@@ -158,7 +161,8 @@ file per element so that no agent has to hold the whole model at once:
 ```
 
 An element's id is its file name (a readable kebab-case slug) and is not repeated
-inside the file. Ids are unique within a kind, need not be stable, and renaming
+inside the file. `sources` is written by tools (`measure`), never by hand: the git
+blob id of each file the element anchors, at the modelled commit. Ids are unique within a kind, need not be stable, and renaming
 one means moving its file. Fields that name a specific kind use a bare id
 (`actor`, `target`, `owner`, `server`, `clients`, `from` name actors; `ref` names
 a flow; `protocol` names a protocol). `about` can name any kind, so it uses the
@@ -233,4 +237,5 @@ Mechanical facts come from tools, not from the agent.
   at the modelled commit and that spans fall inside their files.
 - `measure <repository> <model-dir> [--main <ref>]` fills source links (`url`,
   `commitUrl`, `fileUrl`), the commit date, the commit's position relative to
-  main, and file and line counts for the repository and each actor's footprint.
+  main, file and line counts for the repository and each actor's footprint, and
+  every element's `sources`.

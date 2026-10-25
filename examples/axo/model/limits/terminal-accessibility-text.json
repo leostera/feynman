@@ -1,7 +1,14 @@
 {
-  "subject":"Terminal visible screen text exposed through AppKit accessibility APIs is bounded by UTF-8 bytes.",
-  "value":"64 KiB",
-  "kind":"size",
-  "about":["actors/axo-macos-app"],
-  "anchors":["apple/AxoMac/Sources/AxoMac/Terminal/TerminalAccessibility.swift#maximumUTF8Bytes"]
+  "subject": "Terminal visible screen text exposed through AppKit accessibility APIs is bounded by UTF-8 bytes.",
+  "value": "64 KiB",
+  "kind": "size",
+  "about": [
+    "actors/axo-macos-app"
+  ],
+  "anchors": [
+    "apple/AxoMac/Sources/AxoMac/Terminal/TerminalAccessibility.swift#maximumUTF8Bytes"
+  ],
+  "sources": {
+    "apple/AxoMac/Sources/AxoMac/Terminal/TerminalAccessibility.swift": "ff42089d9241a3c365402a0f3f35c779013be33b"
+  }
 }

@@ -47,6 +47,9 @@
         "measured"
       ],
       "description": "stated: a constant in the code. measured: observed by running it."
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
     }
   },
   "description": "model/limits/<id>.json: a bound the system imposes or was observed to hit."

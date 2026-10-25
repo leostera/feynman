@@ -1,11 +1,13 @@
 // Fill the mechanical parts of a model from git: source links, commit age, position
-// relative to main, and code footprints (files and lines) for actors and the repository.
+// relative to main, code footprints (files and lines) for actors and the repository,
+// and each element's `sources` (content hashes of the files it anchors).
 //
 // Agents decide which paths belong to an actor (`actors/<id>.json` → `footprint.paths`);
 // this only counts. Counts are taken at the model's commit, not the working tree.
 import { readConfig } from "./config.mjs";
 import { git, tryGit } from "./git.mjs";
 import { KINDS, loadModel, writeElement, writeMeta } from "./model.mjs";
+import { stampSources } from "./sources.mjs";
 
 // Paths never counted, unless the model lists its own `meta.source.footprint.excludes`.
 // Paths excluded in `.feynman/config.json` are never counted either.
@@ -57,8 +59,9 @@ export function measureModel(repository, modelDir, mainRef = "main") {
     writeElement(modelDir, actorKind, actor);
   }
   writeMeta(modelDir, model.meta);
+  const stamped = stampSources(repository, modelDir);
   return (
-    `measured ${model.actors.filter((actor) => actor.footprint).length} actors; repository ${source.footprint.lines} lines` +
+    `measured ${model.actors.filter((actor) => actor.footprint).length} actors; repository ${source.footprint.lines} lines; sources updated on ${stamped} elements` +
     (source.main ? `; ${source.main.behind} behind / ${source.main.ahead} ahead of ${mainRef}` : "")
   );
 }

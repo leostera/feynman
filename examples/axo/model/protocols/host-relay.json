@@ -3,22 +3,229 @@
   "style": "websocket",
   "transport": "HTTPS WebSocket upgrade through Worker routes /v1/hosts/:host/:role and account-scoped relay routes; the Durable Object pairs daemon and client peers for a host.",
   "server": "axo-cloud-api",
-  "clients": ["axo-macos-app", "axod-daemon"],
+  "clients": [
+    "axo-macos-app",
+    "axod-daemon"
+  ],
   "framing": "JSON-RPC 2.0 text frames, optionally batches of at most 8 calls. Frame maximum 65,536 bytes; strict calls/replies parsed with Zod. Per-peer 30 calls per rolling second; peer schema tracks negotiated state, bounded delivery window and host subscriptions. Pending operation and outbound delivery queues are bounded; oversized reply groups preserve each request ID and batch shape while converting outcomes to reconciliation-required errors.",
   "version": "Protocol version 1 negotiated before non-negotiate methods; daemon registration pins host generation and lease.",
   "messages": [
-    {"name":"axo.protocol.negotiate","kind":"call","fields":[{"name":"protocolVersion","type":"1"}],"returns":[{"name":"protocolVersion","type":"1"},{"name":"methods","type":"string[]"},{"name":"deliveryCredits","type":"{frames:32,bytes:131072}"}]},
-    {"name":"axo.host.register","kind":"call","summary":"Daemon registers host ID, generation, label, kind, capabilities and initial session snapshot; returns host metadata."},
-    {"name":"axo.host.heartbeat / axo.host.sessions.publish","kind":"call","summary":"Renews an admitted daemon lease and publishes current session snapshots."},
-    {"name":"axo.host.subscribe / axo.host.unsubscribe","kind":"call","summary":"Client establishes or removes a host-generation-scoped event subscription."},
-    {"name":"axo.host.event","kind":"event","from":"axod-daemon","summary":"Daemon-originated host.data wraps session snapshots/removals, shell activity, base64 terminal.output and Pi events with host ID and generation; the relay forwards to matching subscribed clients. Terminal bytes are ephemeral, while account Pi events are persisted in session history."},{"name":"axo.host.event notification","kind":"event","summary":"The relay sends subscription-scoped host notifications to subscribed clients; presence changes identify online/offline host generation."},
-    {"name":"axo.remote.session.create / axo.remote.workspace.session.create / axo.remote.session.close","kind":"call","summary":"Client requests session lifecycle operations at the designated host generation."},
-    {"name":"axo.remote.shell.create / axo.remote.shell.close / axo.remote.session.layout.set","kind":"call","summary":"Client changes remote shell catalog and layout."},
-    {"name":"axo.remote.terminal.input","kind":"call","fields":[{"name":"target","type":"HostRef"},{"name":"sessionId","type":"SessionId"},{"name":"shellId","type":"ShellId"},{"name":"sequence","type":"safe integer"},{"name":"data","type":"base64 string","note":"schema length 4..65536"}],"returns":[{"name":"accepted","type":"boolean"}]},
-    {"name":"axo.remote.terminal.resize","kind":"call","fields":[{"name":"target","type":"HostRef"},{"name":"sessionId","type":"SessionId"},{"name":"shellId","type":"ShellId"},{"name":"rows","type":"integer 1..65535"},{"name":"columns","type":"integer 1..65535"}],"returns":[{"name":"accepted","type":"boolean"}]}
+    {
+      "name": "axo.protocol.negotiate",
+      "kind": "call",
+      "fields": [
+        {
+          "name": "protocolVersion",
+          "type": "1"
+        }
+      ],
+      "returns": [
+        {
+          "name": "protocolVersion",
+          "type": "1"
+        },
+        {
+          "name": "methods",
+          "type": "string[]"
+        },
+        {
+          "name": "deliveryCredits",
+          "type": "{frames:32,bytes:131072}"
+        }
+      ]
+    },
+    {
+      "name": "axo.host.register",
+      "kind": "call",
+      "summary": "Daemon registers host ID, generation, label, kind, capabilities and initial session snapshot; returns host metadata."
+    },
+    {
+      "name": "axo.host.heartbeat / axo.host.sessions.publish",
+      "kind": "call",
+      "summary": "Renews an admitted daemon lease and publishes current session snapshots."
+    },
+    {
+      "name": "axo.host.subscribe / axo.host.unsubscribe",
+      "kind": "call",
+      "summary": "Client establishes or removes a host-generation-scoped event subscription."
+    },
+    {
+      "name": "axo.host.event",
+      "kind": "event",
+      "from": "axod-daemon",
+      "summary": "Daemon-originated host.data wraps session snapshots/removals, shell activity, base64 terminal.output and Pi events with host ID and generation; the relay forwards to matching subscribed clients. Terminal bytes are ephemeral, while account Pi events are persisted in session history."
+    },
+    {
+      "name": "axo.host.event notification",
+      "kind": "event",
+      "summary": "The relay sends subscription-scoped host notifications to subscribed clients; presence changes identify online/offline host generation."
+    },
+    {
+      "name": "axo.remote.session.create / axo.remote.workspace.session.create / axo.remote.session.close",
+      "kind": "call",
+      "summary": "Client requests session lifecycle operations at the designated host generation."
+    },
+    {
+      "name": "axo.remote.shell.create / axo.remote.shell.close / axo.remote.session.layout.set",
+      "kind": "call",
+      "summary": "Client changes remote shell catalog and layout."
+    },
+    {
+      "name": "axo.remote.terminal.input",
+      "kind": "call",
+      "fields": [
+        {
+          "name": "target",
+          "type": "HostRef"
+        },
+        {
+          "name": "sessionId",
+          "type": "SessionId"
+        },
+        {
+          "name": "shellId",
+          "type": "ShellId"
+        },
+        {
+          "name": "sequence",
+          "type": "safe integer"
+        },
+        {
+          "name": "data",
+          "type": "base64 string",
+          "note": "schema length 4..65536"
+        }
+      ],
+      "returns": [
+        {
+          "name": "accepted",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "axo.remote.terminal.resize",
+      "kind": "call",
+      "fields": [
+        {
+          "name": "target",
+          "type": "HostRef"
+        },
+        {
+          "name": "sessionId",
+          "type": "SessionId"
+        },
+        {
+          "name": "shellId",
+          "type": "ShellId"
+        },
+        {
+          "name": "rows",
+          "type": "integer 1..65535"
+        },
+        {
+          "name": "columns",
+          "type": "integer 1..65535"
+        }
+      ],
+      "returns": [
+        {
+          "name": "accepted",
+          "type": "boolean"
+        }
+      ]
+    }
   ],
-  "parsing": [{"summary":"Worker authenticates the principal and validates route role, UUID host, origin, upgrade, lease, peer identity and method parameters; result schemas are checked before metadata replies are returned. Host-targeted requests must match the live route's generation.","anchors":["packages/axo-api-worker/src/http/router.ts", "packages/axo-api-worker/src/axo-host-relay.ts", "packages/axo-api/src/contracts.ts"]}],
-  "definitions": ["schemas/axo.leostera.dev/v1/host-relay.schema.json", "packages/axo-api/src/host-contracts.ts", "packages/axo-api/src/contracts.ts"],
+  "parsing": [
+    {
+      "summary": "Worker authenticates the principal and validates route role, UUID host, origin, upgrade, lease, peer identity and method parameters; result schemas are checked before metadata replies are returned. Host-targeted requests must match the live route's generation.",
+      "anchors": [
+        "packages/axo-api-worker/src/http/router.ts",
+        "packages/axo-api-worker/src/axo-host-relay.ts",
+        "packages/axo-api/src/contracts.ts"
+      ]
+    }
+  ],
+  "definitions": [
+    "schemas/axo.leostera.dev/v1/host-relay.schema.json",
+    "packages/axo-api/src/host-contracts.ts",
+    "packages/axo-api/src/contracts.ts"
+  ],
   "compatibility": "Host v1 is advertised; legacy machine register/heartbeat methods remain enabled for existing clients. Durable Object schema migration adapts older route/pending tables. A stale generation is fenced and clients must reconcile unknown outcomes.",
-  "anchors": ["packages/axo-api-worker/src/axo-host-relay.ts", "packages/axo-api-worker/src/relay/peer.ts", "packages/axo-api-worker/src/relay/records.ts", "packages/axo-api-worker/src/relay/replies.ts", "packages/axo-api-worker/tests/replies.test.ts", "packages/axo-api-worker/tests/replies.property.test.ts", "packages/axo-api-worker/tests/api.test.ts", "packages/axo-api-worker/tests/account-manager.test.ts", "packages/axo-api-worker/tests/hosts.test.ts", "packages/axo-api-worker/tests/lifecycle.test.ts", "packages/axo-api-worker/tests/limits.test.ts", "packages/axo-api-worker/tests/harness.ts", "packages/axo-api-worker/src/http/router.ts", "packages/axo-api-worker/src/http/account-hosts.ts", "packages/axo-api-worker/src/http/hosts.ts", "packages/axo-api-worker/src/http/machines.ts", "packages/axo-api-worker/src/http/rpc.ts", "packages/axo-api-worker/src/http/body.ts", "packages/axo-api/src/v1.ts", "packages/axo-api/src/rpc.ts", "packages/axo-api/src/pi-history.ts", "packages/axo-api/src/pairing.ts", "packages/axo-api/src/runtime-contracts.ts", "packages/axo-api/src/pane-records.ts", "schemas/axo.leostera.dev/v1/host-relay.schema.json", "schemas/axo.leostera.dev/v1/events.schema.json", "schemas/axo.leostera.dev/v1/common.schema.json", "schemas/axo.leostera.dev/v1/fixtures/host-list.result.json", "schemas/axo.leostera.dev/v1/fixtures/host-pi-event.relay.json", "schemas/axo.leostera.dev/v1/fixtures/host-register.call.json", "schemas/axo.leostera.dev/v1/fixtures/host-session-create.call.json", "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.event.json", "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.relay.event.json", "schemas/axo.leostera.dev/v1/fixtures/terminal-input.call.json", "schemas/axo.leostera.dev/README.md"]
+  "anchors": [
+    "packages/axo-api-worker/src/axo-host-relay.ts",
+    "packages/axo-api-worker/src/relay/peer.ts",
+    "packages/axo-api-worker/src/relay/records.ts",
+    "packages/axo-api-worker/src/relay/replies.ts",
+    "packages/axo-api-worker/tests/replies.test.ts",
+    "packages/axo-api-worker/tests/replies.property.test.ts",
+    "packages/axo-api-worker/tests/api.test.ts",
+    "packages/axo-api-worker/tests/account-manager.test.ts",
+    "packages/axo-api-worker/tests/hosts.test.ts",
+    "packages/axo-api-worker/tests/lifecycle.test.ts",
+    "packages/axo-api-worker/tests/limits.test.ts",
+    "packages/axo-api-worker/tests/harness.ts",
+    "packages/axo-api-worker/src/http/router.ts",
+    "packages/axo-api-worker/src/http/account-hosts.ts",
+    "packages/axo-api-worker/src/http/hosts.ts",
+    "packages/axo-api-worker/src/http/machines.ts",
+    "packages/axo-api-worker/src/http/rpc.ts",
+    "packages/axo-api-worker/src/http/body.ts",
+    "packages/axo-api/src/v1.ts",
+    "packages/axo-api/src/rpc.ts",
+    "packages/axo-api/src/pi-history.ts",
+    "packages/axo-api/src/pairing.ts",
+    "packages/axo-api/src/runtime-contracts.ts",
+    "packages/axo-api/src/pane-records.ts",
+    "schemas/axo.leostera.dev/v1/host-relay.schema.json",
+    "schemas/axo.leostera.dev/v1/events.schema.json",
+    "schemas/axo.leostera.dev/v1/common.schema.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-list.result.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pi-event.relay.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-register.call.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-create.call.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.event.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.relay.event.json",
+    "schemas/axo.leostera.dev/v1/fixtures/terminal-input.call.json",
+    "schemas/axo.leostera.dev/README.md"
+  ],
+  "sources": {
+    "packages/axo-api-worker/src/axo-host-relay.ts": "0d13d5878b5a3532f907f0c9180e5f966b5f9c16",
+    "packages/axo-api-worker/src/http/account-hosts.ts": "c4997b4902c21508bd39d397d1ca34c89c79f54d",
+    "packages/axo-api-worker/src/http/body.ts": "efe8ab0f50db93c82f82408daab96065a7aa2a14",
+    "packages/axo-api-worker/src/http/hosts.ts": "6797e58bbf5fe1ff032be9703ab78611a8ed41ac",
+    "packages/axo-api-worker/src/http/machines.ts": "07d400d15b125db2236a4f08c6ef2eb8a70376e4",
+    "packages/axo-api-worker/src/http/router.ts": "54759c8854a25b4ef430af9c053d8458ab45cadb",
+    "packages/axo-api-worker/src/http/rpc.ts": "67e0deea56d146985cf4d61f654b3d1ab807ba05",
+    "packages/axo-api-worker/src/relay/peer.ts": "22d981a3d214f70567670b1867385baf1d12a921",
+    "packages/axo-api-worker/src/relay/records.ts": "316470f7f8e8cef2b8f56ee740a4f12bd721be31",
+    "packages/axo-api-worker/src/relay/replies.ts": "eb0b22aefa3017b84181ddf0523e908d9a60b6e4",
+    "packages/axo-api-worker/tests/account-manager.test.ts": "940c2fb70a8c3c09356e7a699c6246e517558db0",
+    "packages/axo-api-worker/tests/api.test.ts": "bb1f74b699c4babdd3febadeaaa56047d181c2d3",
+    "packages/axo-api-worker/tests/harness.ts": "337974ac0c8be601e9e0a3efefa2087f411d9892",
+    "packages/axo-api-worker/tests/hosts.test.ts": "7f65a1122d3171b6c9f9765efedba14f570f8294",
+    "packages/axo-api-worker/tests/lifecycle.test.ts": "febd667886598b4829bf4efaca6ca9ec04c4cb3c",
+    "packages/axo-api-worker/tests/limits.test.ts": "3b0e2f2d2fa6cf33e34785adae5c746214328c6d",
+    "packages/axo-api-worker/tests/replies.property.test.ts": "9cf207cab3b0df56355c152483c5ff63e2153e45",
+    "packages/axo-api-worker/tests/replies.test.ts": "ccd327f14b8891de96496af717c71eed760d500c",
+    "packages/axo-api/src/contracts.ts": "1a030fbf5805018e22d0317ac532f4db11afaf1d",
+    "packages/axo-api/src/host-contracts.ts": "2d6a5e7eca60a736b0a501cb04801c80487a532d",
+    "packages/axo-api/src/pairing.ts": "0f33d7643198b37596ef3478fa32d0078d3237aa",
+    "packages/axo-api/src/pane-records.ts": "1164d97ba2a87cac2ff5ec7094e9b7bdf5f3336b",
+    "packages/axo-api/src/pi-history.ts": "5b729ff25c8fe6e36e5fd79eaf04cd694b14b347",
+    "packages/axo-api/src/rpc.ts": "55a4c0e7372abf8477e026f62bda5646b1106466",
+    "packages/axo-api/src/runtime-contracts.ts": "779ec007db9e6c6d23f44448dfd38c11f3d94b2e",
+    "packages/axo-api/src/v1.ts": "b940dbe4a2551fc13c4faf9815b616f6aeb14d35",
+    "schemas/axo.leostera.dev/README.md": "763240296327a260cfb10dd8433a764951a8ceac",
+    "schemas/axo.leostera.dev/v1/common.schema.json": "010542cfc5d4fc37d88387730383c9b7a59544e9",
+    "schemas/axo.leostera.dev/v1/events.schema.json": "9e776842f820454eca872c4ac667995e9b8970cc",
+    "schemas/axo.leostera.dev/v1/fixtures/host-list.result.json": "a2fe75c6263a5d246d6138abbecf666188679dd4",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pi-event.relay.json": "83c3b5e15aa6e4b90a6ead5d711f951fa8e2305e",
+    "schemas/axo.leostera.dev/v1/fixtures/host-register.call.json": "f20365ffcd71fb36403806ce44bab58fcd4be924",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-create.call.json": "d227d68754c8ae5d55e3b435cac2ba814c887d53",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.event.json": "341e0c317201d467cc9b9a4e2db654329b6015af",
+    "schemas/axo.leostera.dev/v1/fixtures/host-session-snapshot.relay.event.json": "8fcefd029fe4c22efd80dbaabc0648108be9e9ad",
+    "schemas/axo.leostera.dev/v1/fixtures/terminal-input.call.json": "7981335fd8bd7d1d68eba009231c2338566ac424",
+    "schemas/axo.leostera.dev/v1/host-relay.schema.json": "59a940c747c292a6f6eee88e39410015abac79dc"
+  }
 }

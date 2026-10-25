@@ -1,6 +1,43 @@
 {
-  "summary":"An authenticated browser subscribes to one live host generation, renders live-only terminal output and sends terminal input and resize controls through the account-scoped relay.",
-  "trigger":"A signed-in user selects an online host in the browser workspace.",
-  "steps":[{"actor":"axo-web-client","action":"Open an account-scoped WebSocket, negotiate relay protocol v1 and subscribe to the selected host ID and generation.","protocol":"host-relay"},{"actor":"axo-cloud-api","action":"Authorize and route subscription and RPC messages through the host relay to the matching online host; delivery credits bound outstanding frames."},{"actor":"axod-daemon","action":"Serve metadata and remote session/terminal control requests, while publishing live output and session events through the relay."},{"actor":"axo-cloud-api","action":"Forward live terminal output to the subscribed browser and store structured Pi events in private history; do not persist terminal bytes."},{"actor":"axo-web-client","action":"Decode terminal output into the matching xterm pane and send sequenced terminal input or debounced resize only while the selected host connection is active."}],
-  "anchors":["packages/axo-web-app/src/remote-terminal-app.tsx", "packages/axo-web-app/src/terminal-pane.tsx", "packages/axo-app/src/index.ts", "packages/axo-api-worker/src/axo-host-relay.ts", "packages/axo-api-worker/src/session-history.ts", "crates/axod/src/main.rs"]
+  "summary": "An authenticated browser subscribes to one live host generation, renders live-only terminal output and sends terminal input and resize controls through the account-scoped relay.",
+  "trigger": "A signed-in user selects an online host in the browser workspace.",
+  "steps": [
+    {
+      "actor": "axo-web-client",
+      "action": "Open an account-scoped WebSocket, negotiate relay protocol v1 and subscribe to the selected host ID and generation.",
+      "protocol": "host-relay"
+    },
+    {
+      "actor": "axo-cloud-api",
+      "action": "Authorize and route subscription and RPC messages through the host relay to the matching online host; delivery credits bound outstanding frames."
+    },
+    {
+      "actor": "axod-daemon",
+      "action": "Serve metadata and remote session/terminal control requests, while publishing live output and session events through the relay."
+    },
+    {
+      "actor": "axo-cloud-api",
+      "action": "Forward live terminal output to the subscribed browser and store structured Pi events in private history; do not persist terminal bytes."
+    },
+    {
+      "actor": "axo-web-client",
+      "action": "Decode terminal output into the matching xterm pane and send sequenced terminal input or debounced resize only while the selected host connection is active."
+    }
+  ],
+  "anchors": [
+    "packages/axo-web-app/src/remote-terminal-app.tsx",
+    "packages/axo-web-app/src/terminal-pane.tsx",
+    "packages/axo-app/src/index.ts",
+    "packages/axo-api-worker/src/axo-host-relay.ts",
+    "packages/axo-api-worker/src/session-history.ts",
+    "crates/axod/src/main.rs"
+  ],
+  "sources": {
+    "crates/axod/src/main.rs": "30259d1461e07a8a613ff96d3d21c768109ece6d",
+    "packages/axo-api-worker/src/axo-host-relay.ts": "0d13d5878b5a3532f907f0c9180e5f966b5f9c16",
+    "packages/axo-api-worker/src/session-history.ts": "4b3e50c3bb43a5c3f9d7f1db7eb55e59df9aa3bc",
+    "packages/axo-app/src/index.ts": "1ba4a84960c574bb3af0572f7c2d8b6c1515caf3",
+    "packages/axo-web-app/src/remote-terminal-app.tsx": "c31d4c55a8c2f8e8af6598f5c75d7bef3fb3efac",
+    "packages/axo-web-app/src/terminal-pane.tsx": "e6b8c657f506e108f2776b4f4c4550dbccacfd8c"
+  }
 }

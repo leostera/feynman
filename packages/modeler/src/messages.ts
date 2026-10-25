@@ -19,7 +19,18 @@ export function kickoff(start: Start, report: CoverageReport): string {
     "Work the way you would to understand the system: start from the entrypoints and follow the code across files, wherever it leads. Read each file in full; skimming a few lines does not count. As you go, write and refine model elements, anchor them to the files they come from, and record the files you have read with feynman_reviewed. Use feynman_status to see what is left.",
     "The model is the point, not the count: every behaviour you read about (messages, flows, state, invariants, limits, protocols) belongs in it.",
     "Whenever you stop, I will check which files are still unreviewed and whether the model is valid, and ask you to continue until nothing is left.",
+    ...outdated(report),
   ].join("\n");
+}
+
+/** Elements derived from files that changed: they must be re-examined, not just the files. */
+function outdated(report: CoverageReport): string[] {
+  if (!report.outdated.length) return [];
+  return [
+    "",
+    `${report.outdated.length} element(s) were derived from files that changed; re-examine each against its changed sources and update or remove it:`,
+    ...report.outdated.slice(0, 30).map(({ kind, id, files }) => `  ${kind}/${id}: ${files.join(", ")}`),
+  ];
 }
 
 /** Coverage and problems; `nudge` adds the request to continue. */
@@ -30,6 +41,7 @@ export function continuation(report: CoverageReport, problems: string[], nudge =
     out.push("", "Unreviewed, by directory:");
     for (const [group, n] of groupMissing(report.missing).slice(0, 20)) out.push(`  ${String(n).padStart(4)}  ${group}`);
     out.push("", "Some of them:", ...report.missing.slice(0, LISTED_PATHS).map((path) => `  ${path}`));
+    out.push(...outdated({ ...report, outdated: report.outdated.filter(({ files }) => files.some((file) => report.missing.includes(file))) }));
   }
   if (problems.length) {
     out.push("", `The model has ${problems.length} problem(s)${nudge ? "; fix them" : ""}:`, ...problems.slice(0, 20).map((problem) => `  ${problem}`));

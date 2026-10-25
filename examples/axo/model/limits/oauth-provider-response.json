@@ -1,7 +1,14 @@
 {
-  "subject":"Cloudflare OAuth token and userinfo endpoint responses are bounded before parsing.",
-  "value":"16 KiB",
-  "kind":"size",
-  "about":["actors/axo-cloud-api"],
-  "anchors":["packages/axo-api-worker/src/auth/provider.ts#boundedJson"]
+  "subject": "Cloudflare OAuth token and userinfo endpoint responses are bounded before parsing.",
+  "value": "16 KiB",
+  "kind": "size",
+  "about": [
+    "actors/axo-cloud-api"
+  ],
+  "anchors": [
+    "packages/axo-api-worker/src/auth/provider.ts#boundedJson"
+  ],
+  "sources": {
+    "packages/axo-api-worker/src/auth/provider.ts": "12500e115d1ac3ca1fdb719615ce953aa320802c"
+  }
 }

@@ -25,6 +25,9 @@
     },
     "anchors": {
       "$ref": "urn:feynman:common#/$defs/anchors"
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
     }
   }
 }

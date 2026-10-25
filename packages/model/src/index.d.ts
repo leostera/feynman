@@ -62,6 +62,8 @@ export interface CoverageReport {
   unknown: string[];
   /** Pathspecs excluded by .feynman/config.json. */
   exclude: string[];
+  /** Update only: elements whose source files changed since they were derived. */
+  outdated: OutdatedElement[];
   problems: string[];
 }
 export function computeCoverage(repository: string, modelDir: string): CoverageReport;
@@ -83,3 +85,14 @@ export interface Config {
 export function configPath(modelDir: string): string;
 export function readConfig(modelDir: string): Config;
 export function excludePathspecs(exclude: string[]): string[];
+
+export interface OutdatedElement {
+  /** Model directory of the kind, e.g. "flows". */
+  kind: string;
+  id: string;
+  /** Sources whose content changed or that no longer exist. */
+  files: string[];
+}
+export function blobIds(repository: string, commit: string): Map<string, string>;
+export function stampSources(repository: string, modelDir: string): number;
+export function outdatedElements(repository: string, modelDir: string, commit: string): OutdatedElement[];

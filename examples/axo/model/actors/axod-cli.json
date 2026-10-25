@@ -14,5 +14,8 @@
   },
   "anchors": [
     "crates/axod/src/main.rs"
-  ]
+  ],
+  "sources": {
+    "crates/axod/src/main.rs": "30259d1461e07a8a613ff96d3d21c768109ece6d"
+  }
 }

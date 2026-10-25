@@ -3,15 +3,127 @@
   "style": "http",
   "transport": "Cloudflare Worker HTTP routes POST /api/v1/account/host-pairings and POST /api/v1/host-pairings/redeem.",
   "server": "axo-cloud-api",
-  "clients": ["axo-macos-app", "axod-daemon"],
+  "clients": [
+    "axo-macos-app",
+    "axod-daemon"
+  ],
   "version": "v1 JSON contracts; routes are mounted by the Worker router.",
   "messages": [
-    {"name":"POST /api/v1/account/host-pairings","kind":"route","summary":"Account-authenticated request to create a one-time code; result includes code and expiry."},
-    {"name":"POST /api/v1/host-pairings/redeem","kind":"route","summary":"Redeems code with host ID, current generation, credential ID/secret, label and kind; returns linked account/host identity and timestamp."},
-    {"name":"HostPairingRedeemRequest","kind":"record","fields":[{"name":"code","type":"string","note":"8 Crockford-style symbols separated by a hyphen"},{"name":"hostId","type":"UUID"},{"name":"hostGeneration","type":"UUID"},{"name":"credentialId","type":"UUID"},{"name":"credential","type":"string","note":"43 URL-safe base64 characters"},{"name":"label","type":"string","note":"1..128 chars"},{"name":"hostKind","type":"slug","note":"^[a-z][a-z0-9-]{0,63}$"}]},
-    {"name":"HostPairingRedeemResult","kind":"record","fields":[{"name":"linked","type":"true"},{"name":"accountId","type":"UUID"},{"name":"hostId","type":"UUID"},{"name":"hostGeneration","type":"UUID"},{"name":"credentialId","type":"UUID"},{"name":"linkedAt","type":"date-time"}]}
+    {
+      "name": "POST /api/v1/account/host-pairings",
+      "kind": "route",
+      "summary": "Account-authenticated request to create a one-time code; result includes code and expiry."
+    },
+    {
+      "name": "POST /api/v1/host-pairings/redeem",
+      "kind": "route",
+      "summary": "Redeems code with host ID, current generation, credential ID/secret, label and kind; returns linked account/host identity and timestamp."
+    },
+    {
+      "name": "HostPairingRedeemRequest",
+      "kind": "record",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string",
+          "note": "8 Crockford-style symbols separated by a hyphen"
+        },
+        {
+          "name": "hostId",
+          "type": "UUID"
+        },
+        {
+          "name": "hostGeneration",
+          "type": "UUID"
+        },
+        {
+          "name": "credentialId",
+          "type": "UUID"
+        },
+        {
+          "name": "credential",
+          "type": "string",
+          "note": "43 URL-safe base64 characters"
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "note": "1..128 chars"
+        },
+        {
+          "name": "hostKind",
+          "type": "slug",
+          "note": "^[a-z][a-z0-9-]{0,63}$"
+        }
+      ]
+    },
+    {
+      "name": "HostPairingRedeemResult",
+      "kind": "record",
+      "fields": [
+        {
+          "name": "linked",
+          "type": "true"
+        },
+        {
+          "name": "accountId",
+          "type": "UUID"
+        },
+        {
+          "name": "hostId",
+          "type": "UUID"
+        },
+        {
+          "name": "hostGeneration",
+          "type": "UUID"
+        },
+        {
+          "name": "credentialId",
+          "type": "UUID"
+        },
+        {
+          "name": "linkedAt",
+          "type": "date-time"
+        }
+      ]
+    }
   ],
-  "parsing": [{"summary":"JSON request and result objects disallow additional properties; code, UUIDs, credential encoding, label and host kind are pattern- or length-checked by schema and API implementation.","anchors":["schemas/axo.leostera.dev/v1/pairing.schema.json", "packages/axo-api-worker/src/http/router.ts"]}],
-  "definitions": ["schemas/axo.leostera.dev/v1/pairing.schema.json"],
-  "anchors": ["schemas/axo.leostera.dev/v1/pairing.schema.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-create.result.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.call.json", "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.result.json", "packages/axo-api-worker/src/http/router.ts", "packages/axo-api-worker/src/auth/pairing.ts", "apple/AxoRPC/Sources/AxoRPC/HostPairingCode.swift", "apple/AxoRPC/Tests/AxoRPCTests/BoundaryValueTests.swift", "crates/axo-relay/src/pairing.rs", "crates/axo-relay/src/credential.rs", "crates/axo-relay/src/relay.rs"]
+  "parsing": [
+    {
+      "summary": "JSON request and result objects disallow additional properties; code, UUIDs, credential encoding, label and host kind are pattern- or length-checked by schema and API implementation.",
+      "anchors": [
+        "schemas/axo.leostera.dev/v1/pairing.schema.json",
+        "packages/axo-api-worker/src/http/router.ts"
+      ]
+    }
+  ],
+  "definitions": [
+    "schemas/axo.leostera.dev/v1/pairing.schema.json"
+  ],
+  "anchors": [
+    "schemas/axo.leostera.dev/v1/pairing.schema.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-create.result.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.call.json",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.result.json",
+    "packages/axo-api-worker/src/http/router.ts",
+    "packages/axo-api-worker/src/auth/pairing.ts",
+    "apple/AxoRPC/Sources/AxoRPC/HostPairingCode.swift",
+    "apple/AxoRPC/Tests/AxoRPCTests/BoundaryValueTests.swift",
+    "crates/axo-relay/src/pairing.rs",
+    "crates/axo-relay/src/credential.rs",
+    "crates/axo-relay/src/relay.rs"
+  ],
+  "sources": {
+    "apple/AxoRPC/Sources/AxoRPC/HostPairingCode.swift": "badd741685cc7a814bb145eaf6aca899962964b5",
+    "apple/AxoRPC/Tests/AxoRPCTests/BoundaryValueTests.swift": "c9a8187e292ef90b44eee47d01160b01d8376cf2",
+    "crates/axo-relay/src/credential.rs": "ccd5f837fa647f1d7d5daf1c065d8f6a8d13f7eb",
+    "crates/axo-relay/src/pairing.rs": "2eb18468d2c2efdc7f6c64726b4cb3a15a1e3e87",
+    "crates/axo-relay/src/relay.rs": "c6c7f3ef7b59e6889c02e1d2f7c4d4a9f220f6d9",
+    "packages/axo-api-worker/src/auth/pairing.ts": "e797800865f9fcf95e4cc8f1c3e0d1709738e2da",
+    "packages/axo-api-worker/src/http/router.ts": "54759c8854a25b4ef430af9c053d8458ab45cadb",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-create.result.json": "8fdc3c13ad770ddab774a65fad791cf01fb1c010",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.call.json": "8e8d49df65f2e25492d5894f4b70b798d5f03fc9",
+    "schemas/axo.leostera.dev/v1/fixtures/host-pairing-redeem.result.json": "230a30f1a20909212fe33b65a6011801c176683b",
+    "schemas/axo.leostera.dev/v1/pairing.schema.json": "3b41587cf4624d29cff314238744e27c14c67384"
+  }
 }

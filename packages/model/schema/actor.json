@@ -57,6 +57,9 @@
     },
     "footprint": {
       "$ref": "urn:feynman:common#/$defs/actorFootprint"
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
     }
   },
   "if": {

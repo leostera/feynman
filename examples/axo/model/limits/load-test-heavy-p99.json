@@ -1,7 +1,14 @@
 {
-  "subject":"Heavy load profile pass threshold for control-plane operation p99 latency.",
-  "value":"10 ms",
-  "kind":"latency",
-  "about":["flows/daemon-load-test"],
-  "anchors":["crates/axod-loadtest/src/main.rs#Profile::named"]
+  "subject": "Heavy load profile pass threshold for control-plane operation p99 latency.",
+  "value": "10 ms",
+  "kind": "latency",
+  "about": [
+    "flows/daemon-load-test"
+  ],
+  "anchors": [
+    "crates/axod-loadtest/src/main.rs#Profile::named"
+  ],
+  "sources": {
+    "crates/axod-loadtest/src/main.rs": "50f6458b745ae12e473fd5a6982fd2a91ad3796f"
+  }
 }

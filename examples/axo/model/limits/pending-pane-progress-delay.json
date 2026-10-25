@@ -1,7 +1,14 @@
 {
-  "subject":"A pending pane creation must remain in progress for this delay before showing a spinner, avoiding flicker for fast local requests.",
-  "value":"150 ms",
-  "kind":"latency",
-  "about":["actors/axo-macos-app"],
-  "anchors":["apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneViews.swift#progressDelay"]
+  "subject": "A pending pane creation must remain in progress for this delay before showing a spinner, avoiding flicker for fast local requests.",
+  "value": "150 ms",
+  "kind": "latency",
+  "about": [
+    "actors/axo-macos-app"
+  ],
+  "anchors": [
+    "apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneViews.swift#progressDelay"
+  ],
+  "sources": {
+    "apple/AxoMac/Sources/AxoMac/Workbench/TerminalPaneViews.swift": "d0c33715a7cd9b59edf5f6c6f6ac145d8a1d2ec4"
+  }
 }

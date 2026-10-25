@@ -14,5 +14,8 @@
   },
   "anchors": [
     "packages/axo-api-worker/scripts/dummy-client.ts"
-  ]
+  ],
+  "sources": {
+    "packages/axo-api-worker/scripts/dummy-client.ts": "a08f7834196105cb0ea76f53e97731c2106ce86d"
+  }
 }

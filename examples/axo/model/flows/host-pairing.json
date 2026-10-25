@@ -1,11 +1,41 @@
 {
-  "summary":"A signed-in account creates a short-lived pairing code; axod redeems it with a generated credential and current host generation, creating or rotating the account's linked host credential.",
-  "trigger":"User initiates host pairing from app settings and daemon redeems the presented one-time code.",
-  "steps":[
-    {"actor":"axo-cloud-api","action":"Authenticate account with CSRF protection, apply issuance rate limits, create a random code and store only a purpose-separated HMAC verifier; reserve verifier in the pairing index."},
-    {"actor":"axod-daemon","action":"Generate 32 random bytes and store them in Keychain before network use; persist pending credential ID and current host generation in a strict mode-0600 config, then redeem the normalized code over TLS with host identity and credential material. A transport failure retries the redemption once."},
-    {"actor":"axo-cloud-api","action":"Bound and parse request body, apply global/source redemption rate limits, look up unexpired verifier, HMAC the credential and atomically consume pairing into account host storage."},
-    {"actor":"axo-cloud-api","action":"Return linked host identity and credential ID; if an existing host credential was rotated, close the previous host relay.","protocol":"host-pairing-http"}
+  "summary": "A signed-in account creates a short-lived pairing code; axod redeems it with a generated credential and current host generation, creating or rotating the account's linked host credential.",
+  "trigger": "User initiates host pairing from app settings and daemon redeems the presented one-time code.",
+  "steps": [
+    {
+      "actor": "axo-cloud-api",
+      "action": "Authenticate account with CSRF protection, apply issuance rate limits, create a random code and store only a purpose-separated HMAC verifier; reserve verifier in the pairing index."
+    },
+    {
+      "actor": "axod-daemon",
+      "action": "Generate 32 random bytes and store them in Keychain before network use; persist pending credential ID and current host generation in a strict mode-0600 config, then redeem the normalized code over TLS with host identity and credential material. A transport failure retries the redemption once."
+    },
+    {
+      "actor": "axo-cloud-api",
+      "action": "Bound and parse request body, apply global/source redemption rate limits, look up unexpired verifier, HMAC the credential and atomically consume pairing into account host storage."
+    },
+    {
+      "actor": "axo-cloud-api",
+      "action": "Return linked host identity and credential ID; if an existing host credential was rotated, close the previous host relay.",
+      "protocol": "host-pairing-http"
+    }
   ],
-  "anchors":["packages/axo-api-worker/src/auth/pairing.ts", "packages/axo-api-worker/src/auth/account-manager.ts", "packages/axo-api-worker/src/auth/pairing-directory.ts", "packages/axo-api-worker/src/http/router.ts", "crates/axo-relay/src/pairing.rs", "crates/axo-relay/src/relay.rs", "crates/axo-relay/src/credential.rs"]
+  "anchors": [
+    "packages/axo-api-worker/src/auth/pairing.ts",
+    "packages/axo-api-worker/src/auth/account-manager.ts",
+    "packages/axo-api-worker/src/auth/pairing-directory.ts",
+    "packages/axo-api-worker/src/http/router.ts",
+    "crates/axo-relay/src/pairing.rs",
+    "crates/axo-relay/src/relay.rs",
+    "crates/axo-relay/src/credential.rs"
+  ],
+  "sources": {
+    "crates/axo-relay/src/credential.rs": "ccd5f837fa647f1d7d5daf1c065d8f6a8d13f7eb",
+    "crates/axo-relay/src/pairing.rs": "2eb18468d2c2efdc7f6c64726b4cb3a15a1e3e87",
+    "crates/axo-relay/src/relay.rs": "c6c7f3ef7b59e6889c02e1d2f7c4d4a9f220f6d9",
+    "packages/axo-api-worker/src/auth/account-manager.ts": "b5cc0fd21d759a10bb00f8275bc457afc8b2a553",
+    "packages/axo-api-worker/src/auth/pairing-directory.ts": "0b775be6194a8025777c5973cb711c27735de5e0",
+    "packages/axo-api-worker/src/auth/pairing.ts": "e797800865f9fcf95e4cc8f1c3e0d1709738e2da",
+    "packages/axo-api-worker/src/http/router.ts": "54759c8854a25b4ef430af9c053d8458ab45cadb"
+  }
 }

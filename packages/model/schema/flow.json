@@ -61,6 +61,9 @@
     },
     "confidence": {
       "$ref": "urn:feynman:common#/$defs/confidence"
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
     }
   }
 }

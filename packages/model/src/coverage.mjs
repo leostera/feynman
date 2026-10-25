@@ -3,7 +3,9 @@
 //   bootstrap: every file tracked at the modelled commit (that is, every file git
 //              does not ignore), vendored and generated trees included.
 //   update:    every file added, modified, or renamed between meta.source.base and
-//              meta.source.commit. The base must be an ancestor of the commit.
+//              meta.source.commit (the base must be an ancestor of the commit), plus
+//              every file an element was derived from whose content hash no longer
+//              matches (see sources.mjs). Those elements are reported as outdated.
 //
 // Reviewed files come from the ledgers in <model-dir>/coverage/*.json whose
 // `commit` is the modelled commit.
@@ -12,6 +14,7 @@ import { join } from "node:path";
 import { git, lines, tryGit, trackedFiles } from "./git.mjs";
 import { excludePathspecs, readConfig } from "./config.mjs";
 import { loadModel, readCoverage } from "./model.mjs";
+import { outdatedElements } from "./sources.mjs";
 
 export class CoverageError extends Error {}
 
@@ -22,7 +25,8 @@ export const MODEL_ROOT = ".feynman/";
  * Files under `exclude` in `.feynman/config.json` are never required.
  *
  * @returns {{ mode: "bootstrap" | "update", commit: string, base?: string, required: string[],
- *   missing: string[], deleted: string[], stale: string[], unknown: string[], problems: string[] }}
+ *   missing: string[], deleted: string[], stale: string[], unknown: string[], exclude: string[],
+ *   outdated: { kind: string, id: string, files: string[] }[], problems: string[] }}
  */
 export function computeCoverage(repository, modelDir) {
   if (!existsSync(join(modelDir, "meta.json"))) throw new CoverageError(`${modelDir}: no model. Bootstrap one first.`);
@@ -35,6 +39,7 @@ export function computeCoverage(repository, modelDir) {
   let base;
   let required;
   const deleted = [];
+  let outdated = [];
   if (meta.extraction === "update") {
     mode = "update";
     const baseRef = meta.source.base?.commit;
@@ -49,6 +54,16 @@ export function computeCoverage(repository, modelDir) {
       const [status, path] = row.split("\t");
       if (status === "D") deleted.push(path);
       else required.push(path);
+    }
+    // Hashes catch what the diff cannot, e.g. a base rewritten by a rebase.
+    outdated = outdatedElements(repository, modelDir, commit);
+    const present = new Set(trackedFiles(repository, commit, exclude));
+    for (const { files } of outdated) {
+      for (const file of files) {
+        if (present.has(file)) {
+          if (!required.includes(file)) required.push(file);
+        } else if (!deleted.includes(file)) deleted.push(file);
+      }
     }
   } else {
     required = trackedFiles(repository, commit, exclude);
@@ -83,6 +98,7 @@ export function computeCoverage(repository, modelDir) {
     stale,
     unknown: [...files].filter((path) => !known.has(path)),
     exclude,
+    outdated,
     problems,
   };
 }

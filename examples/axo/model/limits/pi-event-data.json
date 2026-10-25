@@ -1,7 +1,16 @@
 {
-  "subject":"Serialized Pi event payloads accepted by Axod's bridge and account-private durable session history.",
-  "value":"60,000 bytes",
-  "kind":"size",
-  "about":["actors/axo-pi-bridge"],
-  "anchors":["crates/axo-pi/src/connection.rs#MAX_EVENT_DATA_BYTES", "packages/axo-api-worker/tests/session-history.test.ts"]
+  "subject": "Serialized Pi event payloads accepted by Axod's bridge and account-private durable session history.",
+  "value": "60,000 bytes",
+  "kind": "size",
+  "about": [
+    "actors/axo-pi-bridge"
+  ],
+  "anchors": [
+    "crates/axo-pi/src/connection.rs#MAX_EVENT_DATA_BYTES",
+    "packages/axo-api-worker/tests/session-history.test.ts"
+  ],
+  "sources": {
+    "crates/axo-pi/src/connection.rs": "be0dcfd0127ac2e04eece3253ce1e9d2814b10e3",
+    "packages/axo-api-worker/tests/session-history.test.ts": "96fd97b2838934d77bf07679be9ae37d56229bec"
+  }
 }

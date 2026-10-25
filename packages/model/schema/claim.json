@@ -43,6 +43,9 @@
         "$ref": "urn:feynman:common#/$defs/path"
       },
       "description": "Elements the claim is about (actors, flows, invariants, …)."
+    },
+    "sources": {
+      "$ref": "urn:feynman:common#/$defs/sources"
     }
   },
   "description": "model/claims/<id>.json: a statement believed about the system, with the evidence and how it was established."
