@@ -46,3 +46,27 @@ test("elements record the content hash of the files they anchor, and go stale wh
   expect(report.required).toEqual(["src/server.ts"]);
   expect(report.outdated.map(({ id }) => id)).toEqual(["body-size"]);
 });
+
+test("sources hash what is on disk, so a model of uncommitted work stays current once committed", () => {
+  const { root, write, commit, modelDir } = setup();
+  write("src/server.ts", "export const limit = 1024;\n");
+  const first = commit("init");
+  write(".feynman/model/meta.json", JSON.stringify({ system: "x", summary: "x", source: { repository: ".", commit: first }, extraction: "bootstrap" }));
+  write(".feynman/model/limits/body-size.json", JSON.stringify({ subject: "body", value: "2 KiB", kind: "size", anchors: ["src/server.ts"] }));
+
+  // Model an uncommitted change, and a new file that git does not track yet.
+  write("src/server.ts", "export const limit = 2048;\n");
+  write("src/new.ts", "export const fresh = true;\n");
+  write(".feynman/model/limits/fresh.json", JSON.stringify({ subject: "fresh", value: "yes", kind: "other", anchors: ["src/new.ts"] }));
+  measureModel(root, modelDir);
+  expect(outdatedElements(root, modelDir)).toEqual([]);
+  expect(outdatedElements(root, modelDir, first).map(({ id }) => id)).toEqual(["body-size", "fresh"]);
+
+  // Committing the work changes nothing about the model.
+  const second = commit("raise the limit");
+  expect(outdatedElements(root, modelDir, second)).toEqual([]);
+
+  // Editing again makes only the element derived from the edited file outdated.
+  write("src/server.ts", "export const limit = 4096;\n");
+  expect(outdatedElements(root, modelDir)).toEqual([{ kind: "limits", id: "body-size", files: ["src/server.ts"] }]);
+});

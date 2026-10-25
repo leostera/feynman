@@ -153,7 +153,7 @@
         "type": "string",
         "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
       },
-      "description": "Written by tools, not agents: the git blob id (content hash) of every file this element anchors, at meta.source.commit. When any of these files changes, the element must be re-examined."
+      "description": "Written by tools, not agents: the content hash (git blob id, as `git hash-object` computes it) of every file this element anchors, as the file was on disk when the element was derived, committed or not. When any of these files changes, the element must be re-examined."
     }
   }
 }

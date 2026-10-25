@@ -162,7 +162,7 @@ file per element so that no agent has to hold the whole model at once:
 
 An element's id is its file name (a readable kebab-case slug) and is not repeated
 inside the file. `sources` is written by tools (`measure`), never by hand: the git
-blob id of each file the element anchors, at the modelled commit. Ids are unique within a kind, need not be stable, and renaming
+blob id of each file the element anchors, as the file is on disk (committed or not). Ids are unique within a kind, need not be stable, and renaming
 one means moving its file. Fields that name a specific kind use a bare id
 (`actor`, `target`, `owner`, `server`, `clients`, `from` name actors; `ref` names
 a flow; `protocol` names a protocol). `about` can name any kind, so it uses the

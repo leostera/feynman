@@ -95,4 +95,6 @@ export interface OutdatedElement {
 }
 export function blobIds(repository: string, commit: string): Map<string, string>;
 export function stampSources(repository: string, modelDir: string): number;
-export function outdatedElements(repository: string, modelDir: string, commit: string): OutdatedElement[];
+export function workingTreeBlobIds(repository: string, paths: string[]): Map<string, string>;
+/** `target` is a commit, or the working tree when null (the default). */
+export function outdatedElements(repository: string, modelDir: string, target?: string | null): OutdatedElement[];
