@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Actor, Model } from "@feynman/model";
-import { actorGaps, depthGaps, isTestFile, nextGroup, owns } from "../src/phases.ts";
+import { actorGaps, depthGaps, isTestFile, nextGroup, owns, scopeGaps } from "../src/phases.ts";
 
 /** A model whose first-party actors each run one component, named after the actor, covering `paths`. */
 // Fixtures name only the fields the phases look at.
@@ -77,4 +77,25 @@ test("the model is thin while no invariant, claim, or limit cites the tests", ()
   ]);
   const cited = { ...m, invariants: [{ id: "bounded", enforcement: ["test-time"], enforcedAt: [], tests: ["api/a.test.ts"] }] } as unknown as Model;
   expect(depthGaps(cited, ["api/a.ts", "api/a.test.ts"])).toEqual([]);
+});
+
+test("the actor map keeps to the system: no connections between external actors, people reach hosted actors through their host", () => {
+  const ext = (id: string, talksTo: string[] = []): Fixture => ({ id, kind: "program", provenance: "third-party", talksTo });
+  const m = model({
+    actors: [
+      { ...actor("extension", ["src/"], ["pi"]), host: "pi" },
+      actor("operator", null, ["pi", "extension"]),
+      ext("pi", ["git"]),
+      ext("git"),
+      ext("os"),
+    ],
+  });
+  expect(scopeGaps(m)).toEqual([
+    "git ↔ pi: neither is first-party or a person, so how they talk is not this system's behaviour; drop the connection (talksTo, flow steps, protocols)",
+    "actors/operator talks to extension, which runs inside pi; people reach it through its host, so talk to pi instead",
+    "actors/git connects to nothing this repository ships; remove it",
+    "actors/os connects to nothing this repository ships; remove it",
+  ]);
+  const clean = model({ actors: [{ ...actor("extension", ["src/"], ["pi"]), host: "pi" }, actor("operator", null, ["pi"]), ext("pi")] });
+  expect(scopeGaps(clean)).toEqual([]);
 });

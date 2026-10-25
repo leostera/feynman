@@ -67,6 +67,7 @@ export interface Actor {
   runsOn: { location: Location; provider?: string; platform?: string };
   summary: string;
   talksTo?: string[];
+  host?: string;
   anchors: Anchor[];
   confidence?: Confidence;
   sources?: Sources;

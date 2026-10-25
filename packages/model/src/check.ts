@@ -87,7 +87,10 @@ function checkReferences(model: Model): string[] {
     for (const message of protocol.messages ?? []) ref(`protocols/${protocol.id} ${message.name} from`, message.from, "actors");
   }
   for (const state of model.state) ref(`state/${state.id} owner`, state.owner, "actors");
-  for (const actor of model.actors) for (const id of actor.talksTo ?? []) ref(`actors/${actor.id} talksTo`, id, "actors");
+  for (const actor of model.actors) {
+    for (const id of actor.talksTo ?? []) ref(`actors/${actor.id} talksTo`, id, "actors");
+    ref(`actors/${actor.id} host`, actor.host, "actors");
+  }
   for (const component of model.components) {
     for (const id of component.actors ?? []) ref(`components/${component.id} actors`, id, "actors");
     for (const id of component.dependsOn ?? []) ref(`components/${component.id} dependsOn`, id, "components");

@@ -42,8 +42,10 @@ const SCOPE = [
 const PHASE_1 = [
   "Phase 1: actors. Survey the whole repository shallowly: the tree, manifests, READMEs, entrypoints, configuration. Partial reads are fine now.",
   "Write meta.json (what the system is and does), then the actors, things with a runtime identity, starting from whoever uses the system:",
-  "  - people (kind person), and programs or services that use the system or that it calls;",
-  "  - the processes this repository ships (first-party): a CLI, a server, a browser page, a plugin (its host is a separate actor).",
+  "  - the people who use it (kind person), and what they touch to do so;",
+  "  - the processes this repository ships (first-party): a CLI, a server, a browser page, a plugin. A plugin or page names the program it runs inside as its host (Pi, the browser); people talk to the host;",
+  "  - external services whose behaviour shapes what the system does: a database it stores in, an API it depends on, a program it exists to run.",
+  "Keep the map to what you would draw explaining the system to a newcomer. Runtimes, the OS, shells, and tools the code merely calls (git, bun, a compiler) are how it is built, not actors: mention them in components or flow steps. Connect only actors where one end is first-party or a person; how two external programs talk is not this system.",
   "Packages and modules are components, not actors: each with footprint.paths, the actors it runs in, and what it dependsOn. Every first-party actor needs one.",
   "Fill each actor's talksTo. No flows yet; stop when the map covers the whole system.",
 ].join("\n");

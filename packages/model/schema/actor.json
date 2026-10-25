@@ -18,7 +18,7 @@
         "third-party",
         "ambient"
       ],
-      "description": "first-party: its code is in this repository (see the components that run in it). third-party: external software or a service the system depends on. ambient: provided by the platform or environment the system runs in (OS services, the user's shell)."
+      "description": "first-party: its code is in this repository (see the components that run in it). third-party: external software or a service the system depends on. ambient: the person or environment the system serves; platforms (the OS, shells, language runtimes) are where actors run, not actors."
     },
     "kind": {
       "enum": [
@@ -71,7 +71,12 @@
         "type": "string",
         "minLength": 1
       },
-      "description": "Ids of the actors this one communicates with, in either direction: the system's connection map, sketched before flows and protocols describe how."
+      "description": "Ids of the actors this one communicates with, in either direction. At least one end of every connection is first-party or a person: how two external programs talk to each other is not part of the system."
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Id of the actor this one runs inside, when it is loaded by another program: a plugin in its host application, a page in the browser. People use the host to reach it."
     },
     "sources": {
       "$ref": "urn:feynman:common#/$defs/sources"

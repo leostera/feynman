@@ -34,10 +34,18 @@ out" and the code itself.
   services they call. Start from whoever uses the system and follow what it talks
   to (`talksTo`). Each has a `kind` (`person`, `program`, `service`), a
   `provenance` (`first-party`: code in this repository; `third-party`; `ambient`:
-  the platform, such as the OS or the user's shell), and `runsOn` (`local`,
-  `browser`, `remote`, `cloud`, with provider and platform when known). A plugin is
-  its own first-party actor beside its third-party host. Machines are where actors
-  run, not actors.
+  the people and environment served), and `runsOn` (`local`, `browser`, `remote`,
+  `cloud`, with provider and platform when known). A plugin or a page is its own
+  first-party actor and names the program it runs inside as its `host`; people talk
+  to the host.
+
+  Keep the map to what you would draw explaining the system to a newcomer: the
+  people, what they touch, what this repository ships, and the external services
+  whose behaviour shapes the outcome (a database, an API, a program the system
+  exists to run). Runtimes, the OS, shells, and tools the code merely calls (git,
+  a compiler) are implementation: name them in components or flow steps. Every
+  connection has a first-party actor or a person at one end. More actors and edges
+  do not make a better model; the right ones do.
 - **Components** are units of first-party code (packages, modules, libraries),
   never actors. Each lists its `footprint.paths`, the `actors` it runs in, and the
   components it `dependsOn`. Every first-party actor has at least one.

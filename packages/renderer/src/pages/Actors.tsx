@@ -102,6 +102,7 @@ export function ActorPage({ id }: { id: string }) {
         ["Kind", KIND_LABEL[actor.kind]],
         ["Provenance", provenanceDescription(actor.provenance)],
         ["Runs on", locationLabel(actor)],
+        ["Runs inside", actor.host ? <IdRef kind="actor" id={actor.host} /> : null],
         ["Talks to", actor.talksTo?.length ? <IdRefs kind="actor" ids={actor.talksTo} /> : null],
         ["Share of code", actorLines(index, id) === undefined ? null : <CodeShare index={index} actor={id} />],
       ]}

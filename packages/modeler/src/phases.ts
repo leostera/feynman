@@ -35,7 +35,7 @@ export function owns(paths: string[], file: string): boolean {
   });
 }
 
-/** Undirected connections between actors, from talksTo, protocols, and flow steps. */
+/** Undirected connections between actors, from talksTo, hosts, protocols, and flow steps. */
 export function connections(model: Model): Map<string, Set<string>> {
   const graph = new Map<string, Set<string>>(model.actors.map((actor) => [actor.id, new Set<string>()]));
   const link = (a?: string, b?: string) => {
@@ -43,10 +43,44 @@ export function connections(model: Model): Map<string, Set<string>> {
     graph.get(a)!.add(b);
     graph.get(b)!.add(a);
   };
-  for (const actor of model.actors) for (const other of actor.talksTo ?? []) link(actor.id, other);
+  for (const actor of model.actors) for (const other of [...(actor.talksTo ?? []), ...(actor.host ? [actor.host] : [])]) link(actor.id, other);
   for (const protocol of model.protocols) for (const client of protocol.clients ?? []) link(protocol.server, client);
   for (const flow of model.flows) for (const step of flow.steps ?? []) link(step.actor, step.target);
   return graph;
+}
+
+/**
+ * Where the actor map says more than the system: connections between two external
+ * actors (how Pi talks to git is not this system's behaviour), people reaching a
+ * hosted actor without its host, and external actors nothing first-party touches.
+ * Checked in every phase, since flows can add connections too.
+ */
+export function scopeGaps(model: Model): string[] {
+  const gaps: string[] = [];
+  const byId = new Map(model.actors.map((actor) => [actor.id, actor]));
+  const inside = (actor?: Actor) => actor !== undefined && (isFirstParty(actor) || actor.kind === "person");
+  const graph = connections(model);
+  const reported = new Set<string>();
+  for (const [a, others] of graph) {
+    for (const b of others) {
+      const key = [a, b].sort().join(" ↔ ");
+      if (reported.has(key) || inside(byId.get(a)) || inside(byId.get(b))) continue;
+      reported.add(key);
+      gaps.push(`${key}: neither is first-party or a person, so how they talk is not this system's behaviour; drop the connection (talksTo, flow steps, protocols)`);
+    }
+  }
+  for (const person of model.actors.filter((actor) => actor.kind === "person")) {
+    for (const id of person.talksTo ?? []) {
+      const host = byId.get(id)?.host;
+      if (host && host !== person.id) gaps.push(`actors/${person.id} talks to ${id}, which runs inside ${host}; people reach it through its host, so talk to ${host} instead`);
+    }
+  }
+  for (const actor of model.actors) {
+    if (inside(actor)) continue;
+    const touched = [...(graph.get(actor.id) ?? [])].some((id) => isFirstParty(byId.get(id)!) || byId.get(id)!.host === actor.id);
+    if (!touched) gaps.push(`actors/${actor.id} connects to nothing this repository ships; remove it`);
+  }
+  return gaps;
 }
 
 /** What phase 1 still lacks before the actor map is usable. */
@@ -65,7 +99,7 @@ export function actorGaps(model: Model): string[] {
   for (const actor of model.actors.filter(isFirstParty)) {
     if (!componentsOf(model, actor).length) gaps.push(`actors/${actor.id} is first-party, but no component runs in it; add components with footprints`);
   }
-  return gaps;
+  return [...gaps, ...scopeGaps(model)];
 }
 
 export interface Group {
@@ -141,7 +175,7 @@ export function isTestFile(file: string): boolean {
  * files the extraction covers, to tell whether the tests among them were used.
  */
 export function depthGaps(model: Model, files: string[] = []): string[] {
-  const gaps: string[] = [];
+  const gaps: string[] = scopeGaps(model);
   const tests = files.filter(isTestFile);
   if (tests.length) {
     const cited = new Set([...anchoredFiles(model.invariants), ...anchoredFiles(model.claims), ...anchoredFiles(model.limits)]);
@@ -173,10 +207,13 @@ export function depthGaps(model: Model, files: string[] = []): string[] {
     if (isFirstParty(actor) && !inFlows.has(actor.id)) gaps.push(`actors/${actor.id} takes part in no flow`);
   }
   const reported = new Set<string>();
+  const byId = new Map(model.actors.map((actor) => [actor.id, actor]));
+  const inScope = (id: string) => isFirstParty(byId.get(id)!) || byId.get(id)!.kind === "person";
   for (const [a, others] of graph) {
     for (const b of others) {
       const key = pair(a, b);
-      if (shown.has(key) || reported.has(key)) continue;
+      // Pairs of external actors are reported by scopeGaps, to be dropped rather than explained.
+      if (shown.has(key) || reported.has(key) || (!inScope(a) && !inScope(b))) continue;
       reported.add(key);
       gaps.push(`${key} talk, but no flow step or protocol shows how`);
     }

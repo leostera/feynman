@@ -32,7 +32,8 @@ export function interactions(index: Index): Interaction[] {
 
 /**
  * Interactions with direction dropped: one connection per pair of actors, from
- * flow steps and from the actors' `talksTo` (a connection no flow shows yet).
+ * flow steps, from the actors' `talksTo` (a connection no flow shows yet), and from
+ * each hosted actor to its `host`.
  */
 export function connections(index: Index): Interaction[] {
   const byPair = new Map<string, Interaction>();
@@ -45,7 +46,7 @@ export function connections(index: Index): Interaction[] {
     byPair.set(key, entry);
   };
   for (const edge of interactions(index)) add(edge.from, edge.to, edge.flows);
-  for (const actor of index.model.actors) for (const other of actor.talksTo ?? []) add(actor.id, other, []);
+  for (const actor of index.model.actors) for (const other of [...(actor.talksTo ?? []), ...(actor.host ? [actor.host] : [])]) add(actor.id, other, []);
   return [...byPair.values()].sort((x, y) => `${x.from}|${x.to}`.localeCompare(`${y.from}|${y.to}`));
 }
 
