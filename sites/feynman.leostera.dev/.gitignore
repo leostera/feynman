@@ -1,5 +1,6 @@
 node_modules/
 dist/
 .cloudflare/
-# Built from this repository on every build (scripts/examples.ts).
-public/s/github.com/leostera/feynman/
+# Assembled on every build from static/ and the simulators (scripts/pages.ts).
+public/
+.cache/

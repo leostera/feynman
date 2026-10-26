@@ -155,7 +155,8 @@ export async function buildCommand(ctx: Context, options: { out?: string; base?:
   for (const s of prepared.bundle.specs) if (s.error) console.log(red(`${s.path}: ${s.error}`));
   console.log(`wrote ${relative(ctx.cwd, out)} ${dim(`(${prepared.bundle.specs.length} spec(s), ${(page.length / 1e6).toFixed(1)} MB)`)}`);
   if (options.open) spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [out]);
-  return 0;
+  // The page shows a spec that failed to load as an error; a build that ships one has failed.
+  return prepared.bundle.specs.some((s) => s.error) ? 1 : 0;
 }
 
 export async function devCommand(ctx: Context, options: { port: number; base?: string }): Promise<number> {

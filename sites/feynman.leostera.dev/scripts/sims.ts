@@ -10,11 +10,11 @@ export interface Sim {
   summary: string;
   repository: string;
   /**
-   * "deploy": built from this repository on every build and deploy (scripts/examples.ts),
-   * never committed. Otherwise the page is built with `bun run sim` and committed.
+   * "deploy": built from this repository as it is. Otherwise from a clone of `repository`
+   * at `commit`. Either way scripts/pages.ts builds the page on every build; none is committed.
    */
   build?: "deploy";
-  /** The commit the committed page was built from (null when built on deploy), and the specs it holds. */
+  /** The commit the page is built from (null when built from this repository), and the specs it holds. */
   commit: string | null;
   specs: { path: string; title: string }[];
 }
