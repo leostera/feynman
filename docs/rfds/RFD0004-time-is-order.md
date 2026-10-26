@@ -10,11 +10,13 @@
 
 ## Summary
 
-Specs stop modelling real time. There is no clock, no message latency, and no timer
-duration: what happens next is any event that is pending, a message in flight or a timer
-that is set, in any order. A timer means "this may fire at any moment from now on", which
-is what a timeout is once networks, pauses and clocks are allowed to be slow. The engine,
-the checker, the simulator and the timeline all count events instead of milliseconds.
+By default, specs do not model real time. There is no clock, no message latency, and no
+timer duration: what happens next is any event that is pending, a message in flight or a
+timer that is set, in any order, so a run is the interleaving of the actors' steps. A timer
+means "this may fire at any moment from now on", which is what a timeout is once networks,
+pauses and clocks are allowed to be slow. As in TLA+ and P, a spec that needs time models
+it itself, with state and events. The engine, the checker, the simulator and the timeline
+all count events instead of milliseconds.
 
 ## Motivation
 
@@ -86,6 +88,14 @@ treats the lease as running until that timer fires. A pairing code that expires 
 minutes has an `expire` timer; a code typed before it fired works, after it fired fails, and
 the checker tries both.
 
+### Modelling time when it matters
+
+When the code's correctness does rest on time (a lease that a single clock enforces, a
+deadline counted in ticks), the spec says so in its own state, as a TLA+ or P model would:
+a `Clock` actor whose `tick` action advances a counter, steps that compare against it, and
+a bound on ticks in the checker's repeats. Time is then part of the model, visible in the
+state, and the checker explores it like anything else. Nothing in Feynman is special about it.
+
 ### Scenarios and "left alone"
 
 A scenario's `settle()` runs the system **left alone**: every message in flight arrives, in
@@ -144,15 +154,16 @@ instance are the same faults as today, within the same budget.
 
 ### Compatibility and migration
 
-Specs that use `SEC`, `MIN`, `ctx.now`, a duration in `ctx.start`, `latency`, `expires`,
-`within`, `wait` or `settle(horizon)` stop type-checking, and `feynman check` says what to
-write instead. To ease the change for one version, `ctx.start(name, ms)` keeps compiling
-with the duration ignored and a warning; everything else is a clean break.
+None. Feynman is at 0.x, so this is a clean break: `SEC`, `MIN`, `ctx.now`, durations in
+`ctx.start`, `latency`, `expires`, `within`, `wait` and `settle(horizon)` are removed, and
+specs that use them stop type-checking.
 
-The examples are rewritten; the lease lock models its lease with an `expire` timer. Their
-headers' hand-worked counterexamples are redone and the tests updated, and the oracles must
-then agree on state counts exactly. Axo's spec (48 uses of durations) and Seba's need their
-owners to migrate; their published simulators are prebuilt and keep working until rebuilt.
+Everything that uses time is rewritten without it: the examples (the lease lock models its
+lease with an `expire` timer), the test fixtures, the skill, the site's snippets, and the
+specs of the published simulators (axo, and Seba's pipeline if it is published). The
+examples' hand-worked counterexamples are redone and the tests updated, and the oracles must
+then agree with TLC on distinct states exactly. Specs in other repositories are rewritten in
+copies, for their owners to take.
 
 ### Rollout and validation
 
@@ -210,7 +221,8 @@ Keep paying for time in states, code and reading, for orderings the checker shou
 
 - Is "messages before timers" the right order for left alone, or should `settle` deliver
   messages only, and timers fire only when a scenario fires them?
-- Keep `ctx.start(name, ms)` compiling for one version, or break it now like everything else?
+- Should transitions return the next state instead of changing the one they are given
+  (comment on the guide's example)? See "Transitions that return the next state" below.
 
 ### During implementation
 
@@ -220,6 +232,23 @@ Keep paying for time in states, code and reading, for orderings the checker shou
 ### Out of scope
 
 - Timed checking.
+
+## Transitions that return the next state
+
+Raised in review: `run(state, msg, ctx)` changes `state` in place; TLA+ and P instead
+describe the next state, which makes each transition's effect explicit. Two things to weigh:
+
+- **Seeing what changed does not need it.** The engine already copies the stepping
+  instance's state before a step and freezes the result, so a step cannot reach any other
+  state, and every step's changes are recorded field by field (the timeline's
+  `asking: false → true`). What a reader sees would not change.
+- **Writing would.** Returning `{ ...state, token: msg.token }` is as clear for flat state,
+  and noisier for nested state (`{ ...state, hosts: { ...state.hosts, [id]: { ...state.hosts[id], online: true } } }`),
+  which most real specs have. Two styles at once (mutate, or return) would be the worst of
+  both.
+
+Proposal: keep this RFD to time, and decide the transition style in its own RFD with a
+migrated example of each kind (the lease lock, and axo's relay) to compare side by side.
 
 ## Future possibilities
 
