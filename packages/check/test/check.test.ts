@@ -33,3 +33,26 @@ test("counterexamples replay: the same choices give the same events", () => {
   expect(example.worlds.length).toBe(example.choices.length);
   expect(example.events.every((e) => !e.error)).toBe(true);
 });
+
+test("seeds: exploring from where a scenario ends reaches what the depth alone does not", async () => {
+  const { defineSpec, message, runScenario } = await import("@feynman/spec");
+  const { check } = await import("../src/index.ts");
+  const deep = defineSpec("Deep", { messages: { Tick: message<{}>({ name: "tick" }) } }, (spec) => {
+    const zone = spec.defineZone({ name: "z" });
+    const Counter = spec.defineActor({
+      name: "Counter",
+      zone,
+      initialState: () => ({ n: 0 }),
+      actions: { up: { label: "Up", description: "Counts up.", run: (s) => void (s.n += 1) } },
+    });
+    spec.defineInvariants({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
+    spec.defineScenario({ name: "Count to four", run: (s) => { const c = s.spawn(Counter, "c"); for (let i = 0; i < 4; i++) s.act(c, "up"); } });
+  });
+  const bounds = { depth: 2, repeats: 9 };
+  expect(check(deep, bounds).properties[0].holds).toBe(true);
+  const run = runScenario(deep, deep.scenarios[0]);
+  const seeded = check(deep, bounds, [{ name: "Count to four", world: run.worlds.at(-1)! }]);
+  expect(seeded.properties[0].holds).toBe(false);
+  expect(seeded.properties[0].counterexample?.from).toBe("Count to four");
+  expect(seeded.properties[0].counterexample?.events.length).toBe(1);
+});

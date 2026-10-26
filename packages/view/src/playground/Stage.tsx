@@ -6,7 +6,7 @@
 import { cn } from "@cloudflare/kumo";
 import { TicketIcon } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react";
-import { appearance, declaresLinks, liveLinks, type Event, type Mood, type Pending, type Row, type Spec, type Token, type World } from "@feynman/spec";
+import { appearance, declaresLinks, labelled, liveLinks, type Event, type Mood, type Pending, type Row, type Spec, type Token, type World } from "@feynman/spec";
 import { labelOf, messageName, short, time } from "../format";
 import { actorLinks, along, ICON_W, layout, layoutKey, shapeOf, type Box, type Layout, type View, type ZoneBox } from "../layout";
 import { useExplorer } from "../ui";
@@ -113,8 +113,8 @@ export function Stage({
   return (
     <div ref={ref} className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`, width: graph.width, height: graph.height }}>
       <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible" aria-hidden>
-        {graph.zones.map((z) => (
-          <Zone key={z.name} zone={z} description={spec.zones.find((x) => x.name === z.name)?.description} />
+        {graph.zones.map((z, i) => (
+          <Zone key={z.name} zone={z} side={i === 0 ? "first" : i === graph.zones.length - 1 ? "last" : "middle"} width={graph.width} description={spec.zones.find((x) => x.name === z.name)?.description} />
         ))}
         {!declaresLinks(spec) && <Wires spec={spec} world={world} graph={graph} />}
         {links.map((link, i) => {
@@ -169,7 +169,8 @@ export function Stage({
   );
 }
 
-function Zone({ zone, description }: { zone: ZoneBox; description?: string }) {
+/** A zone's caption sits over its column; at the canvas's edges it grows inwards so it is never cut off. */
+function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first" | "middle" | "last"; width: number; description?: string }) {
   if (zone.region) {
     return (
       <g>
@@ -182,7 +183,13 @@ function Zone({ zone, description }: { zone: ZoneBox; description?: string }) {
     );
   }
   return (
-    <text x={zone.x + zone.w / 2} y={zone.y - 12} textAnchor="middle" fill="var(--text-color-kumo-subtle)" className="text-[11px]">
+    <text
+      x={side === "first" ? Math.max(16, zone.x) : side === "last" ? Math.min(width - 16, zone.x + zone.w) : zone.x + zone.w / 2}
+      y={zone.y - 12}
+      textAnchor={side === "first" ? "start" : side === "last" ? "end" : "middle"}
+      fill="var(--text-color-kumo-subtle)"
+      className="text-[11px]"
+    >
       <tspan className="font-medium uppercase tracking-wider">{zone.name}</tspan>
       {description && <tspan> · {description}</tspan>}
     </text>
@@ -511,8 +518,9 @@ function SpeechBubble({ bubble, box }: { bubble: Bubble & { fading: boolean }; b
 }
 
 export function bubbleText(spec: Spec, event: Event, world: World | undefined): string {
-  if (event.text) return event.text;
-  if (event.notes.length) return event.notes[0];
-  if (event.kind === "lose") return event.description;
-  return `${labelOf(world, event.instance)}: ${event.description.replace(/\.$/, "")}`;
+  const say = (text: string) => (world ? labelled(world, text) : text);
+  if (event.text) return say(event.text);
+  if (event.notes.length) return say(event.notes[0]);
+  if (event.kind === "lose") return say(event.description);
+  return `${labelOf(world, event.instance)}: ${say(event.description.replace(/\.$/, ""))}`;
 }

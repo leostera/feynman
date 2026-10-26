@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, statSync, watch, writeFileS
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { check } from "@feynman/check";
+import { scenarioSeeds } from "./shape.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "@feynman/code";
 import type { Spec } from "@feynman/spec";
 import type { Bundle, SourceEntry, SpecEntry } from "@feynman/view/data";
@@ -77,7 +78,7 @@ export async function prepare(ctx: Context, options: Options): Promise<Prepared>
       }
       entry.sources = sourceEntries(ctx, spec);
       if (options.calls) entry.calls = callTrees(repository.root, specSources(spec)).trees as Record<string, CallNode>;
-      if (options.check) entry.report = check(spec, { ...ctx.config.check });
+      if (options.check) entry.report = check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
     } catch (error) {
       entry.error = error instanceof Error ? error.message : String(error);
     }

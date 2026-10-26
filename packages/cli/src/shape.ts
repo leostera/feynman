@@ -1,7 +1,8 @@
 // Mechanical hints that a spec is hiding the system it models. They catch the most
 // common way a spec goes vague: one step standing for many stages of the code.
 import { parseSource } from "@feynman/code";
-import type { Spec, StepInfo } from "@feynman/spec";
+import { runScenario, type Spec, type StepInfo } from "@feynman/spec";
+import type { Seed } from "@feynman/check";
 
 /** A step citing this many files is most likely several stages of the code. */
 export const MAX_FILES_PER_STEP = 4;
@@ -45,4 +46,9 @@ export function unbuilt(spec: Spec): { actor: string; step: string }[] {
 
 export function totalSteps(spec: Spec): number {
   return spec.actors.reduce((n, a) => n + Object.keys(a.actions).length + Object.keys(a.transitions).length, 0);
+}
+
+/** Where each scenario that runs cleanly ends (no spec error, no broken invariant): where exploration should also start. */
+export function scenarioSeeds(spec: Spec, runs = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }))): Seed[] {
+  return runs.filter(({ run }) => !run.error && run.worlds.length && !run.events.some((e) => e.error || e.violations.length)).map(({ scenario, run }) => ({ name: scenario.name, world: run.worlds.at(-1)! }));
 }

@@ -28,7 +28,7 @@ export type {
   Look,
   Link,
 } from "./dsl.ts";
-export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
+export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
 export * from "./engine.ts";
 export { Runner, runScenario } from "./run.ts";
 export type * from "./spec.ts";

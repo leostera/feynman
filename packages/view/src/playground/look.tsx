@@ -118,24 +118,33 @@ export function toneColor(tone: string | undefined): string {
 const PALETTE = [1, 2, 3, 4, 5].map((n) => `var(--feynman-identity-${n})`);
 
 /**
- * Who wears which colour. Instances of actors that name an owner wear their owner's colour
- * (a Mac, its person's), or none while they have no owner. Other instances that are not
- * singletons each get their own (Alice blue, Bob purple).
+ * Who wears which colour. When the spec says whose things are (look.owner, or rows with an
+ * owner), only the owners get colours, and what they own wears them: Alice blue, her Mac
+ * too. Without any owners, every instance that is not a singleton gets its own.
  */
 export function identityColors(spec: Spec, world: World): Map<string, string> {
   const colors = new Map<string, string>();
+  const find = (ref: string | null | undefined) => (ref ? world.instances.find((i) => i.id === ref || i.label === ref) : undefined);
+  const looks = new Map(world.instances.map((i) => [i.id, appearance(spec, world, i.id)]));
+  const owners = new Set<string>();
+  for (const look of looks.values()) {
+    const owner = find(look.owner);
+    if (owner) owners.add(owner.id);
+    for (const row of look.rows) {
+      const of = find(row.owner);
+      if (of) owners.add(of.id);
+    }
+  }
+  const declares = spec.actors.some((a) => a.look.owner) || owners.size > 0;
   let n = 0;
   for (const instance of world.instances) {
     const actor = spec.actors.find((a) => a.name === instance.actor);
-    if (!actor || actor.singleton || actor.look.owner) continue;
-    colors.set(instance.id, PALETTE[n++ % PALETTE.length]);
+    if (!actor || actor.singleton) continue;
+    if (declares ? owners.has(instance.id) : true) colors.set(instance.id, PALETTE[n++ % PALETTE.length]);
   }
-  for (const instance of world.instances) {
-    const owner = appearance(spec, world, instance.id).owner;
-    if (!owner) continue;
-    const of = world.instances.find((i) => i.id === owner || i.label === owner);
-    const color = of && colors.get(of.id);
-    if (color) colors.set(instance.id, color);
+  for (const [id, look] of looks) {
+    const color = find(look.owner) && colors.get(find(look.owner)!.id);
+    if (color) colors.set(id, color);
   }
   return colors;
 }

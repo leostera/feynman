@@ -30,6 +30,26 @@ function attempt<T>(f: (() => T) | undefined, fallback: T): T {
   }
 }
 
+/**
+ * Instance ids in presentation text read as their labels: a row keyed "axod-studio" shows
+ * "Studio daemon". Specs can use ids, as their state does, without carrying labels around.
+ */
+export function labelled(world: World, text: string): string {
+  if (!text) return text;
+  const exact = world.instances.find((i) => i.id === text);
+  if (exact) return exact.label;
+  let out = text;
+  for (const i of [...world.instances].sort((a, b) => b.id.length - a.id.length)) {
+    if (i.id.length < 3 || !out.includes(i.id)) continue;
+    out = out.replace(new RegExp(`(?<![\\w-])${i.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "g"), i.label);
+  }
+  return out;
+}
+
+function labelledRow(world: World, row: Row): Row {
+  return { ...row, label: labelled(world, row.label), ...(row.detail ? { detail: labelled(world, row.detail) } : {}), ...(row.group ? { group: labelled(world, row.group) } : {}) };
+}
+
 export function appearance(spec: Spec, world: World, id: string): Appearance {
   const instance = world.instances.find((i) => i.id === id);
   const actor = instance && spec.actors.find((a) => a.name === instance.actor);
@@ -37,9 +57,9 @@ export function appearance(spec: Spec, world: World, id: string): Appearance {
   const { look } = actor;
   return {
     icon: look.icon ?? null,
-    status: attempt(look.status && (() => look.status!(instance.state as never)), null),
+    status: attempt(look.status && (() => labelled(world, look.status!(instance.state as never))), null),
     mood: attempt(look.mood && (() => look.mood!(instance.state as never)), null),
-    rows: attempt(look.rows && (() => look.rows!(instance.state as never)), []),
+    rows: attempt(look.rows && (() => look.rows!(instance.state as never).map((r) => labelledRow(world, r))), []),
     tokens: declaresTokens(spec)
       ? attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), [])
       : (inferredTokens(spec, world).get(id) ?? []),
