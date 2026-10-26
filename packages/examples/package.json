@@ -1,0 +1,19 @@
+{
+  "name": "@feynman/examples",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Small, well-known systems as Feynman specs, each buggy and fixed, with the verdicts the checker must reach.",
+  "type": "module",
+  "dependencies": {
+    "@feynman/check": "workspace:*",
+    "@feynman/spec": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "*",
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -357,6 +357,12 @@ interface ActorDef<M extends Registry, S, A, T> {
   initialState: (ctx: { id: string; label: string }) => S;
   /** State that survives a restart; everything else returns to its initial value. */
   durable?: (keyof S & string)[];
+  /**
+   * Instances are interchangeable: the spec only compares their ids and labels for equality,
+   * never orders them or computes with them. The checker then treats "Alice, then Bob" and
+   * "Bob, then Alice" as one state. It tests the claim as it goes and says if it is false.
+   */
+  symmetric?: boolean;
   look?: Look<NoInfer<S>>;
   /** The live connections an instance holds now, from its own state. */
   links?: (state: Readonly<NoInfer<S>>, self: { id: string; label: string }) => Link[];
@@ -543,6 +549,7 @@ interface RawActor {
   place?: ActorPlace;
   initialState: ActorInfo["initialState"];
   durable?: string[];
+  symmetric?: boolean;
   look?: ActorInfo["look"];
   links?: ActorInfo["links"];
   actions?: Record<string, RawStep & { label: string; inputs?: Record<string, { type: InputType; examples?: unknown; accepts?: string }> }>;
@@ -597,6 +604,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
     singleton: raw.singleton ?? false,
     initialState: raw.initialState,
     durable: raw.durable ?? [],
+    symmetric: raw.symmetric === true,
     look: raw.look ?? {},
     place: raw.place ?? {},
     links: raw.links,

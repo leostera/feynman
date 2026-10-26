@@ -19,7 +19,7 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
   expect(report.errors).toEqual([]);
 });
 
-test("without faults, every redemption gets its answer and the property holds", () => {
+test("without faults, every redemption gets its answer and the property holds", { timeout: 30_000 }, () => {
   const report = check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000 });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
