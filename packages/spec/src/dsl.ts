@@ -183,6 +183,8 @@ export interface Instance<S, A> {
 /** The world as invariants and examples see it. */
 export interface World {
   readonly now: number;
+  /** Nothing is in flight: no message on its way and no timer set. "Once quiet, …" is how to say "in the end". */
+  readonly quiet: boolean;
   all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
   the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
 }

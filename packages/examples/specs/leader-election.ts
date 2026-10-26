@@ -49,6 +49,10 @@ export function leaderElection(variant: "buggy" | "fixed") {
         },
       });
       spec.defineInvariants({
+        agreeOnceQuiet: {
+          description: "Once every node has announced and nothing is in flight, they agree on one leader.",
+          always: (w) => !(w.quiet && w.all(Node).every((n) => n.state.announced)) || new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
+        },
         agree: {
           description: "Once every node has announced, they all end up agreeing on one leader.",
           after: (w) => w.all(Node).every((n) => n.state.announced),

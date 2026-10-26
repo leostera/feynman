@@ -15,7 +15,7 @@
 //   skipped is expanded again for the difference.
 // - Inputs an action did not read: other values for them would do exactly the same.
 // - Symmetry (keys.ts): interchangeable instances are renamed to one order.
-import { observation, spawn, startWorld, type Event, type Observation, type Spec, type World } from "@feynman/spec";
+import { observation, spawn, startWorld, traceView, type Event, type Observation, type Spec, type World } from "@feynman/spec";
 import { canonical, NO_SYMMETRY, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 import { judge, verdicts } from "./judge.ts";
 import { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
@@ -169,8 +169,15 @@ export interface Seed {
  * at once, breadth first, after a share of random runs. Seeding with where scenarios end puts
  * the search where the interesting states are, rather than spending its budget getting there.
  */
-export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = []): Report {
+/** Callbacks for tools that compare the checker with another: every distinct state, as the search first meets it. */
+export interface Watch {
+  state?(world: World, budget: { acts: Record<string, number>; faults: number; memory: string }): void;
+}
+
+export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = [], watch: Watch = {}): Report {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
+  // A `never` property that reads the path's events in order tells orders apart, so no two orders commute for it.
+  if (spec.invariants.some((i) => i.kind === "never" && /\.events\b/.test(String(i.never)))) b.reduce = false;
   const started = Date.now();
   const roots: { name?: string; world: World; symmetry: Symmetry }[] = [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({
     ...r,
@@ -185,14 +192,18 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   const nodes: Node[] = [];
   const seen = new Map<string, number>();
   const saved = { orders: 0, inputs: 0 };
-  // A state is the world plus the budget spent getting there: actions repeated, faults used.
-  const keyOf = (world: World, acts: Record<string, number>, faults: number, root: number) => `${symmetricKey(world, roots[root].symmetry)}${actsKey(acts)}|${faults}`;
+  // A state is the world plus the budget spent getting there (actions repeated, faults used),
+  // plus what `never` properties remember of the way there (see memoryOf).
+  const nevers = spec.invariants.filter((i) => i.kind === "never");
+  const memory = (events: () => Event[]) => (nevers.length ? memoryOf(nevers, events()) : "");
+  const keyOf = (world: World, acts: Record<string, number>, faults: number, root: number, remembered: string) => `${symmetricKey(world, roots[root].symmetry)}${actsKey(acts)}|${faults}|${remembered}`;
   let frontier: { node: number; only?: Set<string> }[] = [];
   for (const [root, { world }] of roots.entries()) {
-    const key = keyOf(world, {}, 0, root);
+    const key = keyOf(world, {}, 0, root, memory(() => []));
     if (seen.has(key)) continue;
     seen.set(key, nodes.length);
     nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {}, world, sleep: new Map(), expanded: false });
+    watch.state?.(world, { acts: {}, faults: 0, memory: memory(() => []) });
     frontier.push({ node: nodes.length - 1 });
   }
   const failures = new Map<string, { node: number; then?: Event[] }>();
@@ -283,7 +294,8 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       }
       tried.push([name, facts]);
       const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
-      const key = keyOf(step.world, acts, faults, node.root);
+      const remembered = memory(() => [...pathEvents(nodes, index), step.event]);
+      const key = keyOf(step.world, acts, faults, node.root, remembered);
       const existing = seen.get(key);
       if (existing !== undefined) {
         if (roots[node.root].symmetry.classes.length && !twinsAgree(nodes[existing].world, step.world, node.root)) return (refuted = true), false;
@@ -292,6 +304,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       }
       seen.set(key, nodes.length);
       nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts, world: step.world, sleep, expanded: false });
+      watch.state?.(step.world, { acts, faults, memory: remembered });
       depthReached = Math.max(depthReached, node.depth + 1);
       examine(nodes.length - 1);
       if (!step.event.error) next.push({ node: nodes.length - 1 });
@@ -311,7 +324,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   }
 
   if (refuted) {
-    const again = check(spec, { ...bounds, symmetry: false }, seeds);
+    const again = check(spec, { ...bounds, symmetry: false }, seeds, watch);
     const classes = roots.flatMap((r) => r.symmetry.classes.map((c) => c.ids));
     const actors = [...new Set(classes.flatMap((ids) => ids.map((id) => roots[0].world.instances.find((i) => i.id === id)?.actor ?? id)))];
     return { ...again, durationMs: Date.now() - started, reductions: { ...again.reductions, refuted: actors } };
@@ -364,6 +377,46 @@ export function initialWorld(spec: Spec, bounds: Pick<Bounds, "instances">): Wor
     for (let n = 0; n < count; n++) world = spawn(spec, world, actor.name, count === 1 ? actor.name : `${actor.name} ${String.fromCharCode(65 + n)}`).world;
   }
   return world;
+}
+
+// What never properties remember -------------------------------------------------------------------
+
+/**
+ * A `never` property judges the whole path, so two paths to one world are one state only if
+ * the property remembers the same of both. It sees the path through `count` and `some`, each
+ * over single events, so the answers those calls give are all it can remember: they go in the
+ * key. A property that reads `trace.events` itself could remember anything, so then the whole
+ * path goes in: no two paths are merged.
+ */
+function memoryOf(nevers: Spec["invariants"], events: Event[]): string {
+  const base = traceView(events);
+  const memory: unknown[] = [];
+  let opaque = false;
+  const trace = {
+    get events() {
+      opaque = true;
+      return base.events;
+    },
+    count: (p: Parameters<typeof base.count>[0]) => {
+      const n = base.count(p);
+      memory.push(n);
+      return n;
+    },
+    some: (p: Parameters<typeof base.some>[0]) => {
+      const b = base.some(p);
+      memory.push(b);
+      return b;
+    },
+  };
+  for (const invariant of nevers) {
+    if (invariant.kind !== "never") continue;
+    try {
+      invariant.never(trace);
+    } catch {
+      memory.push("!");
+    }
+  }
+  return opaque ? `path:${events.map((e) => `${e.actor}.${e.key}`).join(",")}` : JSON.stringify(memory);
 }
 
 // Commuting -------------------------------------------------------------------------------------------
