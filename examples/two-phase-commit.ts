@@ -10,7 +10,7 @@
 //   commits, the commit arrives, prepare the other, it votes no) with no fault;
 // - fixed keeps `atomic`; `decides` holds without faults and breaks with one, in 6 steps
 //   (begin, two prepares, two votes, one vote lost).
-import { defineSpec, message, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export function twoPhaseCommit(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -109,7 +109,6 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
           description: "Once everyone has voted, the coordinator decides.",
           after: (w) => w.all(Participant).every((p) => p.state.vote !== null),
           eventually: (w) => w.the(Coordinator).state.decided !== null,
-          within: 10 * SEC,
         },
       });
       return { Participant, Coordinator };

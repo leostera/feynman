@@ -5,8 +5,6 @@ import type { ActorPlace, Icon, Link, Look, Script, Shape, Trace, TraceEvent, Wo
 export interface Spec {
   name: string;
   description?: string;
-  /** Default message latency, in milliseconds. */
-  latency: number;
   /** By key: `message:Redeem`. */
   messages: Record<string, MessageInfo>;
   zones: ZoneInfo[];
@@ -41,7 +39,6 @@ export interface MessageInfo {
   name: string;
   over?: string;
   tone: "request" | "reply" | "refused" | "stream";
-  latency?: number;
 }
 
 export interface ZoneInfo {
@@ -68,6 +65,8 @@ export interface StepInfo {
   sends: string[];
   starts: string[];
   when?: (state: unknown) => boolean;
+  /** For a timer, when the code fires it, in words; it does not change when it can fire. */
+  after?: string;
 }
 
 export interface InputInfo {
@@ -115,7 +114,6 @@ export type InvariantInfo =
       kind: "eventually";
       eventually: (world: WorldView) => boolean;
       after?: (world: WorldView) => boolean;
-      within: number;
     }
   | { id: string; description: string; kind: "never"; never: (trace: Trace) => boolean };
 
@@ -127,23 +125,20 @@ export interface ScenarioInfo {
 
 // The world ----------------------------------------------------------------------------------------
 
-/** Everything the engine knows at one moment. Plain data: it serializes, hashes, and copies. */
+/**
+ * Everything the engine knows at one moment. Plain data: it serializes, hashes, and copies.
+ * There is no clock: what can happen next is anything pending, in any order (RFD0004).
+ */
 export interface World {
-  /** Simulated time, in milliseconds. */
-  clock: number;
-  /** Counter for pending ids and events. */
+  /** Counter for pending ids and events: the order things were created in. */
   seq: number;
   /** Counters for `ctx.fresh`, by prefix. */
   fresh: Record<string, number>;
   /** State of the seeded random generator. */
   rng: number;
   instances: InstanceState[];
+  /** Messages in flight and timers set, in the order they were created (by `id`). */
   pending: Pending[];
-  /**
-   * Set once a step has read the clock: from then on a state may hold an absolute time (an
-   * expiry, a last-seen), so worlds that differ only in when they are no longer behave alike.
-   */
-  stamped?: true;
 }
 
 export interface InstanceState {
@@ -157,7 +152,6 @@ export type Pending =
   | {
       id: number;
       kind: "deliver";
-      at: number;
       to: string;
       from: string;
       message: string;
@@ -167,7 +161,6 @@ export type Pending =
   | {
       id: number;
       kind: "timer";
-      at: number;
       to: string;
       timer: string;
     };
@@ -189,14 +182,13 @@ export interface Sent {
   to: string;
   message: string;
   payload: unknown;
-  at: number;
   text?: string;
 }
 
 /** One step of the world, with everything views and the checker need to explain it. */
 export interface Event {
+  /** Its place in the world's history: what came before it has a smaller index. */
   index: number;
-  at: number;
   kind: EventKind;
   /** The instance that took the step. */
   instance: string;
@@ -212,7 +204,7 @@ export interface Event {
   from?: string;
   changes: Change[];
   sent: Sent[];
-  started: { timer: string; at: number }[];
+  started: { timer: string }[];
   cancelled: string[];
   /** Notes and send texts, in everyday words. */
   notes: string[];

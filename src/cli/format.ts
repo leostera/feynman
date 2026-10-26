@@ -33,17 +33,17 @@ function stepName(spec: Spec, event: Event): string {
 /** One event, with what it changed and sent. */
 export function formatEvent(spec: Spec, event: Event, world?: World, position = event.index): string {
   const who = `${label(world, event.instance)} (${event.actor})`;
-  const head = [dim(String(position).padStart(4)), dim(seconds(event.at).padStart(7)), bold(who), stepName(spec, event)];
+  const head = [dim(String(position).padStart(4)), bold(who), stepName(spec, event)];
   if (event.inputs && Object.keys(event.inputs).length) head.push(dim(value(event.inputs)));
   else if (event.payload !== undefined && event.kind !== "spawn") head.push(dim(value(event.payload)));
   if (event.from) head.push(dim(`from ${label(world, event.from)}`));
   const lines = [head.join("  ")];
-  const pad = " ".repeat(14);
+  const pad = " ".repeat(6);
   if (event.kind !== "spawn") lines.push(pad + dim(event.description));
   for (const note of event.notes) lines.push(pad + dim(`“${note}”`));
   if (event.kind !== "spawn") for (const c of event.changes) lines.push(`${pad}${c.path || "state"}: ${value(c.before)} → ${value(c.after)}`);
   for (const s of event.sent) lines.push(`${pad}→ ${label(world, s.to)}: ${spec.messages[s.message]?.name ?? s.message} ${dim(value(s.payload))}`);
-  for (const t of event.started) lines.push(`${pad}${dim(`⏱ ${t.timer} at ${seconds(t.at)}`)}`);
+  for (const t of event.started) lines.push(`${pad}${dim(`⏱ ${t.timer} set`)}`);
   for (const t of event.cancelled) lines.push(`${pad}${dim(`⏱ ${t} cancelled`)}`);
   if (event.error) lines.push(`${pad}${red(`spec error: ${event.error}`)}`);
   for (const v of event.violations) lines.push(`${pad}${red(`✗ breaks ${v}`)}`);

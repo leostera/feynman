@@ -11,7 +11,7 @@
 // (read, miss, load, write, update, the invalidation lost, stale fill). Not 6: just after the
 // invalidation is lost the cache is still empty, which is fine; `eventually` breaks only in a
 // world where the property is false and stays so, which takes the stale fill.
-import { defineSpec, message, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export function cache(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -112,7 +112,6 @@ export function cache(variant: "buggy" | "fixed") {
             const entry = w.the(Cache).state.entry;
             return entry === null || entry.value === w.the(Database).state.value;
           },
-          within: 10 * SEC,
         },
       });
       return { Database, Cache, App };

@@ -21,8 +21,6 @@ interface Case {
   spec: Spec;
   bounds: Partial<Bounds>;
   expect: Record<string, Expected>;
-  /** Whether no step reads the clock, so the reduced search must visit exactly the plain one's states. */
-  clockFree: boolean;
   /** Actors declared symmetric that are not, which the checker must catch. */
   refuted?: string[];
 }
@@ -30,21 +28,21 @@ interface Case {
 const EXHAUSTIVE = { maxStates: 2_000_000, timeLimit: 120_000, walks: 0 };
 
 const cases: Case[] = [
-  { name: "payments, buggy", spec: payments("buggy"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: { events: 4, faults: 0 }, paymentsSettle: "holds" }, clockFree: true },
-  { name: "payments, fixed", spec: payments("fixed"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: "holds", paymentsSettle: "holds" }, clockFree: true },
-  { name: "two-phase commit, buggy", spec: twoPhaseCommit("buggy"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: { events: 7, faults: 0 } }, clockFree: true },
-  { name: "two-phase commit, fixed", spec: twoPhaseCommit("fixed"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: "holds" }, clockFree: true },
-  { name: "two-phase commit, fixed, one fault", spec: twoPhaseCommit("fixed"), bounds: { depth: 8, faults: 1, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: { events: 6, faults: 1 } }, clockFree: true },
-  { name: "lease lock, buggy", spec: leaseLock("buggy"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: { events: 10, faults: 0 } }, clockFree: false },
-  { name: "lease lock, fixed", spec: leaseLock("fixed"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: "holds" }, clockFree: false },
-  { name: "cache, buggy", spec: cache("buggy"), bounds: { depth: 8, faults: 0 }, expect: { converges: { events: 7, faults: 0 } }, clockFree: true },
-  { name: "cache, fixed", spec: cache("fixed"), bounds: { depth: 8, faults: 0 }, expect: { converges: "holds" } , clockFree: true },
-  { name: "leader election, buggy", spec: leaderElection("buggy"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: { events: 4, faults: 0 } }, clockFree: true },
-  { name: "leader election, fixed", spec: leaderElection("fixed"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: "holds" }, clockFree: true, refuted: ["Node"] },
-  { name: "job queue, buggy", spec: jobQueue("buggy"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "holds" }, clockFree: true },
-  { name: "job queue, fixed", spec: jobQueue("fixed"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "holds" }, clockFree: true },
-  { name: "switch", spec: lightSwitch(), bounds: { depth: 6, faults: 0 }, expect: { onOnce: { events: 3, faults: 0 } }, clockFree: true },
-  { name: "cache, fixed, one fault", spec: cache("fixed"), bounds: { depth: 7, faults: 1 }, expect: { converges: { events: 7, faults: 1 } }, clockFree: true },
+  { name: "payments, buggy", spec: payments("buggy"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: { events: 4, faults: 0 }, paymentsSettle: "holds" } },
+  { name: "payments, fixed", spec: payments("fixed"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: "holds", paymentsSettle: "holds" } },
+  { name: "two-phase commit, buggy", spec: twoPhaseCommit("buggy"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: { events: 7, faults: 0 } } },
+  { name: "two-phase commit, fixed", spec: twoPhaseCommit("fixed"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: "holds" } },
+  { name: "two-phase commit, fixed, one fault", spec: twoPhaseCommit("fixed"), bounds: { depth: 8, faults: 1, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: { events: 6, faults: 1 } } },
+  { name: "lease lock, buggy", spec: leaseLock("buggy"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: { events: 10, faults: 0 } } },
+  { name: "lease lock, fixed", spec: leaseLock("fixed"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: "holds" } },
+  { name: "cache, buggy", spec: cache("buggy"), bounds: { depth: 8, faults: 0 }, expect: { converges: { events: 7, faults: 0 } } },
+  { name: "cache, fixed", spec: cache("fixed"), bounds: { depth: 8, faults: 0 }, expect: { converges: "holds" }  },
+  { name: "leader election, buggy", spec: leaderElection("buggy"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: { events: 3, faults: 0 } } },
+  { name: "leader election, fixed", spec: leaderElection("fixed"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: "holds" }, refuted: ["Node"] },
+  { name: "job queue, buggy", spec: jobQueue("buggy"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "holds" } },
+  { name: "job queue, fixed", spec: jobQueue("fixed"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "holds" } },
+  { name: "switch", spec: lightSwitch(), bounds: { depth: 6, faults: 0 }, expect: { onOnce: { events: 3, faults: 0 } } },
+  { name: "cache, fixed, one fault", spec: cache("fixed"), bounds: { depth: 7, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
 ];
 
 /** What a report says about each expected property, in the terms of `Expected`. */
@@ -81,7 +79,8 @@ for (const c of cases) {
       const reduced = run({ reduce: true, symmetry: false });
       expect(verdicts(reduced, c.expect)).toEqual(c.expect);
       expect(reduced.coverage).toEqual(plain.coverage);
-      if (c.clockFree) expect(reduced.states).toBe(plain.states);
+      // Without a clock, sleep sets skip orders, never states.
+      expect(reduced.states).toBe(plain.states);
     });
 
     test("symmetry reaches the same verdicts, in no more states, or is caught being wrong", () => {

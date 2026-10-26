@@ -14,8 +14,6 @@ import type {
   ZoneInfo,
 } from "./spec.ts";
 
-export const SEC = 1000;
-export const MIN = 60 * SEC;
 
 /** Code a step stands for: `path#symbol` or `path:start-end`. */
 export type Source = `${string}#${string}` | `${string}:${number}-${number}`;
@@ -91,8 +89,6 @@ export interface Token {
   /** What the chip shows; the value by default. */
   label?: string;
   mood?: Mood;
-  /** When it stops being usable, in simulated milliseconds: the chip counts down to it. */
-  expires?: number;
 }
 
 export interface Look<S> {
@@ -135,13 +131,11 @@ export interface MessageDef<P> {
   /** The protocol it travels over: "https", "websocket", "unix socket". */
   over?: string;
   tone?: Tone;
-  /** How long it takes to arrive, in milliseconds; the spec's default otherwise. */
-  latency?: number;
   /** Phantom: carries the payload type. */
   readonly payload?: P;
 }
 
-export function message<P>(def: { name: string; over?: string; tone?: Tone; latency?: number }): MessageDef<P> {
+export function message<P>(def: { name: string; over?: string; tone?: Tone }): MessageDef<P> {
   return def;
 }
 
@@ -182,7 +176,6 @@ export interface Instance<S, A> {
 
 /** The world as invariants and examples see it. */
 export interface World {
-  readonly now: number;
   /** Nothing is in flight: no message on its way and no timer set. "Once quiet, …" is how to say "in the end". */
   readonly quiet: boolean;
   all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
@@ -196,14 +189,15 @@ export interface Ctx<M extends Registry, Sends extends MessageKey<M>, Starts ext
   readonly id: string;
   readonly label: string;
   readonly self: Instance<unknown, unknown>;
-  /** Simulated time, in milliseconds. */
-  readonly now: number;
   the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
   all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
   /** Send a message; `text` says, for this event only, what it means. */
   send<K extends Sends>(to: Instance<any, any>, key: K, payload: PayloadOf<M, K>, text?: string): void;
-  /** Start one of this actor's internal transitions as a timer. Restarting replaces it. */
-  start(label: Starts, after: number): void;
+  /**
+   * Set one of this actor's internal transitions as a timer: from now on it may fire at any
+   * moment, before or after anything else pending. Setting it again replaces it.
+   */
+  start(label: Starts): void;
   cancel(label: string): void;
   /** A fresh id: `cred-1`, `cred-2`. */
   fresh(prefix: string): string;
@@ -249,6 +243,11 @@ export interface InternalTransition<M extends Registry, S, Sends extends Message
   extends StepFields<M, Sends, Starts> {
   /** When set, the transition can run whenever this holds, not only as a timer. */
   when?: (state: Readonly<S>) => boolean;
+  /**
+   * For a timer, when the code fires it, in words: "10 minutes", "after three missed
+   * heartbeats". Shown to readers; it has no effect on when it can fire.
+   */
+  after?: string;
   run(state: S, ctx: Ctx<M, Sends, Starts>): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>) => string;
@@ -376,7 +375,6 @@ interface ActorDef<M extends Registry, S, A, T> {
 
 export interface TraceEvent {
   readonly index: number;
-  readonly at: number;
   readonly actor: string;
   readonly key: string;
   /** Whether this event is `actor` taking the step keyed `key`. */
@@ -396,10 +394,9 @@ export type InvariantDef =
   | { description: string; always: (world: World) => boolean }
   | {
       description: string;
-      /** Once `after` holds (always, by default), the system running by itself gets here within `within` milliseconds. */
+      /** Once `after` holds (always, by default), the system left alone gets here. */
       eventually: (world: World) => boolean;
       after?: (world: World) => boolean;
-      within: number;
     }
   | { description: string; never: (trace: Trace) => boolean };
 
@@ -420,10 +417,13 @@ export interface Script {
   act<S, A>(who: Instance<S, A>, action: ActionsWithoutInputs<A>, inputs?: Record<string, never>): void;
   /** Take an action with its inputs. */
   act<S, A, K extends ActionsWithInputs<A>>(who: Instance<S, A>, action: K, inputs: ActionInputs<A, K>): void;
-  /** Run what is due within `horizon` milliseconds (a minute by default), in time order. */
-  settle(horizon?: number): void;
-  /** Let `ms` pass, running what falls due. */
-  wait(ms: number): void;
+  /**
+   * Leave the system alone until nothing is pending: every message in flight arrives, in the
+   * order it was sent, and when none is, the timer set first fires.
+   */
+  settle(): void;
+  /** Fire one of an instance's timers now, ahead of what is in flight. */
+  fire(who: Instance<any, any>, timer: string): void;
   /** Lose the next delivery of `key`, as a network would. */
   lose(key: string): void;
   /** Restart an instance: its state returns to its initial value, except durable fields. */
@@ -454,8 +454,6 @@ export interface SpecOptions<M extends Registry> {
   messages: M;
   /** What the spec explains, in a sentence. */
   description?: string;
-  /** Default message latency in milliseconds (50). */
-  latency?: number;
 }
 
 /**
@@ -470,12 +468,11 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
   const messages: Record<string, MessageInfo> = {};
   for (const [id, def] of Object.entries(options.messages)) {
     const key = `message:${id}`;
-    messages[key] = { key, id, name: def.name, over: def.over, tone: def.tone ?? "request", latency: def.latency };
+    messages[key] = { key, id, name: def.name, over: def.over, tone: def.tone ?? "request" };
   }
   const spec: Spec = {
     name,
     description: options.description,
-    latency: options.latency ?? 50,
     messages,
     zones: [],
     limits: [],
@@ -538,6 +535,7 @@ interface RawStep {
   sends?: string[];
   starts?: string[];
   when?: (state: unknown) => boolean;
+  after?: string;
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
   routine?: boolean;
@@ -594,6 +592,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       sends: step.sends ?? [],
       starts: step.starts ?? [],
       when: step.when,
+      after: step.after,
       say: step.say,
       routine: step.routine ?? false,
       run: step.run as TransitionInfo["run"],
@@ -630,6 +629,6 @@ function inputKind(type: InputType): "string" | "number" | "boolean" | "choice" 
 
 function invariantInfo(id: string, def: InvariantDef): InvariantInfo {
   if ("always" in def) return { id, description: def.description, kind: "always", always: def.always };
-  if ("eventually" in def) return { id, description: def.description, kind: "eventually", eventually: def.eventually, after: def.after, within: def.within };
+  if ("eventually" in def) return { id, description: def.description, kind: "eventually", eventually: def.eventually, after: def.after };
   return { id, description: def.description, kind: "never", never: def.never };
 }

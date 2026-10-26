@@ -3,14 +3,14 @@
 //
 // From a world with the configured instances, each state branches on: every action on
 // every instance (with inputs from its schema), every guarded transition that holds,
-// every pending delivery (networks reorder), the earliest timer, and, within the fault
+// every pending delivery (networks reorder), every timer set, and, within the fault
 // budget, losing a delivery or restarting an instance. States are deduplicated by a
 // canonical key (keys.ts), so breadth-first order finds the shortest counterexample.
 //
 // Three reductions keep every state the plain search would visit, and skip only work
 // whose result is known:
 // - Sleep sets: when two steps on different instances commute (neither reads anyone else,
-//   moves the clock, or shares a counter with the other), both orders reach the same world,
+//   or shares a counter with the other), both orders reach the same world,
 //   so the second order is not tried again. A state reached later with fewer such steps
 //   skipped is expanded again for the difference.
 // - Inputs an action did not read: other values for them would do exactly the same.
@@ -130,14 +130,6 @@ export interface Report {
 interface Facts {
   /** The instance whose state it changes. */
   target: string;
-  /** When it happens: a delivery or timer moves the clock to when it is due, if later. */
-  time: number;
-  /** Whether when it happens shows: it sends, starts a timer, or reads the clock. */
-  timed: boolean;
-  /** It fires a timer, which only the earliest timer may. */
-  timer: boolean;
-  /** It starts a timer, which may become the earliest. */
-  starts: boolean;
   observed: Observation;
   failed: boolean;
 }
@@ -179,12 +171,14 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   // A `never` property that reads the path's events in order tells orders apart, so no two orders commute for it.
   if (spec.invariants.some((i) => i.kind === "never" && /\.events\b/.test(String(i.never)))) b.reduce = false;
   const started = Date.now();
-  const roots: { name?: string; world: World; symmetry: Symmetry }[] = [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({
-    ...r,
-    symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY,
-  }));
+  // Interchangeable instances: merged in keys only with the symmetry bound; `eventually` is
+  // judged up to them either way, so verdicts do not depend on the reduction (judge.ts).
+  const roots: { name?: string; world: World; symmetry: Symmetry; judging: Symmetry }[] = [{ world: initialWorld(spec, b) }, ...seeds].map((r) => {
+    const judging = symmetryOf(spec, r.world);
+    return { ...r, judging, symmetry: b.symmetry ? judging : NO_SYMMETRY };
+  });
   const v = verdicts();
-  const walked: WalkResult = b.walks > 0 ? walk(spec, roots.map((r) => r.world), b, v, started + b.timeLimit * WALK_SHARE) : { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
+  const walked: WalkResult = b.walks > 0 ? walk(spec, roots, b, v, started + b.timeLimit * WALK_SHARE) : { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
   // The search judges afresh, so it finds the shortest counterexample even for what a run found.
   const search = verdicts();
   search.futures = v.futures;
@@ -215,15 +209,14 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   let twinChecks = 0;
   let refuted = false;
   const twinsAgree = (a: World, b: World, root: number) => {
-    // Twins at different times are also shifted in time; their next steps differ in when, not what.
-    if (twinChecks >= TWIN_CHECKS || a.clock !== b.clock || canonical(a) === canonical(b)) return true;
+    if (twinChecks >= TWIN_CHECKS || canonical(a) === canonical(b)) return true;
     twinChecks++;
     return sameSet(successors(spec, a, roots[root].symmetry), successors(spec, b, roots[root].symmetry));
   };
 
   const examine = (index: number) => {
     const node = nodes[index];
-    const { findings, error } = judge(spec, node.world, node.event, () => pathEvents(nodes, index), search);
+    const { findings, error } = judge(spec, node.world, node.event, () => pathEvents(nodes, index), search, roots[node.root].judging);
     for (const f of findings) {
       search.broken.add(f.id);
       failures.set(f.id, { node: index, then: f.then });
@@ -279,10 +272,6 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       }
       const facts: Facts = {
         target: targetOf(world, choice),
-        time: step.world.clock,
-        timed: observed.readsNow || step.event.sent.length > 0 || step.event.started.length > 0,
-        timer: step.event.kind === "timer",
-        starts: step.event.started.length > 0,
         observed,
         failed: !!step.event.error,
       };
@@ -338,7 +327,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
     const found = walked.findings.find((f) => f.id === id);
     if (!found) return undefined;
     const root = roots[found.root];
-    const { path, then } = shrink(spec, root.world, found, replay(spec, root.world, found.choices));
+    const { path, then } = shrink(spec, root.world, found, replay(spec, root.world, found.choices), root.judging);
     return { counterexample: { ...path, ...(root.name ? { from: root.name } : {}) }, then };
   };
   const properties: PropertyResult[] = spec.invariants.map((invariant) => {
@@ -371,7 +360,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
 
 /** Singletons, plus the configured number of every other actor, labelled by actor: "Mac", or "Mac A", "Mac B"… */
 export function initialWorld(spec: Spec, bounds: Pick<Bounds, "instances">): World {
-  let world = startWorld(spec).at(-1)?.world ?? { clock: 0, seq: 0, fresh: {}, rng: 1, instances: [], pending: [] };
+  let world = startWorld(spec).at(-1)?.world ?? { seq: 0, fresh: {}, rng: 1, instances: [], pending: [] };
   for (const actor of spec.actors.filter((a) => !a.singleton)) {
     const count = bounds.instances[actor.name] ?? 1;
     for (let n = 0; n < count; n++) world = spawn(spec, world, actor.name, count === 1 ? actor.name : `${actor.name} ${String.fromCharCode(65 + n)}`).world;
@@ -424,11 +413,8 @@ function memoryOf(nevers: Spec["invariants"], events: Event[]): string {
 /**
  * Whether two steps taken from one world reach the same world in either order. They must
  * change different instances, neither may read another instance, and they may not both use
- * a shared counter. Sends commute: a step never sees what is pending. Time: the clock ends
- * at the later of the two either way, but a step taken second runs at the other's time if
- * that is later, so that step must not show when it ran (send, start a timer, read now).
- * And neither may disable the other: only the earliest timer fires, so a timer does not
- * commute with a step that starts one.
+ * a shared counter. Sends and timers commute: a step never sees what is pending, and
+ * nothing pending waits for anything else to be able to happen.
  */
 function commute(a: Facts, b: Facts): boolean {
   return (
@@ -437,11 +423,7 @@ function commute(a: Facts, b: Facts): boolean {
     !b.failed &&
     !a.observed.readsOthers &&
     !b.observed.readsOthers &&
-    !(a.observed.shared && b.observed.shared) &&
-    !(a.timer && b.starts) &&
-    !(b.timer && a.starts) &&
-    !(b.time > a.time && a.timed) &&
-    !(a.time > b.time && b.timed)
+    !(a.observed.shared && b.observed.shared)
   );
 }
 
@@ -462,10 +444,8 @@ function stepName(world: World, choice: Choice): string {
       return `r|${choice.instance}`;
     case "fire":
     case "lose": {
-      const p = world.pending.find((x) => x.id === choice.pending)!;
-      // When it is due, absolutely: along a path that never changes, while how soon does.
-      // (Across paths it may differ for one state; then the names miss and more is tried.)
-      return `${choice.kind[0]}|${p.at}|${pendingText(p)}`;
+      // What it carries: two identical entries reach the same world either way.
+      return `${choice.kind[0]}|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
     }
   }
 }

@@ -4,7 +4,7 @@
 // search cannot reach, but prove nothing. Each run is seeded, so runs are reproducible, and
 // a broken property's run is shrunk to the fewest steps that still break it.
 import { actorNamed, choices as enabled, holdsIn, traceView, type Event, type Spec, type World } from "../spec/index.ts";
-import { pendingText } from "./keys.ts";
+import { pendingText, type Symmetry } from "./keys.ts";
 import { judge, safely, settles, type Verdicts } from "./judge.ts";
 import { apply, branches, QUIET, type Choice, type Counterexample } from "./steps.ts";
 import type { Bounds } from "./explore.ts";
@@ -27,12 +27,18 @@ export interface WalkResult {
 /** How often a run picks each kind of step, when it can: mostly the system, some people, rare faults. */
 const WEIGHTS = { system: 0.6, people: 0.32, faults: 0.08 };
 
-export function walk(spec: Spec, roots: World[], b: Bounds, v: Verdicts, until: number): WalkResult {
+/** Where runs start: a world, and the symmetry `eventually` is judged up to (judge.ts). */
+export interface WalkRoot {
+  world: World;
+  judging: Symmetry;
+}
+
+export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, until: number): WalkResult {
   const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
   for (let run = 0; run < b.walks && Date.now() < until; run++) {
     const root = run % roots.length;
     const random = seeded(run + 1);
-    let world = roots[root];
+    let world = roots[root].world;
     let faults = 0;
     const acts: Record<string, number> = {};
     const path: Choice[] = [];
@@ -48,7 +54,7 @@ export function walk(spec: Spec, roots: World[], b: Bounds, v: Verdicts, until: 
       events.push(step.event);
       out.steps++;
       out.deepest = Math.max(out.deepest, path.length);
-      const { findings, error } = judge(spec, step.world, step.event, () => events, v);
+      const { findings, error } = judge(spec, step.world, step.event, () => events, v, roots[root].judging);
       for (const f of findings) {
         v.broken.add(f.id);
         out.findings.push({ id: f.id, root, choices: [...path], then: f.then });
@@ -132,19 +138,19 @@ function rebind(spec: Spec, was: World, world: World, choice: Choice): Choice | 
 }
 
 /** Whether a replayed path still breaks the property, judged at its end. */
-function stillBreaks(spec: Spec, id: string, path: Counterexample): { then?: Event[] } | null {
+function stillBreaks(spec: Spec, id: string, path: Counterexample, judging: Symmetry): { then?: Event[] } | null {
   const invariant = spec.invariants.find((i) => i.id === id)!;
   const end = path.worlds.at(-1) ?? path.initial;
   if (invariant.kind === "always") return path.events.some((e) => e.violations.includes(id)) ? {} : null;
   if (invariant.kind === "never") return safely(() => invariant.never(traceView(path.events))) ? {} : null;
   if (invariant.after && !holdsIn(spec, end, invariant.after)) return null;
   if (holdsIn(spec, end, invariant.eventually)) return null;
-  const then = settles(spec, end, invariant.eventually, invariant.within);
+  const then = settles(spec, end, invariant.eventually, new Map(), judging);
   return then ? { then } : null;
 }
 
 /** Drop steps one at a time while the property still breaks; at most `budget` replays. */
-export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, budget = 400): { path: Counterexample; then?: Event[] } {
+export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, judging: Symmetry, budget = 400): { path: Counterexample; then?: Event[] } {
   let best = replayed;
   let then = found.then;
   let tries = 0;
@@ -156,7 +162,7 @@ export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed:
       const keep = best.choices.map((_, n) => n !== i);
       const candidate = replayLoosely(spec, initial, best, keep);
       if (candidate.choices.length >= best.choices.length) continue;
-      const result = stillBreaks(spec, found.id, candidate);
+      const result = stillBreaks(spec, found.id, candidate, judging);
       if (!result) continue;
       best = candidate;
       then = result.then ?? then;

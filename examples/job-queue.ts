@@ -11,7 +11,7 @@
 // Expected: buggy breaks `doneOnce` in 6 steps without faults (enqueue, the timeout fires
 // before the first delivery lands, both deliveries land, both are worked); fixed holds, and
 // every job is finished even when one message is lost.
-import { defineSpec, message, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export function jobQueue(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -74,7 +74,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
               state.enqueued += 1;
               state.pending = ctx.fresh("job");
               ctx.send(ctx.the(Worker), Job, { id: state.pending });
-              ctx.start("redeliver", 1 * SEC);
+              ctx.start("redeliver");
             },
           },
         },
@@ -89,12 +89,13 @@ export function jobQueue(variant: "buggy" | "fixed") {
           },
           redeliver: {
             description: "No acknowledgement in time: hand the job over again.",
+            after: "1 second, the visibility timeout",
             sends: [Job],
             starts: ["redeliver"],
             run(state, ctx) {
               if (!state.pending) return;
               ctx.send(ctx.the(Worker), Job, { id: state.pending });
-              ctx.start("redeliver", 1 * SEC);
+              ctx.start("redeliver");
             },
           },
         },
@@ -109,7 +110,6 @@ export function jobQueue(variant: "buggy" | "fixed") {
           description: "A job handed out is eventually acknowledged.",
           after: (w) => w.the(Broker).state.pending !== null,
           eventually: (w) => w.the(Broker).state.pending === null,
-          within: 10 * SEC,
         },
       });
       return { World, Worker, Broker };

@@ -1,4 +1,4 @@
-import { defineSpec, message, MIN, SEC } from "../../../src/spec/index.ts";
+import { defineSpec, message } from "../../../src/spec/index.ts";
 
 export default defineSpec(
   "Remote access",
@@ -18,9 +18,11 @@ export default defineSpec(
     const cloudflare = spec.defineZone({ name: "Cloudflare" });
     const macs = spec.defineZone({ name: "Macs" });
 
-    const CODE_LIFETIME = spec.defineLimit({
+    // Expiry is not modelled: these tests are about lost replies. It would be a timer on the relay.
+    spec.defineLimit({
       name: "Pairing code lifetime",
-      value: 10 * MIN,
+      value: 10,
+      unit: "minutes",
       sources: ["packages/axo-api-worker/src/auth/pairing.ts#CODE_TTL"],
     });
 
@@ -29,7 +31,7 @@ export default defineSpec(
       zone: cloudflare,
       singleton: true,
       initialState: () => ({
-        codes: {} as Record<string, { account: string; used: boolean; expires: number }>,
+        codes: {} as Record<string, { account: string; used: boolean }>,
         hosts: {} as Record<string, { account: string; verifier: string }>,
       }),
       transitions: {
@@ -42,7 +44,7 @@ export default defineSpec(
           sends: [Code],
           run(state, msg, ctx) {
             const code = ctx.fresh("code");
-            state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
+            state.codes[ctx.hash(code)] = { account: msg.account, used: false };
             ctx.reply(Code, { code });
           },
         },
@@ -56,8 +58,8 @@ export default defineSpec(
           sends: [Redeemed, Refused],
           run(state, msg, ctx) {
             const code = state.codes[ctx.hash(msg.code)];
-            if (!code || code.used || code.expires < ctx.now) {
-              return ctx.reply(Refused, { status: 404 }, "The code is unknown, used, or expired.");
+            if (!code || code.used) {
+              return ctx.reply(Refused, { status: 404 }, "The code is unknown or used.");
             }
             code.used = true;
             state.hosts[msg.host] = { account: code.account, verifier: ctx.hash(msg.credential) };
@@ -118,7 +120,7 @@ export default defineSpec(
             state.code = code;
             state.keychain.push(credential);
             ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id, credential });
-            ctx.start("redeemTimeout", 5 * SEC);
+            ctx.start("redeemTimeout");
           },
         },
       },
@@ -141,13 +143,14 @@ export default defineSpec(
         },
         redeemTimeout: {
           description: "No answer in time; the Mac sends the same redemption again.",
+          after: "5 seconds",
           sources: ["crates/axo-relay/src/pairing.rs#retry"],
           sends: [Redeem],
           starts: ["redeemTimeout"],
           run(state, ctx) {
             if (state.link.pending && state.code) {
               ctx.send(ctx.the(Relay), Redeem, { code: state.code, host: ctx.id, credential: state.link.pending });
-              ctx.start("redeemTimeout", 5 * SEC);
+              ctx.start("redeemTimeout");
             }
           },
         },
@@ -165,7 +168,6 @@ export default defineSpec(
         after: (world) =>
           world.all(Mac).some((mac) => mac.state.link.pending !== null && world.all(Person).some((p) => p.state.codes.includes(mac.state.code ?? ""))),
         eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
-        within: 30 * SEC,
       },
       codeRedeemedOnce: {
         description: "A pairing code is never redeemed twice.",

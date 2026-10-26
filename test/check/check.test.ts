@@ -81,10 +81,10 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
   expect(report.walks.runs).toBeGreaterThan(0);
 });
 
-test("the reductions skip work, never states: exactly the states of the plain search, without the clock", async () => {
+test("the reductions skip work, never states: exactly the states of the plain search", async () => {
   const { defineSpec, message } = await import("../../src/spec/index.ts");
-  // Clients ping a server and count the answers; a log hears about every answer. No step
-  // reads the clock, so no two worlds are time-shifted twins and the counts must match.
+  // Clients ping a server and count the answers; a log hears about every answer. Many steps
+  // commute, so sleep sets skip many orders, and the state counts must still match.
   const pings = defineSpec(
     "Pings",
     { messages: { Ping: message<{ n: number }>({ name: "ping" }), Pong: message<{ n: number }>({ name: "pong" }), Note: message<{ n: number }>({ name: "note" }) } },
@@ -129,14 +129,13 @@ test("the reductions skip work, never states: exactly the states of the plain se
   expect(reduced.reductions.orders).toBeGreaterThan(0);
 });
 
-test("the reductions keep the verdicts on a spec that reads the clock", () => {
+test("the reductions keep the verdicts and the states on a spec with timers and retries", () => {
   const bounds = { depth: 8, faults: 1, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   const plain = check(remoteAccess, { ...bounds, reduce: false });
   const reduced = check(remoteAccess, { ...bounds, reduce: true });
   expect(reduced.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
   expect(reduced.coverage).toEqual(plain.coverage);
-  // Time-shifted twins: which of two the search keeps depends on the order it meets them.
-  expect(Math.abs(reduced.states - plain.states) / plain.states).toBeLessThan(0.001);
+  expect(reduced.states).toBe(plain.states);
 }, 30_000);
 
 test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", () => {
