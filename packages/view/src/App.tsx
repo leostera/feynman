@@ -65,7 +65,15 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
     go({ ...route, page: "play", item: null });
   };
   const openCounterexample = (ce: Counterexample, origin: string) => {
-    setSession({ initial: ce.initial, steps: ce.events.map((event, i) => ({ event, world: ce.worlds[i] })), ops: null, origin });
+    // A counterexample found from where a scenario ends starts there.
+    const from = ce.from ? `${origin}, after “${ce.from}”` : origin;
+    setSession({ initial: ce.initial, steps: ce.events.map((event, i) => ({ event, world: ce.worlds[i] })), ops: null, origin: from });
+    go({ ...route, page: "play", item: null });
+  };
+  const openScenario = (name: string) => {
+    const scenario = current.spec!.scenarios.find((s) => s.name === name);
+    if (!scenario) return;
+    setSession(runScenarioSession(current.spec!, scenario));
     go({ ...route, page: "play", item: null });
   };
   return (
@@ -128,7 +136,7 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
               />
             )}
             {route.page === "flows" && <Flows selected={route.item} onSelect={(item) => go({ ...route, item })} onOpen={openFlow} />}
-            {route.page === "checks" && <Checks onOpen={openCounterexample} />}
+            {route.page === "checks" && <Checks onOpen={openCounterexample} onScenario={openScenario} />}
             {route.page === "reference" && <Reference />}
           </ExplorerProvider>
         )}
