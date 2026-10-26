@@ -33,3 +33,16 @@ smallest depth.
 the same distinct states (its worlds projected onto the TLA+ variables: no times, no ids),
 the same verdict on every invariant, and counterexamples just as short. It needs Java and
 `tla2tools.jar` (the TLA+ Toolbox has one; or set `TLA_TOOLS_JAR`), and is skipped without.
+
+### P
+
+`oracles/p/` models three of the systems in P: two-phase commit, payments and the job
+queue. P delivers each machine's messages in order, so every message goes through a
+`Network` machine that holds a bag and delivers (or, within the fault budget, loses) any
+message in it; timers may fire at any moment once set, as the checker's may. Properties are
+monitors over announced events. P's checker runs seeded schedules rather than every state, so
+`test/p-oracles.test.ts` compares verdicts only: P breaks the property (with the property's
+own assertion) exactly when the checker does. It needs .NET 8 and `dotnet tool install
+--global P`, and is skipped without.
+
+Run both kinds with `bun run oracles` (about two minutes); `bun run test` leaves them out.
