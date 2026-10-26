@@ -1,13 +1,33 @@
-// The timeline: the event log of a playground session. Hovering an event peeks at the world
-// as it was then; clicking travels back to it, without forgetting what came after until
-// something else is done there. The focused event's detail sits at the bottom, with its code.
+// The timeline: the event log of a playground session, one line per event. Runs of routine
+// events (heartbeats and other housekeeping) fold into one line that opens on click.
+// Hovering an event peeks at the world as it was then; clicking travels back to it, without
+// forgetting what came after until something else is done there. The focused event sits at
+// the bottom in words, with its changes, messages and code one click away.
 import { Badge, cn } from "@cloudflare/kumo";
-import { useEffect, useRef } from "react";
-import type { Event } from "@feynman/spec";
+import { CaretRightIcon, HeartbeatIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import type { Event, World } from "@feynman/spec";
 import { clock, kindLabel, labelOf, stepTitle } from "./format";
 import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
+
+type Entry = { kind: "event"; event: Event; world: World; index: number } | { kind: "fold"; events: { event: Event; world: World; index: number }[] };
+
+/** Events in order, with each run of two or more routine events folded into one entry. */
+function entriesOf(session: Session): Entry[] {
+  const out: Entry[] = [];
+  session.steps.forEach(({ event, world }, index) => {
+    if (!event) return;
+    const item = { event, world, index };
+    const prev = out.at(-1);
+    if (!event.routine) out.push({ kind: "event", ...item });
+    else if (prev?.kind === "fold") prev.events.push(item);
+    else if (prev?.kind === "event" && prev.event.routine) out[out.length - 1] = { kind: "fold", events: [prev, item] };
+    else out.push({ kind: "event", ...item });
+  });
+  return out;
+}
 
 export function Timeline({
   session,
@@ -25,7 +45,9 @@ export function Timeline({
 }) {
   const { spec } = useExplorer();
   const list = useRef<HTMLDivElement>(null);
-  const steps = session.steps.map((s, index) => ({ ...s, index })).filter((s): s is { event: Event; world: typeof s.world; index: number } => s.event !== null);
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const entries = entriesOf(session);
+  const count = session.steps.filter((s) => s.event).length;
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
   }, [session.steps.length]);
@@ -34,44 +56,71 @@ export function Timeline({
   }, [cursor]);
   const focusIndex = preview ?? cursor ?? session.steps.length - 1;
   const focused = focusIndex >= 0 ? session.steps[focusIndex] : null;
+  const row = ({ event, world, index }: { event: Event; world: World; index: number }, nested = false) => (
+    <Row
+      key={index}
+      step={index}
+      active={focusIndex === index}
+      later={cursor !== null && index > cursor}
+      nested={nested}
+      onEnter={() => onPreview(index)}
+      onClick={() => onPick(index)}
+      time={clock(event.at)}
+      title={bubbleText(spec, event, world)}
+      who={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
+      flag={event.error || event.violations.length ? "broken" : event.kind === "lose" || event.kind === "restart" ? kindLabel(event) : null}
+    />
+  );
   return (
-    <aside className="flex w-[22rem] shrink-0 flex-col border-l border-kumo-hairline bg-kumo-base">
-      <div className="flex items-baseline gap-2 px-4 pb-2 pt-3">
-        <span className="text-sm font-semibold">Timeline</span>
-        <span className="ml-auto text-xs text-kumo-subtle">{steps.length} events</span>
+    <aside className="flex w-[21rem] shrink-0 flex-col overflow-hidden rounded-2xl bg-kumo-elevated ring-1 ring-kumo-line">
+      <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
+        <h2 className="text-sm font-semibold">Timeline</h2>
+        <span className="ml-auto text-xs tabular-nums text-kumo-subtle">{count} events</span>
       </div>
-      <div ref={list} className="min-h-0 flex-1 overflow-y-auto py-1" onMouseLeave={() => onPreview(null)}>
+      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" onMouseLeave={() => onPreview(null)}>
         <Row
+          step={-1}
           active={focusIndex === -1}
-          previewed={preview === -1}
           onEnter={() => onPreview(-1)}
           onClick={() => onPick(-1)}
-          step={-1}
-          time="0.00s"
+          time={clock(0)}
           title={session.origin === "Fresh start" ? "The start" : `Start of “${session.origin}”`}
-          subtitle={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
+          who={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
         />
-        {steps.map(({ event, world, index }) => (
-          <Row
-            key={index}
-            active={focusIndex === index}
-            previewed={preview === index}
-            onEnter={() => onPreview(index)}
-            onClick={() => onPick(index)}
-            step={index}
-            later={cursor !== null && index > cursor}
-            time={clock(event.at)}
-            title={bubbleText(spec, event, world)}
-            subtitle={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
-            kind={kindLabel(event)}
-            bad={Boolean(event.error || event.violations.length)}
-            fault={event.kind === "lose" || event.kind === "restart"}
-          />
-        ))}
+        {entries.map((entry) => {
+          if (entry.kind === "event") return row(entry);
+          const first = entry.events[0];
+          const expanded = open.has(first.index);
+          const lastIndex = entry.events.at(-1)!.index;
+          const names = [...new Set(entry.events.map((e) => stepTitle(spec, e.event)))];
+          return (
+            <div key={`fold-${first.index}`}>
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onMouseEnter={() => onPreview(lastIndex)}
+                onClick={() => setOpen((s) => new Set(s.has(first.index) ? [...s].filter((x) => x !== first.index) : [...s, first.index]))}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-kumo-subtle hover:bg-kumo-tint",
+                  cursor !== null && first.index > cursor && "opacity-45",
+                  !expanded && focusIndex >= first.index && focusIndex <= lastIndex && "bg-kumo-tint",
+                )}
+              >
+                <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums">{clock(first.event.at)}</span>
+                <HeartbeatIcon size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-[12.5px]">
+                  {names.join(", ")} <span className="tabular-nums">×{entry.events.length}</span>
+                </span>
+                <CaretRightIcon size={12} className={cn("shrink-0 transition-transform duration-150", expanded && "rotate-90")} />
+              </button>
+              {expanded && entry.events.map((e) => row(e, true))}
+            </div>
+          );
+        })}
       </div>
       {focused?.event && (
-        <div className="max-h-[50%] shrink-0 overflow-y-auto border-t border-kumo-hairline px-3 py-3">
-          <EventDetail event={focused.event} world={focused.world} />
+        <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-kumo-line px-4 py-3">
+          <EventDetail event={focused.event} world={focused.world} folded />
         </div>
       )}
     </aside>
@@ -79,31 +128,28 @@ export function Timeline({
 }
 
 function Row({
+  step,
   active,
-  previewed,
+  later,
+  nested,
   onEnter,
   onClick,
   time,
   title,
-  subtitle,
-  kind,
-  bad,
-  fault,
-  step,
-  later,
+  who,
+  flag,
 }: {
   step: number;
-  later?: boolean;
   active: boolean;
-  previewed: boolean;
+  later?: boolean;
+  nested?: boolean;
   onEnter: () => void;
   onClick: () => void;
   time: string;
   title: string;
-  subtitle: string;
-  kind?: string;
-  bad?: boolean;
-  fault?: boolean;
+  /** Who did what, for the tooltip. */
+  who: string;
+  flag?: string | null;
 }) {
   return (
     <button
@@ -112,15 +158,12 @@ function Row({
       onFocus={onEnter}
       onClick={onClick}
       data-step={step}
-      title="Travel back to this moment"
-      className={cn(later && "opacity-45", "mx-2 flex w-[calc(100%-1rem)] items-start gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-kumo-tint", active && "bg-kumo-tint ring-1 ring-kumo-line", previewed && "bg-kumo-tint")}
+      title={`${who}. Click to travel back to this moment.`}
+      className={cn("flex w-full items-baseline gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-kumo-tint", active && "bg-kumo-tint ring-1 ring-kumo-line", later && "opacity-45", nested && "pl-6")}
     >
-      <span className="w-11 shrink-0 pt-px text-right font-mono text-[10.5px] font-semibold text-kumo-subtle">{time}</span>
-      <span className="min-w-0 flex-1">
-        <span className={cn("block text-[12.5px] font-medium leading-snug", bad && "text-kumo-danger")}>{title}</span>
-        <span className="block truncate text-[11px] text-kumo-subtle">{subtitle}</span>
-      </span>
-      {kind && (fault || bad) && <Badge variant={bad ? "error" : "warning"}>{bad ? "broken" : kind}</Badge>}
+      <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums text-kumo-subtle">{time}</span>
+      <span className={cn("min-w-0 flex-1 text-[12.5px] font-medium leading-snug line-clamp-2", flag === "broken" && "text-kumo-danger")}>{title}</span>
+      {flag && <Badge variant={flag === "broken" ? "error" : "warning"}>{flag}</Badge>}
     </button>
   );
 }

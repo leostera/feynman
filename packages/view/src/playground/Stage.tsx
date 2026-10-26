@@ -1,28 +1,31 @@
-// The stage: zones, the wires between actors that can talk, the live links instances hold,
-// one node per instance (icon, status, rows), messages travelling the wires, and speech
-// bubbles for what just happened. Everything is placed by the computed layout.
+// The stage: the service's zone as a tinted region and the others as captioned columns, one
+// node per instance, the live links instances hold, messages travelling between them, and a
+// speech bubble for what just happened. Colour follows people: an instance wears its own
+// colour, or its owner's, and its links and rows carry it. Rings show how a node is doing
+// only when that says something (connected, failing); otherwise they show whose it is.
 import { cn } from "@cloudflare/kumo";
-import { TicketIcon, TimerIcon } from "@phosphor-icons/react";
+import { TicketIcon } from "@phosphor-icons/react";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react";
-import { appearance, declaresLinks, liveLinks, type Event, type Pending, type Row, type Spec, type Token, type World } from "@feynman/spec";
+import { appearance, declaresLinks, liveLinks, type Event, type Mood, type Pending, type Row, type Spec, type Token, type World } from "@feynman/spec";
 import { labelOf, messageName, short, time } from "../format";
-import { along, edgeKey, ICON_W, layout, layoutKey, pathOf, shapeOf, type Box, type Layout } from "../layout";
+import { actorLinks, along, ICON_W, layout, layoutKey, shapeOf, type Box, type Layout, type View, type ZoneBox } from "../layout";
 import { useExplorer } from "../ui";
-import { colorOf, iconFor, instanceColors, moodColor, toneColor } from "./look";
+import { iconFor, identityColors, moodColor, toneColor } from "./look";
 
 export interface Bubble {
   key: string;
   instance: string;
   text: string;
   tone: "action" | "message" | "bad" | "quiet";
-  age: number;
 }
 
-/** While a token is being dragged: which nodes would accept it. */
+/** A token being carried, by dragging it or by picking it up: which nodes would take it. */
 export interface Dragging {
   from: string;
   token: Token;
   targets: Set<string>;
+  /** Picked up with a click or the keyboard, rather than held under the pointer. */
+  carried: boolean;
 }
 
 /** Wraps a node's icon in its menu: the trigger element and what it shows. */
@@ -34,14 +37,29 @@ export interface Fit {
   y: number;
 }
 
-export function useLayout(spec: Spec, world: World): Layout | null {
-  const key = layoutKey(spec, world);
-  const [state, setState] = useState<{ key: string; layout: Layout } | null>(null);
-  const worldRef = useRef(world);
-  worldRef.current = world;
+/** The size of the canvas, which the layout fills. */
+export function useView() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<View>({ w: 0, h: 0 });
   useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => setView({ w: entry.contentRect.width, h: entry.contentRect.height }));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, view };
+}
+
+export function useLayout(spec: Spec, world: World, view: View): Layout | null {
+  const key = layoutKey(spec, world, view);
+  const [state, setState] = useState<{ key: string; layout: Layout } | null>(null);
+  const latest = useRef({ world, view });
+  latest.current = { world, view };
+  useEffect(() => {
+    if (!latest.current.view.w) return;
     let live = true;
-    layout(spec, worldRef.current).then((l) => live && setState({ key, layout: l }));
+    layout(spec, latest.current.world, latest.current.view).then((l) => live && setState({ key, layout: l }));
     return () => {
       live = false;
     };
@@ -49,23 +67,11 @@ export function useLayout(spec: Spec, world: World): Layout | null {
   return state?.layout ?? null;
 }
 
-/** Scale the drawing to fit its box with room for the overlays, centred; never above 1.15. */
-export function useFit(width: number, height: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setBox({ w: entry.contentRect.width, h: entry.contentRect.height }));
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-  const top = 72;
-  const bottom = 56;
-  const side = 48;
-  const scale = width && height && box.w ? Math.min(1.2, (box.w - side * 2) / width, (box.h - top - bottom) / height) : 1;
-  const fit: Fit = { scale, x: (box.w - width * scale) / 2, y: top + Math.max(0, (box.h - top - bottom - height * scale) / 2) };
-  return { ref, fit };
+/** The layout already fills the canvas; scale down only when it could not fit. */
+export function fitOf(graph: Layout | null, view: View): Fit {
+  if (!graph || !view.w) return { scale: 1, x: 0, y: 0 };
+  const scale = Math.min(1, view.w / graph.width, view.h / graph.height);
+  return { scale, x: (view.w - graph.width * scale) / 2, y: (view.h - graph.height * scale) / 2 };
 }
 
 export function Stage({
@@ -75,12 +81,13 @@ export function Stage({
   clock,
   live,
   focus,
-  bubbles,
+  bubble,
   next,
   pulse,
   menu,
   dragging,
   onToken,
+  onDrop,
   onPacket,
 }: {
   world: World;
@@ -88,37 +95,36 @@ export function Stage({
   fit: Fit;
   clock: number;
   live: boolean;
-  focus: Event | null;
-  bubbles: Bubble[];
+  focus: { event: Event; index: number } | null;
+  bubble: (Bubble & { fading: boolean }) | null;
   next: number | null;
   pulse: string | null;
   menu: MenuFor;
   dragging: Dragging | null;
-  onToken: (from: string, token: Token, e: ReactPointerEvent) => void;
+  onToken: (from: string, token: Token, e: ReactPointerEvent | null) => void;
+  onDrop: (target: string) => void;
   onPacket: (pending: Extract<Pending, { kind: "deliver" }>) => void;
 }) {
   const { spec } = useExplorer();
   const links = liveLinks(spec, world);
-  const quietWires = declaresLinks(spec);
-  const changed = new Set((focus?.changes ?? []).map((c) => c.instance));
-  const colors = instanceColors(spec, world);
-  const { ref, rows } = useRowAnchors(fit.scale);
+  const colors = identityColors(spec, world);
+  const changed = new Set((focus?.event.changes ?? []).map((c) => c.instance));
+  const { ref, rows } = useRowAnchors(fit.scale, `${layoutKey(spec, world, { w: graph.width, h: graph.height })}:${JSON.stringify(world.instances.map((i) => appearance(spec, world, i.id).rows.map((r) => r.label)))}`);
   return (
     <div ref={ref} className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`, width: graph.width, height: graph.height }}>
-      <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible">
+      <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible" aria-hidden>
         {graph.zones.map((z) => (
           <Zone key={z.name} zone={z} description={spec.zones.find((x) => x.name === z.name)?.description} />
         ))}
-        {[...graph.edges].map(([key, points]) => (
-          <path key={key} d={pathOf(points)} fill="none" stroke="var(--color-kumo-line)" strokeWidth={1} opacity={quietWires ? 0.35 : 0.8} />
-        ))}
+        {!declaresLinks(spec) && <Wires spec={spec} world={world} graph={graph} />}
         {links.map((link, i) => {
           const a = graph.nodes.get(link.from);
           const b = graph.nodes.get(link.target);
           if (!a || !b) return null;
           const row = link.row ? rows.get(`${link.target}::${link.row}`) : undefined;
-          const q = row ? rowAnchor(row, iconCenter(a)) : anchor(b, a);
-          const p = anchor(a, row ? { x: q.x - 68, y: q.y - 40, w: 136, h: 80 } : b);
+          const q = row ? rowAnchor(row, iconCenter(a)) : rim(iconCenter(b), iconCenter(a));
+          const p = rim(iconCenter(a), q);
+          const stroke = link.mood && link.mood !== "ok" ? moodColor(link.mood) : (colors.get(link.from) ?? "var(--color-kumo-brand)");
           return (
             <line
               key={i}
@@ -126,10 +132,11 @@ export function Stage({
               y1={p.y}
               x2={q.x}
               y2={q.y}
-              stroke={link.mood ? moodColor(link.mood) : (colors.get(link.from) ?? moodColor("busy"))}
+              stroke={stroke}
               strokeWidth={2}
-              strokeDasharray={link.style === "dotted" ? "2 6" : link.style === "solid" ? undefined : "8 6"}
+              strokeDasharray={link.style === "dotted" ? "2 6" : link.style === "solid" ? undefined : "7 7"}
               strokeLinecap="round"
+              className={link.style === "solid" ? undefined : "feynman-flow"}
             />
           );
         })}
@@ -142,74 +149,111 @@ export function Stage({
             id={instance.id}
             world={world}
             box={box}
-            touched={changed.has(instance.id)}
+            region={graph.zones.some((z) => z.region && z.name === spec.actors.find((a) => a.name === instance.actor)?.zone)}
+            flash={live && changed.has(instance.id) ? (focus?.index ?? null) : null}
             pulse={live && !dragging && pulse === instance.id}
             menu={menu}
             colors={colors}
             drop={dragging ? (dragging.targets.has(instance.id) ? "target" : dragging.from === instance.id ? "source" : "other") : null}
+            carrying={dragging?.carried ? dragging.token : null}
             onToken={live ? onToken : null}
+            onDrop={onDrop}
           />
         ) : null;
       })}
       {world.pending.map((p) =>
-        p.kind === "deliver" ? <Packet key={p.id} pending={p} graph={graph} clock={clock} next={next === p.id} live={live} onClick={() => onPacket(p)} /> : null,
+        p.kind === "deliver" ? <Packet key={p.id} pending={p} graph={graph} world={world} clock={clock} next={next === p.id} live={live} onClick={() => onPacket(p)} /> : null,
       )}
-      {[...new Set(bubbles.map((b) => b.instance))].map((instance) => {
-        const box = graph.nodes.get(instance);
-        return box ? <SpeechBubbles key={instance} bubbles={bubbles.filter((b) => b.instance === instance)} box={box} /> : null;
-      })}
+      {bubble && graph.nodes.get(bubble.instance) && <SpeechBubble key={bubble.key} bubble={bubble} box={graph.nodes.get(bubble.instance)!} />}
     </div>
   );
 }
 
-function Zone({ zone, description }: { zone: Box & { name: string }; description?: string }) {
+function Zone({ zone, description }: { zone: ZoneBox; description?: string }) {
+  if (zone.region) {
+    return (
+      <g>
+        <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx={32} fill="var(--color-kumo-warning-tint)" stroke="var(--color-kumo-warning)" strokeOpacity={0.55} strokeDasharray="5 6" />
+        <text x={zone.x + zone.w / 2} y={zone.y + zone.h - 18} textAnchor="middle" fill="var(--text-color-kumo-warning)" className="text-[13px] font-medium">
+          {zone.name}
+          {description ? ` · ${description}` : ""}
+        </text>
+      </g>
+    );
+  }
   return (
-    <g>
-      <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx={24} fill="var(--color-kumo-tint)" fillOpacity={0.35} stroke="var(--color-kumo-line)" strokeDasharray="6 6" />
-      <text x={zone.x + 8} y={zone.y - 12} fill="currentColor" className="text-[11px] font-medium uppercase tracking-wider text-kumo-subtle">
-        {zone.name}
-        {description ? ` · ${description}` : ""}
-      </text>
-    </g>
+    <text x={zone.x + zone.w / 2} y={zone.y - 12} textAnchor="middle" fill="var(--text-color-kumo-subtle)" className="text-[11px]">
+      <tspan className="font-medium uppercase tracking-wider">{zone.name}</tspan>
+      {description && <tspan> · {description}</tspan>}
+    </text>
   );
 }
 
-/** Where a straight link leaves box `a` towards box `b`: the edge of a's icon circle. */
-function anchor(a: Box, b: Box): { x: number; y: number } {
-  const ca = iconCenter(a);
-  const cb = iconCenter(b);
-  const d = Math.hypot(cb.x - ca.x, cb.y - ca.y) || 1;
-  return { x: ca.x + ((cb.x - ca.x) / d) * 36, y: ca.y + ((cb.y - ca.y) / d) * 36 };
+/** Without declared links, which actors can talk is drawn faintly, straight between nodes. */
+function Wires({ spec, world, graph }: { spec: Spec; world: World; graph: Layout }) {
+  const lines: { a: Box; b: Box; key: string }[] = [];
+  for (const [x, y] of actorLinks(spec))
+    for (const i of world.instances.filter((w) => w.actor === x))
+      for (const j of world.instances.filter((w) => w.actor === y)) {
+        const a = graph.nodes.get(i.id);
+        const b = graph.nodes.get(j.id);
+        if (a && b) lines.push({ a, b, key: `${i.id}|${j.id}` });
+      }
+  return (
+    <>
+      {lines.map(({ a, b, key }) => {
+        const p = rim(iconCenter(a), iconCenter(b));
+        const q = rim(iconCenter(b), iconCenter(a));
+        return <line key={key} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="var(--color-kumo-line)" strokeWidth={1} />;
+      })}
+    </>
+  );
+}
+
+/** The point on the icon circle at `c` facing `towards`. */
+function rim(c: { x: number; y: number }, towards: { x: number; y: number }): { x: number; y: number } {
+  const d = Math.hypot(towards.x - c.x, towards.y - c.y) || 1;
+  return { x: c.x + ((towards.x - c.x) / d) * 38, y: c.y + ((towards.y - c.y) / d) * 38 };
 }
 
 function iconCenter(box: Box): { x: number; y: number } {
-  return { x: box.x + Math.min(box.w, ICON_W) / 2 + (box.w > ICON_W + 200 ? (box.w - ICON_W) / 2 : 0), y: box.y + 40 };
+  return { x: box.x + Math.min(box.w, ICON_W) / 2 + (box.w > ICON_W + 200 ? (box.w - ICON_W) / 2 : 0), y: box.y + 36 };
 }
 
 // Nodes -------------------------------------------------------------------------------------------------
 
 type DropState = "target" | "source" | "other" | null;
 
+/** A mood worth a ring: how it is doing says something. "info" and "off" leave the ring to identity. */
+const telling = (mood: Mood | null): boolean => mood === "ok" || mood === "bad" || mood === "warn" || mood === "busy";
+
 function Node({
   id,
   world,
   box,
-  touched,
+  region,
+  flash,
   pulse,
   menu,
   colors,
   drop,
+  carrying,
   onToken,
+  onDrop,
 }: {
   id: string;
   world: World;
   box: Box;
-  touched: boolean;
+  region: boolean;
+  /** The event that just changed this node, to flash it once. */
+  flash: number | null;
   pulse: boolean;
   menu: MenuFor;
   colors: Map<string, string>;
   drop: DropState;
-  onToken: ((from: string, token: Token, e: ReactPointerEvent) => void) | null;
+  carrying: Token | null;
+  onToken: ((from: string, token: Token, e: ReactPointerEvent | null) => void) | null;
+  onDrop: (target: string) => void;
 }) {
   const { spec } = useExplorer();
   const instance = world.instances.find((i) => i.id === id)!;
@@ -217,47 +261,64 @@ function Node({
   const look = appearance(spec, world, id);
   const shape = shapeOf(actor);
   const Icon = iconFor(look.icon);
+  const identity = colors.get(id);
+  const ring = telling(look.mood) ? moodColor(look.mood) : (identity ?? (region ? "var(--color-kumo-warning)" : "var(--color-kumo-line)"));
   const timers = world.pending.filter((p): p is Extract<Pending, { kind: "timer" }> => p.kind === "timer" && p.to === id);
-  const ring = moodColor(look.mood);
-  const trigger = <button type="button" className="group flex w-[136px] shrink-0 cursor-pointer flex-col items-center gap-1 outline-none" onClick={(e) => e.stopPropagation()} />;
+  const waiting = timers.map((t) => `${t.timer} in ${time(Math.max(0, t.at - world.clock))}`).join(", ");
+  const trigger = <button type="button" title={waiting ? `Waiting: ${waiting}` : undefined} className="group flex w-[136px] shrink-0 cursor-pointer flex-col items-center gap-1 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus" onClick={(e) => e.stopPropagation()} />;
   const iconBlock = menu(
     id,
     trigger,
     <>
       <span
+        key={flash ?? "still"}
         className={cn(
-          "relative flex size-[72px] items-center justify-center rounded-full bg-kumo-base transition-transform group-hover:scale-105 group-data-[popup-open]:scale-105 group-data-[popup-open]:outline-3 group-data-[popup-open]:outline-offset-4 group-data-[popup-open]:outline-kumo-brand",
+          "relative flex size-[72px] items-center justify-center rounded-full bg-kumo-base transition-transform duration-200 ease-out group-hover:scale-105 group-data-[popup-open]:scale-105",
           pulse && "feynman-pulse",
-          drop === "target" && "scale-110 outline-3 outline-offset-4 outline-dashed outline-kumo-brand",
+          flash !== null && "feynman-flash",
+          drop === "target" && "scale-110",
         )}
-        style={{ boxShadow: `0 0 0 3px ${ring}` }}
+        style={{ boxShadow: `0 0 0 ${drop === "target" ? 4 : 3}px ${drop === "target" ? "var(--color-kumo-brand)" : ring}` }}
       >
-        <Icon size={30} weight="duotone" className="text-kumo-default" />
-        {touched && <span className="absolute -right-0.5 -top-0.5 size-3 rounded-full ring-2 ring-kumo-base" style={{ background: "var(--color-kumo-warning)" }} />}
+        <Icon size={30} weight="duotone" style={{ color: region && !identity ? "var(--text-color-kumo-warning)" : undefined }} />
+        {identity && telling(look.mood) && <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full ring-2 ring-kumo-canvas" style={{ background: identity }} />}
       </span>
       <span className="max-w-full truncate text-[13px] font-semibold leading-tight">{instance.label}</span>
       {look.status && <span className="max-w-full truncate text-[11px] leading-tight text-kumo-subtle">{look.status}</span>}
-      {colors.has(id) && <span className="h-0.5 w-6 rounded-full" style={{ background: colors.get(id) }} />}
-      {timers.length > 0 && (
-        <span className="flex items-center gap-0.5 font-mono text-[10px] text-kumo-subtle" title={timers.map((t) => `${t.timer} in ${time(Math.max(0, t.at - world.clock))}`).join(", ")}>
-          <TimerIcon size={10} />
-          {timers[0].timer} {time(Math.max(0, timers[0].at - world.clock))}
-        </span>
-      )}
     </>,
   );
   const tokens = look.tokens.length > 0 && (
-    <Tokens tokens={look.tokens} color={colors.get(id)} hidden={drop === "source"} onDown={onToken && ((token, e) => onToken(id, token, e))} />
+    <div className={cn("absolute left-[92px] -top-3 z-10 flex flex-col items-start gap-1", drop === "source" && "opacity-30")}>
+      {look.tokens.slice(0, 3).map((token) => (
+        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} color={identity} onPick={onToken && ((e) => onToken(id, token, e))} />
+      ))}
+    </div>
   );
-  const frame = cn("absolute transition-opacity", drop === "other" && "opacity-40");
+  const dropHere = carrying && drop === "target" && (
+    <button
+      type="button"
+      autoFocus
+      onClick={(e) => {
+        e.stopPropagation();
+        onDrop(id);
+      }}
+      className="absolute left-1/2 top-0 z-20 size-[88px] -translate-x-1/2 -translate-y-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus"
+      aria-label={`Drop ${carrying.label ?? String(carrying.value)} on ${instance.label}`}
+    />
+  );
+  const head = (
+    <div className="relative">
+      {iconBlock}
+      {tokens}
+      {dropHere}
+    </div>
+  );
+  const frame = cn("absolute transition-opacity duration-200", drop === "other" && "opacity-35");
   const place = { left: box.x, top: box.y, width: box.w, height: box.h };
   if (shape === "hub") {
     return (
       <div data-instance={id} className={cn(frame, "flex flex-col items-center gap-3")} style={place}>
-        <div className="relative">
-          {iconBlock}
-          {tokens}
-        </div>
+        {head}
         <Rows id={id} rows={look.rows} world={world} colors={colors} className="w-full flex-1" />
       </div>
     );
@@ -265,60 +326,62 @@ function Node({
   if (shape === "side") {
     return (
       <div data-instance={id} className={cn(frame, "flex items-start gap-1")} style={place}>
-        <div className="relative">
-          {iconBlock}
-          {tokens}
-        </div>
+        {head}
         <Rows id={id} rows={look.rows} world={world} colors={colors} className="mt-3 w-[160px]" compact />
       </div>
     );
   }
   return (
     <div data-instance={id} className={cn(frame, "flex justify-center")} style={place}>
-      <div className="relative">
-        {iconBlock}
-        {tokens}
-      </div>
+      {head}
     </div>
   );
 }
 
-/** Things to drag, clipped to the icon's top-right like a ticket. */
-function Tokens({ tokens, color, hidden, onDown }: { tokens: Token[]; color?: string; hidden: boolean; onDown: ((token: Token, e: ReactPointerEvent) => void) | null }) {
-  return (
-    <div className={cn("absolute left-[96px] -top-2 z-10 flex flex-col items-start gap-1", hidden && "opacity-30")}>
-      {tokens.slice(0, 3).map((token) => (
-        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} color={color} onDown={onDown} />
-      ))}
-    </div>
+/** Something to carry to another node: drag it, or click it (or press Enter) to pick it up. */
+export function TokenChip({ token, color, onPick }: { token: Token; color?: string; onPick?: ((e: ReactPointerEvent | null) => void) | null }) {
+  const accent = moodColor(token.mood ?? "warn");
+  const name = token.label ?? String(token.value);
+  const body = (
+    <>
+      <TicketIcon size={14} weight="duotone" style={{ color: color ?? accent }} />
+      {name}
+    </>
   );
-}
-
-export function TokenChip({ token, color, onDown }: { token: Token; color?: string; onDown?: ((token: Token, e: ReactPointerEvent) => void) | null }) {
+  const look = "flex select-none items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 font-mono text-[12px] font-semibold";
+  const style = { background: "var(--color-kumo-warning-tint)", boxShadow: `0 0 0 1.5px ${accent}, 0 3px 8px var(--color-kumo-shadow-drop)`, rotate: "-4deg" } as const;
+  if (!onPick) {
+    return (
+      <span className={look} style={style}>
+        {body}
+      </span>
+    );
+  }
   return (
-    <span
-      role={onDown ? "button" : undefined}
-      title={onDown ? `Drag ${token.label ?? String(token.value)} onto another node` : undefined}
-      onPointerDown={
-        onDown
-          ? (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onDown(token, e);
-            }
-          : undefined
-      }
-      className={cn("flex select-none items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 font-mono text-[11.5px] font-semibold shadow-lg", onDown && "cursor-grab transition-transform hover:scale-110 active:cursor-grabbing")}
-      style={{ background: "var(--color-kumo-warning-tint)", boxShadow: `0 0 0 1.5px ${moodColor(token.mood ?? "warn")}, 0 4px 10px var(--color-kumo-shadow-drop)`, rotate: "-4deg" }}
+    <button
+      type="button"
+      title={`Drag ${name} onto another node, or click to pick it up`}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        onPick(e);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        onPick(null);
+      }}
+      className={cn(look, "cursor-grab touch-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:outline-2 focus-visible:outline-kumo-focus active:cursor-grabbing")}
+      style={style}
     >
-      <TicketIcon size={13} weight="duotone" style={{ color: color ?? moodColor(token.mood ?? "warn") }} />
-      {token.label ?? String(token.value)}
-    </span>
+      {body}
+    </button>
   );
 }
 
-/** Where rows sit on the stage, in stage coordinates, so links can end at them. */
-function useRowAnchors(scale: number) {
+/** Where rows sit on the stage, in stage coordinates, so links can end at them. Measured when they move. */
+function useRowAnchors(scale: number, key: string) {
   const ref = useRef<HTMLDivElement>(null);
   const [rows, setRows] = useState<Map<string, Box>>(new Map());
   useLayoutEffect(() => {
@@ -330,12 +393,8 @@ function useRowAnchors(scale: number) {
       const r = row.getBoundingClientRect();
       next.set(row.dataset.row!, { x: (r.left - origin.left) / scale, y: (r.top - origin.top) / scale, w: r.width / scale, h: r.height / scale });
     }
-    const same = next.size === rows.size && [...next].every(([k, b]) => {
-      const o = rows.get(k);
-      return o && Math.abs(o.x - b.x) < 0.5 && Math.abs(o.y - b.y) < 0.5 && Math.abs(o.w - b.w) < 0.5;
-    });
-    if (!same) setRows(next);
-  });
+    setRows(next);
+  }, [scale, key]);
   return { ref, rows };
 }
 
@@ -345,49 +404,57 @@ function rowAnchor(row: Box, from: { x: number; y: number }): { x: number; y: nu
   return { x: left ? row.x : row.x + row.w, y: row.y + row.h / 2 };
 }
 
-/** State as structure: rows boxed by group, each with its mood as a dot. */
+/** State as structure: rows boxed by group. A group belonging to someone wears their colour. */
 function Rows({ id, rows, world, colors, className, compact }: { id: string; rows: Row[]; world: World; colors: Map<string, string>; className?: string; compact?: boolean }) {
-  const dot = (row: Row) => (row.mood ? moodColor(row.mood) : (colorOf(colors, world, row.owner) ?? moodColor(null)));
+  const colorOf = (ref?: string) => {
+    const owner = ref && world.instances.find((i) => i.id === ref || i.label === ref);
+    return owner ? colors.get(owner.id) : undefined;
+  };
+  const dot = (row: Row) => (row.mood ? moodColor(row.mood) : (colorOf(row.owner) ?? moodColor(null)));
   const groups = new Map<string, Row[]>();
   for (const row of rows) groups.set(row.group ?? "", [...(groups.get(row.group ?? "") ?? []), row]);
-  if (!rows.length) return compact ? null : <div className={cn("rounded-xl border border-dashed border-kumo-line p-3 text-center text-[11px] text-kumo-subtle", className)}>empty</div>;
+  if (!rows.length) return compact ? null : <p className={cn("pt-2 text-center text-[12px] text-kumo-subtle", className)}>Nothing yet</p>;
+  const limit = compact ? 3 : 6;
   return (
-    <div className={cn("flex min-h-0 flex-col gap-2 overflow-hidden", className)}>
-      {[...groups].map(([group, items]) => (
-        <div key={group} className="overflow-hidden rounded-xl bg-kumo-elevated ring-1 ring-kumo-line">
-          {group && (
-            <div className="flex items-center gap-1.5 border-b border-kumo-hairline px-3 py-1.5">
-              <span className="size-2 rounded-full" style={{ background: colorOf(colors, world, items.find((r) => r.owner)?.owner) ?? "var(--color-kumo-brand)" }} />
-              <span className="truncate text-[12px] font-semibold">{group}</span>
-            </div>
-          )}
-          {items.slice(0, compact ? 3 : 6).map((row, i) =>
-            compact ? (
-              <div key={i} data-row={`${id}::${row.label}`} className="flex flex-col px-2.5 py-1">
-                <span className="flex items-center gap-1.5">
-                  <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot(row) }} />
-                  <span className="truncate font-mono text-[10px] text-kumo-subtle">{row.label}</span>
-                </span>
-                {row.detail && <span className="truncate font-mono text-[11px]">{row.detail}</span>}
+    <div className={cn("flex min-h-0 flex-col gap-2.5 overflow-hidden", className)}>
+      {[...groups].map(([group, items]) => {
+        const owner = colorOf(items.find((r) => r.owner)?.owner);
+        return (
+          <div key={group} className="overflow-hidden rounded-xl bg-kumo-base shadow-sm" style={{ boxShadow: `0 0 0 ${owner ? 1.5 : 1}px ${owner ?? "var(--color-kumo-line)"}` }}>
+            {group && (
+              <div className="flex items-center gap-2 px-3 pb-1 pt-2">
+                <span className="size-2.5 rounded-full" style={{ background: owner ?? "var(--color-kumo-line)" }} />
+                <span className="truncate text-[13px] font-semibold">{group}</span>
               </div>
-            ) : (
-              <div key={i} data-row={`${id}::${row.label}`} className="flex items-center gap-1.5 px-3 py-1.5">
-                <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot(row) }} />
-                <span className="min-w-0 truncate text-[12px]">{row.label}</span>
-                {row.detail && <span className="ml-auto truncate pl-2 text-[11px] text-kumo-subtle">{row.detail}</span>}
-              </div>
-            ),
-          )}
-          {items.length > (compact ? 3 : 6) && <div className="px-3 pb-1.5 text-[10px] text-kumo-subtle">+{items.length - (compact ? 3 : 6)} more</div>}
-        </div>
-      ))}
+            )}
+            {items.slice(0, limit).map((row, i) =>
+              compact ? (
+                <div key={i} data-row={`${id}::${row.label}`} className="flex flex-col px-2.5 py-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot(row) }} />
+                    <span className="truncate text-[11px] text-kumo-subtle">{row.label}</span>
+                  </span>
+                  {row.detail && <span className="truncate font-mono text-[11px]">{row.detail}</span>}
+                </div>
+              ) : (
+                <div key={i} data-row={`${id}::${row.label}`} className="mx-1.5 mb-1.5 flex items-center gap-2 rounded-lg bg-kumo-elevated px-2.5 py-1.5">
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: dot(row) }} />
+                  <span className="min-w-0 truncate text-[12.5px]">{row.label}</span>
+                  {row.detail && <span className="ml-auto truncate pl-2 text-[11px] text-kumo-subtle">{row.detail}</span>}
+                </div>
+              ),
+            )}
+            {items.length > limit && <div className="px-3 pb-2 text-[11px] text-kumo-subtle">+{items.length - limit} more</div>}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 // Messages in flight ------------------------------------------------------------------------------------
 
-function Packet({ pending, graph, clock, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; graph: Layout; clock: number; next: boolean; live: boolean; onClick: () => void }) {
+function Packet({ pending, graph, world, clock, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; graph: Layout; world: World; clock: number; next: boolean; live: boolean; onClick: () => void }) {
   const { spec } = useExplorer();
   const from = graph.nodes.get(pending.from);
   const to = graph.nodes.get(pending.to);
@@ -396,10 +463,12 @@ function Packet({ pending, graph, clock, next, live, onClick }: { pending: Extra
   const progress = Math.min(1, Math.max(0, (clock - (pending.at - latency)) / Math.max(1, latency)));
   const a = iconCenter(from);
   const b = iconCenter(to);
-  const route = graph.edges.get(edgeKey(pending.from, pending.to));
-  const points = route ? (dist(route[0], a) <= dist(route[0], b) ? route : [...route].reverse()) : [a, b];
-  const at = along([a, ...points.slice(1, -1), b], 0.12 + progress * 0.76);
+  const at = along([rim(a, b), rim(b, a)], 0.1 + progress * 0.8);
   const color = toneColor(spec.messages[pending.message]?.tone);
+  const name = messageName(spec, pending.message);
+  if (routineDelivery(spec, world, pending)) {
+    return <span className="pointer-events-none absolute z-10 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70" style={{ left: at.x, top: at.y, background: color }} title={name} />;
+  }
   return (
     <button
       type="button"
@@ -408,33 +477,35 @@ function Packet({ pending, graph, clock, next, live, onClick }: { pending: Extra
         e.stopPropagation();
         onClick();
       }}
-      className={cn("absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1 whitespace-nowrap rounded-full bg-kumo-base py-0.5 pl-1 pr-2 text-[11px] font-medium shadow-md ring-1 ring-kumo-line", next && live && "feynman-pulse")}
+      className={cn("absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-kumo-base py-0.5 pl-1.5 pr-2.5 text-[11.5px] font-medium shadow-md ring-1 ring-kumo-line", next && live && "feynman-pulse")}
       style={{ left: at.x, top: at.y }}
-      title={`${messageName(spec, pending.message)} ${short(pending.payload, 80)}. Click to deliver it now or lose it.`}
+      title={`${name} ${short(pending.payload, 80)}. Click to deliver it now or lose it.`}
     >
       <span className="size-2.5 rounded-full" style={{ background: color }} />
-      {messageName(spec, pending.message)}
+      {name}
     </button>
   );
 }
 
-const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
+/** Whether a message in flight lands on a routine step, like a heartbeat. */
+export function routineDelivery(spec: Spec, world: World, pending: Pending): boolean {
+  const actor = spec.actors.find((a) => a.name === world.instances.find((i) => i.id === pending.to)?.actor);
+  const key = pending.kind === "deliver" ? `message:${pending.message}` : pending.timer;
+  return Boolean(actor?.transitions[key]?.routine);
+}
 
-// Speech bubbles ----------------------------------------------------------------------------------------
+// The speech bubble -------------------------------------------------------------------------------------
 
-/** A node's recent bubbles, newest nearest the node, stacked upwards from just above it. */
-function SpeechBubbles({ bubbles, box }: { bubbles: Bubble[]; box: Box }) {
+/** What just happened, above whoever did it; while time runs it fades after a moment. */
+function SpeechBubble({ bubble, box }: { bubble: Bubble & { fading: boolean }; box: Box }) {
   const c = iconCenter(box);
+  const ring = bubble.tone === "bad" ? "var(--color-kumo-danger)" : bubble.tone === "action" ? "var(--color-kumo-brand)" : "var(--color-kumo-line)";
   return (
-    <div className="pointer-events-none absolute z-20 flex w-max max-w-[260px] -translate-x-1/2 -translate-y-full flex-col-reverse items-center gap-1.5" style={{ left: c.x, top: c.y - 46 }}>
-      {bubbles.map((bubble) => {
-        const ring = bubble.tone === "bad" ? "var(--color-kumo-danger)" : bubble.tone === "action" ? "var(--color-kumo-brand)" : bubble.tone === "quiet" ? "var(--color-kumo-line)" : "var(--color-kumo-info)";
-        return (
-          <div key={bubble.key} className={cn("rounded-xl bg-kumo-base px-3 py-1.5 text-center text-[12px] leading-snug shadow-lg", bubble.age > 0 && "text-kumo-subtle")} style={{ boxShadow: `0 0 0 ${bubble.age > 0 ? 1 : 1.5}px ${bubble.age > 0 ? "var(--color-kumo-line)" : ring}` }}>
-            {bubble.text}
-          </div>
-        );
-      })}
+    <div
+      className={cn("pointer-events-none absolute z-20 w-max max-w-[280px] -translate-x-1/2 -translate-y-full rounded-xl bg-kumo-base px-3 py-1.5 text-center text-[12.5px] leading-snug shadow-lg", bubble.fading && "feynman-bubble")}
+      style={{ left: c.x, top: c.y - 48, boxShadow: `0 0 0 1.5px ${ring}, 0 6px 16px var(--color-kumo-shadow-drop)` }}
+    >
+      {bubble.text}
     </div>
   );
 }

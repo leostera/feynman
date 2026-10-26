@@ -11,6 +11,8 @@ export interface Appearance {
   mood: Mood | null;
   rows: Row[];
   tokens: Token[];
+  /** Whose this is, if the actor says; undefined when it does not. */
+  owner: string | null | undefined;
 }
 
 export interface LiveLink extends Link {
@@ -31,7 +33,7 @@ function attempt<T>(f: (() => T) | undefined, fallback: T): T {
 export function appearance(spec: Spec, world: World, id: string): Appearance {
   const instance = world.instances.find((i) => i.id === id);
   const actor = instance && spec.actors.find((a) => a.name === instance.actor);
-  if (!instance || !actor) return { icon: null, status: null, mood: null, rows: [], tokens: [] };
+  if (!instance || !actor) return { icon: null, status: null, mood: null, rows: [], tokens: [], owner: undefined };
   const { look } = actor;
   return {
     icon: look.icon ?? null,
@@ -39,6 +41,7 @@ export function appearance(spec: Spec, world: World, id: string): Appearance {
     mood: attempt(look.mood && (() => look.mood!(instance.state as never)), null),
     rows: attempt(look.rows && (() => look.rows!(instance.state as never)), []),
     tokens: attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), []),
+    owner: look.owner ? attempt(() => look.owner!(instance.state as never), null) : undefined,
   };
 }
 
