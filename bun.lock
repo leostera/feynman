@@ -116,11 +116,13 @@
       "devDependencies": {
         "@cloudflare/vite-plugin": "beta",
         "@tailwindcss/vite": "^4.3.3",
+        "@types/bun": "^1.4.4",
         "@types/node": "^24.0.0",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.2",
         "cf": "^1.0.0-beta.18",
+        "shiki": "^4.5.0",
         "tailwindcss": "^4.3.3",
         "typescript": "^7.0.2",
         "vite": "^8.3.5",

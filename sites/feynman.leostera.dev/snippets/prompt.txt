@@ -1,0 +1,4 @@
+Read https://feynman.leostera.dev/SKILL.md, then write a Feynman spec for how <the behaviour>
+works in this repository. Install @leostera/feynman with bun, put the spec in specs/, and run
+`bunx feynman check` until every rule holds or you can show a real bug. Report what the spec
+covers, the scenarios, and every verdict.

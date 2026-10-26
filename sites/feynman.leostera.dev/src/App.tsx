@@ -3,8 +3,10 @@ import {
   ArrowRightIcon,
   ArrowsLeftRightIcon,
   ChatsCircleIcon,
+  CheckIcon,
   CircleHalfIcon,
   CodeIcon,
+  CopyIcon,
   FileHtmlIcon,
   GitPullRequestIcon,
   GlobeIcon,
@@ -14,17 +16,12 @@ import {
   TerminalIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import sims from "../sims.json";
-
-/** A published simulator: built from a repository's specs, served at /s/<slug>/. */
-interface Sim {
-  slug: string;
-  title: string;
-  summary: string;
-  repository: string;
-  commit: string | null;
-}
+import type { Sim } from "../scripts/sims.ts";
+import install from "../snippets/install.sh?highlight";
+import leaseLock from "../snippets/lease-lock.ts?highlight";
+import prompt from "../snippets/prompt.txt?highlight";
 
 const SIMS: Sim[] = sims;
 const AXO = SIMS.find((sim) => sim.slug === "github.com/leostera/axo");
@@ -51,47 +48,6 @@ const VIEWS: { icon: Icon; name: string; text: string }[] = [
     text: "Each step links to the code it stands for, with its call tree. The checker notices when that code changes under the spec.",
   },
 ];
-
-const SPEC = `const Client = spec.defineActor({
-  name: "Client",
-  initialState: () => ({ token: null as number | null }),
-  actions: {
-    acquire: {
-      label: "Take the lock",
-      sends: [Acquire],
-      run(state, _inputs, ctx) {
-        ctx.send(ctx.the(LockServer), Acquire, {});
-      },
-    },
-  },
-  transitions: {
-    [Granted]: {
-      description: "Holds the lock, then stalls before writing.",
-      starts: ["write"],
-      run(state, msg, ctx) {
-        state.token = msg.token;
-        ctx.start("write", 2 * SEC);
-      },
-    },
-    write: {
-      description: "Wakes up and writes, sure it still holds the lock.",
-      sends: [Write],
-      run(state, ctx) {
-        ctx.send(ctx.the(Storage), Write, { token: state.token });
-      },
-    },
-  },
-});
-
-spec.defineInvariants({
-  fenced: {
-    description: "No write from an older holder lands after a newer one's.",
-    always: (w) => {
-      const writes = w.the(Storage).state.accepted;
-      return writes.every((t, i) => i === 0 || t >= writes[i - 1]);
-    },
-  },
-});`;
 
 const SPEC_PARTS: { name: string; text: string }[] = [
   { name: "Actors", text: "hold state. Actions are what people do; transitions answer messages and timers." },
@@ -178,8 +134,11 @@ export function App() {
           <LinkButton href="#simulators" variant="ghost" size="sm">
             Simulators
           </LinkButton>
-          <LinkButton href="#spec" variant="ghost" size="sm">
-            Specs
+          <LinkButton href="#start" variant="ghost" size="sm">
+            Get started
+          </LinkButton>
+          <LinkButton href="#agents" variant="ghost" size="sm">
+            Agents
           </LinkButton>
           <LinkButton href="#checker" variant="ghost" size="sm">
             Checker
@@ -208,8 +167,8 @@ export function App() {
                 Open the axo simulator
               </LinkButton>
             )}
-            <LinkButton href="#how" variant="secondary">
-              How it works
+            <LinkButton href="#start" variant="secondary">
+              Get started
             </LinkButton>
           </div>
         </section>
@@ -243,7 +202,7 @@ export function App() {
         <Section
           id="spec"
           title="What a spec looks like"
-          lead="Plain TypeScript, kept next to the code it describes, and written to be read. This one is a lock with a lease: a client that stalls past its lease writes after the next holder."
+          lead="Plain TypeScript, kept next to the code it describes, and written to be read. This one is complete: a lock server that hands out tokens, clients that take the lock, and a rule they must keep."
         >
           <div className="grid gap-8 lg:grid-cols-[1fr_1.7fr]">
             <ul className="space-y-4 text-sm text-kumo-subtle">
@@ -256,10 +215,49 @@ export function App() {
                 A spec has no presentation in it. An optional <Code>.play.tsx</Code> file next to it gives the simulator its own look.
               </li>
             </ul>
-            <pre className="overflow-x-auto rounded-lg bg-kumo-recessed p-4 text-[12px] leading-relaxed ring-1 ring-kumo-hairline">
-              <code>{SPEC}</code>
-            </pre>
+            <CodeBlock snippet={leaseLock} label="specs/lease-lock.ts" />
           </div>
+        </Section>
+
+        <Section id="start" title="Get started" lead="Feynman is one package, @leostera/feynman, and runs on Bun 1.3 or later.">
+          <CodeBlock snippet={install} label="In the repository to model" />
+          <p className="mt-4 text-sm text-kumo-subtle">
+            Specs live in <Code>specs/*.ts</Code> and import <Code>@leostera/feynman</Code>. An optional <Code>specs/&lt;name&gt;.play.tsx</Code>{" "}
+            imports <Code>@leostera/feynman/play</Code>.{" "}
+            <a className="text-kumo-link underline" href="https://www.npmjs.com/package/@leostera/feynman">
+              The package on npm
+            </a>
+            .
+          </p>
+        </Section>
+
+        <Section id="agents" title="Hand it to your agent" lead="Agents write and maintain specs; Feynman gives them what they need to do it well.">
+          <CodeBlock snippet={prompt} label="A prompt to start from" />
+          <ul className="mt-6 grid gap-3 text-sm text-kumo-subtle sm:grid-cols-3">
+            <li>
+              <a className="font-semibold text-kumo-default underline" href="/SKILL.md">
+                /SKILL.md
+              </a>{" "}
+              is the whole method: how to read a codebase, model it, check it, and report. The package ships it as a skill too, which Pi loads.
+            </li>
+            <li>
+              <a className="font-semibold text-kumo-default underline" href="/llms.txt">
+                /llms.txt
+              </a>{" "}
+              says what Feynman is and lists everything here, in plain text.
+            </li>
+            <li>
+              <strong className="text-kumo-default">Every simulator</strong> has its check report beside it as text, such as{" "}
+              {AXO ? (
+                <a className="font-mono text-kumo-default underline" href={`${simHref(AXO)}check.txt`}>
+                  check.txt
+                </a>
+              ) : (
+                "check.txt"
+              )}
+              , and links to its spec at the commit it was built from.
+            </li>
+          </ul>
         </Section>
 
         <Section id="checker" title="A checker that says how sure it is" lead="Every rule gets one of four verdicts, and Feynman never rounds up.">
@@ -307,7 +305,7 @@ export function App() {
                   </div>
                   <p className="mt-2 text-sm text-kumo-subtle">{sim.summary}</p>
                   <p className="mt-4 font-mono text-xs text-kumo-subtle">
-                    /s/{sim.slug} · {sim.commit!.slice(0, 7)}
+                    /s/{sim.slug} · {sim.commit!.slice(0, 7)} · {sim.specs.length} spec{sim.specs.length === 1 ? "" : "s"}
                   </p>
                 </LayerCard>
               </a>
@@ -343,6 +341,23 @@ export function App() {
 }
 
 const simHref = (sim: Sim) => `/s/${sim.slug}/`;
+
+/** A highlighted snippet (from scripts/highlight.ts) with what it is and a copy button. */
+function CodeBlock({ snippet, label }: { snippet: { code: string; html: string }; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => void navigator.clipboard.writeText(snippet.code).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)));
+  return (
+    <figure className="overflow-hidden rounded-lg bg-kumo-recessed ring-1 ring-kumo-hairline">
+      <figcaption className="flex items-center justify-between border-b border-kumo-hairline py-1 pl-4 pr-1 text-xs text-kumo-subtle">
+        <span className="font-mono">{label}</span>
+        <Button variant="ghost" size="xs" icon={copied ? CheckIcon : CopyIcon} onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </figcaption>
+      <div className="code overflow-x-auto p-4 text-[12px] leading-relaxed" dangerouslySetInnerHTML={{ __html: snippet.html }} />
+    </figure>
+  );
+}
 
 function Code({ children }: { children: ReactNode }) {
   return <code className="rounded bg-kumo-recessed px-1 py-px font-mono text-[0.9em] text-kumo-default">{children}</code>;
