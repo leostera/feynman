@@ -117,6 +117,8 @@ export interface StageProps {
   onAct: (instance: string, key: string, inputs: Record<string, unknown>) => void;
   /** What the action bar shows over the selected node. */
   bar: ReactNode;
+  /** The bar is a menu, one action per row: it opens beside the node rather than above it. */
+  barStacked?: boolean;
 }
 
 export function Stage(props: StageProps) {
@@ -207,8 +209,13 @@ export function Stage(props: StageProps) {
           ) : null;
         })}
         {bubble && <SpeechBubble key={bubble.key} bubble={bubble} scene={scene} graph={graph} />}
-        {selectedBox && props.bar && (
+        {selectedBox && props.bar && !props.barStacked && (
           <div className="absolute z-30 -translate-x-1/2 -translate-y-full" style={{ left: clampX(selectedBox.x + selectedBox.anchor.x, graph.width), top: selectedBox.y - 10 }} onClick={(e) => e.stopPropagation()}>
+            {props.bar}
+          </div>
+        )}
+        {selectedBox && props.bar && props.barStacked && (
+          <div className="absolute z-30" style={besideNode(selectedBox, graph)} onClick={(e) => e.stopPropagation()}>
             {props.bar}
           </div>
         )}
@@ -219,6 +226,14 @@ export function Stage(props: StageProps) {
 }
 
 const clampX = (x: number, width: number) => Math.min(Math.max(x, 220), width - 220);
+
+/** Where a menu (14rem wide) goes: right of the node, or left of it near the right edge; its top level with the node's, within the canvas. */
+const MENU_WIDTH = 224;
+function besideNode(box: { x: number; y: number; w: number; h: number }, graph: { width: number; height: number }) {
+  const right = box.x + box.w + 10;
+  const left = right + MENU_WIDTH > graph.width - 8 ? Math.max(8, box.x - 10 - MENU_WIDTH) : right;
+  return { left, top: Math.min(Math.max(box.y - 4, 8), Math.max(8, graph.height - 260)) };
+}
 
 /** A zone's caption sits over its column; at the canvas's edges it grows inwards so it is never cut off. */
 function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first" | "middle" | "last"; width: number; description?: string }) {
