@@ -26,6 +26,50 @@ export interface StepOptions {
   explain?: boolean;
   /** Which `always` invariants the world after it breaks (true). */
   invariants?: boolean;
+  /** Filled in with what the step touched besides its own state, for the checker's reductions. */
+  observe?: Observation;
+}
+
+/**
+ * What a step touched besides its own instance. A step that reads nobody else and uses no
+ * world-wide counter commutes with a step on another instance, when neither moves the clock.
+ */
+export interface Observation {
+  /** It looked at another instance (`the`, `all`, `from`). */
+  readsOthers: boolean;
+  /** It used a counter every instance shares (`fresh`, `random`). */
+  shared: boolean;
+  /** It read the clock. */
+  readsNow: boolean;
+  /** The action inputs it read; all of them when it enumerated them. */
+  inputs: Set<string>;
+}
+
+export function observation(): Observation {
+  return { readsOthers: false, shared: false, readsNow: false, inputs: new Set() };
+}
+
+/** The inputs, recording which ones the action reads. */
+function watchedInputs(inputs: Record<string, unknown>, observe: Observation): Record<string, unknown> {
+  const all = () => Object.keys(inputs).forEach((key) => observe.inputs.add(key));
+  return new Proxy(inputs, {
+    get(target, key) {
+      if (typeof key === "string") observe.inputs.add(key);
+      return target[key as string];
+    },
+    has(target, key) {
+      if (typeof key === "string") observe.inputs.add(key);
+      return key in target;
+    },
+    ownKeys(target) {
+      all();
+      return Reflect.ownKeys(target);
+    },
+    getOwnPropertyDescriptor(target, key) {
+      all();
+      return Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
 }
 
 const FULL: StepOptions = {};
@@ -134,7 +178,8 @@ export function act(spec: Spec, world: World, instanceId: string, key: string, i
   const actor = actorNamed(spec, instance.actor);
   const action = actor.actions[key];
   if (!action) throw new SpecError(`${actor.name} has no action "${key}"`);
-  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, inputs, ctx) }, how);
+  const seen = how.observe ? watchedInputs(inputs, how.observe) : inputs;
+  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, seen, ctx) }, how);
 }
 
 /** Deliver a pending message, or fire a pending timer. */
@@ -261,7 +306,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     ...run.delivery,
   };
   try {
-    run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from));
+    run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe));
   } catch (error) {
     const message = readOnly(error)
       ? `changes the state of another instance (${error instanceof Error ? error.message : String(error)}); a step may change only its own state, and tell others with a message`
@@ -289,8 +334,17 @@ function sentence(step: StepInfo, state: unknown, payload: unknown): string | un
   }
 }
 
-function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo, step: StepInfo, effects: { sent: Sent[]; started: { timer: string; at: number }[]; cancelled: string[]; notes: string[] }, from?: InstanceState) {
-  const view = worldView(spec, world);
+function makeCtx(
+  spec: Spec,
+  world: World,
+  self: InstanceState,
+  actor: ActorInfo,
+  step: StepInfo,
+  effects: { sent: Sent[]; started: { timer: string; at: number }[]; cancelled: string[]; notes: string[] },
+  from?: InstanceState,
+  observe?: Observation,
+) {
+  const view = worldView(spec, world, observe ? (id) => id !== self.id && (observe.readsOthers = true) : undefined);
   const send = (to: { id: string }, message: string, payload: unknown, text?: string) => {
     if (!step.sends.includes(message)) throw new SpecError(`sends ${message}, which it does not declare in sends`);
     const info = spec.messages[message];
@@ -308,7 +362,11 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
     id: self.id,
     label: self.label,
     self: view.instance(self),
-    now: world.clock,
+    get now() {
+      if (observe) observe.readsNow = true;
+      world.stamped = true;
+      return world.clock;
+    },
     from: from ? view.instance(from) : undefined,
     the: view.the,
     all: view.all,
@@ -332,11 +390,13 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
       if (world.pending.length < had) effects.cancelled.push(label);
     },
     fresh(prefix: string) {
+      if (observe) observe.shared = true;
       world.fresh[prefix] = (world.fresh[prefix] ?? 0) + 1;
       return `${prefix}-${world.fresh[prefix]}`;
     },
     hash: hashOf,
     random() {
+      if (observe) observe.shared = true;
       world.rng = (world.rng + 0x6d2b79f5) >>> 0;
       let t = world.rng;
       t = Math.imul(t ^ (t >>> 15), t | 1);

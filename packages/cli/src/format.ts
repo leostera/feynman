@@ -70,12 +70,23 @@ export function formatSources(statuses: SourceStatus[]): string[] {
  * broken whatever exploration found. A property that held while exploration stopped early
  * says so, rather than claiming to hold.
  */
+/** What else the search did: random runs, and the work its reductions saved. */
+function searchNotes(report: Report): string[] {
+  const notes: string[] = [];
+  if (report.walks.runs) notes.push(`  also ${report.walks.runs.toLocaleString()} random run(s), ${report.walks.steps.toLocaleString()} steps, up to ${report.walks.deepest} deep: they find bugs deeper than the search, but prove nothing`);
+  const saved = report.reductions.orders + report.reductions.inputs;
+  const symmetric = report.reductions.symmetric.map((labels) => labels.join(" = ")).join(", ");
+  if (saved || symmetric) notes.push(`  skipped ${saved.toLocaleString()} step(s) whose result was known${symmetric ? `; treated as interchangeable: ${symmetric}` : ""}`);
+  return notes.map((n) => dim(n));
+}
+
 export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, string> = new Map()): string {
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...(report.seeds ? [`and from the end of ${report.seeds} scenario(s)`] : []), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
+    ...searchNotes(report),
   ];
   for (const p of report.properties) {
     const scenario = brokenBy.get(p.id);
@@ -97,7 +108,8 @@ export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, s
     }
     lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}`);
     const ce = p.counterexample!;
-    lines.push(dim(`    shortest counterexample, ${ce.events.length} event(s)${ce.from ? `, from the end of scenario "${ce.from}"` : ""}:`));
+    const found = p.foundBy === "walk" ? `found by a random run past the search's depth, shrunk to ${ce.events.length} event(s)` : `shortest counterexample, ${ce.events.length} event(s)`;
+    lines.push(dim(`    ${found}${ce.from ? `, from the end of scenario "${ce.from}"` : ""}:`));
     lines.push(indent(formatEvents(spec, ce.events, ce.worlds), 4));
     if (p.then?.length) {
       lines.push(dim(`    then, left to run by itself, it never holds:`));
