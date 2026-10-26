@@ -91,7 +91,7 @@ export function Node({ shape, icon, label, status, mood, ring, accent, badge, in
       )}
       {badge && (
         <span
-          className="absolute -right-1 -top-1 flex size-[18px] items-center justify-center rounded-full text-[10px] font-bold text-kumo-inverse ring-2 ring-kumo-canvas"
+          className="absolute -right-1 -top-1 flex size-[18px] items-center justify-center rounded-full text-[10px] font-semibold text-kumo-inverse ring-2 ring-kumo-canvas"
           style={{ background: badge.color }}
           title={badge.title}
         >
@@ -185,7 +185,7 @@ export function Badge({ children, mood }: { children: ReactNode; mood?: Mood }) 
 export function Ticket({ code, expired = false, label }: { code: string; expired?: boolean; label?: string }) {
   return (
     <span
-      className={cn("flex items-center gap-1 whitespace-nowrap rounded-md border-2 border-dashed bg-kumo-warning-tint px-1.5 py-0.5 font-mono text-[11.5px] font-bold", expired && "opacity-50 line-through")}
+      className={cn("flex items-center gap-1 whitespace-nowrap rounded-md border-2 border-dashed bg-kumo-warning-tint px-1.5 py-0.5 font-mono text-[11.5px] font-semibold", expired && "opacity-50 line-through")}
       style={{ borderColor: "var(--color-kumo-warning)" }}
       title={label}
     >

@@ -87,7 +87,7 @@ function SourceRow({ source }: { source: string }) {
           {entry?.text && <CodeExcerpt text={entry.text} start={entry.start ?? 1} />}
           {calls && (
             <div className="border-t border-kumo-hairline px-2 py-2">
-              <p className="mb-1 px-1 text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">Calls</p>
+              <p className="mb-1 px-1 text-[11px] font-medium text-kumo-subtle">Calls</p>
               <CallTree node={calls} depth={0} />
             </div>
           )}
@@ -274,7 +274,7 @@ export function Section({ title, children, aside }: { title: string; children: R
   return (
     <section className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <h3 className="text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">{title}</h3>
+        <h3 className="text-[11px] font-medium text-kumo-subtle">{title}</h3>
         {aside}
       </div>
       {children}

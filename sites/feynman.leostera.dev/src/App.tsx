@@ -128,7 +128,7 @@ export function App() {
   return (
     <div className="min-h-screen bg-kumo-canvas text-kumo-default">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
-        <a href="/" className="text-lg font-semibold tracking-tight text-kumo-default">
+        <a href="/" className="text-lg font-semibold text-kumo-default">
           Feynman
         </a>
         <nav className="flex items-center gap-1">
@@ -154,7 +154,7 @@ export function App() {
       <main className="mx-auto max-w-5xl px-6">
         <section className="pt-16 pb-12 sm:pt-24">
           <Badge variant="beta">Early</Badge>
-          <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
+          <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl">
             Understand how a system behaves, and what each change does to it.
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-kumo-subtle">
@@ -297,7 +297,7 @@ export function App() {
           <div className="grid gap-4 sm:grid-cols-2">
             {SIMS.filter(published).map((sim) => (
               <a key={sim.slug} href={simHref(sim)} className="group block">
-                <LayerCard className="h-full p-5 transition-colors group-hover:bg-kumo-tint">
+                <LayerCard className="h-full px-5 py-4 group-hover:bg-kumo-tint">
                   <div className="flex items-center justify-between">
                     <Text variant="heading3" as="h3">
                       {sim.title}
