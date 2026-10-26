@@ -37,14 +37,24 @@ export function typecheck(root: string, files: string[]): TypeError[] {
     files: files.map((f) => join(root, f)),
   };
   writeFileSync(join(dir, "tsconfig.json"), JSON.stringify(config));
-  // tsc prints paths relative to its working directory: run it in the repository.
-  const out = spawnSync(TSC, ["-p", join(dir, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8", cwd: root });
+  // tsc prints paths relative to its working directory, which it reads from PWD: run it in
+  // the repository's real directory, past any symlink like /tmp, and say so in PWD too.
+  const real = realpathSync(root);
+  const out = spawnSync(TSC, ["-p", join(dir, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8", cwd: real, env: { ...process.env, PWD: real } });
   const errors: TypeError[] = [];
+  const fromRoot = (path: string): string => {
+    const absolute = resolve(real, path);
+    try {
+      return relative(real, realpathSync(absolute));
+    } catch {
+      return relative(real, absolute);
+    }
+  };
   let last: TypeError | null = null;
   for (const line of (out.stdout + out.stderr).split("\n")) {
     const m = /^(.+?)\((\d+),(\d+)\): error TS\d+: (.*)$/.exec(line);
     if (m) {
-      last = { file: relative(realpathSync(root), realpathSync(resolve(root, m[1]))), line: Number(m[2]), column: Number(m[3]), message: hint(m[4]) };
+      last = { file: fromRoot(m[1]), line: Number(m[2]), column: Number(m[3]), message: hint(m[4]) };
       // Only the specs themselves: code they import may not type-check without its own setup.
       if (files.includes(last.file)) errors.push(last);
       else last = null;
