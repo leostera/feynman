@@ -17,6 +17,7 @@ import { nodeLook, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, type Op, type Session } from "./session";
 import { Timeline } from "./Timeline";
 import { useExplorer } from "./ui";
+import { useSettings } from "./preferences";
 
 /** A choice in the top-left pill: where a session starts from, or which spec. */
 export interface Choice {
@@ -66,10 +67,12 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
     const scene = sceneOf(spec, world, sceneRef.current.groups, sceneRef.current.toggled);
     return scene.of.get(p.from) !== scene.of.get(p.to);
   };
-  const [playing, setPlaying] = useState(false);
+  const settings = useSettings();
+  const [playing, setPlaying] = useState(settings.autoPlay);
   const [speed, setSpeed] = useState(1);
   const play: Play = { playing, speed, setPlaying, setSpeed };
-  const replay = useReplay(spec, session, cursor, setCursor, speed, drawnFlying);
+  // Reduced motion plays each event in within one frame.
+  const replay = useReplay(spec, session, cursor, setCursor, settings.reduceMotion ? Infinity : speed, drawnFlying);
   usePlay(spec, session, setSession, setCursor, replay, travelled === null && hover === null, [playing, setPlaying]);
   const base = travelled === null ? live : worldAt(session, travelled);
   const viewing = hover ?? travelled;
@@ -361,7 +364,7 @@ function useReplay(
     const start = performance.now();
     let frame = 0;
     const tick = (t: number) => {
-      const done = Math.min(1, (t - start) / duration);
+      const done = duration > 0 ? Math.min(1, (t - start) / duration) : 1;
       setFlight(flying ? { pending: flying.id, progress: done } : null);
       if (done < 1) frame = requestAnimationFrame(tick);
       else land(at + 1);

@@ -76,3 +76,11 @@ body,
   --feynman-identity-4: var(--color-kumo-badge-orange);
   --feynman-identity-5: color-mix(in oklab, var(--color-kumo-badge-green), white 28%);
 }
+
+/* Settings → Reduce motion: nothing animates (preferences.ts). */
+[data-reduce-motion] *,
+[data-reduce-motion] *::before,
+[data-reduce-motion] *::after {
+  animation: none !important;
+  transition: none !important;
+}
