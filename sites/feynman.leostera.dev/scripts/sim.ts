@@ -30,7 +30,7 @@ if (git("status", "--porcelain")) {
   console.error(`${dir} has uncommitted changes; build from a clean checkout`);
   process.exit(1);
 }
-const cli = resolve(site, "../../packages/cli/bin/feynman.ts");
+const cli = resolve(site, "../../bin/feynman.ts");
 const feynman = (...args: string[]) => spawnSync("bun", [cli, ...args], { cwd: dir, encoding: "utf8", env: { ...process.env, NO_COLOR: "1" }, maxBuffer: 1 << 26 });
 const out = join(site, "public/s", slug);
 const build = spawnSync("bun", [cli, "build", "--out", join(out, "index.html")], { cwd: dir, stdio: "inherit" });
