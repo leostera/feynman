@@ -1,7 +1,7 @@
 # RFD0004 - Time is the order of events
 
 - Feature Name: `time-is-order`
-- Status: Draft
+- Status: Accepted
 - Author: `leostera`
 - Start Date: `2026-10-26`
 - Updated: `2026-10-26`
