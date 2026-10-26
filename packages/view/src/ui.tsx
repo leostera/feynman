@@ -4,6 +4,7 @@ import { Badge, cn } from "@cloudflare/kumo";
 import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, CodeIcon } from "@phosphor-icons/react";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Event, Spec, World } from "@feynman/spec";
+import type { Playground } from "@feynman/play";
 import type { Bundle, CallNode, SpecEntry } from "./data";
 import { labelOf, messageName, short, sourceUrl, stepTitle, time } from "./format";
 
@@ -11,6 +12,8 @@ export interface Loaded {
   entry: SpecEntry;
   spec: Spec | null;
   base: Spec | null;
+  /** How the spec is shown, from its playground file; null for the defaults. */
+  playground: Playground | null;
 }
 
 interface Explorer {
@@ -21,10 +24,10 @@ interface Explorer {
 const ExplorerContext = createContext<Explorer | null>(null);
 export const ExplorerProvider = ExplorerContext.Provider;
 
-export function useExplorer(): Explorer & { spec: Spec } {
+export function useExplorer(): Explorer & { spec: Spec; playground: Playground | null } {
   const value = useContext(ExplorerContext);
   if (!value?.loaded.spec) throw new Error("no spec loaded");
-  return { ...value, spec: value.loaded.spec };
+  return { ...value, spec: value.loaded.spec, playground: value.loaded.playground };
 }
 
 /** Steps of a spec by `Actor.key`, for descriptions and sources. */

@@ -26,6 +26,8 @@ export interface SpecEntry {
   path: string;
   /** Page-relative URL of the spec's browser module. */
   module: string | null;
+  /** Page-relative URL of the spec's playground module (`<name>.play.tsx`), if it has one. */
+  playModule: string | null;
   /** The spec at the base commit, when it existed there. */
   baseModule: string | null;
   /** Why the spec could not be loaded or bundled. */

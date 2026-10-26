@@ -1,5 +1,6 @@
 @source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
 @source "./**/*.{ts,tsx}";
+@source "../../play/src/**/*.{ts,tsx}";
 @import "@cloudflare/kumo/styles";
 @import "tailwindcss";
 
@@ -24,12 +25,25 @@ body,
 .feynman-flash { animation: feynman-flash 420ms cubic-bezier(0.16, 1, 0.3, 1); }
 
 /* While time runs, the speech bubble says its piece and fades. */
+/* Opacity and scale only: the bubble is centred with translate, which an animation would override. */
 @keyframes feynman-bubble {
-  0% { opacity: 0; translate: 0 4px; }
-  8%, 70% { opacity: 1; translate: 0 0; }
+  0% { opacity: 0; scale: 0.96; }
+  8%, 70% { opacity: 1; scale: 1; }
   100% { opacity: 0; }
 }
 .feynman-bubble { animation: feynman-bubble 3.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* Busy: the ring breathes. */
+@keyframes feynman-busy { 50% { box-shadow: 0 0 0 2px var(--color-kumo-brand), 0 0 0 6px color-mix(in oklab, var(--color-kumo-brand) 18%, transparent); } }
+.feynman-busy { animation: feynman-busy 1.4s ease-in-out infinite; }
+
+/* A closed group with messages moving inside it: a faint glow, so the work is not hidden. */
+@keyframes feynman-hum { 50% { filter: drop-shadow(0 0 8px color-mix(in oklab, var(--color-kumo-warning) 55%, transparent)); } }
+.feynman-hum { animation: feynman-hum 0.9s ease-in-out infinite; }
+
+/* Where a carried token or a choice can go: a dashed ring that turns. */
+@keyframes feynman-target { to { rotate: 1turn; } }
+.feynman-target { border: 2px dashed var(--color-kumo-brand); animation: feynman-target 6s linear infinite; }
 
 /* Live links flow from the one holding them. */
 @keyframes feynman-flow { to { stroke-dashoffset: -14; } }
@@ -39,7 +53,7 @@ body,
 @keyframes feynman-tip { from { opacity: 0; translate: 0 -4px; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .feynman-flow, .feynman-pulse, .feynman-flash, .feynman-tip { animation: none; }
+  .feynman-flow, .feynman-pulse, .feynman-flash, .feynman-tip, .feynman-busy, .feynman-hum, .feynman-target { animation: none; }
   /* Still goes away, just without moving. */
   .feynman-bubble { animation: feynman-bubble-still 3.2s steps(1, end) forwards; }
   @keyframes feynman-bubble-still { to { opacity: 0; } }

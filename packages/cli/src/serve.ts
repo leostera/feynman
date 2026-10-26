@@ -11,7 +11,8 @@ import type { Spec } from "@feynman/spec";
 import type { Bundle, SourceEntry, SpecEntry } from "@feynman/view/data";
 import { specSources, type Context } from "./commands.ts";
 import { dim, green, red, yellow } from "./format.ts";
-import { bundle, loadSpec } from "./load.ts";
+import { playgroundFor } from "./discover.ts";
+import { bundle as bundleModule, loadSpec } from "./load.ts";
 
 const VIEW = dirname(Bun.resolveSync("@feynman/view/package.json", import.meta.dir));
 
@@ -42,7 +43,7 @@ export function ensureView() {
 
 /** Bundle a spec file for the browser; `@feynman/spec` resolves to this installation. */
 function bundleSpec(path: string): Promise<string> {
-  return bundle(path, "browser");
+  return bundleModule(path, "browser");
 }
 
 function specId(path: string, taken: Set<string>): string {
@@ -66,12 +67,17 @@ export async function prepare(ctx: Context, options: Options): Promise<Prepared>
   const specs: SpecEntry[] = [];
   for (const path of ctx.found) {
     const id = specId(path, taken);
-    const entry: SpecEntry = { id, path, module: null, baseModule: null, error: null, sources: {}, calls: {}, report: null };
+    const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, report: null };
     specs.push(entry);
     try {
       const spec = await loadSpec(join(repository.root, path));
       modules.set(`specs/${id}.js`, await bundleSpec(join(repository.root, path)));
       entry.module = `specs/${id}.js`;
+      const play = playgroundFor(repository.root, path);
+      if (play) {
+        modules.set(`specs/${id}.play.js`, await bundleModule(join(repository.root, play), "browser"));
+        entry.playModule = `specs/${id}.play.js`;
+      }
       if (bases.get(path)) {
         modules.set(`specs/${id}.base.js`, bases.get(path)!);
         entry.baseModule = `specs/${id}.base.js`;

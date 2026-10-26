@@ -1,16 +1,16 @@
-// The stage: the service's zone as a tinted region and the others as captioned columns, one
-// node per instance, the live links instances hold, messages travelling between them, and a
-// speech bubble for what just happened. Colour follows people: an instance wears its own
-// colour, or its owner's, and its links and rows carry it. Rings show how a node is doing
-// only when that says something (connected, failing); otherwise they show whose it is.
+// The stage: the scene's zones (the service's as a tinted region, the others as captioned
+// columns), one node per scene node, the live links they hold, messages travelling between
+// them, panels beside nodes, and a speech bubble for what just happened. Colour follows
+// people: whose a node is shows as a small initial in their colour, and its links carry it.
+// Rings show only how a node is doing: grey until something is connected, busy or broken.
 import { cn } from "@cloudflare/kumo";
-import { TicketIcon } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode } from "react";
-import { appearance, declaresLinks, labelled, liveLinks, type Event, type Mood, type Pending, type Row, type Spec, type Token, type World } from "@feynman/spec";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { declaresLinks, labelled, worldView, type Actor, type Event, type InstanceState, type Pending, type Spec, type Token, type World } from "@feynman/spec";
+import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "@feynman/play";
 import { labelOf, messageName, short, time } from "../format";
-import { actorLinks, along, ICON_W, layout, layoutKey, shapeOf, type Box, type Layout, type View, type ZoneBox } from "../layout";
+import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Sizes, type View, type ZoneBox } from "../layout";
+import { nodeLook, sceneLinks, type NodeLook, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
-import { iconFor, identityColors, moodColor, toneColor } from "./look";
 
 export interface Bubble {
   key: string;
@@ -21,20 +21,25 @@ export interface Bubble {
 
 /** A token being carried, by dragging it or by picking it up: which nodes would take it. */
 export interface Dragging {
+  /** The instance holding it, and the node it is drawn on. */
   from: string;
+  fromNode: string;
   token: Token;
+  /** Node ids that would take it. */
   targets: Set<string>;
   /** Picked up with a click or the keyboard, rather than held under the pointer. */
   carried: boolean;
 }
 
-/** Wraps a node's icon in its menu: the trigger element and what it shows. */
-export type MenuFor = (id: string, trigger: ReactElement, children: ReactNode) => ReactNode;
-
 export interface Fit {
   scale: number;
   x: number;
   y: number;
+}
+
+/** A node being chosen as an action's input: clicking a target runs the action with its value. */
+export interface Picking {
+  targets: Map<string, unknown>;
 }
 
 /** The size of the canvas, which the layout fills. */
@@ -51,15 +56,27 @@ export function useView() {
   return { ref, view };
 }
 
-export function useLayout(spec: Spec, world: World, view: View): Layout | null {
-  const key = layoutKey(spec, world, view);
+/** Sizes a playground file gives its custom nodes, by node id. */
+export function sizesOf(playground: Playground | null, scene: Scene): Sizes {
+  const sizes: Sizes = new Map();
+  if (!playground) return sizes;
+  for (const node of scene.nodes) {
+    const size = node.group ? playground.group[node.group.name]?.size : playground.actor[node.members[0].actor]?.size;
+    if (size) sizes.set(node.id, size);
+  }
+  return sizes;
+}
+
+export function useLayout(spec: Spec, world: World, scene: Scene, view: View, sizes: Sizes): Layout | null {
+  const key = layoutKey(spec, world, scene, view, sizes);
   const [state, setState] = useState<{ key: string; layout: Layout } | null>(null);
-  const latest = useRef({ world, view });
-  latest.current = { world, view };
+  const latest = useRef({ world, scene, view, sizes });
+  latest.current = { world, scene, view, sizes };
   useEffect(() => {
     if (!latest.current.view.w) return;
     let live = true;
-    layout(spec, latest.current.world, latest.current.view).then((l) => live && setState({ key, layout: l }));
+    const { world, scene, view, sizes } = latest.current;
+    layout(spec, world, scene, view, sizes).then((l) => live && setState({ key, layout: l }));
     return () => {
       live = false;
     };
@@ -74,23 +91,9 @@ export function fitOf(graph: Layout | null, view: View): Fit {
   return { scale, x: (view.w - graph.width * scale) / 2, y: (view.h - graph.height * scale) / 2 };
 }
 
-export function Stage({
-  world,
-  graph,
-  fit,
-  clock,
-  live,
-  focus,
-  bubble,
-  next,
-  pulse,
-  menu,
-  dragging,
-  onToken,
-  onDrop,
-  onPacket,
-}: {
+export interface StageProps {
   world: World;
+  scene: Scene;
   graph: Layout;
   fit: Fit;
   clock: number;
@@ -98,86 +101,133 @@ export function Stage({
   focus: { event: Event; index: number } | null;
   bubble: (Bubble & { fading: boolean }) | null;
   next: number | null;
+  /** The node to try first, breathing. */
   pulse: string | null;
-  menu: MenuFor;
+  selected: string | null;
+  picking: Picking | null;
   dragging: Dragging | null;
-  onToken: (from: string, token: Token, e: ReactPointerEvent | null) => void;
+  /** Tokens already handed over, by `kind\0value`: they are gone from their holder. */
+  spent: Set<string>;
+  onSelect: (node: string | null) => void;
+  onPick: (node: string) => void;
+  onToken: (from: string, fromNode: string, token: Token, e: ReactPointerEvent | null) => void;
   onDrop: (target: string) => void;
   onPacket: (pending: Extract<Pending, { kind: "deliver" }>) => void;
-}) {
-  const { spec } = useExplorer();
-  const links = liveLinks(spec, world);
+  /** Run an action of an instance, from a custom render. */
+  onAct: (instance: string, key: string, inputs: Record<string, unknown>) => void;
+  /** What the action bar shows over the selected node. */
+  bar: ReactNode;
+}
+
+export function Stage(props: StageProps) {
+  const { world, scene, graph, fit, clock, live, focus, bubble, next, dragging, selected } = props;
+  const { spec, playground } = useExplorer();
   const colors = identityColors(spec, world);
-  const changed = new Set((focus?.event.changes ?? []).map((c) => c.instance));
-  const { ref, rows } = useRowAnchors(fit.scale, `${layoutKey(spec, world, { w: graph.width, h: graph.height })}:${JSON.stringify(world.instances.map((i) => appearance(spec, world, i.id).rows.map((r) => r.label)))}`);
+  const colorOf = (ref: string | null | undefined) => {
+    const instance = ref ? world.instances.find((i) => i.id === ref || i.label === ref) : undefined;
+    return instance ? colors.get(instance.id) : undefined;
+  };
+  const links = sceneLinks(spec, world, scene);
+  const changed = new Set((focus?.event.changes ?? []).map((c) => scene.of.get(c.instance)));
+  const humming = new Set(world.pending.filter((p) => p.kind === "deliver" && scene.of.get(p.from) === scene.of.get(p.to) && scene.nodes.find((n) => n.id === scene.of.get(p.to))?.group).map((p) => scene.of.get(p.to)));
+  const { ref, rows } = useRowAnchors(fit.scale, `${layoutKey(spec, world, scene, { w: graph.width, h: graph.height }, new Map())}`);
+  const selectedBox = selected ? graph.nodes.get(selected) : undefined;
   return (
-    <div ref={ref} className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`, width: graph.width, height: graph.height }}>
-      <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible" aria-hidden>
-        {graph.zones.map((z, i) => (
-          <Zone key={z.name} zone={z} side={i === 0 ? "first" : i === graph.zones.length - 1 ? "last" : "middle"} width={graph.width} description={spec.zones.find((x) => x.name === z.name)?.description} />
-        ))}
-        {!declaresLinks(spec) && <Wires spec={spec} world={world} graph={graph} />}
-        {links.map((link, i) => {
-          const a = graph.nodes.get(link.from);
-          const b = graph.nodes.get(link.target);
-          if (!a || !b) return null;
-          const row = link.row ? rows.get(`${link.target}::${link.row}`) : undefined;
-          const q = row ? rowAnchor(row, iconCenter(a)) : rim(iconCenter(b), iconCenter(a));
-          const p = rim(iconCenter(a), q);
-          const stroke = link.mood && link.mood !== "ok" ? moodColor(link.mood) : (colors.get(link.from) ?? "var(--color-kumo-brand)");
-          return (
-            <line
-              key={i}
-              x1={p.x}
-              y1={p.y}
-              x2={q.x}
-              y2={q.y}
-              stroke={stroke}
-              strokeWidth={2}
-              strokeDasharray={link.style === "dotted" ? "2 6" : link.style === "solid" ? undefined : "7 7"}
-              strokeLinecap="round"
-              className={link.style === "solid" ? undefined : "feynman-flow"}
+    <PlayProvider value={{ colorOf }}>
+      <div ref={ref} className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`, width: graph.width, height: graph.height }}>
+        <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible" aria-hidden>
+          {graph.zones.map((z, i) => (
+            <Zone key={z.name} zone={z} side={i === 0 ? "first" : i === graph.zones.length - 1 ? "last" : "middle"} width={graph.width} description={spec.zones.find((x) => x.name === z.name)?.description} />
+          ))}
+          {graph.groups.map((g) => (
+            <g key={g.id}>
+              <rect x={g.box.x} y={g.box.y} width={g.box.w} height={g.box.h} rx={16} fill="none" stroke="var(--color-kumo-line)" strokeDasharray="3 5" />
+              <text x={g.box.x + 12} y={g.box.y + 14} fill="var(--text-color-kumo-subtle)" className="text-[10px] font-medium">
+                {g.label}
+              </text>
+            </g>
+          ))}
+          {!declaresLinks(spec) && <Wires spec={spec} scene={scene} graph={graph} />}
+          {links.map((link, i) => {
+            const a = graph.nodes.get(link.fromNode);
+            const b = graph.nodes.get(link.toNode);
+            if (!a || !b) return null;
+            const row = link.row ? rows.get(`${link.toNode}::${labelled(world, link.row)}`) : undefined;
+            const q = row ? rowAnchor(row, center(a)) : rim(b, center(a));
+            const p = rim(a, q);
+            const style = { ...(link.kind ? playground?.link[link.kind] : undefined) };
+            const dotted = (style.style ?? link.style) === "dotted";
+            const flowing = style.flowing ?? !dotted;
+            const tint = style.color && style.color !== "owner" ? moodColor(style.color) : undefined;
+            const stroke = tint ?? (link.mood && link.mood !== "ok" ? moodColor(link.mood) : (colorOf(link.from) ?? "var(--color-kumo-brand)"));
+            return (
+              <line
+                key={i}
+                x1={p.x}
+                y1={p.y}
+                x2={q.x}
+                y2={q.y}
+                stroke={stroke}
+                strokeWidth={2}
+                strokeOpacity={0.85}
+                strokeDasharray={dotted ? "2 6" : (style.style ?? "dashed") === "solid" ? undefined : "6 6"}
+                strokeLinecap="round"
+                className={flowing ? "feynman-flow" : undefined}
+              />
+            );
+          })}
+          {world.pending.map((p) => (p.kind === "deliver" ? <Trail key={p.id} pending={p} scene={scene} graph={graph} /> : null))}
+        </svg>
+        {scene.nodes.map((node) => {
+          const box = graph.nodes.get(node.id);
+          return box ? (
+            <NodeView
+              key={node.id}
+              node={node}
+              box={box}
+              region={graph.zones.some((z) => z.region && z.name === node.zone) && node.singleton}
+              flash={live && changed.has(node.id) ? (focus?.index ?? null) : null}
+              humming={humming.has(node.id)}
+              colorOf={colorOf}
+              colors={colors}
+              stage={props}
             />
-          );
+          ) : null;
         })}
-      </svg>
-      {world.instances.map((instance) => {
-        const box = graph.nodes.get(instance.id);
-        return box ? (
-          <Node
-            key={instance.id}
-            id={instance.id}
-            world={world}
-            box={box}
-            region={graph.zones.some((z) => z.region && z.name === spec.actors.find((a) => a.name === instance.actor)?.zone)}
-            flash={live && changed.has(instance.id) ? (focus?.index ?? null) : null}
-            pulse={live && !dragging && pulse === instance.id}
-            menu={menu}
-            colors={colors}
-            drop={dragging ? (dragging.targets.has(instance.id) ? "target" : dragging.from === instance.id ? "source" : "other") : null}
-            carrying={dragging?.carried ? dragging.token : null}
-            onToken={live ? onToken : null}
-            onDrop={onDrop}
-          />
-        ) : null;
-      })}
-      {world.pending.map((p) =>
-        p.kind === "deliver" ? <Packet key={p.id} pending={p} graph={graph} world={world} clock={clock} next={next === p.id} live={live} onClick={() => onPacket(p)} /> : null,
-      )}
-      {bubble && graph.nodes.get(bubble.instance) && <SpeechBubble key={bubble.key} bubble={bubble} box={graph.nodes.get(bubble.instance)!} />}
-    </div>
+        {world.pending.map((p) =>
+          p.kind === "deliver" ? <Packet key={p.id} pending={p} scene={scene} graph={graph} world={world} clock={clock} next={next === p.id} live={live} onClick={() => props.onPacket(p)} /> : null,
+        )}
+        {scene.nodes.map((node) => {
+          const box = graph.nodes.get(node.id);
+          const panel = box && panelOf(spec, playground, world, node, props);
+          return panel ? (
+            <div key={`panel:${node.id}`} className="absolute z-20 -translate-x-1/2" style={{ left: Math.min(Math.max(box.x + box.anchor.x, 132), graph.width - 132), top: box.y + box.h + 4 }}>
+              {panel}
+            </div>
+          ) : null;
+        })}
+        {bubble && <SpeechBubble key={bubble.key} bubble={bubble} scene={scene} graph={graph} />}
+        {selectedBox && props.bar && (
+          <div className="absolute z-30 -translate-x-1/2 -translate-y-full" style={{ left: clampX(selectedBox.x + selectedBox.anchor.x, graph.width), top: selectedBox.y - 10 }} onClick={(e) => e.stopPropagation()}>
+            {props.bar}
+          </div>
+        )}
+        {dragging && <span className="sr-only">Carrying {dragging.token.label ?? String(dragging.token.value)}</span>}
+      </div>
+    </PlayProvider>
   );
 }
+
+const clampX = (x: number, width: number) => Math.min(Math.max(x, 220), width - 220);
 
 /** A zone's caption sits over its column; at the canvas's edges it grows inwards so it is never cut off. */
 function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first" | "middle" | "last"; width: number; description?: string }) {
   if (zone.region) {
     return (
       <g>
-        <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx={32} fill="var(--color-kumo-warning-tint)" stroke="var(--color-kumo-warning)" strokeOpacity={0.55} strokeDasharray="5 6" />
-        <text x={zone.x + zone.w / 2} y={zone.y + zone.h - 18} textAnchor="middle" fill="var(--text-color-kumo-warning)" className="text-[13px] font-medium">
+        <rect x={zone.x} y={zone.y} width={zone.w} height={zone.h} rx={40} fill="var(--color-kumo-warning-tint)" fillOpacity={0.6} stroke="var(--color-kumo-warning)" strokeOpacity={0.45} strokeDasharray="6 6" />
+        <text x={zone.x + zone.w / 2} y={zone.y + zone.h - 14} textAnchor="middle" fill="var(--text-color-kumo-warning)" className="text-[12px]">
           {zone.name}
-          {description ? ` · ${description}` : ""}
         </text>
       </g>
     );
@@ -185,185 +235,286 @@ function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first"
   return (
     <text
       x={side === "first" ? Math.max(16, zone.x) : side === "last" ? Math.min(width - 16, zone.x + zone.w) : zone.x + zone.w / 2}
-      y={zone.y - 12}
+      y={zone.y - 10}
       textAnchor={side === "first" ? "start" : side === "last" ? "end" : "middle"}
       fill="var(--text-color-kumo-subtle)"
-      className="text-[11px]"
+      className="text-[10.5px]"
     >
-      <tspan className="font-medium uppercase tracking-wider">{zone.name}</tspan>
-      {description && <tspan> · {description}</tspan>}
+      <tspan className="uppercase tracking-wider">{zone.name}</tspan>
+      {description && <tspan opacity={0.75}> · {description}</tspan>}
     </text>
   );
 }
 
-/** Without declared links, which actors can talk is drawn faintly, straight between nodes. */
-function Wires({ spec, world, graph }: { spec: Spec; world: World; graph: Layout }) {
-  const lines: { a: Box; b: Box; key: string }[] = [];
-  for (const [x, y] of actorLinks(spec))
-    for (const i of world.instances.filter((w) => w.actor === x))
-      for (const j of world.instances.filter((w) => w.actor === y)) {
-        const a = graph.nodes.get(i.id);
-        const b = graph.nodes.get(j.id);
-        if (a && b) lines.push({ a, b, key: `${i.id}|${j.id}` });
-      }
+/** Without declared links, which nodes can talk is drawn faintly. */
+function Wires({ spec, scene, graph }: { spec: Spec; scene: Scene; graph: Layout }) {
   return (
     <>
-      {lines.map(({ a, b, key }) => {
-        const p = rim(iconCenter(a), iconCenter(b));
-        const q = rim(iconCenter(b), iconCenter(a));
-        return <line key={key} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="var(--color-kumo-line)" strokeWidth={1} />;
+      {nodeLinks(spec, scene).map(([x, y]) => {
+        const a = graph.nodes.get(x);
+        const b = graph.nodes.get(y);
+        if (!a || !b) return null;
+        const p = rim(a, center(b));
+        const q = rim(b, center(a));
+        return <line key={`${x}|${y}`} x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke="var(--color-kumo-line)" strokeWidth={1} />;
       })}
     </>
   );
 }
 
-/** The point on the icon circle at `c` facing `towards`. */
-function rim(c: { x: number; y: number }, towards: { x: number; y: number }): { x: number; y: number } {
+// Geometry ----------------------------------------------------------------------------------------
+
+type Point = { x: number; y: number };
+type Placed = Box & { anchor: Anchor };
+
+function center(box: Placed): Point {
+  return { x: box.x + box.anchor.x, y: box.y + box.anchor.y };
+}
+
+/** The point on a node's rim facing `towards`. */
+function rim(box: Placed, towards: Point): Point {
+  const c = center(box);
   const d = Math.hypot(towards.x - c.x, towards.y - c.y) || 1;
-  return { x: c.x + ((towards.x - c.x) / d) * 38, y: c.y + ((towards.y - c.y) / d) * 38 };
+  return { x: c.x + ((towards.x - c.x) / d) * (box.anchor.r + 3), y: c.y + ((towards.y - c.y) / d) * (box.anchor.r + 3) };
 }
 
-function iconCenter(box: Box): { x: number; y: number } {
-  return { x: box.x + Math.min(box.w, ICON_W) / 2 + (box.w > ICON_W + 200 ? (box.w - ICON_W) / 2 : 0), y: box.y + 36 };
+/** A gentle curve from a to b, bending to one side: requests one way, answers the other. */
+function curve(a: Point, b: Point, bend: number) {
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  const c = { x: mx - ((b.y - a.y) / len) * bend, y: my + ((b.x - a.x) / len) * bend };
+  return {
+    d: `M${a.x},${a.y} Q${c.x},${c.y} ${b.x},${b.y}`,
+    at: (t: number): Point => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t ** 2 * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t ** 2 * b.y }),
+  };
 }
 
-// Nodes -------------------------------------------------------------------------------------------------
+function flight(pending: Extract<Pending, { kind: "deliver" }>, scene: Scene, graph: Layout, tone: string | undefined) {
+  const from = graph.nodes.get(scene.of.get(pending.from) ?? "");
+  const to = graph.nodes.get(scene.of.get(pending.to) ?? "");
+  if (!from || !to || from === to) return null;
+  const bend = tone === "reply" || tone === "refused" ? -24 : 24;
+  return curve(rim(from, center(to)), rim(to, center(from)), bend);
+}
 
-type DropState = "target" | "source" | "other" | null;
+/** Where rows sit on the stage, in stage coordinates, so links can end at them. Measured when they move. */
+function useRowAnchors(scale: number, key: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [rows, setRows] = useState<Map<string, Box>>(new Map());
+  const last = useRef("");
+  // Measured after every render, but only stored when something moved, so it settles.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const origin = el.getBoundingClientRect();
+    const next = new Map<string, Box>();
+    for (const row of el.querySelectorAll<HTMLElement>("[data-row]")) {
+      const r = row.getBoundingClientRect();
+      next.set(row.dataset.row!, { x: Math.round((r.left - origin.left) / scale), y: Math.round((r.top - origin.top) / scale), w: Math.round(r.width / scale), h: Math.round(r.height / scale) });
+    }
+    const signature = `${key}|${JSON.stringify([...next])}`;
+    if (signature === last.current) return;
+    last.current = signature;
+    setRows(next);
+  });
+  return { ref, rows };
+}
 
-/** A mood worth a ring: how it is doing says something. "info" and "off" leave the ring to identity. */
-const telling = (mood: Mood | null): boolean => mood === "ok" || mood === "bad" || mood === "warn" || mood === "busy";
+/** The side of a row facing a point: where a link from there meets it. */
+function rowAnchor(row: Box, from: Point): Point {
+  const left = Math.abs(from.x - row.x) < Math.abs(from.x - (row.x + row.w));
+  return { x: left ? row.x : row.x + row.w, y: row.y + row.h / 2 };
+}
 
-function Node({
-  id,
-  world,
+// Nodes -------------------------------------------------------------------------------------------
+
+/** Props for a playground file's render functions. */
+function renderProps(spec: Spec, world: World, node: SceneNode, look: NodeLook, stage: StageProps) {
+  const view = worldView(spec, world);
+  const act = (instance: string, key: string, inputs?: Record<string, unknown>) => stage.live && stage.onAct(instance, key, inputs ?? {});
+  if (!node.group) {
+    const [m] = node.members;
+    return {
+      kind: "actor" as const,
+      props: { instance: { id: m.id, label: m.label }, state: m.state, look, world: view, clock: stage.clock, live: stage.live, act: ((key: string, inputs?: Record<string, unknown>) => act(m.id, key, inputs)) as NodeProps["act"] } as NodeProps,
+    };
+  }
+  const members = node.members.map((m: InstanceState) => ({ instance: { id: m.id, label: m.label }, actor: m.actor, state: m.state, look: nodeLook(spec, world, { ...node, group: null, members: [m], id: m.id }) }));
+  const props: GroupProps = {
+    label: node.label,
+    members,
+    look,
+    world: view,
+    clock: stage.clock,
+    live: stage.live,
+    member: <A extends Actor<any, any>>(actor: A) => members.find((m) => m.actor === actor.name) as never,
+    act,
+  };
+  return { kind: "group" as const, props };
+}
+
+function panelOf(spec: Spec, playground: Playground | null, world: World, node: SceneNode, stage: StageProps): ReactNode {
+  if (!playground) return null;
+  const look = nodeLook(spec, world, node);
+  const made = renderProps(spec, world, node, look, stage);
+  try {
+    if (made.kind === "group") return playground.group[node.group!.name]?.panel?.(made.props) ?? null;
+    return playground.actor[node.members[0].actor]?.panel?.(made.props) ?? null;
+  } catch (error) {
+    console.warn(`feynman: the panel for ${node.label} failed`, error);
+    return null;
+  }
+}
+
+/** A custom drawing from the playground file, if it has one for this node; null otherwise. */
+function customNode(spec: Spec, playground: Playground | null, world: World, node: SceneNode, look: NodeLook, stage: StageProps): { content: ReactNode } | { failed: true } | null {
+  if (!playground) return null;
+  const made = renderProps(spec, world, node, look, stage);
+  const render = made.kind === "group" ? playground.group[node.group!.name]?.render : playground.actor[node.members[0].actor]?.node;
+  if (!render) return null;
+  try {
+    return { content: (render as (p: unknown) => ReactNode)(made.props) };
+  } catch (error) {
+    console.warn(`feynman: the drawing for ${node.label} failed; showing the default`, error);
+    return { failed: true };
+  }
+}
+
+function NodeView({
+  node,
   box,
   region,
   flash,
-  pulse,
-  menu,
+  humming,
+  colorOf,
   colors,
-  drop,
-  carrying,
-  onToken,
-  onDrop,
+  stage,
 }: {
-  id: string;
-  world: World;
-  box: Box;
+  node: SceneNode;
+  box: Layout["nodes"] extends Map<string, infer B> ? B : never;
   region: boolean;
-  /** The event that just changed this node, to flash it once. */
   flash: number | null;
-  pulse: boolean;
-  menu: MenuFor;
+  humming: boolean;
+  colorOf: (ref: string | null | undefined) => string | undefined;
   colors: Map<string, string>;
-  drop: DropState;
-  carrying: Token | null;
-  onToken: ((from: string, token: Token, e: ReactPointerEvent | null) => void) | null;
-  onDrop: (target: string) => void;
+  stage: StageProps;
 }) {
-  const { spec } = useExplorer();
-  const instance = world.instances.find((i) => i.id === id)!;
-  const actor = spec.actors.find((a) => a.name === instance.actor)!;
-  const look = appearance(spec, world, id);
-  const shape = shapeOf(actor);
-  const Icon = iconFor(look.icon);
-  const identity = colors.get(id);
-  const ring = telling(look.mood) ? moodColor(look.mood) : (identity ?? (region ? "var(--color-kumo-warning)" : "var(--color-kumo-line)"));
-  const timers = world.pending.filter((p): p is Extract<Pending, { kind: "timer" }> => p.kind === "timer" && p.to === id);
+  const { spec, playground } = useExplorer();
+  const { world, dragging, picking, live, clock } = stage;
+  const look = presentedLook(spec, playground, world, node, stage);
+  const identity = node.members.map((m) => colors.get(m.id)).find(Boolean);
+  const owner = look.owner ? world.instances.find((i) => i.id === look.owner || i.label === look.owner) : identity ? node.members.find((m) => colors.get(m.id)) : undefined;
+  const badge = identity && owner ? { text: owner.label.charAt(0).toUpperCase(), color: identity, title: look.owner ? `${owner.label}'s` : owner.label } : null;
+  const drop = dragging ? (dragging.targets.has(node.id) ? "target" : dragging.fromNode === node.id ? "source" : "other") : null;
+  const pickable = picking?.targets.has(node.id) ?? false;
+  const timers = world.pending.filter((p): p is Extract<Pending, { kind: "timer" }> => p.kind === "timer" && node.members.some((m) => m.id === p.to));
   const waiting = timers.map((t) => `${t.timer} in ${time(Math.max(0, t.at - world.clock))}`).join(", ");
-  const trigger = <button type="button" title={waiting ? `Waiting: ${waiting}` : undefined} className="group flex w-[136px] shrink-0 cursor-pointer flex-col items-center gap-1 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus" onClick={(e) => e.stopPropagation()} />;
-  const iconBlock = menu(
-    id,
-    trigger,
-    <>
-      <span
-        key={flash ?? "still"}
-        className={cn(
-          "relative flex size-[72px] items-center justify-center rounded-full bg-kumo-base transition-transform duration-200 ease-out group-hover:scale-105 group-data-[popup-open]:scale-105",
-          pulse && "feynman-pulse",
-          flash !== null && "feynman-flash",
-          drop === "target" && "scale-110",
-        )}
-        style={{ boxShadow: `0 0 0 ${drop === "target" ? 4 : 3}px ${drop === "target" ? "var(--color-kumo-brand)" : ring}` }}
-      >
-        <Icon size={30} weight="duotone" style={{ color: region && !identity ? "var(--text-color-kumo-warning)" : undefined }} />
-        {identity && telling(look.mood) && <span className="absolute left-0.5 top-0.5 size-3.5 rounded-full ring-2 ring-kumo-canvas" style={{ background: identity }} />}
+  const custom = customNode(spec, playground, world, node, look, stage);
+  const visual =
+    custom && "content" in custom ? (
+      custom.content
+    ) : (
+      <span className="relative">
+        <Node
+          shape={look.shape}
+          icon={look.icon}
+          label={node.label}
+          status={look.status}
+          mood={look.mood}
+          accent={region ? "var(--color-kumo-warning)" : undefined}
+          badge={badge}
+          shapeClassName={cn(stage.pulse === node.id && !dragging && live && "feynman-pulse", flash !== null && "feynman-flash")}
+        />
+        {custom && "failed" in custom && <span className="absolute -left-1 -top-1 size-3 rounded-full bg-kumo-danger" title="The playground file's drawing failed; see the console" />}
       </span>
-      <span className="max-w-full truncate text-[13px] font-semibold leading-tight">{instance.label}</span>
-      {look.status && <span className="max-w-full truncate text-[11px] leading-tight text-kumo-subtle">{look.status}</span>}
-    </>,
+    );
+  const held = look.held.filter(({ token }) => !stage.spent.has(`${token.kind}\u0000${String(token.value)}`));
+  const target = drop === "target" || pickable;
+  const click = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (pickable) stage.onPick(node.id);
+    else if (dragging?.carried && drop === "target") stage.onDrop(node.id);
+    else if (live) stage.onSelect(stage.selected === node.id ? null : node.id);
+  };
+  const trigger = (
+    <button
+      type="button"
+      title={waiting ? `Waiting: ${waiting}` : undefined}
+      aria-label={pickable ? `Choose ${node.label}` : `${node.label}${look.status ? `, ${look.status}` : ""}`}
+      aria-pressed={stage.selected === node.id}
+      onClick={click}
+      className={cn(
+        "group relative flex shrink-0 cursor-pointer flex-col items-center rounded-xl outline-none transition-[scale] duration-200 ease-out hover:scale-[1.04]",
+        custom && stage.pulse === node.id && !dragging && live && "feynman-pulse",
+        custom && flash !== null && "feynman-flash",
+        humming && "feynman-hum",
+        target && "scale-110",
+        stage.selected === node.id && "scale-[1.04]",
+      )}
+      style={{ width: kindWidth(box) }}
+    >
+      <span key={flash ?? "still"} className="contents">
+        {visual}
+      </span>
+      {target && <span className="feynman-target pointer-events-none absolute rounded-full" style={{ left: box.anchor.x - box.anchor.r - 8, top: box.anchor.y - box.anchor.r - 8, width: (box.anchor.r + 8) * 2, height: (box.anchor.r + 8) * 2 }} />}
+    </button>
   );
-  const tokens = look.tokens.length > 0 && (
-    <div className={cn("absolute left-[92px] -top-3 z-10 flex flex-col items-start gap-1", drop === "source" && "opacity-30")}>
-      {look.tokens.slice(0, 3).map((token) => (
-        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} color={identity} onPick={onToken && ((e) => onToken(id, token, e))} />
+  const tokens = held.length > 0 && (
+    <div className={cn("absolute z-10 flex flex-col items-start gap-1", drop === "source" && "opacity-30")} style={{ left: box.anchor.x + box.anchor.r + 6, top: Math.max(0, box.anchor.y - box.anchor.r - 6) }}>
+      {held.slice(-2).map(({ token, from }) => (
+        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} holder={world.instances.find((i) => i.id === from)!} clock={clock} onPick={live ? (e) => stage.onToken(from, node.id, token, e) : null} />
       ))}
     </div>
   );
-  const dropHere = carrying && drop === "target" && (
-    <button
-      type="button"
-      autoFocus
-      onClick={(e) => {
-        e.stopPropagation();
-        onDrop(id);
-      }}
-      className="absolute left-1/2 top-0 z-20 size-[88px] -translate-x-1/2 -translate-y-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-kumo-focus"
-      aria-label={`Drop ${carrying.label ?? String(carrying.value)} on ${instance.label}`}
-    />
-  );
-  const head = (
-    <div className="relative">
-      {iconBlock}
-      {tokens}
-      {dropHere}
-    </div>
-  );
-  const frame = cn("absolute transition-opacity duration-200", drop === "other" && "opacity-35");
+  const frame = cn("absolute transition-opacity duration-200", (drop === "other" || (picking && !pickable)) && "opacity-35");
   const place = { left: box.x, top: box.y, width: box.w, height: box.h };
-  if (shape === "hub") {
-    return (
-      <div data-instance={id} className={cn(frame, "flex flex-col items-center gap-3")} style={place}>
-        {head}
-        <Rows id={id} rows={look.rows} world={world} colors={colors} className="w-full flex-1" />
-      </div>
-    );
-  }
-  if (shape === "side") {
-    return (
-      <div data-instance={id} className={cn(frame, "flex items-start gap-1")} style={place}>
-        {head}
-        <Rows id={id} rows={look.rows} world={world} colors={colors} className="mt-3 w-[160px]" compact />
-      </div>
-    );
-  }
+  const rows = <Rows rows={look.rows} anchor={node.id} compact={box.kind === "side"} className={box.kind === "hub" ? "mt-3 w-full" : "mt-1 w-[150px]"} />;
   return (
-    <div data-instance={id} className={cn(frame, "flex justify-center")} style={place}>
-      {head}
+    <div data-node={node.id} className={cn(frame, box.kind === "side" ? "flex items-start" : "flex flex-col items-center")} style={place}>
+      <div className="relative">
+        {trigger}
+        {tokens}
+      </div>
+      {box.kind !== "plain" && rows}
     </div>
   );
 }
 
-/** Something to carry to another node: drag it, or click it (or press Enter) to pick it up. */
-export function TokenChip({ token, color, onPick }: { token: Token; color?: string; onPick?: ((e: ReactPointerEvent | null) => void) | null }) {
-  const accent = moodColor(token.mood ?? "warn");
-  const name = token.label ?? String(token.value);
-  const body = (
-    <>
-      <TicketIcon size={14} weight="duotone" style={{ color: color ?? accent }} />
-      {name}
-    </>
-  );
-  const look = "flex select-none items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 font-mono text-[12px] font-semibold";
-  const style = { background: "var(--color-kumo-warning-tint)", boxShadow: `0 0 0 1.5px ${accent}, 0 3px 8px var(--color-kumo-shadow-drop)`, rotate: "-4deg" } as const;
-  if (!onPick) {
-    return (
-      <span className={look} style={style}>
-        {body}
-      </span>
-    );
+/** The node's look, with what the playground file says about it: a group's status. */
+function presentedLook(spec: Spec, playground: Playground | null, world: World, node: SceneNode, stage: StageProps): NodeLook {
+  const look = nodeLook(spec, world, node);
+  const status = node.group && playground?.group[node.group.name]?.status;
+  if (!status) return look;
+  try {
+    const made = renderProps(spec, world, node, look, stage);
+    return { ...look, status: status(made.props as GroupProps) };
+  } catch (error) {
+    console.warn(`feynman: the status for ${node.label} failed`, error);
+    return look;
   }
+}
+
+function kindWidth(box: { kind: string; w: number; anchor: Anchor }): number | undefined {
+  return box.kind === "plain" ? box.w : box.kind === "side" ? box.anchor.x * 2 : undefined;
+}
+
+/** Something to carry to another node: drag it, or click it (or press Enter) to pick it up. */
+export function TokenChip({ token, holder, clock, onPick }: { token: Token; holder?: { id: string; label: string }; clock: number; onPick?: ((e: ReactPointerEvent | null) => void) | null }) {
+  const { playground } = useExplorer();
+  const name = token.label ?? String(token.value);
+  const custom = playground?.token[token.kind];
+  let body: ReactNode = null;
+  if (custom) {
+    try {
+      body = custom({ token, holder: holder ?? { id: "", label: "" }, clock });
+    } catch (error) {
+      console.warn(`feynman: the drawing for ${token.kind} failed`, error);
+    }
+  }
+  body ??= <Ticket code={String(token.value)} label={token.label} left={token.expires !== undefined ? token.expires - clock : null} />;
+  const tilt = "-rotate-3 drop-shadow-sm";
+  if (!onPick) return <span className={cn("block select-none", tilt)}>{body}</span>;
   return (
     <button
       type="button"
@@ -379,102 +530,36 @@ export function TokenChip({ token, color, onPick }: { token: Token; color?: stri
         e.preventDefault();
         onPick(null);
       }}
-      className={cn(look, "cursor-grab touch-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:outline-2 focus-visible:outline-kumo-focus active:cursor-grabbing")}
-      style={style}
+      className={cn("block cursor-grab touch-none select-none rounded-md transition-transform duration-150 ease-out hover:scale-110 focus-visible:outline-2 focus-visible:outline-kumo-focus active:cursor-grabbing", tilt)}
     >
       {body}
     </button>
   );
 }
 
-/** Where rows sit on the stage, in stage coordinates, so links can end at them. Measured when they move. */
-function useRowAnchors(scale: number, key: string) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [rows, setRows] = useState<Map<string, Box>>(new Map());
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const origin = el.getBoundingClientRect();
-    const next = new Map<string, Box>();
-    for (const row of el.querySelectorAll<HTMLElement>("[data-row]")) {
-      const r = row.getBoundingClientRect();
-      next.set(row.dataset.row!, { x: (r.left - origin.left) / scale, y: (r.top - origin.top) / scale, w: r.width / scale, h: r.height / scale });
-    }
-    setRows(next);
-  }, [scale, key]);
-  return { ref, rows };
-}
+// Messages in flight ------------------------------------------------------------------------------
 
-/** The side of a row facing a point: where a link from there meets it. */
-function rowAnchor(row: Box, from: { x: number; y: number }): { x: number; y: number } {
-  const left = Math.abs(from.x - row.x) < Math.abs(from.x - (row.x + row.w));
-  return { x: left ? row.x : row.x + row.w, y: row.y + row.h / 2 };
-}
-
-/** State as structure: rows boxed by group. A group belonging to someone wears their colour. */
-function Rows({ id, rows, world, colors, className, compact }: { id: string; rows: Row[]; world: World; colors: Map<string, string>; className?: string; compact?: boolean }) {
-  const colorOf = (ref?: string) => {
-    const owner = ref && world.instances.find((i) => i.id === ref || i.label === ref);
-    return owner ? colors.get(owner.id) : undefined;
-  };
-  const dot = (row: Row) => (row.mood ? moodColor(row.mood) : (colorOf(row.owner) ?? moodColor(null)));
-  const groups = new Map<string, Row[]>();
-  for (const row of rows) groups.set(row.group ?? "", [...(groups.get(row.group ?? "") ?? []), row]);
-  if (!rows.length) return compact ? null : <p className={cn("pt-2 text-center text-[12px] text-kumo-subtle", className)}>Nothing yet</p>;
-  const limit = compact ? 3 : 6;
-  return (
-    <div className={cn("flex min-h-0 flex-col gap-2.5 overflow-hidden", className)}>
-      {[...groups].map(([group, items]) => {
-        const owner = colorOf(items.find((r) => r.owner)?.owner);
-        return (
-          <div key={group} className="overflow-hidden rounded-xl bg-kumo-base shadow-sm" style={{ boxShadow: `0 0 0 ${owner ? 1.5 : 1}px ${owner ?? "var(--color-kumo-line)"}` }}>
-            {group && (
-              <div className="flex items-center gap-2 px-3 pb-1 pt-2">
-                <span className="size-2.5 rounded-full" style={{ background: owner ?? "var(--color-kumo-line)" }} />
-                <span className="truncate text-[13px] font-semibold">{group}</span>
-              </div>
-            )}
-            {items.slice(0, limit).map((row, i) =>
-              compact ? (
-                <div key={i} data-row={`${id}::${row.label}`} className="flex flex-col px-2.5 py-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot(row) }} />
-                    <span className="truncate text-[11px] text-kumo-subtle">{row.label}</span>
-                  </span>
-                  {row.detail && <span className="truncate font-mono text-[11px]">{row.detail}</span>}
-                </div>
-              ) : (
-                <div key={i} data-row={`${id}::${row.label}`} className="mx-1.5 mb-1.5 flex items-center gap-2 rounded-lg bg-kumo-elevated px-2.5 py-1.5">
-                  <span className="size-2 shrink-0 rounded-full" style={{ background: dot(row) }} />
-                  <span className="min-w-0 truncate text-[12.5px]">{row.label}</span>
-                  {row.detail && <span className="ml-auto truncate pl-2 text-[11px] text-kumo-subtle">{row.detail}</span>}
-                </div>
-              ),
-            )}
-            {items.length > limit && <div className="px-3 pb-2 text-[11px] text-kumo-subtle">+{items.length - limit} more</div>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Messages in flight ------------------------------------------------------------------------------------
-
-function Packet({ pending, graph, world, clock, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; graph: Layout; world: World; clock: number; next: boolean; live: boolean; onClick: () => void }) {
+/** The faint path a message travels. */
+function Trail({ pending, scene, graph }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout }) {
   const { spec } = useExplorer();
-  const from = graph.nodes.get(pending.from);
-  const to = graph.nodes.get(pending.to);
-  if (!from || !to) return null;
-  const latency = spec.messages[pending.message]?.latency ?? spec.latency;
+  const tone = spec.messages[pending.message]?.tone;
+  const c = flight(pending, scene, graph, tone);
+  if (!c) return null;
+  return <path d={c.d} fill="none" stroke={toneColor(tone)} strokeOpacity={0.3} strokeWidth={1.5} strokeDasharray="2 5" />;
+}
+
+function Packet({ pending, scene, graph, world, clock, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout; world: World; clock: number; next: boolean; live: boolean; onClick: () => void }) {
+  const { spec } = useExplorer();
+  const message = spec.messages[pending.message];
+  const c = flight(pending, scene, graph, message?.tone);
+  if (!c) return null;
+  const latency = message?.latency ?? spec.latency;
   const progress = Math.min(1, Math.max(0, (clock - (pending.at - latency)) / Math.max(1, latency)));
-  const a = iconCenter(from);
-  const b = iconCenter(to);
-  const at = along([rim(a, b), rim(b, a)], 0.1 + progress * 0.8);
-  const color = toneColor(spec.messages[pending.message]?.tone);
+  const at = c.at(0.04 + progress * 0.92);
+  const color = toneColor(message?.tone);
   const name = messageName(spec, pending.message);
   if (routineDelivery(spec, world, pending)) {
-    return <span className="pointer-events-none absolute z-10 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-70" style={{ left: at.x, top: at.y, background: color }} title={name} />;
+    return <span className="pointer-events-none absolute z-10 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60" style={{ left: at.x, top: at.y, background: color }} title={name} />;
   }
   return (
     <button
@@ -484,12 +569,14 @@ function Packet({ pending, graph, world, clock, next, live, onClick }: { pending
         e.stopPropagation();
         onClick();
       }}
-      className={cn("absolute z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 whitespace-nowrap rounded-full bg-kumo-base py-0.5 pl-1.5 pr-2.5 text-[11.5px] font-medium shadow-md ring-1 ring-kumo-line", next && live && "feynman-pulse")}
+      className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
       style={{ left: at.x, top: at.y }}
       title={`${name} ${short(pending.payload, 80)}. Click to deliver it now or lose it.`}
     >
-      <span className="size-2.5 rounded-full" style={{ background: color }} />
-      {name}
+      <span className={cn("block size-3 rounded-full", next && live && "feynman-pulse")} style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
+      <span className="absolute bottom-full left-1/2 mb-1 max-w-[200px] -translate-x-1/2 truncate whitespace-nowrap rounded-full px-2 py-px text-[10px] font-semibold text-kumo-inverse" style={{ background: color }}>
+        {name}
+      </span>
     </button>
   );
 }
@@ -501,16 +588,18 @@ export function routineDelivery(spec: Spec, world: World, pending: Pending): boo
   return Boolean(actor?.transitions[key]?.routine);
 }
 
-// The speech bubble -------------------------------------------------------------------------------------
+// The speech bubble -------------------------------------------------------------------------------
 
 /** What just happened, above whoever did it; while time runs it fades after a moment. */
-function SpeechBubble({ bubble, box }: { bubble: Bubble & { fading: boolean }; box: Box }) {
-  const c = iconCenter(box);
+function SpeechBubble({ bubble, scene, graph }: { bubble: Bubble & { fading: boolean }; scene: Scene; graph: Layout }) {
+  const box = graph.nodes.get(scene.of.get(bubble.instance) ?? "");
+  if (!box) return null;
+  const c = center(box);
   const ring = bubble.tone === "bad" ? "var(--color-kumo-danger)" : bubble.tone === "action" ? "var(--color-kumo-brand)" : "var(--color-kumo-line)";
   return (
     <div
-      className={cn("pointer-events-none absolute z-20 w-max max-w-[280px] -translate-x-1/2 -translate-y-full rounded-xl bg-kumo-base px-3 py-1.5 text-center text-[12.5px] leading-snug shadow-lg", bubble.fading && "feynman-bubble")}
-      style={{ left: c.x, top: c.y - 48, boxShadow: `0 0 0 1.5px ${ring}, 0 6px 16px var(--color-kumo-shadow-drop)` }}
+      className={cn("pointer-events-none absolute z-20 w-max max-w-[260px] -translate-x-1/2 -translate-y-full rounded-xl bg-kumo-elevated px-2.5 py-1.5 text-center text-[11px] leading-snug shadow-lg", bubble.fading && "feynman-bubble")}
+      style={{ left: Math.min(Math.max(c.x, 140), graph.width - 140), top: c.y - box.anchor.r - 12, boxShadow: `0 0 0 1.5px ${ring}, 0 6px 16px var(--color-kumo-shadow-drop)` }}
     >
       {bubble.text}
     </div>
@@ -518,9 +607,12 @@ function SpeechBubble({ bubble, box }: { bubble: Bubble & { fading: boolean }; b
 }
 
 export function bubbleText(spec: Spec, event: Event, world: World | undefined): string {
+  void spec;
   const say = (text: string) => (world ? labelled(world, text) : text);
   if (event.text) return say(event.text);
   if (event.notes.length) return say(event.notes[0]);
   if (event.kind === "lose") return say(event.description);
   return `${labelOf(world, event.instance)}: ${say(event.description.replace(/\.$/, ""))}`;
 }
+
+export { telling };

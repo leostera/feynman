@@ -5,9 +5,9 @@ import { check, type Bounds } from "@feynman/check";
 import { checkSources, git, repositoryAt, withWorktree, writeLock, type Repository } from "@feynman/code";
 import { diffRuns, runScenario, type RunDiff, type Spec } from "@feynman/spec";
 import { readConfig, type Config } from "./config.ts";
-import { discoverSpecs, selectSpecs } from "./discover.ts";
+import { discoverSpecs, playgroundFor, selectSpecs } from "./discover.ts";
 import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red, yellow } from "./format.ts";
-import { loadSpec } from "./load.ts";
+import { loadPlayground, loadSpec } from "./load.ts";
 import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt } from "./shape.ts";
 import { typecheck } from "./types.ts";
 
@@ -60,9 +60,18 @@ export async function list(ctx: Context): Promise<number> {
 export async function checkCommand(ctx: Context, named: string[], bounds: Partial<Bounds>): Promise<number> {
   let status = 0;
   const selected = await loadSelected(ctx, named);
-  const typeErrors = typecheck(ctx.repository.root, selected.map((s) => s.path));
+  const plays = selected.map((s) => playgroundFor(ctx.repository.root, s.path)).filter((p): p is string => p !== null);
+  const typeErrors = typecheck(ctx.repository.root, [...selected.map((s) => s.path), ...plays]);
   for (const e of typeErrors) console.log(red(`${e.file}:${e.line}:${e.column} ${e.message}`));
   if (typeErrors.length) status = 1;
+  for (const play of plays) {
+    try {
+      await loadPlayground(join(ctx.repository.root, play));
+    } catch (error) {
+      status = 1;
+      console.log(red((error as Error).message));
+    }
+  }
   for (const { path, spec } of selected) {
     const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
     console.log(dim(path));

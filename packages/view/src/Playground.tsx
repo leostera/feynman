@@ -8,11 +8,12 @@
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
 import { ArrowCounterClockwiseIcon, ArrowLeftIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { appearance, choices, dropsFor, pendingInOrder, type Drop, type Event, type Pending, type Spec, type Token, type World } from "@feynman/spec";
+import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "@feynman/spec";
+import { groupsOf, iconFor, TONES, toneColor } from "@feynman/play";
 import { clock as clockAt, labelOf, messageName, time } from "./format";
-import { iconFor, identityColors, TONES, toneColor } from "./playground/look";
-import { InputsDialog, InspectDialog, NodeMenu, type Asking } from "./playground/NodeMenu";
-import { bubbleText, fitOf, routineDelivery, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging } from "./playground/Stage";
+import { ActionBar, InputsDialog, InspectDialog, startAction, type Asking, type Choosing } from "./playground/Actions";
+import { bubbleText, fitOf, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Picking } from "./playground/Stage";
+import { nodeLook, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, type Op, type Session } from "./session";
 import { Timeline } from "./Timeline";
 import { useExplorer } from "./ui";
@@ -37,25 +38,38 @@ function worldAt(session: Session, index: number): World {
 }
 
 export function Playground({ session, setSession, scenarios }: { session: Session; setSession: (s: Session) => void; scenarios: ReactNodeMenu }) {
-  const { spec } = useExplorer();
+  const { spec, playground } = useExplorer();
+  const groups = groupsOf(spec, playground);
+  /** Groups opened (or, for those that start open, closed) by node id. */
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<Choosing | null>(null);
   /** Hovering a timeline event peeks at it; leaving returns. */
   const [hover, setHover] = useState<number | null>(null);
   /** The moment travelled back to, null for now. Acting there continues from it. */
   const [cursor, setCursor] = useState<number | null>(null);
   const [packet, setPacket] = useState<Extract<Pending, { kind: "deliver" }> | null>(null);
   const [asking, setAsking] = useState<Asking | null>(null);
-  const [inspecting, setInspecting] = useState<string | null>(null);
-  const [choosing, setChoosing] = useState<{ target: string; drops: Drop[] } | null>(null);
+  const [inspecting, setInspecting] = useState<string[] | null>(null);
+  const [dropChoice, setDropChoice] = useState<{ target: string; drops: Drop[] } | null>(null);
   const last = session.steps.length - 1;
   const travelled = cursor !== null && cursor < last ? cursor : null;
   useEffect(() => setCursor(null), [session.origin, session.initial]);
   const live = current(session);
-  const clock = useClock(spec, session, setSession, travelled === null && hover === null);
+  const sceneRef = useRef<{ groups: GroupInfo[]; toggled: Set<string> }>({ groups, toggled });
+  sceneRef.current = { groups, toggled };
+  const clock = useClock(spec, session, setSession, travelled === null && hover === null, (world, p) => {
+    // A message inside a closed group is not drawn travelling, so there is nothing to slow down for.
+    const scene = sceneOf(spec, world, sceneRef.current.groups, sceneRef.current.toggled);
+    return scene.of.get(p.from) !== scene.of.get(p.to);
+  });
   const base = travelled === null ? live : worldAt(session, travelled);
   const viewing = hover ?? travelled;
   const world = viewing === null ? live : worldAt(session, viewing);
   const { ref, view } = useView();
-  const graph = useLayout(spec, world, view);
+  const scene = sceneOf(spec, world, groups, toggled);
+  const baseScene = sceneOf(spec, base, groups, toggled);
+  const graph = useLayout(spec, world, scene, view, sizesOf(playground, scene));
   const fit = fitOf(graph, view);
   const focusIndex = viewing ?? last;
   const focus = focusIndex >= 0 && session.steps[focusIndex].event ? { event: session.steps[focusIndex].event!, index: focusIndex } : null;
@@ -64,8 +78,18 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
     setCursor(null);
     setHover(null);
     setPacket(null);
+    setDropChoice(null);
     setChoosing(null);
+    setSelected(null);
     setSession(apply(spec, from, travelled === null ? { ...op, at: clock.now } : op));
+  };
+  /** Several operations at once, such as adding a Mac's app and daemon. */
+  const runAll = (ops: Op[]) => {
+    let next = travelled === null ? session : rollback(session, travelled + 1);
+    for (const op of ops) next = apply(spec, next, travelled === null ? { ...op, at: clock.now } : op);
+    setCursor(null);
+    setSelected(null);
+    setSession(next);
   };
   const back = () => {
     clock.setPlaying(false);
@@ -81,33 +105,69 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
     const timer = setTimeout(() => setCursor(travelled + 1 >= last ? null : travelled + 1), REPLAY_MS / Math.max(1, clock.speed));
     return () => clearTimeout(timer);
   }, [clock.playing, clock.speed, travelled, hover, last]);
-  const drag = useCarry(spec, base, (target, drops) => {
+  const drag = useCarry(spec, base, baseScene, (target, drops) => {
     if (drops.length === 1 && drops[0].complete) run({ op: "act", instance: target, key: drops[0].action.key, inputs: drops[0].inputs });
     else if (drops.length === 1) setAsking({ instance: target, action: drops[0].action.key, inputs: drops[0].inputs });
-    else if (drops.length > 1) setChoosing({ target, drops });
+    else if (drops.length > 1) setDropChoice({ target, drops });
   });
   useKeys({
     ArrowLeft: back,
     ArrowRight: forward,
     " ": () => clock.setPlaying(!clock.playing),
-    Escape: () => (drag.cancel(), setPacket(null), setChoosing(null)),
+    Escape: () => (drag.cancel(), setPacket(null), setDropChoice(null), setChoosing(null), setSelected(null)),
   });
   const bubble = bubbleFor(spec, session, focusIndex, viewing === null && clock.playing);
   const act = firstAction(spec, base);
-  const handlers = { onRun: run, onInputs: (instance: string, action: string) => setAsking({ instance, action }), onInspect: setInspecting };
   const canAct = hover === null;
+  const picking = pickingOf(base, baseScene, choosing);
+  const spent = spentTokens(spec, session, focusIndex);
+  const selectedNode = canAct && selected ? baseScene.nodes.find((n) => n.id === selected) : undefined;
+  const openGroup = selectedNode && (baseScene.groups.has(selectedNode.id) ? { id: selectedNode.id, open: false } : (() => {
+    const g = baseScene.open.find((o) => o.nodes.includes(selectedNode.id));
+    return g ? { id: g.id, open: true } : null;
+  })());
+  const bar = selectedNode && (
+    <ActionBar
+      node={selectedNode}
+      world={base}
+      choosing={choosing}
+      group={openGroup ? { label: baseScene.groups.get(openGroup.id)?.label ?? "", open: openGroup.open } : null}
+      onStart={(instance, action) => {
+        const next = startAction(spec, base, instance, action);
+        if ("run" in next) run(next.run);
+        else if ("choose" in next) setChoosing(next.choose);
+        else setAsking(next.ask);
+      }}
+      onRun={run}
+      onAsk={(a) => (setChoosing(null), setAsking(a))}
+      onBack={() => setChoosing(null)}
+      onInspect={setInspecting}
+      onToggleGroup={() => {
+        if (!openGroup) return;
+        setToggled((t) => (t.has(openGroup.id) ? new Set([...t].filter((x) => x !== openGroup.id)) : new Set([...t, openGroup.id])));
+        setSelected(openGroup.open ? openGroup.id : null);
+      }}
+      onClose={() => (setSelected(null), setChoosing(null))}
+      nameOf={(value) => {
+        const node = typeof value === "string" ? baseScene.nodes.find((n) => n.id === baseScene.of.get(value)) : undefined;
+        return node?.label ?? labelled(base, String(value));
+      }}
+    />
+  );
   const canStep = travelled !== null || pendingInOrder(base).length > 0 || choices(spec, base).guards.length > 0;
   const tip =
     drag.dragging?.carried ? `Carrying ${tokenName(drag.dragging.token)}. Click a highlighted node to hand it over, or press Esc.`
+    : choosing && picking ? `Click ${[...picking.targets.keys()].map((id) => baseScene.nodes.find((n) => n.id === id)?.label).join(" or ")}, or choose in the bar.`
     : hover !== null ? "Peeking at this moment. Click it to travel back here."
     : travelled !== null ? pastTip(session, travelled)
-    : tipFor(spec, base);
+    : tipFor(spec, base, baseScene, spentTokens(spec, session, travelled ?? last));
   return (
     <div className="flex h-full min-h-0 gap-3 bg-kumo-recessed p-3">
-      <div ref={ref} className="relative min-w-0 flex-1 overflow-hidden rounded-2xl bg-kumo-canvas ring-1 ring-kumo-line" onClick={() => (setPacket(null), setChoosing(null))}>
+      <div ref={ref} className="relative min-w-0 flex-1 overflow-hidden rounded-2xl bg-kumo-canvas ring-1 ring-kumo-line" onClick={() => (setPacket(null), setDropChoice(null), setSelected(null), setChoosing(null))}>
         {graph && (
           <Stage
             world={world}
+            scene={scene}
             graph={graph}
             fit={fit}
             clock={viewing === null ? clock.now : world.clock}
@@ -115,26 +175,27 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
             focus={focus}
             bubble={bubble}
             next={nextFlight(spec, base)}
-            pulse={act?.instance ?? null}
+            pulse={act ? (baseScene.of.get(act.instance) ?? null) : null}
+            selected={selectedNode?.id ?? null}
+            picking={picking}
             dragging={drag.dragging}
+            spent={spent}
+            onSelect={(id) => (setSelected(id), setChoosing(null))}
+            onPick={(id) => {
+              const value = picking?.targets.get(id);
+              if (choosing && value !== undefined) run({ op: "act", instance: choosing.instance, key: choosing.action, inputs: { ...choosing.inputs, [choosing.input]: value } });
+            }}
             onToken={drag.start}
             onDrop={drag.drop}
-            menu={(id, trigger, children) =>
-              canAct ? (
-                <NodeMenu id={id} world={base} trigger={trigger} handlers={handlers}>
-                  {children}
-                </NodeMenu>
-              ) : (
-                <div className="flex w-[136px] flex-col items-center gap-1">{children}</div>
-              )
-            }
+            onAct={(instance, key, inputs) => run({ op: "act", instance, key, inputs })}
             onPacket={(p) => setPacket(p)}
+            bar={bar}
           />
         )}
         <div className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">
           <div className="pointer-events-auto flex items-center gap-1 justify-self-start rounded-full bg-kumo-elevated p-1 shadow ring ring-kumo-line">
             <Select size="sm" aria-label="Start from" className="w-52 rounded-full" value={session.origin} onValueChange={(v) => v && scenarios.onPick(String(v))} items={scenarios.items} />
-            <AddMenu world={base} onRun={run} />
+            <AddMenu world={base} groups={groups} onRun={runAll} />
           </div>
           <Tip text={tip} action={travelled !== null && hover === null ? { label: "Back to now", onClick: () => setCursor(null) } : null} />
         </div>
@@ -143,16 +204,30 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
           <Transport clock={clock} shown={viewing === null ? clock.now : world.clock} canBack={(travelled ?? last) >= 0} canStep={canStep} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
         </div>
         {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
-        {choosing && <DropChoice choice={choosing} world={base} onRun={run} onAsk={(drop) => (setChoosing(null), setAsking({ instance: choosing.target, action: drop.action.key, inputs: drop.inputs }))} />}
+        {dropChoice && <DropChoice choice={dropChoice} world={base} onRun={run} onAsk={(drop) => (setDropChoice(null), setAsking({ instance: dropChoice.target, action: drop.action.key, inputs: drop.inputs }))} />}
       </div>
-      <Timeline session={session} preview={hover} cursor={travelled} onPreview={setHover} onPick={(n) => (setHover(null), setCursor(n >= last ? null : n))} />
+      <Timeline
+        session={session}
+        preview={hover}
+        cursor={travelled}
+        onPreview={setHover}
+        onPick={(n) => (setHover(null), setCursor(n >= last ? null : n))}
+        foldOf={(event, w) => {
+          if (event.routine) return "routine";
+          // A message from one member of a closed group to another happened inside it.
+          if (event.kind !== "deliver" || !event.from) return null;
+          const scene = sceneOf(spec, w, groups, toggled);
+          const node = scene.of.get(event.instance);
+          return node && node === scene.of.get(event.from) && scene.groups.has(node) ? `inside:${scene.groups.get(node)!.label}` : null;
+        }}
+      />
       {drag.dragging && drag.at && !drag.dragging.carried && (
         <div className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 scale-110" style={{ left: drag.at.x, top: drag.at.y }}>
-          <TokenChip token={drag.dragging.token} color={identityColors(spec, base).get(drag.dragging.from)} />
+          <TokenChip token={drag.dragging.token} clock={clock.now} />
         </div>
       )}
       <InputsDialog target={asking} world={base} onClose={() => setAsking(null)} onRun={run} />
-      <InspectDialog id={inspecting} world={base} onClose={() => setInspecting(null)} />
+      <InspectDialog ids={inspecting} world={base} onClose={() => setInspecting(null)} />
     </div>
   );
 }
@@ -196,7 +271,9 @@ interface Clock {
  * The displayed clock. While playing it advances in real time at the chosen speed, slowed
  * down while a message worth watching is in flight; whatever falls due runs.
  */
-function useClock(spec: Spec, session: Session, setSession: (s: Session) => void, active: boolean): Clock {
+function useClock(spec: Spec, session: Session, setSession: (s: Session) => void, active: boolean, shown: (world: World, p: Extract<Pending, { kind: "deliver" }>) => boolean): Clock {
+  const visible = useRef(shown);
+  visible.current = shown;
   const [now, setNow] = useState(current(session).clock);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -217,7 +294,7 @@ function useClock(spec: Spec, session: Session, setSession: (s: Session) => void
       last = t;
       let { now, session } = state.current;
       const world = current(session);
-      const flying = world.pending.filter((p): p is Extract<Pending, { kind: "deliver" }> => p.kind === "deliver" && p.at > now && !routineDelivery(spec, world, p));
+      const flying = world.pending.filter((p): p is Extract<Pending, { kind: "deliver" }> => p.kind === "deliver" && p.at > now && !routineDelivery(spec, world, p) && visible.current(world, p));
       const slowest = Math.min(...flying.map((p) => spec.messages[p.message]?.latency ?? spec.latency));
       const rate = flying.length ? Math.min(speed, slowest / FLIGHT_MS) : speed;
       now += elapsed * rate;
@@ -284,67 +361,110 @@ function firstAction(spec: Spec, world: World): { instance: string; key: string 
 }
 
 /** The first token some node holds that another node would accept. */
-function firstDrag(spec: Spec, world: World): { from: string; token: Token; to: string } | null {
-  for (const instance of world.instances) {
-    for (const token of appearance(spec, world, instance.id).tokens) {
-      const to = world.instances.find((i) => i.id !== instance.id && dropsFor(spec, world, i.id, token).length);
-      if (to) return { from: instance.id, token, to: to.id };
+function firstDrag(spec: Spec, world: World, scene: Scene, spent: Set<string>): { from: string; token: Token; to: string } | null {
+  for (const node of scene.nodes) {
+    for (const { token } of nodeLook(spec, world, node).held) {
+      if (spent.has(`${token.kind}\u0000${String(token.value)}`)) continue;
+      const to = scene.nodes.find((n) => n.id !== node.id && n.members.some((m) => dropsFor(spec, world, m.id, token).length));
+      if (to) return { from: node.label, token, to: to.label };
     }
   }
   return null;
 }
 
 /** What to try next, as a goal: what is on its way, what to carry, who to add, what to click. */
-function tipFor(spec: Spec, world: World): string {
-  const flight = pendingInOrder(world).find((p): p is Extract<Pending, { kind: "deliver" }> => p.kind === "deliver" && !routineDelivery(spec, world, p));
-  if (flight) return `${capitalize(messageName(spec, flight.message))} is on its way to ${labelOf(world, flight.to)}. Press Play to watch it arrive.`;
-  const drag = firstDrag(spec, world);
-  if (drag) return `Drag ${tokenName(drag.token)} from ${labelOf(world, drag.from)} onto ${labelOf(world, drag.to)}.`;
+function tipFor(spec: Spec, world: World, scene: Scene, spent: Set<string>): string {
+  const nodeLabel = (instance: string) => scene.nodes.find((n) => n.id === scene.of.get(instance))?.label ?? labelOf(world, instance);
+  const flight = pendingInOrder(world).find(
+    (p): p is Extract<Pending, { kind: "deliver" }> => p.kind === "deliver" && !routineDelivery(spec, world, p) && scene.of.get(p.from) !== scene.of.get(p.to),
+  );
+  if (flight) return `${capitalize(messageName(spec, flight.message))} is on its way to ${nodeLabel(flight.to)}. Press Play to watch it arrive.`;
+  const drag = firstDrag(spec, world, scene, spent);
+  if (drag) return `Drag ${tokenName(drag.token)} from ${drag.from} onto ${drag.to}.`;
   const missing = spec.actors.find((a) => !a.singleton && Object.keys(a.actions).length && !world.instances.some((i) => i.actor === a.name));
-  if (missing) return `Add a ${missing.name} with +.`;
+  if (missing) return `Add ${article(missing.name)} with +.`;
   const act = firstAction(spec, world);
   if (act) {
     const instance = world.instances.find((i) => i.id === act.instance)!;
     const action = spec.actors.find((a) => a.name === instance.actor)!.actions[act.key];
-    return `Click ${instance.label}, then “${action.label}”. Every node has more to try.`;
+    return `Click ${nodeLabel(instance.id)}, then “${action.label}”. Every node has more to try.`;
   }
   const timer = pendingInOrder(world).find((p) => !routineDelivery(spec, world, p));
-  if (timer) return `${labelOf(world, timer.to)} is waiting${timer.kind === "timer" ? ` (${timer.timer}, ${time(Math.max(0, timer.at - world.clock))})` : ""}. Press Play.`;
+  if (timer) return `${nodeLabel(timer.to)} is waiting${timer.kind === "timer" ? ` (${timer.timer}, ${time(Math.max(0, timer.at - world.clock))})` : ""}. Press Play.`;
   return "All quiet. Add someone with +, or start from a scenario.";
+}
+
+const article = (name: string) => (/^[aeiou]/i.test(name) ? `an ${name}` : `a ${name}`);
+
+/** While choosing an input whose values are instances, the nodes they are drawn in, each with its value. */
+function pickingOf(world: World, scene: Scene, choosing: Choosing | null): Picking | null {
+  if (!choosing) return null;
+  const targets = new Map<string, unknown>();
+  for (const value of choosing.values) {
+    const node = typeof value === "string" && world.instances.some((i) => i.id === value) ? scene.of.get(value) : undefined;
+    if (node && !targets.has(node)) targets.set(node, value);
+  }
+  return targets.size ? { targets } : null;
+}
+
+/**
+ * Tokens already handed over by the moment `index`: every value an action took as an input,
+ * by the kind that input accepts. A pairing code typed into a Mac is gone from the phone.
+ */
+function spentTokens(spec: Spec, session: Session, index: number): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i <= index && i < session.steps.length; i++) {
+    const event = session.steps[i].event;
+    if (!event || event.kind !== "action" || !event.inputs) continue;
+    const action = spec.actors.find((a) => a.name === event.actor)?.actions[event.key];
+    if (!action) continue;
+    for (const [name, value] of Object.entries(event.inputs)) {
+      const input = action.inputs[name];
+      if (!input) continue;
+      out.add(`${event.actor}.${event.key}.${name}\u0000${String(value)}`);
+      if (input.accepts) out.add(`${input.accepts}\u0000${String(value)}`);
+    }
+  }
+  return out;
 }
 
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // Carrying tokens: drag one, or click it to pick it up, then drop it on a node that takes it ---------------
 
-function useCarry(spec: Spec, world: World, onDrop: (target: string, drops: Drop[]) => void) {
+function useCarry(spec: Spec, world: World, scene: Scene, onDrop: (target: string, drops: Drop[]) => void) {
   const [dragging, setDragging] = useState<Dragging | null>(null);
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
-  const latest = useRef({ world, onDrop, dragging });
-  latest.current = { world, onDrop, dragging };
+  const latest = useRef({ world, scene, onDrop, dragging });
+  latest.current = { world, scene, onDrop, dragging };
   const cleanup = useRef<() => void>(() => {});
   const cancel = () => {
     cleanup.current();
     setDragging(null);
     setAt(null);
   };
+  /** Drop on a node: the first of its members with an action that takes the token. */
   const drop = (target: string) => {
     const carrying = latest.current.dragging;
     cancel();
     if (!carrying || !carrying.targets.has(target)) return;
-    const { world, onDrop } = latest.current;
-    onDrop(target, dropsFor(spec, world, target, carrying.token));
+    const { world, scene, onDrop } = latest.current;
+    const node = scene.nodes.find((n) => n.id === target);
+    for (const member of node?.members ?? []) {
+      const drops = dropsFor(spec, world, member.id, carrying.token);
+      if (drops.length) return onDrop(member.id, drops);
+    }
   };
-  const start = (from: string, token: Token, e: ReactPointerEvent | null) => {
+  const start = (from: string, fromNode: string, token: Token, e: ReactPointerEvent | null) => {
     cancel();
-    const targets = new Set(world.instances.filter((i) => i.id !== from && dropsFor(spec, world, i.id, token).length).map((i) => i.id));
+    const targets = new Set(scene.nodes.filter((n) => n.id !== fromNode && n.members.some((m) => dropsFor(spec, world, m.id, token).length)).map((n) => n.id));
     if (!e) {
-      setDragging({ from, token, targets, carried: true });
+      setDragging({ from, fromNode, token, targets, carried: true });
       return;
     }
     const origin = { x: e.clientX, y: e.clientY };
     let moved = false;
-    setDragging({ from, token, targets, carried: false });
+    setDragging({ from, fromNode, token, targets, carried: false });
     const move = (ev: PointerEvent) => {
       moved ||= Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > 4;
       setAt({ x: ev.clientX, y: ev.clientY });
@@ -354,11 +474,11 @@ function useCarry(spec: Spec, world: World, onDrop: (target: string, drops: Drop
       // A click without moving picks the token up instead.
       if (!moved) {
         setAt(null);
-        setDragging({ from, token, targets, carried: true });
+        setDragging({ from, fromNode, token, targets, carried: true });
         return;
       }
-      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-instance]");
-      drop(el?.dataset.instance ?? "");
+      const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-node]");
+      drop(el?.dataset.node ?? "");
     };
     const abort = () => cancel();
     window.addEventListener("pointermove", move);
@@ -438,21 +558,44 @@ function Legend() {
   );
 }
 
-/** "+": add an instance of any actor that is not a singleton. */
-function AddMenu({ world, onRun }: { world: World; onRun: (op: Op) => void }) {
+/**
+ * "+": add someone or something. A group of actors drawn as one (a Mac: its app and its
+ * daemon) is added whole, each member labelled "<name> <suffix>"; other actors one at a time.
+ */
+function AddMenu({ world, groups, onRun }: { world: World; groups: GroupInfo[]; onRun: (ops: Op[]) => void }) {
   const { spec } = useExplorer();
-  const kinds = spec.actors.filter((a) => !a.singleton);
-  if (!kinds.length) return null;
+  const keyed = groups.filter((g) => g.members.some((m) => m.suffix !== null));
+  const inGroup = new Set(keyed.flatMap((g) => g.members.map((m) => m.actor)));
+  const kinds = spec.actors.filter((a) => !a.singleton && !inGroup.has(a.name));
+  if (!kinds.length && !keyed.length) return null;
+  const taken = new Set(world.instances.map((i) => i.label));
+  const addGroup = (group: GroupInfo) => {
+    const free = (name: string) => group.members.every((m) => !taken.has(m.suffix ? `${name} ${m.suffix}` : name));
+    const name = group.names?.find(free) ?? Array.from({ length: 99 }, (_, n) => (n ? `${group.name} ${n + 1}` : group.name)).find(free)!;
+    onRun(group.members.map((m) => ({ op: "spawn", actor: m.actor, label: m.suffix ? `${name} ${m.suffix}` : name })));
+  };
+  const addActor = (name: string) => {
+    const actor = spec.actors.find((a) => a.name === name)!;
+    onRun([{ op: "spawn", actor: name, label: actor.look.names?.find((n) => !taken.has(n)) ?? nextLabel(world, name) }]);
+  };
   return (
     <DropdownMenu>
       <DropdownMenu.Trigger render={<Button variant="ghost" size="sm" shape="circle" aria-label="Add" title="Add someone or something" icon={<PlusIcon size={14} />} />} />
       <DropdownMenu.Content>
         <DropdownMenu.Group>
           <DropdownMenu.Label>Add</DropdownMenu.Label>
+          {keyed.map((group) => {
+            const Icon = iconFor(group.icon ?? spec.actors.find((a) => a.name === group.members[0].actor)?.look.icon ?? null);
+            return (
+              <DropdownMenu.Item key={group.name} icon={<Icon />} onClick={() => addGroup(group)}>
+                {group.name}
+              </DropdownMenu.Item>
+            );
+          })}
           {kinds.map((actor) => {
             const Icon = iconFor(actor.look.icon ?? null);
             return (
-              <DropdownMenu.Item key={actor.name} icon={<Icon />} onClick={() => onRun({ op: "spawn", actor: actor.name, label: nextLabel(world, actor.name) })}>
+              <DropdownMenu.Item key={actor.name} icon={<Icon />} onClick={() => addActor(actor.name)}>
                 {actor.name}
               </DropdownMenu.Item>
             );

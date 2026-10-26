@@ -27,6 +27,12 @@ export type {
   ZonePlace,
   Look,
   Link,
+  Shape,
+  StateOf,
+  ActionsOf,
+  InputsOf,
+  Group,
+  GroupDef,
 } from "./dsl.ts";
 export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
 export * from "./engine.ts";
