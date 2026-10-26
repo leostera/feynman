@@ -76,10 +76,14 @@ function repo(): { root: string; commit: (message: string) => void } {
   };
 }
 
+/** ANSI colour codes: the CLI colours its output when stdout is a terminal, as it is under `bun test` in one. */
+const ANSI = /\u001b\[[0-9;]*m/g;
+
+/** Run the CLI in-process and keep what it printed, as plain text. */
 async function capture(argv: string[], cwd: string): Promise<{ status: number; out: string }> {
   const lines: string[] = [];
   const log = console.log;
-  console.log = (...args: unknown[]) => void lines.push(args.join(" "));
+  console.log = (...args: unknown[]) => void lines.push(args.join(" ").replace(ANSI, ""));
   try {
     const status = await main(argv, cwd);
     return { status, out: lines.join("\n") };
