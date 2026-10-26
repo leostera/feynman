@@ -77,7 +77,10 @@ function searchNotes(report: Report): string[] {
   const saved = report.reductions.orders + report.reductions.inputs;
   const symmetric = report.reductions.symmetric.map((labels) => labels.join(" = ")).join(", ");
   if (saved || symmetric) notes.push(`  skipped ${saved.toLocaleString()} step(s) whose result was known${symmetric ? `; treated as interchangeable: ${symmetric}` : ""}`);
-  return notes.map((n) => dim(n));
+  const out = notes.map((n) => dim(n));
+  if (report.reductions.refuted?.length)
+    out.push(yellow(`  ! ${report.reductions.refuted.join(", ")} declared symmetric, but swapping two instances changed what happens next; checked without symmetry. Remove symmetric: true.`));
+  return out;
 }
 
 export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, string> = new Map()): string {

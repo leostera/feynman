@@ -474,9 +474,11 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
 
 - **Instances.** Use `singleton: true` for things there is one of (a service, a database).
   For the rest, scenarios `spawn`, and the checker uses one of each, or more with
-  `--instances Mac=2`. Two of an actor are cheap: the checker treats interchangeable
-  instances as one (symmetry), as long as the spec only compares ids and labels and never
-  computes with them (hashing an id, lower-casing a label). If it does, pass `--no-symmetry`.
+  `--instances Mac=2`. Two of an actor are cheap when you declare `symmetric: true` on it:
+  the checker then treats "Alice, then Bob" and "Bob, then Alice" as one state. Declare it
+  only when the spec compares the actor's ids and labels for equality and never orders or
+  computes with them (electing the highest id, hashing an id). The checker tests the claim
+  and says when it is false.
 - **State.** Keep only what decides behaviour. Use hashes, not secrets (`ctx.hash`).
 - **Repeats.** The checker lets each instance take the same action at most `--repeats N`
   times on one path (2 by default). Raise it when a bug needs more.
@@ -487,6 +489,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   `defineLimit` for named ones. Reading `ctx.now` is fine, but it costs: from then on worlds
   that differ only in when they are can no longer be merged. Prefer a timer to storing a time
   when the code allows either.
+- **Eventually.** An `eventually` property is judged on the system left alone from each
+  explored world: no actions, no faults, every event on time, simultaneous events in a fixed
+  order. The search itself tries the other orders.
 - **Order.** Any message may overtake any other, as on separate connections. Messages on one
   WebSocket or stream cannot; if a counterexample depends on such an overtaking, say so in
   the report rather than "fixing" the system.

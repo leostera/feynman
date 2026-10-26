@@ -1,7 +1,7 @@
 // Judging one world reached by the search or a random run: which properties it breaks.
 // Shared, so both ways of exploring check properties identically.
 import { choices, fire, guard, holdsIn, traceView, type Event, type Spec, type StepOptions, type World } from "@feynman/spec";
-import { canonical } from "./keys.ts";
+import { canonical, pendingText } from "./keys.ts";
 
 /** Running by itself to check an `eventually` needs only the worlds. */
 const SILENT: StepOptions = { explain: false, invariants: false };
@@ -56,7 +56,7 @@ export function judge(spec: Spec, world: World, event: Event | null, path: () =>
       if (!v.futures.has(invariant.id)) v.futures.set(invariant.id, new Map());
       if (!neverWithin(spec, world, invariant.eventually, invariant.within, v.futures.get(invariant.id)!)) continue;
       // Found: run it again, explained, for the counterexample.
-      const then = settles(spec, world, invariant.eventually, invariant.within);
+      const then = settles(spec, world, invariant.eventually, invariant.within, v.futures.get(invariant.id)!);
       if (then) findings.push({ id: invariant.id, then });
     }
   }
@@ -64,70 +64,89 @@ export function judge(spec: Spec, world: World, event: Event | null, path: () =>
 }
 
 /**
- * What the system does by itself from a world, per `eventually` property: how long until the
- * property holds, or that it does not for a while (or ever, once nothing is left to run).
- * The run by itself is deterministic, so every world on one such run shares its future, and
- * many explored worlds run into futures already seen. Keyed like deduplication.
+ * The system left alone: no actions and no faults, every event on time. Events due at the
+ * same moment go in the order of what they carry (then a guarded transition before any), not
+ * of internal ids, so the run, and so an `eventually` verdict, is a function of the state
+ * alone: merging worlds cannot change it. Other orders of simultaneous events are not the
+ * system left alone's business: the search itself tries every order of deliveries, so it
+ * reaches them, and judges from there.
  */
-type Future = { holdsAfter: number } | { notFor: number };
-export type Futures = Map<string, Future>;
+export function soloChoices(spec: Spec, world: World): ({ kind: "guard"; instance: string; key: string } | { kind: "fire"; pending: number })[] {
+  const { guards, pending } = choices(spec, world);
+  if (guards.length) return [{ kind: "guard", instance: guards[0].instance, key: guards[0].key }];
+  if (!pending.length) return [];
+  const due = Math.max(world.clock, pending[0].at);
+  const now = pending.filter((p) => p.at <= due);
+  // Most overdue first, then by what it carries.
+  now.sort((a, b) => a.at - b.at || (pendingText(a) < pendingText(b) ? -1 : pendingText(a) > pendingText(b) ? 1 : 0));
+  return [{ kind: "fire", pending: now[0].id }];
+}
 
-/** Whether the system, left alone from `world`, does not reach `predicate` within `within` ms. */
+function soloStep(spec: Spec, world: World, choice: ReturnType<typeof soloChoices>[number], how: StepOptions) {
+  return choice.kind === "guard" ? guard(spec, world, choice.instance, choice.key, how) : fire(spec, world, choice.pending, how);
+}
+
+/** Per world: how long until the property holds, left alone; or that it is longer than some time. */
+type Worst = { exact: number } | { over: number };
+export type Futures = Map<string, Worst>;
+
+/**
+ * How long the system left alone takes to reach `predicate` from `world`; Infinity when it
+ * takes longer than `budget` ms, or never gets there (it stops, or loops). Remembered per
+ * world, so runs that meet share the rest.
+ */
+function worst(spec: Spec, world: World, predicate: (w: never) => boolean, budget: number, futures: Futures, stack: Set<string>, depth = 0): number {
+  if (holdsIn(spec, world, predicate as never)) return 0;
+  const key = canonical(world);
+  const known = futures.get(key);
+  if (known && "exact" in known) return known.exact <= budget ? known.exact : Infinity;
+  if (known && known.over >= budget) return Infinity;
+  // Back where this order already was, without the property: an order can go round forever.
+  if (stack.has(key) || depth >= SETTLE_LIMIT) return Infinity;
+  const next = soloChoices(spec, world);
+  let longest = next.length ? 0 : Infinity;
+  stack.add(key);
+  for (const choice of next) {
+    const step = soloStep(spec, world, choice, SILENT);
+    const took = step.world.clock - world.clock;
+    const rest = took > budget ? Infinity : worst(spec, step.world, predicate, budget - took, futures, stack, depth + 1);
+    longest = Math.max(longest, took + rest);
+    if (longest > budget) break;
+  }
+  stack.delete(key);
+  futures.set(key, longest <= budget ? { exact: longest } : { over: budget });
+  return longest <= budget ? longest : Infinity;
+}
+
+/** Whether the system left alone keeps `predicate` false for longer than `within`. */
 function neverWithin(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures): boolean {
-  const chain: { key: string; clock: number }[] = [];
+  return worst(spec, world, predicate, within, futures, new Set()) === Infinity;
+}
+
+/** The events of the system left alone not reaching `predicate` within `within` ms, explained; null if it does. */
+export function settles(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures = new Map()): Event[] | null {
+  if (!neverWithin(spec, world, predicate, within, futures)) return null;
+  const events: Event[] = [];
+  const seen = new Set<string>();
   const deadline = world.clock + within;
-  const remember = (future: (clock: number) => Future) => {
-    for (const { key, clock } of chain) futures.set(key, future(clock));
-  };
   let current = world;
   for (let n = 0; n < SETTLE_LIMIT; n++) {
     const key = canonical(current);
-    const known = futures.get(key);
-    if (known && "holdsAfter" in known) {
-      const at = current.clock + known.holdsAfter;
-      remember((clock) => ({ holdsAfter: at - clock }));
-      return at > deadline;
+    if (seen.has(key)) break;
+    seen.add(key);
+    const budget = deadline - current.clock;
+    let failing: ReturnType<typeof soloStep> | undefined;
+    for (const choice of soloChoices(spec, current)) {
+      const step = soloStep(spec, current, choice, {});
+      const took = step.world.clock - current.clock;
+      if (took > budget || worst(spec, step.world, predicate, budget - took, futures, new Set()) === Infinity) {
+        failing = step;
+        break;
+      }
     }
-    if (known && current.clock + known.notFor >= deadline) {
-      const until = current.clock + known.notFor;
-      remember((clock) => ({ notFor: until - clock }));
-      return true;
-    }
-    chain.push({ key, clock: current.clock });
-    const { guards, pending } = choices(spec, current);
-    if (!guards.length && !pending.length) {
-      remember(() => ({ notFor: Infinity }));
-      return true;
-    }
-    if (!guards.length && pending[0].at > deadline) {
-      remember((clock) => ({ notFor: deadline - clock }));
-      return true;
-    }
-    current = (guards.length ? guard(spec, current, guards[0].instance, guards[0].key, SILENT) : fire(spec, current, pending[0].id, SILENT)).world;
-    if (holdsIn(spec, current, predicate as never)) {
-      const at = current.clock;
-      remember((clock) => ({ holdsAfter: at - clock }));
-      return at > deadline;
-    }
-  }
-  return true;
-}
-
-/**
- * Run the system by itself (no actions, no faults) for `within` milliseconds of simulated
- * time; the events, if `predicate` never holds in that time.
- */
-export function settles(spec: Spec, world: World, predicate: (w: never) => boolean, within: number): Event[] | null {
-  const events: Event[] = [];
-  const deadline = world.clock + within;
-  let current = world;
-  for (let n = 0; n < SETTLE_LIMIT; n++) {
-    const { guards, pending } = choices(spec, current);
-    if (!guards.length && (!pending.length || pending[0].at > deadline)) break;
-    const step = guards.length ? guard(spec, current, guards[0].instance, guards[0].key) : fire(spec, current, pending[0].id);
-    events.push(step.event);
-    current = step.world;
-    if (holdsIn(spec, current, predicate as never)) return null;
+    if (!failing || failing.world.clock > deadline) break;
+    events.push(failing.event);
+    current = failing.world;
   }
   return events;
 }

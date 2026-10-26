@@ -31,7 +31,9 @@ export function pendingText(p: Pending): string {
 
 /**
  * When each pending event is due, as part of a key: how far ahead, or, once due, its rank
- * among the overdue ones ("late0" is the most overdue). Ties share a rank.
+ * among the overdue ones ("late0" is the most overdue). Ties share a rank: nothing depends on
+ * the order events due at once were sent in (the search and the system left alone take them
+ * in every order).
  */
 export function dueTimes(world: World): Map<Pending, string> {
   const out = new Map<Pending, string>();
@@ -75,11 +77,10 @@ export interface Symmetry {
 const MAX_CLASS = 4;
 
 /**
- * Classes of interchangeable instances in a world: several instances of one actor that is not
- * a singleton, whose initial states are the same once their ids and labels are swapped.
- * That is the evidence that the actor's data names an instance only by its id or label, so
- * renaming them is a symmetry of the system. A spec that computes with names (hashing an id,
- * lower-casing a label) breaks it; such a spec turns symmetry off with `symmetry: false`.
+ * Classes of interchangeable instances in a world: several instances of one actor declared
+ * `symmetric`, whose initial states are the same once their ids and labels are swapped. The
+ * declaration is a claim about the handlers, which no look at the data can confirm (a spec
+ * that elects the highest id has symmetric initial states); the search tests it as it goes.
  */
 export function symmetryOf(spec: Spec, world: World): Symmetry {
   const byActor = new Map<string, World["instances"]>();
@@ -87,7 +88,7 @@ export function symmetryOf(spec: Spec, world: World): Symmetry {
   const classes: Symmetry["classes"] = [];
   for (const [name, instances] of byActor) {
     const actor = actorNamed(spec, name);
-    if (actor.singleton || instances.length < 2 || instances.length > MAX_CLASS) continue;
+    if (!actor.symmetric || actor.singleton || instances.length < 2 || instances.length > MAX_CLASS) continue;
     const initial = instances.map((i) => JSON.stringify(actor.initialState({ id: i.id, label: i.label })));
     const swapsCleanly = instances.every((a, n) => instances.every((b, m) => rename(initial[n], new Map([[a.id, b.id], [a.label, b.label], [b.id, a.id], [b.label, a.label]])) === initial[m]));
     if (swapsCleanly) classes.push({ ids: instances.map((i) => i.id), labels: instances.map((i) => i.label) });

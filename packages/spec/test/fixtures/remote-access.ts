@@ -94,6 +94,7 @@ export default defineSpec(
     const Mac = spec.defineActor({
       name: "Mac",
       zone: macs,
+      symmetric: true,
       initialState: () => ({
         link: { account: null as string | null, pending: null as string | null },
         code: null as string | null,

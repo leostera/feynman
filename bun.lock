@@ -47,6 +47,18 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/examples": {
+      "name": "@feynman/examples",
+      "version": "0.1.0",
+      "dependencies": {
+        "@feynman/check": "workspace:*",
+        "@feynman/spec": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "*",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/play": {
       "name": "@feynman/play",
       "version": "0.1.0",
@@ -157,6 +169,8 @@
     "@feynman/cli": ["@feynman/cli@workspace:packages/cli"],
 
     "@feynman/code": ["@feynman/code@workspace:packages/code"],
+
+    "@feynman/examples": ["@feynman/examples@workspace:packages/examples"],
 
     "@feynman/play": ["@feynman/play@workspace:packages/play"],
 

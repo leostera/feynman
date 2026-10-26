@@ -18,7 +18,7 @@
 import { observation, spawn, startWorld, type Event, type Observation, type Spec, type World } from "@feynman/spec";
 import { canonical, NO_SYMMETRY, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 import { judge, verdicts } from "./judge.ts";
-import { apply, branches, replay, type Choice, type Counterexample } from "./steps.ts";
+import { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
 import { shrink, walk, type WalkResult } from "./walk.ts";
 
 export { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
@@ -60,6 +60,23 @@ export const DEFAULT_BOUNDS: Bounds = {
   reduce: true,
 };
 
+/** Merged twins whose next steps are compared, to test a symmetry claim. */
+const TWIN_CHECKS = 2_000;
+
+/** The keys of the worlds one step away, faults aside. */
+function successors(spec: Spec, world: World, symmetry: Symmetry): Set<string> {
+  const out = new Set<string>();
+  for (const choice of branches(spec, world, false)) {
+    const step = apply(spec, world, choice, QUIET);
+    out.add(step.event.error ? `error:${step.event.error}` : symmetricKey(step.world, symmetry));
+  }
+  return out;
+}
+
+function sameSet(a: Set<string>, b: Set<string>): boolean {
+  return a.size === b.size && [...a].every((k) => b.has(k));
+}
+
 /** Share of the time limit random runs may use. */
 const WALK_SHARE = 0.25;
 
@@ -100,7 +117,13 @@ export interface Report {
   /** The random runs: how many, how many steps in all, and the longest. */
   walks: { runs: number; steps: number; deepest: number };
   /** What the reductions saved: steps not tried because their result was known. */
-  reductions: { orders: number; inputs: number; symmetric: string[][] };
+  reductions: {
+    orders: number;
+    inputs: number;
+    symmetric: string[][];
+    /** Actors declared symmetric whose instances turned out not to be; the search was redone without. */
+    refuted?: string[];
+  };
 }
 
 /** What one step did, as far as commuting with another step goes. */
@@ -176,6 +199,16 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   const errors = new Map<string, number>();
   let depthReached = 0;
   let stoppedBy: Report["stoppedBy"];
+
+  // Symmetry is a claim; test it on the twins the search merges: both must have the same next steps.
+  let twinChecks = 0;
+  let refuted = false;
+  const twinsAgree = (a: World, b: World, root: number) => {
+    // Twins at different times are also shifted in time; their next steps differ in when, not what.
+    if (twinChecks >= TWIN_CHECKS || a.clock !== b.clock || canonical(a) === canonical(b)) return true;
+    twinChecks++;
+    return sameSet(successors(spec, a, roots[root].symmetry), successors(spec, b, roots[root].symmetry));
+  };
 
   const examine = (index: number) => {
     const node = nodes[index];
@@ -253,6 +286,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       const key = keyOf(step.world, acts, faults, node.root);
       const existing = seen.get(key);
       if (existing !== undefined) {
+        if (roots[node.root].symmetry.classes.length && !twinsAgree(nodes[existing].world, step.world, node.root)) return (refuted = true), false;
         if (b.reduce) revisit(existing, step.world, sleep, next);
         continue;
       }
@@ -274,6 +308,13 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       if (!expand(index, only, next)) break search;
     }
     frontier = next;
+  }
+
+  if (refuted) {
+    const again = check(spec, { ...bounds, symmetry: false }, seeds);
+    const classes = roots.flatMap((r) => r.symmetry.classes.map((c) => c.ids));
+    const actors = [...new Set(classes.flatMap((ids) => ids.map((id) => roots[0].world.instances.find((i) => i.id === id)?.actor ?? id)))];
+    return { ...again, durationMs: Date.now() - started, reductions: { ...again.reductions, refuted: actors } };
   }
 
   const counterexample = (index: number) => {

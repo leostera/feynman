@@ -98,6 +98,8 @@ export interface ActorInfo {
   singleton: boolean;
   initialState: (ctx: { id: string; label: string }) => unknown;
   durable: string[];
+  /** Its instances are interchangeable (see `defineActor({ symmetric })`). */
+  symmetric: boolean;
   look: Look<unknown>;
   place: ActorPlace;
   links?: (state: unknown, self: { id: string; label: string }) => Link[];
