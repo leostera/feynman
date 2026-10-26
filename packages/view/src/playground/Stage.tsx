@@ -227,12 +227,15 @@ export function Stage(props: StageProps) {
 
 const clampX = (x: number, width: number) => Math.min(Math.max(x, 220), width - 220);
 
-/** Where a menu (14rem wide) goes: right of the node, or left of it near the right edge; its top level with the node's, within the canvas. */
+/** Where a menu (14rem wide) goes: just right of the node's shape (not its label, which may be wider), or left of it near the right edge; its top level with the shape's, within the canvas. */
 const MENU_WIDTH = 224;
-function besideNode(box: { x: number; y: number; w: number; h: number }, graph: { width: number; height: number }) {
-  const right = box.x + box.w + 10;
-  const left = right + MENU_WIDTH > graph.width - 8 ? Math.max(8, box.x - 10 - MENU_WIDTH) : right;
-  return { left, top: Math.min(Math.max(box.y - 4, 8), Math.max(8, graph.height - 260)) };
+const MENU_GAP = 8;
+function besideNode(box: { x: number; y: number; anchor: { x: number; y: number; r: number } }, graph: { width: number; height: number }) {
+  const centre = box.x + box.anchor.x;
+  const right = centre + box.anchor.r + MENU_GAP;
+  const left = right + MENU_WIDTH > graph.width - 8 ? Math.max(8, centre - box.anchor.r - MENU_GAP - MENU_WIDTH) : right;
+  const top = box.y + box.anchor.y - box.anchor.r;
+  return { left, top: Math.min(Math.max(top, 8), Math.max(8, graph.height - 260)) };
 }
 
 /** A zone's caption sits over its column; at the canvas's edges it grows inwards so it is never cut off. */
