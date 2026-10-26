@@ -5,10 +5,11 @@
   "description": "feynman.leostera.dev: what Feynman is, and the simulators it has published.",
   "scripts": {
     "sim": "bun scripts/sim.ts",
-    "dev": "cf dev",
-    "build": "cf build",
-    "deploy": "cf deploy",
-    "typecheck": "tsc --noEmit"
+    "dev": "bun scripts/examples.ts && cf dev",
+    "build": "bun scripts/examples.ts && cf build",
+    "deploy": "bun scripts/examples.ts && cf deploy",
+    "typecheck": "tsc --noEmit",
+    "examples": "bun scripts/examples.ts"
   },
   "dependencies": {
     "@cloudflare/kumo": "^2.15.0",

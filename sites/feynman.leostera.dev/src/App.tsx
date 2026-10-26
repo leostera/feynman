@@ -19,11 +19,12 @@ import {
 import { useState, type ReactNode } from "react";
 import sims from "../sims.json";
 import type { Sim } from "../scripts/sims.ts";
+import { published, refLabel } from "../scripts/published.ts";
 import install from "../snippets/install.sh?highlight";
 import leaseLock from "../snippets/lease-lock.ts?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
 
-const SIMS: Sim[] = sims;
+const SIMS = sims as Sim[];
 const AXO = SIMS.find((sim) => sim.slug === "github.com/leostera/axo");
 
 const VIEWS: { icon: Icon; name: string; text: string }[] = [
@@ -294,7 +295,7 @@ export function App() {
 
         <Section id="simulators" title="Simulators" lead="Built from the specs in public repositories, at the commit named on each.">
           <div className="grid gap-4 sm:grid-cols-2">
-            {SIMS.filter((sim) => sim.commit).map((sim) => (
+            {SIMS.filter(published).map((sim) => (
               <a key={sim.slug} href={simHref(sim)} className="group block">
                 <LayerCard className="h-full p-5 transition-colors group-hover:bg-kumo-tint">
                   <div className="flex items-center justify-between">
@@ -305,7 +306,7 @@ export function App() {
                   </div>
                   <p className="mt-2 text-sm text-kumo-subtle">{sim.summary}</p>
                   <p className="mt-4 font-mono text-xs text-kumo-subtle">
-                    /s/{sim.slug} · {sim.commit!.slice(0, 7)} · {sim.specs.length} spec{sim.specs.length === 1 ? "" : "s"}
+                    /s/{sim.slug} · {refLabel(sim)} · {sim.specs.length} spec{sim.specs.length === 1 ? "" : "s"}
                   </p>
                 </LayerCard>
               </a>

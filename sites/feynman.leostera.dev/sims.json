@@ -11,5 +11,43 @@
         "title": "Remote access"
       }
     ]
+  },
+  {
+    "slug": "github.com/leostera/feynman",
+    "title": "Feynman's examples",
+    "summary": "Seven well-known systems, each with a real bug: retries that debit twice, two-phase commit deciding too early, a lease lock without fencing, a stale cache fill, leader election, a job queue doing work twice, and a switch. Step through them, lose messages, and read the checker's counterexamples.",
+    "repository": "https://github.com/leostera/feynman",
+    "build": "deploy",
+    "commit": null,
+    "specs": [
+      {
+        "path": "examples/cache.ts",
+        "title": "Cache (buggy)"
+      },
+      {
+        "path": "examples/job-queue.ts",
+        "title": "Job queue (buggy)"
+      },
+      {
+        "path": "examples/leader-election.ts",
+        "title": "Leader election (buggy)"
+      },
+      {
+        "path": "examples/lease-lock.ts",
+        "title": "Lease lock (buggy)"
+      },
+      {
+        "path": "examples/payments.ts",
+        "title": "Payments (buggy)"
+      },
+      {
+        "path": "examples/switch.ts",
+        "title": "Switch"
+      },
+      {
+        "path": "examples/two-phase-commit.ts",
+        "title": "Two-phase commit (buggy)"
+      }
+    ]
   }
 ]
