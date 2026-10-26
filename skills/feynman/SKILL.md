@@ -41,6 +41,10 @@ able to point at every actor, message and step and say where it is.
   message means something crosses a process or network boundary.
 - **One step per stage the code has.** A step whose sources span several functions in
   several files is hiding the system; split it.
+- **Name instances the way people do:** "Studio" and "Alice", not "mac-studio". Use
+  labels, not ids, in `status`, rows and `say`. When one machine runs two processes that
+  are separate actors (an app and its daemon), give each a distinct label ("Studio app",
+  "Studio daemon") and keep them together with `place: { order }`.
 - **Use the system's own words** for actors, messages, steps, statuses, files and tables:
   `READY`, `analysis.json`, "Pending folder". Don't invent generic roles such as
   "processor", "pipeline" or "store" unless the code uses them. Keep names short; put the
@@ -108,7 +112,7 @@ export default defineSpec(
   (spec) => {
     const { NewCode, Code, Redeem, Redeemed, Refused } = spec.messages;
 
-    const devices = spec.defineZone({ name: "People's devices" });
+    const devices = spec.defineZone({ name: "People's devices", description: "signed in with Access" });
     const cloud = spec.defineZone({ name: "Cloudflare" });
 
     const CODE_LIFETIME = spec.defineLimit({
@@ -128,7 +132,8 @@ export default defineSpec(
       look: {
         icon: "cloud",
         status: (s) => `${Object.values(s.codes).filter((c) => !c.used).length} code(s) waiting`,
-        rows: (s) => Object.values(s.codes).map((c) => ({ group: `${c.account}'s account`, label: "pairing code", detail: c.used ? "used" : "unused", mood: c.used ? "off" : "info" })),
+        // `owner` names the person a row belongs to, so the account box wears their colour.
+        rows: (s) => Object.values(s.codes).map((c) => ({ group: `${c.account}'s account`, owner: c.account.replace(/^acct-/, ""), label: "pairing code", detail: c.used ? "used" : "unused", mood: c.used ? "off" : "info" })),
       },
       transitions: {
         // Keyed by message: runs when the message is delivered.
@@ -192,6 +197,8 @@ export default defineSpec(
         icon: "laptop",
         status: (s) => (s.account ? "linked" : s.pending ? "linking" : "not linked"),
         mood: (s) => (s.account ? "ok" : s.pending ? "busy" : "off"),
+        // Whose Mac this is, once linked: it wears that person's colour.
+        owner: (s) => s.account?.replace(/^acct-/, "") ?? null,
       },
       // The live connections it holds, drawn as lines; `to` is an instance id or label, or a singleton's name.
       links: (s) => (s.pending ? [{ to: "Relay", kind: "https", style: "dotted" }] : []),
@@ -344,7 +351,7 @@ shows nothing rather than an error.
 
 - `import { defineSpec, message, SEC, MIN } from "@feynman/spec"` is all a spec needs.
   For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
-  `Link`, `Row`, `Icon` and `Mood`.
+  `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
   'any' because it … is referenced directly or indirectly in its own initializer", two
   actors refer to each other inside a function whose return type TypeScript has to infer.
@@ -368,7 +375,7 @@ Paths are relative to the repository root. The first `path#symbol` of a step is 
 of its call tree in the explorer.
 
 **Point at real code; never invent paths.** `feynman check` fails on sources that don't
-resolve.
+resolve. When the code does not exist yet, leave `sources` out of that step instead.
 
 ### Modelling choices
 
@@ -385,6 +392,29 @@ resolve.
   `defineLimit` for named ones.
 - **`when` guards** gate actions (offered only while true) and internal transitions (which
   then run whenever true, without a timer).
+
+## Bringing an older spec up to date
+
+Specs written before the presentation vocabulary existed still run; they just look and
+read worse. To update one:
+
+1. Run `feynman check` first and keep its result, so you can tell later whether you
+   changed behaviour.
+2. Re-read the modelling rules above against the spec: actors that are really one
+   process, steps that hide several stages (check prints "stands for N pieces of
+   code"), generic names, ids where people use labels.
+3. Add, for every actor: `look.icon`, `status`, `mood`, and `owner` where something
+   belongs to someone. Add `rows` on the service the others talk to, `links` for
+   connections that come and go (with `row` when they meet a row), `say` on the steps
+   that matter, and `description` on zones.
+4. Mark heartbeats, lease renewals and polling `routine: true`, or remove them if their
+   expiry never changes what happens.
+5. Declare `look.tokens` and `accepts` for every hand-off a person makes, such as a code
+   shown on one device and typed on another.
+6. Add `place` only where the computed map misreads: a gate on the edge of a region
+   (`edge`), zones in the wrong order (`column`), or a busy zone (`arrange`).
+7. Run `feynman check` again: the same invariants must hold, with the same
+   counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands
 
