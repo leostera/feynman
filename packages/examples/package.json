@@ -13,7 +13,8 @@
     "typescript": "^7.0.2"
   },
   "scripts": {
-    "test": "bun test",
+    "test": "bun test test/examples.test.ts",
+    "oracles": "bun test test/oracles.test.ts test/p-oracles.test.ts",
     "typecheck": "tsc --noEmit"
   }
 }
