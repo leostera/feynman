@@ -6,7 +6,7 @@
 // the event log: hover to peek, click to travel back, step through it with ← and →; acting
 // in the past continues from there.
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, ArrowLeftIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, ArrowLeftIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "@feynman/spec";
 import { groupsOf, iconFor, TONES, toneColor } from "@feynman/play";
@@ -102,6 +102,12 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
     replay.stop();
     setCursor(Math.max(-1, (travelled ?? last) - 1));
   };
+  /** Back to the start, before the first event; the events stay to step through again. */
+  const toStart = () => {
+    clock.setPlaying(false);
+    replay.stop();
+    setCursor(-1);
+  };
   /** One step on, animated: in the past, to the next recorded event; at now, run the next events and play them in. */
   const forward = () => {
     if (replay.running) return replay.finish();
@@ -125,6 +131,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
   });
   useKeys({
     ArrowLeft: back,
+    Home: toStart,
     ArrowRight: forward,
     " ": () => clock.setPlaying(!clock.playing),
     Escape: () => (drag.cancel(), setPacket(null), setDropChoice(null), setChoosing(null), setSelected(null)),
@@ -215,7 +222,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
         </div>
         <div className="pointer-events-none absolute inset-x-3 bottom-3 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
           <Legend />
-          <Transport clock={clock} shown={shownClock} canBack={(travelled ?? last) >= 0} canStep={canStep} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
+          <Transport clock={clock} shown={shownClock} canBack={(travelled ?? last) >= 0} canStep={canStep} onFirst={toStart} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
         </div>
         {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
         {dropChoice && <DropChoice choice={dropChoice} world={base} onRun={run} onAsk={(drop) => (setDropChoice(null), setAsking({ instance: dropChoice.target, action: drop.action.key, inputs: drop.inputs }))} />}
@@ -585,10 +592,11 @@ function DropChoice({ choice, world, onRun, onAsk }: { choice: { target: string;
 
 // Overlays ----------------------------------------------------------------------------------------------
 
-function Transport({ clock, shown, canBack, canStep, onBack, onStep, onReset }: { clock: Clock; shown: number; canBack: boolean; canStep: boolean; onBack: () => void; onStep: () => void; onReset: () => void }) {
+function Transport({ clock, shown, canBack, canStep, onFirst, onBack, onStep, onReset }: { clock: Clock; shown: number; canBack: boolean; canStep: boolean; onFirst: () => void; onBack: () => void; onStep: () => void; onReset: () => void }) {
   return (
     <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-kumo-elevated p-1 shadow-lg ring ring-kumo-line">
       <span className="w-[4.5rem] px-2 text-right font-mono text-xs tabular-nums">{clockAt(shown)}</span>
+      <Button size="xs" variant="ghost" shape="square" aria-label="Back to the start (Home)" title="Back to the start (Home)" icon={<SkipBackIcon size={12} />} disabled={!canBack} onClick={onFirst} />
       <Button size="xs" variant="ghost" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={12} />} disabled={!canBack} onClick={onBack} />
       <Button size="xs" variant={clock.playing ? "secondary" : "primary"} icon={clock.playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />} onClick={() => clock.setPlaying(!clock.playing)}>
         {clock.playing ? "Pause" : "Play"}
