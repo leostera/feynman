@@ -39,7 +39,7 @@ export interface Bounds {
   repeats: number;
 }
 
-export const DEFAULT_BOUNDS: Bounds = { instances: {}, depth: 14, faults: 1, maxStates: 100_000, timeLimit: 20_000, repeats: 2 };
+export const DEFAULT_BOUNDS: Bounds = { instances: {}, depth: 14, faults: 1, maxStates: 300_000, timeLimit: 20_000, repeats: 2 };
 
 export type Choice =
   | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }

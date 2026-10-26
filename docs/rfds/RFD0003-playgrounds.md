@@ -4,7 +4,7 @@
 - Status: Accepted
 - Author: `leostera`
 - Start Date: `2026-10-26`
-- Updated: `2026-10-26`
+- Updated: `2026-10-26` (implementation notes)
 - Discussion PR: `TBD`
 - Tracking Issue: `TBD`
 
@@ -95,7 +95,8 @@ export default defineSpec("Remote access", { messages }, (spec) => {
 });
 ```
 
-`specs/remote-access.play.tsx` is how it is shown:
+`specs/remote-access.play.tsx` is how it is shown (as implemented, the handles are
+`spec.handles`, since `spec.actors` is already the runtime list):
 
 ```tsx
 import { definePlayground, Node, Ticket, Terminal, Rows, countdown } from "@feynman/play";
@@ -350,8 +351,36 @@ hand-built, disconnected from the spec and the checker.
 ### Before acceptance
 
 - Should groups live in the spec (as proposed) or only in playground files?
+  **Both:** `spec.defineGroup` in the spec, and `play.group` adds one or styles a spec's.
 - Should a playground file be allowed to hide actors entirely, or only group them?
+  **Only group them.** Every message stays in the timeline.
 - Is `look.shape` enough for the default, or should kind be its own field?
+  **`look.shape` is enough.** The default follows the icon, and actors on a zone's edge
+  are drawn as gates (a fourth shape).
+
+### Implementation notes
+
+- **Handles:** the body of `defineSpec` returns the actors, which become `spec.handles`.
+- **Groups:** a list of singletons is one node. A record (`{ app: App, daemon: Axod }`)
+  groups other actors' instances by label suffix, so "Studio app" and "Studio daemon"
+  are one "Studio". Adding the group from "+" spawns every member.
+- **Messages inside a closed group:**
+  - they are not drawn, and the node glows while they are in flight;
+  - they don't slow the clock;
+  - two or more in a row fold in the timeline as "inside <group>".
+- **A token disappears** from its holder once an action has taken its value as an input.
+- **Choosing an input:** a one-input action offers its choices in the action bar. When
+  the choices are instances, their nodes light up and clicking one chooses it.
+- **Bundling:** a playground module is bundled with `react`, `react/jsx-runtime`,
+  `@cloudflare/kumo` and `@feynman/play` read from a global the page sets, so there is
+  one React and the kit's classes are in the page's stylesheet. Tailwind classes written
+  in a playground file are not compiled; use the kit, or `style` with Kumo variables.
+- **Validation** on the axo test bed:
+  - the flow end to end: sign in, pair, a ticket with a countdown, drag it onto the Mac,
+    the Mac goes green with a flowing link, open it by clicking the Mac, run `whoami`,
+    and the output appears in the terminal;
+  - Impeccable: 2 findings (nested cards in the region), against 7 for the hand-built
+    page.
 
 ### During implementation
 
@@ -359,6 +388,7 @@ hand-built, disconnected from the spec and the checker.
 - How panels lay out when several are open: attached to their node, or docked?
 - Whether `feynman check` should screenshot the default and custom playgrounds and run
   the detector.
+- Whether to compile Tailwind classes used in playground files, per file, at build time.
 
 ### Out of scope
 

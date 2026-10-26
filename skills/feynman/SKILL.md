@@ -6,7 +6,7 @@ description: Write and check Feynman specs, which are small executable models of
 # Feynman specs
 
 A spec is a TypeScript file that models one behaviour of a system as a deterministic,
-discrete-event program. You write only the spec. The `feynman` CLI derives everything else
+discrete-event program. You write the spec. The `feynman` CLI derives everything else
 from it:
 
 - a playground to try it in;
@@ -15,7 +15,9 @@ from it:
 - diffs between commits;
 - links from every step to the code.
 
-**Never write UI code for an explainer.**
+**Never write a standalone UI for an explainer.** When the derived playground cannot show
+what matters in the domain (a terminal to type in, a Settings pane), add a small
+playground file beside the spec that composes Feynman's kit; see "Playground files".
 
 ## When to write one, and how big
 
@@ -42,9 +44,10 @@ able to point at every actor, message and step and say where it is.
 - **One step per stage the code has.** A step whose sources span several functions in
   several files is hiding the system; split it.
 - **Name instances the way people do:** "Studio" and "Alice", not "mac-studio". Use
-  labels, not ids, in `status`, rows and `say`. When one machine runs two processes that
-  are separate actors (an app and its daemon), give each a distinct label ("Studio app",
-  "Studio daemon") and keep them together with `place: { order }`.
+  labels, not ids, in `status`, rows and `say` (ids in them are shown as labels anyway).
+  When one machine runs two processes that are separate actors (an app and its daemon),
+  give each a distinct label with a common prefix ("Studio app", "Studio daemon") and
+  show them as one Mac with `spec.defineGroup` (below).
 - **Use the system's own words** for actors, messages, steps, statuses, files and tables:
   `READY`, `analysis.json`, "Pending folder". Don't invent generic roles such as
   "processor", "pipeline" or "store" unless the code uses them. Keep names short; put the
@@ -169,6 +172,7 @@ export default defineSpec(
       initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
       look: {
         icon: "phone",
+        names: ["Alice", "Bob"], // labels for people added in the playground
         status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in"),
         // The code on screen, to drag onto a Mac (see `accepts` on the Mac's `link` input).
         tokens: (s) => s.codes.slice(-1).map((code) => ({ kind: "pairing code", value: code })),
@@ -265,6 +269,9 @@ export default defineSpec(
         if (!s.the(Relay).state.codes) throw new Error("unreachable");
       },
     });
+
+    // Every actor, so a playground file can name them: spec.handles.Person.
+    return { Relay, Person, Mac };
   },
 );
 ```
@@ -340,12 +347,98 @@ actor, add:
     - `order` sorts its instances within the zone;
     - `edge: "left" | "right"` sets it on the zone's border, like a gate everything passes
       through.
+- **Groups**, for the level of abstraction a newcomer needs. Model each process as its
+  own actor, as the checker needs, then say which read as one thing:
+  ```ts
+  // One relay for people, as the product presents it.
+  spec.defineGroup({ name: "Axo relay", actors: [Worker, Manager, Index], icon: "cloud" });
+  // One Mac: "Studio app" and "Studio daemon" are one "Studio"; + adds both.
+  spec.defineGroup({ name: "Mac", actors: { app: App, daemon: Axod }, icon: "laptop", names: ["Studio", "iMac"] });
+  ```
+  A list of singletons is one node. A record groups other actors' instances by label
+  suffix. A closed group is one node: messages between its members don't fly across the
+  map, and they fold in the timeline as "inside Axo relay". Readers open it with "Look
+  inside". Groups start closed; pass `collapsed: false` to start open.
+- **`look.names`**: labels for instances added in the playground, such as
+  `["Alice", "Bob"]`, rather than "Person 2".
+- **`look.shape`** only to override the default: services (cloud, server, database…) are
+  circles with a short name inside, devices (phone, laptop…) rounded squares, and actors
+  on a zone's edge gates.
+- **`expires`** on a token, in simulated milliseconds: the ticket shows the time it has
+  left. A token disappears from its holder once an action has taken its value as an
+  input, so a used pairing code is gone from the phone.
 - **`say`** on the steps a reader cares about. It is the sentence the timeline and the
   speech bubbles show, such as "Made code 19YP for alice, valid 10 minutes". Without it,
   they show the `description`.
 
 These functions take only the actor's own state. Keep them cheap and total: a throw
 shows nothing rather than an error.
+
+Make the body of `defineSpec` end with `return { Person, Relay, … }`, every actor. Other
+files (a playground file, a helper) then reach them, typed, as `spec.handles.Person`.
+
+### Playground files
+
+Write `specs/<behaviour>.play.tsx` only when the defaults cannot show something the
+reader must see to understand the domain. Examples: a terminal on the phone that has a Mac
+open, with commands to click and their output; the status a group shows while closed
+("1 code waiting"); a custom drawing for one node. The spec stays the model: the checker,
+flows and diffs never load this file, and removing it leaves a working playground.
+
+```tsx
+import { definePlayground, Terminal } from "@feynman/play";
+import spec from "./remote-access.ts";
+
+const { Person, Manager, Axod } = spec.handles;
+
+export default definePlayground(spec, (play) => {
+  // A group's status while closed, from its members' state.
+  play.group("Axo relay", {
+    status: ({ member, clock }) => {
+      const waiting = Object.values(member(Manager)?.state.pairings ?? {}).filter((p) => !p.consumed && p.expires > clock).length;
+      return waiting ? `${waiting} code(s) waiting` : "one room per account";
+    },
+  });
+  // A panel beside a node while it returns something; act() runs one of its actions.
+  play.actor(Person, {
+    panel: ({ state, world, live, act }) => {
+      const host = Object.keys(state.watching)[0];
+      if (!host) return null;
+      return (
+        <Terminal
+          title={world.all(Axod).find((a) => a.id === host)?.label ?? host}
+          lines={state.asked.flatMap((r) => [`$ ${state.commands[r]}`, ...(state.outputs.includes(r) ? ["ok"] : [])])}
+          commands={["whoami", "uptime"]}
+          onRun={live ? (command) => act("run", { host, command }) : undefined}
+        />
+      );
+    },
+  });
+});
+```
+
+- **What you can say:**
+  - `play.group(name, actors?, { status, render, panel, size, icon, collapsed })` styles a
+    spec group, or adds one when given actors;
+  - `play.actor(Actor, { node, panel, size })` redraws a node or adds a panel;
+  - `play.token(kind, render)` draws a token;
+  - `play.link(kind, { style, flowing, color })` styles a kind of link.
+- **Render functions only draw and act.** They receive typed `state`, `look` (the
+  default, to build on), `world`, `clock`, `live` and `act`. They change the model only
+  through `act(action, inputs)`, which runs a declared action exactly as the playground's
+  buttons do, and does nothing while the reader looks at the past (`live` is false).
+  Keep them pure and cheap: they run on every frame while time runs. If one throws, that
+  node falls back to the default drawing.
+- **Compose the kit:** `Node`, `Rows`, `Ticket`, `Terminal`, `Panel`, `Card`, `Badge`,
+  `Icon` and `countdown` from `@feynman/play`. They carry the playground's look in light
+  and dark mode. For anything else, use the `style` prop with Kumo's CSS variables (such
+  as `var(--color-kumo-line)`). Tailwind classes in a playground file are not compiled.
+- **What the playground needs in the spec:** a panel can only show what the state holds.
+  To show the command typed, the state must keep it; to count down a code, its token
+  needs `expires`. Add such state only if it is true to the system, and keep the
+  checker's result the same.
+- `feynman check` type-checks the playground file with the spec and loads it, which
+  catches actors and state fields that do not exist.
 
 ### Types
 
@@ -413,7 +506,13 @@ read worse. To update one:
    shown on one device and typed on another.
 6. Add `place` only where the computed map misreads: a gate on the edge of a region
    (`edge`), zones in the wrong order (`column`), or a busy zone (`arrange`).
-7. Run `feynman check` again: the same invariants must hold, with the same
+7. Group what a newcomer would see as one thing (`spec.defineGroup`): the service whose
+   parts are separate actors, and each machine that runs two of them. Add `look.names`
+   for people and `expires` on tokens that expire. End the body with
+   `return { …every actor }`.
+8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a
+   playground file.
+9. Run `feynman check` again: the same invariants must hold, with the same
    counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands
@@ -444,7 +543,7 @@ export default defineConfig({ specs: ["docs/specs/*.ts"], check: { depth: 12, in
 
 When you finish, report:
 
-- the spec's path;
+- the spec's path, and the playground file's if you wrote one;
 - what it covers and what it leaves out;
 - the scenarios;
 - the check result: which properties hold, within which bounds, and every counterexample,
