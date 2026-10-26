@@ -99,6 +99,13 @@ export function cache(variant: "buggy" | "fixed") {
       });
 
       spec.defineInvariants({
+        consistentOnceQuiet: {
+          description: "Once nothing is in flight, the cache is empty or agrees with the database.",
+          always: (w) => {
+            const entry = w.the(Cache).state.entry;
+            return !w.quiet || entry === null || entry.value === w.the(Database).state.value;
+          },
+        },
         converges: {
           description: "Left alone, the cache ends up empty or agreeing with the database.",
           eventually: (w) => {

@@ -11,6 +11,7 @@ import { payments } from "../specs/payments.ts";
 import { twoPhaseCommit } from "../specs/two-phase-commit.ts";
 import { leaderElection } from "../specs/leader-election.ts";
 import { jobQueue } from "../specs/job-queue.ts";
+import { lightSwitch } from "../specs/switch.ts";
 
 /** A property's expected verdict: holds, or broken by a shortest path of this many events, with this many faults. */
 type Expected = "holds" | { events: number; faults: number };
@@ -42,6 +43,7 @@ const cases: Case[] = [
   { name: "leader election, fixed", spec: leaderElection("fixed"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: "holds" }, clockFree: true, refuted: ["Node"] },
   { name: "job queue, buggy", spec: jobQueue("buggy"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "holds" }, clockFree: true },
   { name: "job queue, fixed", spec: jobQueue("fixed"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "holds" }, clockFree: true },
+  { name: "switch", spec: lightSwitch(), bounds: { depth: 6, faults: 0 }, expect: { onOnce: { events: 3, faults: 0 } }, clockFree: true },
   { name: "cache, fixed, one fault", spec: cache("fixed"), bounds: { depth: 7, faults: 1 }, expect: { converges: { events: 7, faults: 1 } }, clockFree: true },
 ];
 

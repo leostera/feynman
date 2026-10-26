@@ -101,6 +101,10 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
             return !(outcomes.includes("commit") && outcomes.includes("abort"));
           },
         },
+        decidedOnceQuiet: {
+          description: "Once everyone has voted and nothing is in flight, the coordinator has decided.",
+          always: (w) => !(w.quiet && w.all(Participant).every((p) => p.state.vote !== null)) || w.the(Coordinator).state.decided !== null,
+        },
         decides: {
           description: "Once everyone has voted, the coordinator decides.",
           after: (w) => w.all(Participant).every((p) => p.state.vote !== null),

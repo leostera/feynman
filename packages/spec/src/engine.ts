@@ -462,7 +462,7 @@ export function worldView(spec: Spec, world: World, onRead?: (id: string) => voi
     const info = spec.actors.find((a) => a.name === actor?.name);
     throw new SpecError(found.length === 0 ? `there is no ${info?.name ?? "such actor"} yet` : `there are ${found.length} of ${info?.name}; use all() instead of the()`);
   };
-  return { now: world.clock, all, the, instance } as WorldView & { instance: typeof instance };
+  return { now: world.clock, quiet: world.pending.length === 0, all, the, instance } as WorldView & { instance: typeof instance };
 }
 
 export function violatedAlways(spec: Spec, world: World): string[] {

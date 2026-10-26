@@ -489,6 +489,11 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   `defineLimit` for named ones. Reading `ctx.now` is fine, but it costs: from then on worlds
   that differ only in when they are can no longer be merged. Prefer a timer to storing a time
   when the code allows either.
+- **In the end.** `w.quiet` is true when nothing is in flight. "Once quiet, the nodes agree"
+  is a safety property (`always: (w) => !w.quiet || …`), cheaper and sharper than an
+  `eventually` when what you mean is "after everything has arrived".
+- **Never.** A `never` property sees the path through `trace.count` and `trace.some`; prefer
+  those to reading `trace.events`, which makes every path its own state.
 - **Eventually.** An `eventually` property is judged on the system left alone from each
   explored world: no actions, no faults, every event on time, simultaneous events in a fixed
   order. The search itself tries the other orders.
