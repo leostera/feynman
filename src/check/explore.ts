@@ -132,6 +132,8 @@ interface Facts {
   target: string;
   observed: Observation;
   failed: boolean;
+  /** Whether it sets a timer: timers are kept in age order (keys.ts), so two that set one do not commute. */
+  setsTimer: boolean;
 }
 
 interface Node {
@@ -274,6 +276,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
         target: targetOf(world, choice),
         observed,
         failed: !!step.event.error,
+        setsTimer: step.event.started.length > 0,
       };
       // What the child need not try: what this node skipped or already tried, where it commutes with this step.
       const sleep = new Map<string, Facts>();
@@ -413,8 +416,8 @@ function memoryOf(nevers: Spec["invariants"], events: Event[]): string {
 /**
  * Whether two steps taken from one world reach the same world in either order. They must
  * change different instances, neither may read another instance, and they may not both use
- * a shared counter. Sends and timers commute: a step never sees what is pending, and
- * nothing pending waits for anything else to be able to happen.
+ * a shared counter, or both set a timer (timers are kept in age order). Sends commute: a
+ * step never sees what is pending, and nothing pending waits for anything else.
  */
 function commute(a: Facts, b: Facts): boolean {
   return (
@@ -423,7 +426,8 @@ function commute(a: Facts, b: Facts): boolean {
     !b.failed &&
     !a.observed.readsOthers &&
     !b.observed.readsOthers &&
-    !(a.observed.shared && b.observed.shared)
+    !(a.observed.shared && b.observed.shared) &&
+    !(a.setsTimer && b.setsTimer)
   );
 }
 

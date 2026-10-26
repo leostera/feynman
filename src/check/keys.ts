@@ -1,7 +1,8 @@
 // State identity for deduplication: when two worlds behave the same from here on.
 //
-// - Ids are left out. Pending events are a bag: what is in flight and what is set, not the
-//   order it was created in, since any of it may happen next (RFD0004).
+// - Ids are left out. Messages in flight are a bag: any may arrive next (RFD0004). Timers
+//   that are set are a sequence, oldest first: any may fire next too, but the system left
+//   alone fires the oldest (judge.ts), so how old each is decides what it does from here.
 // - Instances of one actor that are interchangeable (symmetry) are renamed to a canonical
 //   order, so "Alice did it, then Bob" and "Bob did it, then Alice" are one state.
 import { actorNamed, type Spec, type World } from "../spec/index.ts";
@@ -27,11 +28,13 @@ export function pendingText(p: Pending): string {
   return text;
 }
 
-/** The lines a world's key is made of, before renaming and sorting. */
+/** The lines a world's key is made of, before renaming and sorting: timers make one line, in age order. */
 function keyParts(world: World): { instances: string[]; pending: string[]; rest: string } {
+  const timers = world.pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id);
+  const messages = world.pending.filter((p) => p.kind === "deliver").map(pendingText);
   return {
     instances: world.instances.map((i) => `${i.id}=${textOf(i.state)}`),
-    pending: world.pending.map(pendingText),
+    pending: timers.length ? [...messages, `timers ${timers.map(pendingText).join(" ")}`] : messages,
     rest: `${JSON.stringify(world.fresh)}|${world.rng}`,
   };
 }

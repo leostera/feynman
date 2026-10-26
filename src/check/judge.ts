@@ -66,12 +66,13 @@ export function judge(spec: Spec, world: World, event: Event | null, path: () =>
 /**
  * The system left alone: no actions and no faults. A guarded transition that holds runs
  * first; then the message in flight that sorts first by what it carries; when none is in
- * flight, the timer that sorts first. Ordering by content, not by internal ids, makes the
- * run, and so an `eventually` verdict, a function of the state alone: merging worlds cannot
- * change it. With symmetry, content is compared as the world's canonical twin has it
- * (keys.ts), so twins the search merges are judged alike. Other orders are not the system
- * left alone's business: the search itself tries every order, so it reaches them, and
- * judges from there.
+ * flight, the oldest timer, so a timer set again and again (a retry loop) cannot starve
+ * another. Messages are a bag in a world's key and timers a sequence by age (keys.ts), so
+ * the run, and so an `eventually` verdict, is a function of the state alone: merging worlds
+ * cannot change it. With symmetry, content is compared as the world's canonical twin has
+ * it, so twins the search merges are judged alike. Other orders are not the system left
+ * alone's business: the search itself tries every order, so it reaches them, and judges
+ * from there.
  */
 export function soloChoices(spec: Spec, world: World, symmetry: Symmetry = NO_SYMMETRY): ({ kind: "guard"; instance: string; key: string } | { kind: "fire"; pending: number })[] {
   const { guards, pending } = choices(spec, world);
@@ -80,7 +81,8 @@ export function soloChoices(spec: Spec, world: World, symmetry: Symmetry = NO_SY
     items.map((item) => [renamed(text(item), renaming), item] as const).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))[0]?.[1];
   const guarded = least(guards, (g) => `${g.instance}|${g.key}`);
   if (guarded) return [{ kind: "guard", instance: guarded.instance, key: guarded.key }];
-  const next = least(pending.filter((p) => p.kind === "deliver"), pendingText) ?? least(pending.filter((p) => p.kind === "timer"), pendingText);
+  const oldestTimer = pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id)[0];
+  const next = least(pending.filter((p) => p.kind === "deliver"), pendingText) ?? oldestTimer;
   return next ? [{ kind: "fire", pending: next.id }] : [];
 }
 

@@ -302,7 +302,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
   const self = { ...next.instances[position] };
   next.instances[position] = self;
   const state = clone(self.state);
-  const effects = { sent: [] as Sent[], started: [] as { timer: string; at: number }[], cancelled: [] as string[], notes: [...(run.notes ?? [])] };
+  const effects = { sent: [] as Sent[], started: [] as { timer: string }[], cancelled: [] as string[], notes: [...(run.notes ?? [])] };
   const base = {
     kind: run.kind,
     instance: self.id,
