@@ -2,6 +2,15 @@
 // module per spec (and per spec at the base commit, when comparing).
 import type { Report } from "@feynman/check";
 
+/**
+ * What `feynman build` writes into its single page, in `<script type="application/json"
+ * id="feynman">`: the bundle, and each module's code by the page-relative path entries name.
+ */
+export interface Embedded {
+  bundle: Bundle;
+  modules: Record<string, string>;
+}
+
 export interface Bundle {
   generatedAt: string;
   /** Served by `feynman dev`: the page reloads when specs change. */

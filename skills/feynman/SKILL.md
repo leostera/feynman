@@ -542,7 +542,7 @@ feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
-feynman build [--out .feynman/site] [--base REF]
+feynman build [--out .feynman/index.html] [--base REF]   one self-contained HTML file
 feynman open
 ```
 

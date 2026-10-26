@@ -1,14 +1,14 @@
 // The explorer: the prebuilt view, plus `feynman.json` and a browser module per spec.
-// `feynman build` writes them to a directory; `feynman dev` serves them from memory and
-// reloads the page when a spec (or anything it imports) changes.
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, watch, writeFileSync, cpSync } from "node:fs";
+// `feynman build` writes them all into one self-contained HTML file; `feynman dev` serves
+// them from memory and reloads the page when a spec (or anything it imports) changes.
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { check } from "@feynman/check";
 import { scenarioSeeds } from "./shape.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "@feynman/code";
 import type { Spec } from "@feynman/spec";
-import type { Bundle, SourceEntry, SpecEntry } from "@feynman/view/data";
+import type { Bundle, Embedded, SourceEntry, SpecEntry } from "@feynman/view/data";
 import { specSources, type Context } from "./commands.ts";
 import { dim, green, red, yellow } from "./format.ts";
 import { playgroundFor } from "./discover.ts";
@@ -114,22 +114,38 @@ function sourceEntries(ctx: Context, spec: Spec): Record<string, SourceEntry> {
   return out;
 }
 
-function write(dir: string, prepared: Prepared) {
-  rmSync(dir, { recursive: true, force: true });
-  cpSync(join(VIEW, "dist"), dir, { recursive: true });
-  mkdirSync(join(dir, "specs"), { recursive: true });
-  for (const [path, code] of prepared.modules) writeFileSync(join(dir, path), code);
-  writeFileSync(join(dir, "feynman.json"), JSON.stringify(prepared.bundle));
+/**
+ * The explorer as one HTML file: the view's script and stylesheet inlined, and the bundle and
+ * every module embedded as JSON, which the page imports through blob URLs. It opens from disk.
+ */
+export function singlePage(prepared: Prepared): string {
+  const dist = join(VIEW, "dist");
+  const page = readFileSync(join(dist, "index.html"), "utf8");
+  const asset = (href: string) => readFileSync(join(dist, href.replace(/^\.\//, "")), "utf8");
+  const embedded: Embedded = { bundle: prepared.bundle, modules: Object.fromEntries(prepared.modules) };
+  // Inside a <script>, "</script" or "<!--" would end or confuse it; both escape harmlessly in JS and JSON strings.
+  const inScript = (code: string) => code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
+  const data = JSON.stringify(embedded).replace(/<\//g, "<\\/").replace(/<!--/g, "<\\u0021--");
+  let scripts = 0;
+  let styles = 0;
+  const out = page
+    .replace(/<script type="module" crossorigin src="([^"]+)"><\/script>/g, (_, src: string) => (scripts++, `<script type="module">${inScript(asset(src))}</script>`))
+    .replace(/<link rel="stylesheet" crossorigin href="([^"]+)">/g, (_, href: string) => (styles++, `<style>${asset(href).replace(/<\/style/gi, "<\\/style")}</style>`))
+    .replace("</head>", () => `<script type="application/json" id="feynman">${data}</script>\n  </head>`);
+  if (scripts !== 1 || styles !== 1) throw new Error(`the explorer's index.html has ${scripts} script(s) and ${styles} stylesheet(s); expected one of each`);
+  return out;
 }
 
 export async function buildCommand(ctx: Context, options: { out?: string; base?: string; open?: boolean }): Promise<number> {
   ensureView();
   const prepared = await prepare(ctx, { base: options.base, check: true, calls: true });
-  const out = resolve(ctx.cwd, options.out ?? join(ctx.repository.root, ".feynman", "site"));
-  write(out, prepared);
+  const out = resolve(ctx.cwd, options.out ?? join(ctx.repository.root, ".feynman", "index.html"));
+  mkdirSync(dirname(out), { recursive: true });
+  const page = singlePage(prepared);
+  writeFileSync(out, page);
   for (const s of prepared.bundle.specs) if (s.error) console.log(red(`${s.path}: ${s.error}`));
-  console.log(`wrote ${relative(ctx.cwd, out) || "."}/ ${dim(`(${prepared.bundle.specs.length} spec(s))`)}`);
-  if (options.open) return serve(ctx, { port: 4321, base: options.base, prepared, open: true, watch: false });
+  console.log(`wrote ${relative(ctx.cwd, out)} ${dim(`(${prepared.bundle.specs.length} spec(s), ${(page.length / 1e6).toFixed(1)} MB)`)}`);
+  if (options.open) spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [out]);
   return 0;
 }
 
@@ -137,9 +153,9 @@ export async function devCommand(ctx: Context, options: { port: number; base?: s
   return serve(ctx, { ...options, watch: true, open: false });
 }
 
-async function serve(ctx: Context, options: { port: number; base?: string; prepared?: Prepared; open: boolean; watch: boolean }): Promise<number> {
+async function serve(ctx: Context, options: { port: number; base?: string; open: boolean; watch: boolean }): Promise<number> {
   ensureView();
-  let prepared = options.prepared ?? (await prepare(ctx, { base: options.base, check: false, calls: false }));
+  let prepared = await prepare(ctx, { base: options.base, check: false, calls: false });
   prepared.bundle.dev = options.watch;
   const clients = new Set<ReadableStreamDefaultController<string>>();
   const reload = () => clients.forEach((c) => c.enqueue("event: reload\ndata: {}\n\n"));
@@ -185,7 +201,7 @@ async function serve(ctx: Context, options: { port: number; base?: string; prepa
     console.log(dim(`checked in ${Math.round((Date.now() - started) / 1000)}s`) + (problems.length ? yellow(`  ${problems.length} spec(s) with problems`) : ""));
     reload();
   };
-  if (!options.prepared) void enrich();
+  void enrich();
 
   if (options.watch) {
     let timer: ReturnType<typeof setTimeout> | undefined;
