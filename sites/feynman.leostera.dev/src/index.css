@@ -2,3 +2,14 @@
 @source "./**/*.{ts,tsx}";
 @import "@cloudflare/kumo/styles";
 @import "tailwindcss";
+
+/* Snippets are highlighted at build time (scripts/highlight.ts), with both modes' colours. */
+.code pre.shiki {
+  background: transparent !important;
+  margin: 0;
+  white-space: pre;
+}
+[data-mode="dark"] .code .shiki,
+[data-mode="dark"] .code .shiki span {
+  color: var(--shiki-dark) !important;
+}
