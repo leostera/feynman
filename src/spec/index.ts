@@ -39,3 +39,4 @@ export * from "./engine.ts";
 export { Runner, runScenario, SETTLE_LIMIT } from "./run.ts";
 export type * from "./spec.ts";
 export { diffRuns, type RunDiff, type StepDiff, type StepStatus } from "./diff.ts";
+export { flowsOf, type Flow } from "./flows.ts";
