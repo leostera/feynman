@@ -31,7 +31,9 @@ interface Options {
 export function ensureView() {
   const dist = join(VIEW, "dist", "index.html");
   const newest = (dir: string): number => Math.max(...readdirSync(dir, { withFileTypes: true }).map((d) => (d.isDirectory() ? newest(join(dir, d.name)) : statSync(join(dir, d.name)).mtimeMs)));
-  if (existsSync(dist) && statSync(dist).mtimeMs >= newest(join(VIEW, "src"))) return;
+  // The explorer bundles @feynman/spec too: a change to either means a rebuild.
+  const sources = Math.max(newest(join(VIEW, "src")), newest(join(VIEW, "..", "spec", "src")));
+  if (existsSync(dist) && statSync(dist).mtimeMs >= sources) return;
   console.log(dim("building the explorer…"));
   const out = spawnSync("bun", ["run", "build"], { cwd: VIEW, encoding: "utf8" });
   if (out.status !== 0) throw new Error(`could not build the explorer:\n${out.stderr || out.stdout}`);

@@ -318,11 +318,25 @@ function finish(spec: Spec, before: World, after: World, partial: Omit<Event, "i
 
 // Views for predicates --------------------------------------------------------------------------------
 
-export function worldView(spec: Spec, world: World) {
+/** The world as predicates and examples see it; `onRead` hears whose state they read. */
+export function worldView(spec: Spec, world: World, onRead?: (id: string) => void) {
   const views = new Map<string, { id: string; label: string; state: unknown }>();
   const instance = (i: InstanceState) => {
     let view = views.get(i.id);
-    if (!view) views.set(i.id, (view = { id: i.id, label: i.label, state: i.state }));
+    if (!view)
+      views.set(
+        i.id,
+        (view = onRead
+          ? {
+              id: i.id,
+              label: i.label,
+              get state() {
+                onRead(i.id);
+                return i.state;
+              },
+            }
+          : { id: i.id, label: i.label, state: i.state }),
+      );
     return view;
   };
   const all = (actor: { name: string }) => world.instances.filter((i) => i.actor === actor?.name).map(instance);

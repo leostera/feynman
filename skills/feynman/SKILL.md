@@ -300,18 +300,39 @@ actor, add:
   one to three rows.
 - **`links`** for connections that come and go: sockets, sessions, subscriptions. Only
   live links are drawn prominently.
+- **`look.owner`:** whose this is, as an instance label or id: a Mac belongs to the person
+  whose account it is linked to. It then wears that person's colour, so readers can
+  follow Alice through the system.
+- **`routine: true`** on housekeeping steps a reader need not watch, such as heartbeats,
+  lease renewals or polling. The playground folds runs of them into one timeline line
+  and does not stop for them; the checker explores them like any other step. Better
+  still, leave out a heartbeat unless its expiry changes what happens.
 - **`look.tokens`** for things a person would carry from one node to another: a pairing
   code shown on a phone, a link to share, a file to upload. Each is `{ kind, value, label? }`,
   and it floats beside the node. Give the receiving action's input `accepts: kind`, as in
   `spec.defineInput(String, { examples, accepts: "pairing code" })`. Dragging the token onto
   that node then runs the action with it. This is the most memorable way to show a
-  hand-off between actors.
+  hand-off between actors. Without any declared tokens, the playground infers them: a
+  value an action's input examples read from another instance's state can be dragged
+  from that instance. Declare tokens when you want control over what shows.
 - **`row`** on a link: the label of the target's row it ends at. With it, a Mac's socket
   meets that Mac's line in the relay rather than the relay's icon.
 - **`owner`** on a row: the instance it belongs to, by id or label. The row's group, and
   the row itself if it has no mood, take that instance's colour; links take their
   source's. Readers can then follow Alice through the system.
 - **Zone `description`**: a few words beside its name, such as "sign in with Access".
+- **Placement hints**, when the computed map does not tell the story; there are no
+  coordinates.
+  - On a zone, `place: { column, region, align, arrange }`:
+    - `column` orders zones left to right, from 0;
+    - `region: true` draws the zone as the tinted area everything hangs off (a zone holding
+      a singleton is one by default);
+    - `align` is `"start"`, `"center"` or `"end"`;
+    - `arrange` is `"stack"`, `"row"` or `"grid"`.
+  - On an actor, `place: { order, edge }`:
+    - `order` sorts its instances within the zone;
+    - `edge: "left" | "right"` sets it on the zone's border, like a gate everything passes
+      through.
 - **`say`** on the steps a reader cares about. It is the sentence the timeline and the
   speech bubbles show, such as "Made code 19YP for alice, valid 10 minutes". Without it,
   they show the `description`.
