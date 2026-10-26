@@ -1,16 +1,12 @@
 // Words and numbers as the explorer shows them.
 import type { Event, Spec, World } from "../spec/index.ts";
 
-/** A moment on the clock, like a stopwatch: 0.65s, 4.20s, 1:48.4, 2:03:10. */
-export function clock(ms: number): string {
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(2)}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}:${(s % 60).toFixed(1).padStart(4, "0")}`;
-  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+/** An event's place in a run, counted from 1: specs have no clock (RFD0004), events have an order. */
+export function ordinal(position: number): string {
+  return `#${position}`;
 }
 
-/** A duration in words: 50ms, 9.95s, 10min. */
+/** Real time in words, such as how long a check took: 50ms, 9.95s, 10min. */
 export function time(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${+(ms / 1000).toFixed(2)}s`;

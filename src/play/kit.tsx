@@ -19,17 +19,6 @@ const PlayContext = createContext<PlayContextValue>({ colorOf: () => undefined }
 export const PlayProvider = PlayContext.Provider;
 export const usePlay = () => useContext(PlayContext);
 
-// Formatting ---------------------------------------------------------------------------------------
-
-/** Time left as a person reads it: "9:58", "42s", "expired". */
-export function countdown(left: number): string {
-  if (left <= 0) return "expired";
-  const s = Math.ceil(left / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-}
-
 // Icons --------------------------------------------------------------------------------------------
 
 export function Icon({ name, size = 16, className, style }: { name: IconName | null | undefined; size?: number; className?: string; style?: CSSProperties }) {
@@ -192,9 +181,8 @@ export function Badge({ children, mood }: { children: ReactNode; mood?: Mood }) 
 
 // Tokens -------------------------------------------------------------------------------------------
 
-/** Something to hand over: a code on a ticket, with the time it has left. */
-export function Ticket({ code, left, label }: { code: string; left?: number | null; label?: string }) {
-  const expired = left !== undefined && left !== null && left <= 0;
+/** Something to hand over: a code on a ticket, struck through once it no longer works. */
+export function Ticket({ code, expired = false, label }: { code: string; expired?: boolean; label?: string }) {
   return (
     <span
       className={cn("flex items-center gap-1 whitespace-nowrap rounded-md border-2 border-dashed bg-kumo-warning-tint px-1.5 py-0.5 font-mono text-[11.5px] font-bold", expired && "opacity-50 line-through")}
@@ -203,7 +191,6 @@ export function Ticket({ code, left, label }: { code: string; left?: number | nu
     >
       <TicketIcon size={13} weight="duotone" className="text-kumo-warning" />
       {code}
-      {left !== undefined && left !== null && <span className="font-sans text-[11px] font-normal text-kumo-subtle">{countdown(left)}</span>}
     </span>
   );
 }

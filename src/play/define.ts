@@ -23,8 +23,6 @@ export interface NodeProps<A = Actor<unknown, {}>> {
   /** The look the spec gives it, to build on. */
   look: Appearance;
   world: WorldView;
-  /** Simulated time now, in milliseconds. */
-  clock: number;
   /** False while looking at the past: acting does nothing then. */
   live: boolean;
   act: Act<A>;
@@ -46,7 +44,6 @@ export interface GroupProps {
   /** Its members' looks, merged: their rows and tokens, the most telling mood. */
   look: Appearance;
   world: WorldView;
-  clock: number;
   live: boolean;
   /** The member of an actor, typed: `member(Manager).state.pairings`. */
   member<A extends Actor<any, any>>(actor: A): { instance: Self; state: Readonly<StateOf<A>>; look: Appearance } | undefined;
@@ -57,7 +54,6 @@ export interface GroupProps {
 export interface TokenProps {
   token: Token;
   holder: Self;
-  clock: number;
 }
 
 export interface LinkStyle {
@@ -121,7 +117,7 @@ export interface PlayBuilder {
   group(name: string, actors: Actors, options?: GroupOptions): void;
   group(name: string, options: GroupOptions): void;
   actor<A extends Actor<any, any>>(actor: A, presentation: ActorPresentation<A>): void;
-  /** How a token of this kind is drawn, such as a ticket with a countdown. */
+  /** How a token of this kind is drawn, such as a ticket. */
   token(kind: string, render: (props: TokenProps) => ReactNode): void;
   link(kind: string, style: LinkStyle): void;
 }
