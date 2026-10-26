@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "@feynman/spec";
 import { groupsOf, iconFor, TONES, toneColor } from "@feynman/play";
 import { clock as clockAt, labelOf, messageName, time } from "./format";
-import { ActionBar, InputsDialog, InspectDialog, startAction, type Asking, type Choosing } from "./playground/Actions";
+import { ActionBar, actionsOf, InputsDialog, InspectDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
 import { bubbleText, fitOf, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Picking } from "./playground/Stage";
 import { nodeLook, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, type Op, type Session } from "./session";
@@ -190,6 +190,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
             onAct={(instance, key, inputs) => run({ op: "act", instance, key, inputs })}
             onPacket={(p) => setPacket(p)}
             bar={bar}
+            barStacked={!!selectedNode && !choosing && actionsOf(spec, selectedNode).length >= STACK_FROM}
           />
         )}
         <div className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">

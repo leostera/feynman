@@ -45,6 +45,19 @@ export function startAction(spec: Spec, world: World, instance: string, action: 
   return { ask: { instance, action: action.key } };
 }
 
+/** From this many actions, the bar becomes a menu: one action per row, beside the node. */
+export const STACK_FROM = 4;
+
+/** The actions a node offers now: every member's actions whose `when` holds. */
+export function actionsOf(spec: Spec, node: SceneNode) {
+  return node.members.flatMap((m) => {
+    const actor = spec.actors.find((a) => a.name === m.actor)!;
+    return Object.values(actor.actions)
+      .filter((a) => !a.when || safe(() => a.when!(m.state)))
+      .map((action) => ({ member: m, action }));
+  });
+}
+
 export function ActionBar({
   node,
   world,
@@ -95,24 +108,23 @@ export function ActionBar({
       </div>
     );
   }
-  const actions = node.members.flatMap((m) => {
-    const actor = spec.actors.find((a) => a.name === m.actor)!;
-    return Object.values(actor.actions)
-      .filter((a) => !a.when || safe(() => a.when!(m.state)))
-      .map((action) => ({ member: m, action }));
-  });
+  const actions = actionsOf(spec, node);
   const many = new Set(actions.map((a) => a.member.id)).size > 1;
-  return (
-    <div className={shell} role="toolbar" aria-label={node.label}>
-      <span className="whitespace-nowrap pr-1 font-semibold">{node.label}</span>
-      {actions.length === 0 && <span className="whitespace-nowrap px-1 text-kumo-subtle">only answers messages</span>}
-      {actions.map(({ member, action }) => (
-        <Button key={`${member.id}.${action.key}`} size="xs" variant="secondary" title={`${many ? `${member.label}: ` : ""}${action.description}`} onClick={() => onStart(member.id, action)}>
-          {action.label}
-          {Object.keys(action.inputs).length ? "…" : ""}
-        </Button>
-      ))}
-      <span className="mx-0.5 h-4 w-px bg-kumo-line" />
+  const buttons = actions.map(({ member, action }) => (
+    <Button
+      key={`${member.id}.${action.key}`}
+      size="xs"
+      variant={actions.length >= STACK_FROM ? "ghost" : "secondary"}
+      className={actions.length >= STACK_FROM ? "w-full justify-start" : undefined}
+      title={`${many ? `${member.label}: ` : ""}${action.description}`}
+      onClick={() => onStart(member.id, action)}
+    >
+      {action.label}
+      {Object.keys(action.inputs).length ? "…" : ""}
+    </Button>
+  ));
+  const tools = (
+    <>
       {group && (
         <Button size="xs" variant="ghost" icon={group.open ? <CornersInIcon size={11} /> : <CornersOutIcon size={11} />} onClick={onToggleGroup}>
           {group.open ? `Close ${group.label}` : "Look inside"}
@@ -123,6 +135,27 @@ export function ActionBar({
         <Button size="xs" variant="ghost" shape="square" aria-label={`Restart ${node.label}`} title={`Restart ${node.label}`} icon={<ArrowCounterClockwiseIcon size={11} />} onClick={() => onRun({ op: "restart", instance: node.members[0].id })} />
       )}
       <Button size="xs" variant="ghost" shape="square" aria-label="Close" icon={<XIcon size={11} />} onClick={onClose} />
+    </>
+  );
+  if (actions.length >= STACK_FROM) {
+    // Too many for one row: a menu, the node's name and tools on top, an action per row below.
+    return (
+      <div className="flex w-56 flex-col rounded-lg bg-kumo-elevated p-0.5 text-[11px] shadow-xl ring-1 ring-kumo-brand" role="menu" aria-label={node.label}>
+        <div className="flex items-center gap-0.5 border-b border-kumo-hairline pb-0.5 pl-2">
+          <span className="min-w-0 flex-1 truncate font-semibold">{node.label}</span>
+          {tools}
+        </div>
+        <div className="flex flex-col pt-0.5">{buttons}</div>
+      </div>
+    );
+  }
+  return (
+    <div className={shell} role="toolbar" aria-label={node.label}>
+      <span className="whitespace-nowrap pr-1 font-semibold">{node.label}</span>
+      {actions.length === 0 && <span className="whitespace-nowrap px-1 text-kumo-subtle">only answers messages</span>}
+      {buttons}
+      <span className="mx-0.5 h-4 w-px bg-kumo-line" />
+      {tools}
     </div>
   );
 }
