@@ -8,7 +8,7 @@ import { readConfig, type Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
 import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red, yellow } from "./format.ts";
 import { loadSpec } from "./load.ts";
-import { shapeWarnings } from "./shape.ts";
+import { shapeWarnings, totalSteps, unbuilt } from "./shape.ts";
 import { typecheck } from "./types.ts";
 
 export interface Context {
@@ -79,6 +79,12 @@ export async function checkCommand(ctx: Context, named: string[], bounds: Partia
     const statuses = checkSources(ctx.repository.root, specSources(spec));
     for (const line of formatSources(statuses)) console.log(line);
     for (const w of shapeWarnings(spec)) console.log(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));
+    const designed = unbuilt(spec);
+    if (designed.length) {
+      const all = designed.length === totalSteps(spec);
+      const which = designed.length <= 6 ? `: ${designed.map((d) => `${d.actor} ${d.step}`).join(", ")}` : "";
+      console.log(dim(all ? `  no step points at code yet; this spec is a design. Add sources as the code appears.` : `  ${designed.length} step(s) have no code yet${which}`));
+    }
     if (report.properties.some((p) => !p.holds) || report.errors.length || statuses.some((s) => s.status === "missing")) status = 1;
   }
   return status;

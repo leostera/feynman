@@ -35,3 +35,14 @@ export function shapeWarnings(spec: Spec): ShapeWarning[] {
   }
   return warnings;
 }
+
+/** Steps with no sources: designed but not built yet, or not anchored to their code. */
+export function unbuilt(spec: Spec): { actor: string; step: string }[] {
+  return spec.actors.flatMap((actor) =>
+    [...Object.values(actor.actions), ...Object.values(actor.transitions)].filter((step) => step.sources.length === 0).map((step) => ({ actor: actor.name, step: stepName(step) })),
+  );
+}
+
+export function totalSteps(spec: Spec): number {
+  return spec.actors.reduce((n, a) => n + Object.keys(a.actions).length + Object.keys(a.transitions).length, 0);
+}

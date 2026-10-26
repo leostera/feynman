@@ -23,8 +23,11 @@ from it:
   get linked to an account?" Do not write one spec per service.
 - **Review:** extend or adjust the spec that covers the change. `feynman diff` shows what
   changed in each scenario.
-- **Develop:** write the spec first, check it, then write code that matches it. Point the
-  sources at the code as it appears.
+- **Develop:** write the spec first, check it, then write code that matches it. A spec
+  needs no code: leave `sources` out of steps that are not built yet, and `feynman check`
+  says which those are. The checker finds design flaws before there is anything to
+  debug. Add `sources` to each step as its code appears; a source that is given must
+  point at real code.
 
 A spec models **this** system, not a kind of system. Someone who knows the code should be
 able to point at every actor, message and step and say where it is.

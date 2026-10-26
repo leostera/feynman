@@ -185,7 +185,12 @@ export interface ReplyCtx<M extends Registry, Sends extends MessageKey<M>, Start
 interface StepFields<M extends Registry, Sends extends MessageKey<M>, Starts extends string> {
   /** In everyday words, what the step does, in general. */
   description: string;
-  sources: Source[];
+  /**
+   * The code this step stands for, as an ordered trail. Leave it out while the code does
+   * not exist yet, such as when designing a feature before building it; add it as the code
+   * appears.
+   */
+  sources?: Source[];
   sends?: Sends[];
   starts?: Starts[];
 }
@@ -361,7 +366,7 @@ export interface Script {
 export interface SpecBuilder<M extends Registry> {
   readonly messages: { [N in keyof M & string]: `message:${N}` };
   defineZone(def: { name: string; description?: string }): Zone;
-  defineLimit(def: { name: string; value: number; unit?: string; sources: Source[] }): Limit;
+  defineLimit(def: { name: string; value: number; unit?: string; sources?: Source[] }): Limit;
   defineActor<S, A = {}, T = {}>(def: ActorDef<M, S, A, T>): Actor<S, A>;
   /** An action input: its type, and the example values the playground offers and the checker tries. */
   /**
@@ -406,7 +411,7 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
       return zone;
     },
     defineLimit(def) {
-      const limit: LimitInfo = { name: def.name, value: def.value, unit: def.unit, sources: def.sources };
+      const limit: LimitInfo = { name: def.name, value: def.value, unit: def.unit, sources: def.sources ?? [] };
       spec.limits.push(limit);
       return limit;
     },
@@ -434,7 +439,7 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
 
 interface RawStep {
   description: string;
-  sources: string[];
+  sources?: string[];
   sends?: string[];
   starts?: string[];
   when?: (state: unknown) => boolean;
@@ -465,7 +470,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       key,
       label: step.label,
       description: step.description,
-      sources: step.sources,
+      sources: step.sources ?? [],
       sends: step.sends ?? [],
       starts: step.starts ?? [],
       when: step.when,
@@ -488,7 +493,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       key,
       message,
       description: step.description,
-      sources: step.sources,
+      sources: step.sources ?? [],
       sends: step.sends ?? [],
       starts: step.starts ?? [],
       when: step.when,

@@ -259,7 +259,7 @@ export function EventDetail({ event, world, compare, folded }: { event: Event; w
       <details className="group">
         <summary className="flex cursor-pointer list-none items-center gap-1 text-[12px] text-kumo-subtle hover:text-kumo-default [&::-webkit-details-marker]:hidden">
           <CaretRightIcon size={12} className="transition-transform duration-150 group-open:rotate-90" />
-          What changed, what it sent, and the code
+          {event.sources.length ? "What changed, what it sent, and the code" : "What changed and what it sent (no code yet)"}
         </summary>
         <div className="pt-2">{body}</div>
       </details>
