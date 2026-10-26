@@ -2,12 +2,12 @@
   "name": "@feynman/site",
   "private": true,
   "type": "module",
-  "description": "feynman.leostera.dev: what Feynman is, and the explainers it has published.",
+  "description": "feynman.leostera.dev: what Feynman is, and the simulators it has published.",
   "scripts": {
-    "explainers": "bun scripts/explainers.ts",
+    "sim": "bun scripts/sim.ts",
     "dev": "cf dev",
-    "build": "bun run explainers && cf build",
-    "deploy": "bun run explainers && cf deploy",
+    "build": "cf build",
+    "deploy": "cf deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
