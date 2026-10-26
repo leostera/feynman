@@ -34,6 +34,30 @@ export type Icon =
   | "gear" | "camera" | "video" | "mail" | "bell" | "clock" | "cpu" | "box" | "plug" | "wifi" | "chat"
   | "router" | "storage" | "code" | "pipeline" | "eye" | "card";
 
+/**
+ * Where a zone sits on the playground's map. Positions are still computed; these say what
+ * matters to the picture: left to right, which zone is the region everything hangs off, and
+ * how its instances line up.
+ */
+export interface ZonePlace {
+  /** Left to right, from 0. Zones without one follow the direction messages flow. */
+  column?: number;
+  /** Draw it as a tinted region, as for a service. By default, a zone holding a singleton is one. */
+  region?: boolean;
+  /** Where its instances sit in the column: at the top, the middle (default), or the bottom. A region's start at the top. */
+  align?: "start" | "center" | "end";
+  /** How its instances line up: one under another (default), side by side, or in a grid. */
+  arrange?: "stack" | "row" | "grid";
+}
+
+/** Where an actor's instances sit within their zone. */
+export interface ActorPlace {
+  /** Instances of actors with a lower order come first; by default, the order that crosses links least. */
+  order?: number;
+  /** Sit on the zone's border rather than inside it, like a gate everything passes through. */
+  edge?: "left" | "right";
+}
+
 /** How things are going: colours a node, a row, or a link. */
 export type Mood = "ok" | "warn" | "bad" | "busy" | "off" | "info";
 
@@ -291,6 +315,8 @@ interface ActorDef<M extends Registry, S, A, T> {
   zone: Zone;
   /** One instance, spawned with the world. */
   singleton?: boolean;
+  /** Where its instances sit within the zone, on the playground's map. */
+  place?: ActorPlace;
   initialState: (ctx: { id: string; label: string }) => S;
   /** State that survives a restart; everything else returns to its initial value. */
   durable?: (keyof S & string)[];
@@ -365,7 +391,7 @@ export interface Script {
 
 export interface SpecBuilder<M extends Registry> {
   readonly messages: { [N in keyof M & string]: `message:${N}` };
-  defineZone(def: { name: string; description?: string }): Zone;
+  defineZone(def: { name: string; description?: string; place?: ZonePlace }): Zone;
   defineLimit(def: { name: string; value: number; unit?: string; sources?: Source[] }): Limit;
   defineActor<S, A = {}, T = {}>(def: ActorDef<M, S, A, T>): Actor<S, A>;
   /** An action input: its type, and the example values the playground offers and the checker tries. */
@@ -406,7 +432,7 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
   const builder: SpecBuilder<M> = {
     messages: Object.fromEntries(Object.keys(options.messages).map((id) => [id, `message:${id}`])) as SpecBuilder<M>["messages"],
     defineZone(def) {
-      const zone: ZoneInfo = { name: def.name, description: def.description };
+      const zone: ZoneInfo = { name: def.name, description: def.description, place: def.place ?? {} };
       spec.zones.push(zone);
       return zone;
     },
@@ -453,6 +479,7 @@ interface RawActor {
   description?: string;
   zone: ZoneInfo;
   singleton?: boolean;
+  place?: ActorPlace;
   initialState: ActorInfo["initialState"];
   durable?: string[];
   look?: ActorInfo["look"];
@@ -510,6 +537,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
     initialState: raw.initialState,
     durable: raw.durable ?? [],
     look: raw.look ?? {},
+    place: raw.place ?? {},
     links: raw.links,
     actions,
     transitions,

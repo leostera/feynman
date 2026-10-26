@@ -72,3 +72,36 @@ test("look, links and say: presentation as data, evaluated against the world", (
   // Example arrays work like example functions.
   expect(spec.actors[1].actions.dial.inputs.n.examples?.({} as never)).toEqual([1, 2]);
 });
+
+const handOff = defineSpec("Hand-off", { messages: { Nothing: message<{}>({ name: "nothing" }) } }, (spec) => {
+  const zone = spec.defineZone({ name: "z" });
+  const Phone = spec.defineActor({ name: "Phone", zone, initialState: () => ({ codes: ["c-1"], host: "mac" }), actions: {} });
+  const Mac = spec.defineActor({
+    name: "Mac",
+    zone,
+    initialState: () => ({ code: null as string | null }),
+    actions: {
+      link: {
+        label: "Link",
+        description: "Types a code.",
+        inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Phone).flatMap((p) => p.state.codes), "made-up"] }) },
+        run: (s, { code }) => void (s.code = code),
+      },
+      // Inputs naming instances are references, not things to carry.
+      ping: { label: "Ping", description: "Pings.", inputs: { to: spec.defineInput(String, { examples: (w): string[] => w.all(Phone).map((p) => p.id) }) }, run: () => {} },
+    },
+  });
+  spec.defineScenario({ name: "Both", run: (s) => void (s.spawn(Phone, "phone"), s.spawn(Mac, "mac")) });
+});
+
+test("without declared tokens, values an action takes that another node holds can be carried", () => {
+  const run = runScenario(handOff, handOff.scenarios[0]);
+  const world = run.worlds.at(-1)!;
+  const phone = world.instances.find((i) => i.actor === "Phone")!.id;
+  const mac = world.instances.find((i) => i.actor === "Mac")!.id;
+  const tokens = appearance(handOff, world, phone).tokens;
+  expect(tokens.map((t) => t.value)).toEqual(["c-1"]);
+  expect(appearance(handOff, world, mac).tokens).toEqual([]);
+  const drops = dropsFor(handOff, world, mac, tokens[0]);
+  expect(drops.map((d) => [d.action.key, d.inputs])).toEqual([["link", { code: "c-1" }]]);
+});

@@ -151,39 +151,93 @@ async function order(spec: Spec, world: World): Promise<Layout> {
   return result;
 }
 
-/** Spread the ordered zones over the canvas: columns across, instances down. */
+const GAP = 32;
+
+/** Zones left to right: those with a column where they ask, the rest in ELK's order around them. */
+function columnOrder(spec: Spec, zones: ZoneBox[]): ZoneBox[] {
+  const placed = new Map<number, ZoneBox>();
+  const rest: ZoneBox[] = [];
+  for (const zone of [...zones].sort((a, b) => a.x - b.x)) {
+    const column = spec.zones.find((z) => z.name === zone.name)?.place.column;
+    if (column === undefined || placed.has(column)) rest.push(zone);
+    else placed.set(column, zone);
+  }
+  const out: ZoneBox[] = [];
+  for (let i = 0; out.length < zones.length; i++) out.push(placed.get(i) ?? rest.shift() ?? [...placed].filter(([c]) => c >= i).sort(([a], [b]) => a - b).map(([c, z]) => (placed.delete(c), z))[0]);
+  return out.filter(Boolean);
+}
+
+/** Lay out a zone's instances by its `arrange`, relative to the top left of their block. */
+function block(arrange: "stack" | "row" | "grid", boxes: Box[], vgap: number): { places: { x: number; y: number }[]; w: number; h: number } {
+  if (arrange === "row") {
+    let x = 0;
+    const h = Math.max(0, ...boxes.map((b) => b.h));
+    const places = boxes.map((b) => ((x += b.w + GAP), { x: x - b.w - GAP, y: (h - b.h) / 2 }));
+    return { places, w: Math.max(0, x - GAP), h };
+  }
+  if (arrange === "grid") {
+    const cols = Math.ceil(Math.sqrt(boxes.length));
+    const cw = Math.max(0, ...boxes.map((b) => b.w));
+    const ch = Math.max(0, ...boxes.map((b) => b.h));
+    const rows = Math.ceil(boxes.length / cols);
+    const places = boxes.map((b, i) => ({ x: (i % cols) * (cw + GAP) + (cw - b.w) / 2, y: Math.floor(i / cols) * (ch + vgap) }));
+    return { places, w: cols * cw + (cols - 1) * GAP, h: rows * ch + (rows - 1) * vgap };
+  }
+  const w = Math.max(0, ...boxes.map((b) => b.w));
+  let y = 0;
+  const places = boxes.map((b) => ((y += b.h + vgap), { x: (w - b.w) / 2, y: y - b.h - vgap }));
+  return { places, w, h: Math.max(0, y - vgap) };
+}
+
+/**
+ * Spread the ordered zones over the canvas: a column per zone, filling the width, and each
+ * zone's instances lined up by its `place` hints. Instances on a zone's edge straddle its
+ * border.
+ */
 function arrange(spec: Spec, world: World, ordered: Layout, view: View): Layout {
-  const columns = [...ordered.zones]
-    .sort((a, b) => a.x - b.x)
-    .map((zone) => {
-      const ids = [...ordered.nodes].filter(([id]) => zoneOfInstance(spec, world, id) === zone.name).sort(([, a], [, b]) => a.y - b.y || a.x - b.x);
-      const region = ids.some(([id]) => spec.actors.find((a) => a.name === world.instances.find((i) => i.id === id)?.actor)?.singleton);
-      const width = Math.max(...ids.map(([, b]) => b.w)) + (region ? 64 : 0);
-      return { zone, ids, region, width };
-    });
+  const actorOf = (id: string) => spec.actors.find((a) => a.name === world.instances.find((i) => i.id === id)?.actor);
+  const columns = columnOrder(spec, ordered.zones).map((zone) => {
+    const place = spec.zones.find((z) => z.name === zone.name)?.place ?? {};
+    const all = [...ordered.nodes]
+      .filter(([id]) => zoneOfInstance(spec, world, id) === zone.name)
+      .sort(([a, ba], [b, bb]) => (actorOf(a)?.place.order ?? 0) - (actorOf(b)?.place.order ?? 0) || ba.y - bb.y || ba.x - bb.x);
+    const inner = all.filter(([id]) => !actorOf(id)?.place.edge);
+    const edges = all.filter(([id]) => actorOf(id)?.place.edge);
+    const region = place.region ?? all.some(([id]) => actorOf(id)?.singleton);
+    const arrange = place.arrange ?? "stack";
+    const sized = block(arrange, inner.map(([, b]) => b), GAP);
+    return { zone, place, inner, edges, region, arrange, width: sized.w + (region ? 64 : 0), height: sized.h };
+  });
   const used = columns.reduce((sum, c) => sum + c.width, 0);
-  const gaps = Math.max(1, columns.length - 1);
-  const gap = columns.length > 1 ? Math.min(280, Math.max(72, (view.w - RESERVE.side * 2 - used) / gaps)) : 0;
+  const minGap = columns.some((c) => c.edges.length) ? 120 : 72;
+  const gap = columns.length > 1 ? Math.min(280, Math.max(minGap, (view.w - RESERVE.side * 2 - used) / (columns.length - 1))) : 0;
   const width = Math.max(view.w, used + gap * (columns.length - 1) + RESERVE.side * 2);
   const top = RESERVE.top + RESERVE.caption;
-  const bottom = RESERVE.bottom;
-  const tallest = Math.max(...columns.map((c) => c.ids.reduce((sum, [, b]) => sum + b.h, 0) + 32 * (c.ids.length - 1) + (c.region ? 96 : 0)));
-  const height = Math.max(view.h, top + tallest + bottom);
-  const room = height - top - bottom;
+  const tallest = Math.max(...columns.map((c) => c.height + (c.region ? 96 : 0)));
+  const height = Math.max(view.h, top + tallest + RESERVE.bottom);
+  const room = height - top - RESERVE.bottom;
   const out: Layout = { width, height, zones: [], nodes: new Map(), edges: new Map() };
   let x = (width - used - gap * (columns.length - 1)) / 2;
   for (const column of columns) {
     const inner = column.region ? room - 96 : room;
-    const stack = column.ids.reduce((sum, [, b]) => sum + b.h, 0);
-    const vgap = column.ids.length > 1 ? Math.min(120, Math.max(32, (inner - stack) / column.ids.length)) : 0;
-    const total = stack + vgap * (column.ids.length - 1);
-    // The service sits at the top of its region, as the thing the rest hangs off; columns are centred.
-    let y = top + (column.region ? 40 : Math.max(0, (inner - total) / 2));
-    for (const [id, box] of column.ids) {
-      out.nodes.set(id, { x: x + (column.width - box.w) / 2, y, w: box.w, h: box.h });
-      y += box.h + vgap;
+    // Spread a stack down the room it has, within reason; rows and grids keep their spacing.
+    const vgap = column.arrange === "stack" && column.inner.length > 1 ? Math.min(120, Math.max(GAP, (inner - column.inner.reduce((s, [, b]) => s + b.h, 0)) / column.inner.length)) : GAP;
+    const laid = block(column.arrange, column.inner.map(([, b]) => b), vgap);
+    const align = column.place.align ?? (column.region ? "start" : "center");
+    const free = Math.max(0, inner - laid.h);
+    const y0 = top + (column.region ? 40 : 0) + (align === "start" ? 0 : align === "end" ? free : free / 2);
+    const x0 = x + (column.width - laid.w) / 2;
+    column.inner.forEach(([id, box], i) => out.nodes.set(id, { x: x0 + laid.places[i].x, y: y0 + laid.places[i].y, w: box.w, h: box.h }));
+    const zone: ZoneBox = column.region ? { name: column.zone.name, region: true, x, y: top - 12, w: column.width, h: room + 12 } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room };
+    // On the edge: straddling the border, spread around the middle of the zone's height.
+    const sides = { left: column.edges.filter(([id]) => actorOf(id)?.place.edge === "left"), right: column.edges.filter(([id]) => actorOf(id)?.place.edge === "right") };
+    for (const [side, list] of Object.entries(sides)) {
+      const stack = block("stack", list.map(([, b]) => b), GAP);
+      list.forEach(([id, box], i) =>
+        out.nodes.set(id, { x: (side === "left" ? zone.x : zone.x + zone.w) - box.w / 2, y: zone.y + (zone.h - stack.h) / 2 + stack.places[i].y, w: box.w, h: box.h }),
+      );
     }
-    out.zones.push(column.region ? { name: column.zone.name, region: true, x, y: top - 12, w: column.width, h: room + 12 } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room });
+    out.zones.push(zone);
     x += column.width + gap;
   }
   return out;

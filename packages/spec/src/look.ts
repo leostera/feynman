@@ -40,7 +40,9 @@ export function appearance(spec: Spec, world: World, id: string): Appearance {
     status: attempt(look.status && (() => look.status!(instance.state as never)), null),
     mood: attempt(look.mood && (() => look.mood!(instance.state as never)), null),
     rows: attempt(look.rows && (() => look.rows!(instance.state as never)), []),
-    tokens: attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), []),
+    tokens: declaresTokens(spec)
+      ? attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), [])
+      : (inferredTokens(spec, world).get(id) ?? []),
     owner: look.owner ? attempt(() => look.owner!(instance.state as never), null) : undefined,
   };
 }
@@ -53,6 +55,66 @@ export interface Drop {
   complete: boolean;
 }
 
+/** Whether any actor says what can be carried; if none does, it is inferred. */
+export function declaresTokens(spec: Spec): boolean {
+  return spec.actors.some((a) => a.look.tokens);
+}
+
+/** The token kind an input takes when tokens are inferred for it. */
+function inferredKind(actor: string, action: string, input: string): string {
+  return `${actor}.${action}.${input}`;
+}
+
+const inferred = new WeakMap<World, Map<string, Token[]>>();
+
+/**
+ * Without declared tokens: what a person would carry. When an action someone can take now
+ * gets its input examples from other instances' state, each value can be dragged from the
+ * instance it came from, like a pairing code on a phone typed into a Mac. Only instances
+ * the examples actually read count, so a value that merely also appears elsewhere stays
+ * put. Values that name instances are left out; those are references, not things to carry.
+ */
+export function inferredTokens(spec: Spec, world: World): Map<string, Token[]> {
+  const cached = inferred.get(world);
+  if (cached) return cached;
+  const out = new Map<string, Token[]>();
+  const names = new Set(world.instances.flatMap((i) => [i.id, i.label, i.actor]));
+  for (const target of world.instances) {
+    const actor = spec.actors.find((a) => a.name === target.actor);
+    if (!actor) continue;
+    for (const action of Object.values(actor.actions)) {
+      if (action.when && !attempt(() => action.when!(target.state), false)) continue;
+      for (const [name, input] of Object.entries(action.inputs)) {
+        if (input.type !== "string" && input.type !== "number") continue;
+        const read = new Set<string>();
+        const view = worldView(spec, world, (id) => read.add(id));
+        const values = attempt(() => input.examples?.(view as never), [] as unknown[]);
+        const sources = world.instances.filter((i) => read.has(i.id) && i.id !== target.id);
+        for (const value of [...new Set(values)].reverse()) {
+          if ((typeof value !== "string" && typeof value !== "number") || names.has(String(value)) || value === "") continue;
+          for (const holder of sources) {
+            if (!holds(holder.state, value)) continue;
+            const list = out.get(holder.id) ?? [];
+            const kind = inferredKind(actor.name, action.key, name);
+            if (!list.some((t) => t.value === value)) list.push({ kind, value });
+            out.set(holder.id, list);
+          }
+        }
+      }
+    }
+  }
+  inferred.set(world, out);
+  return out;
+}
+
+/** Whether a scalar appears anywhere in a state, as a value or a key. */
+function holds(state: unknown, value: string | number, depth = 0): boolean {
+  if (state === value) return true;
+  if (depth > 6 || state === null || typeof state !== "object") return false;
+  if (Array.isArray(state)) return state.some((v) => holds(v, value, depth + 1));
+  return Object.entries(state).some(([k, v]) => k === String(value) || holds(v, value, depth + 1));
+}
+
 export function dropsFor(spec: Spec, world: World, id: string, token: Token): Drop[] {
   const instance = world.instances.find((i) => i.id === id);
   const actor = instance && spec.actors.find((a) => a.name === instance.actor);
@@ -60,7 +122,7 @@ export function dropsFor(spec: Spec, world: World, id: string, token: Token): Dr
   const view = worldView(spec, world);
   const out: Drop[] = [];
   for (const action of Object.values(actor.actions)) {
-    const slot = Object.entries(action.inputs).find(([, input]) => input.accepts === token.kind);
+    const slot = Object.entries(action.inputs).find(([name, input]) => input.accepts === token.kind || token.kind === inferredKind(actor.name, action.key, name));
     if (!slot) continue;
     if (action.when && !attempt(() => action.when!(instance.state), false)) continue;
     const inputs: Record<string, unknown> = {};

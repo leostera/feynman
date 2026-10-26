@@ -1,6 +1,6 @@
 // What a spec is at runtime, and what the engine produces: plain data that views, the
 // checker, and diffs read. Functions (initial state, run, predicates) are the only code.
-import type { Link, Look, Script, Trace, TraceEvent, World as WorldView } from "./dsl.ts";
+import type { ActorPlace, Link, Look, Script, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
 
 export interface Spec {
   name: string;
@@ -31,6 +31,7 @@ export interface MessageInfo {
 export interface ZoneInfo {
   name: string;
   description?: string;
+  place: ZonePlace;
 }
 
 export interface LimitInfo {
@@ -82,6 +83,7 @@ export interface ActorInfo {
   initialState: (ctx: { id: string; label: string }) => unknown;
   durable: string[];
   look: Look<unknown>;
+  place: ActorPlace;
   links?: (state: unknown, self: { id: string; label: string }) => Link[];
   actions: Record<string, ActionInfo>;
   transitions: Record<string, TransitionInfo>;
