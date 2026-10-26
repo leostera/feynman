@@ -4,7 +4,7 @@
     "title": "axo: remote access",
     "summary": "People pair their Macs with a one-time code, then open a terminal on them from a browser, through Cloudflare Access and a relay of Durable Objects. Add Macs and phones, lose messages, revoke a Mac.",
     "repository": "https://github.com/leostera/axo",
-    "commit": "54d505c7c3471158bbbd8916ec967434009acd39",
+    "commit": "3f5d3c28f7106c8cdbf021fb89126a7848d806b6",
     "specs": [
       {
         "path": "specs/remote-access.ts",
