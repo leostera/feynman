@@ -177,8 +177,22 @@ function columnOrder(spec: Spec, zones: ZoneBox[]): ZoneBox[] {
     else placed.set(column, zone);
   }
   const out: ZoneBox[] = [];
-  for (let i = 0; out.length < zones.length; i++) out.push(placed.get(i) ?? rest.shift() ?? [...placed].filter(([c]) => c >= i).sort(([a], [b]) => a - b).map(([c, z]) => (placed.delete(c), z))[0]);
-  return out.filter(Boolean);
+  // A column nobody asked for takes the next zone without one, else the next asked-for zone further right.
+  const next = (i: number): ZoneBox | undefined => {
+    const asked = placed.get(i);
+    if (asked) return placed.delete(i), asked;
+    if (rest.length) return rest.shift();
+    const later = [...placed.keys()].filter((c) => c > i).sort((a, b) => a - b)[0];
+    if (later === undefined) return undefined;
+    const zone = placed.get(later)!;
+    placed.delete(later);
+    return zone;
+  };
+  for (let i = 0; out.length < zones.length; i++) {
+    const zone = next(i);
+    if (zone) out.push(zone);
+  }
+  return out;
 }
 
 /** Lay out a zone's nodes by its `arrange`, relative to the top left of their block. */

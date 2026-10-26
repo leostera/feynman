@@ -1,3 +1,7 @@
 [install.scopes]
 # @cloudflare/kumo is published to the public npm registry.
 "@cloudflare" = "https://registry.npmjs.org/"
+
+[test]
+# Model-checking tests explore thousands of states: give each a minute, not bun's default five seconds.
+timeout = 60000
