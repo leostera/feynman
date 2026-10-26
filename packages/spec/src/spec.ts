@@ -137,6 +137,11 @@ export interface World {
   rng: number;
   instances: InstanceState[];
   pending: Pending[];
+  /**
+   * Set once a step has read the clock: from then on a state may hold an absolute time (an
+   * expiry, a last-seen), so worlds that differ only in when they are no longer behave alike.
+   */
+  stamped?: true;
 }
 
 export interface InstanceState {

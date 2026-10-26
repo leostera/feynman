@@ -19,6 +19,8 @@ Commands:
                            scenarios, and that every source still resolves.
       --depth N --faults N --repeats N --max-states N --time-limit SECONDS
       --instances Actor=N,Actor=N
+      --walks N --walk-depth N   random runs past the depth (0 to turn off)
+      --no-symmetry              keep interchangeable instances apart
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
   dev [--port N]           Serve the explorer, reloading when specs change.
@@ -42,6 +44,9 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       repeats: { type: "string" },
       "max-states": { type: "string" },
       "time-limit": { type: "string" },
+      walks: { type: "string" },
+      "walk-depth": { type: "string" },
+      "no-symmetry": { type: "boolean" },
       instances: { type: "string" },
       base: { type: "string" },
       port: { type: "string" },
@@ -87,6 +92,9 @@ function bounds(values: Record<string, string | boolean | undefined>): Partial<B
   if (int("repeats") !== undefined) out.repeats = int("repeats");
   if (int("max-states") !== undefined) out.maxStates = int("max-states");
   if (int("time-limit") !== undefined) out.timeLimit = int("time-limit")! * 1000;
+  if (int("walks") !== undefined) out.walks = int("walks");
+  if (int("walk-depth") !== undefined) out.walkDepth = int("walk-depth");
+  if (values["no-symmetry"]) out.symmetry = false;
   if (typeof values.instances === "string") {
     out.instances = Object.fromEntries(
       values.instances.split(",").map((pair) => {

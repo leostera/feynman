@@ -58,6 +58,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                     It stopped at its {report.stoppedBy === "timeLimit" ? "time" : "state"} limit, so some orders were not tried: a property that held there is not proven.
                   </span>
                 )}
+                {report.walks?.runs ? ` Also ${report.walks.runs.toLocaleString()} random runs up to ${report.walks.deepest} steps deep, which find bugs past that depth but prove nothing.` : ""}
               </p>
             </div>
             <Section title="Properties">
@@ -81,6 +82,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                           {p.kind} · {p.id}
                           {verdict === "scenario" && <span className="font-sans text-kumo-danger"> · broken by the scenario “{scenarios.get(p.id)}”; exploration did not reach it</span>}
                           {verdict === "explored" && <span className="font-sans"> · held in the states explored</span>}
+                          {p.foundBy === "walk" && <span className="font-sans"> · found by a random run, shrunk to {p.counterexample!.events.length} steps; maybe not the shortest</span>}
                           {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
                         </p>
                       </div>

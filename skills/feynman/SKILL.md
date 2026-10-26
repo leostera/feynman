@@ -474,7 +474,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
 
 - **Instances.** Use `singleton: true` for things there is one of (a service, a database).
   For the rest, scenarios `spawn`, and the checker uses one of each, or more with
-  `--instances Mac=2`.
+  `--instances Mac=2`. Two of an actor are cheap: the checker treats interchangeable
+  instances as one (symmetry), as long as the spec only compares ids and labels and never
+  computes with them (hashing an id, lower-casing a label). If it does, pass `--no-symmetry`.
 - **State.** Keep only what decides behaviour. Use hashes, not secrets (`ctx.hash`).
 - **Repeats.** The checker lets each instance take the same action at most `--repeats N`
   times on one path (2 by default). Raise it when a bug needs more.
@@ -482,7 +484,12 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   default). State listed in `durable` survives a restart.
 - **Time.** Messages take `latency` ms (50 by default; set per message with
   `message({ latency })`). Timers fire at `now + ms`. Use real values from the code, and
-  `defineLimit` for named ones.
+  `defineLimit` for named ones. Reading `ctx.now` is fine, but it costs: from then on worlds
+  that differ only in when they are can no longer be merged. Prefer a timer to storing a time
+  when the code allows either.
+- **Order.** Any message may overtake any other, as on separate connections. Messages on one
+  WebSocket or stream cannot; if a counterexample depends on such an overtaking, say so in
+  the report rather than "fixing" the system.
 - **`when` guards** gate actions (offered only while true) and internal transitions (which
   then run whenever true, without a timer).
 
@@ -521,6 +528,7 @@ read worse. To update one:
 feynman list                   the specs found
 feynman run [spec] [--scenario NAME]
 feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
+              [--walks 2000] [--walk-depth 120] [--no-symmetry]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
@@ -528,7 +536,18 @@ feynman build [--out .feynman/site] [--base REF]
 feynman open
 ```
 
-When `check` stops at its state limit, it says so. If that happens, lower `--depth`, use
+`check` explores in two ways. A breadth-first search tries every order of events up to
+`--depth` and finds the shortest counterexample. Random runs (`--walks N`, up to
+`--walk-depth` steps, a quarter of the time) go far deeper and find bugs the search cannot
+reach. Their counterexamples are shrunk but may not be the shortest, and they prove nothing.
+Read the verdicts as:
+
+- `✓` holds in every state within the bounds;
+- `~` held in the states explored, but the search stopped early: not a proof;
+- `?` never tested: no explored world got to where it applies (add a scenario that does);
+- `✗` broken, by the search, a random run, or a scenario.
+
+When `check` stops at its limits, it says so. If that happens, lower `--depth`, use
 fewer instances, or narrow the examples of inputs. An explored state space that is too
 big usually means the spec models too much.
 

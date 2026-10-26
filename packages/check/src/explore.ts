@@ -1,29 +1,28 @@
-// The checker: a bounded breadth-first search over everything that can happen next.
+// The checker: a bounded breadth-first search over everything that can happen next, plus
+// random runs that go deeper than the search can.
 //
 // From a world with the configured instances, each state branches on: every action on
 // every instance (with inputs from its schema), every guarded transition that holds,
 // every pending delivery (networks reorder), the earliest timer, and, within the fault
 // budget, losing a delivery or restarting an instance. States are deduplicated by a
-// canonical hash, so breadth-first order finds the shortest counterexample.
-import {
-  act,
-  actorNamed,
-  choices,
-  fire,
-  guard,
-  holdsIn,
-  lose,
-  restart,
-  spawn,
-  startWorld,
-  traceView,
-  worldView,
-  type Event,
-  type Spec,
-  type Step,
-  type StepOptions,
-  type World,
-} from "@feynman/spec";
+// canonical key (keys.ts), so breadth-first order finds the shortest counterexample.
+//
+// Three reductions keep every state the plain search would visit, and skip only work
+// whose result is known:
+// - Sleep sets: when two steps on different instances commute (neither reads anyone else,
+//   moves the clock, or shares a counter with the other), both orders reach the same world,
+//   so the second order is not tried again. A state reached later with fewer such steps
+//   skipped is expanded again for the difference.
+// - Inputs an action did not read: other values for them would do exactly the same.
+// - Symmetry (keys.ts): interchangeable instances are renamed to one order.
+import { observation, spawn, startWorld, type Event, type Observation, type Spec, type World } from "@feynman/spec";
+import { canonical, NO_SYMMETRY, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
+import { judge, verdicts } from "./judge.ts";
+import { apply, branches, replay, type Choice, type Counterexample } from "./steps.ts";
+import { shrink, walk, type WalkResult } from "./walk.ts";
+
+export { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
+export { canonical } from "./keys.ts";
 
 export interface Bounds {
   /** Instances of each actor that is not a singleton (1 by default). */
@@ -38,26 +37,31 @@ export interface Bounds {
   timeLimit: number;
   /** Times one instance may take the same action on one path. */
   repeats: number;
+  /** Random runs to try before the search; they take at most a quarter of the time limit. */
+  walks: number;
+  /** Longest random run, in events. */
+  walkDepth: number;
+  /** Treat interchangeable instances of one actor as one (see keys.ts). */
+  symmetry: boolean;
+  /** Skip orders and inputs that cannot make a difference. Off only to compare. */
+  reduce: boolean;
 }
 
-export const DEFAULT_BOUNDS: Bounds = { instances: {}, depth: 14, faults: 1, maxStates: 300_000, timeLimit: 20_000, repeats: 2 };
+export const DEFAULT_BOUNDS: Bounds = {
+  instances: {},
+  depth: 14,
+  faults: 1,
+  maxStates: 300_000,
+  timeLimit: 20_000,
+  repeats: 2,
+  walks: 2_000,
+  walkDepth: 120,
+  symmetry: true,
+  reduce: true,
+};
 
-export type Choice =
-  | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }
-  | { kind: "fire"; pending: number }
-  | { kind: "guard"; instance: string; key: string }
-  | { kind: "lose"; pending: number }
-  | { kind: "restart"; instance: string };
-
-/** A path from the initial world, replayed with every world along it. */
-export interface Counterexample {
-  /** The scenario whose end the path starts from; none for the empty world. */
-  from?: string;
-  initial: World;
-  choices: Choice[];
-  events: Event[];
-  worlds: World[];
-}
+/** Share of the time limit random runs may use. */
+const WALK_SHARE = 0.25;
 
 export interface PropertyResult {
   id: string;
@@ -72,6 +76,8 @@ export interface PropertyResult {
    * and the property not yet. Zero means exploration never got there, so holding says nothing.
    */
   tested?: number;
+  /** Who found the counterexample: the search (shortest), or a random run (shrunk, maybe not shortest). */
+  foundBy?: "search" | "walk";
 }
 
 export interface Report {
@@ -89,7 +95,28 @@ export interface Report {
   properties: PropertyResult[];
   /** Spec bugs met while exploring: an undeclared send, a message nobody handles. */
   errors: { message: string; counterexample: Counterexample }[];
+  /** Steps that ran somewhere, in the search or a random run. */
   coverage: { reached: string[]; missed: string[] };
+  /** The random runs: how many, how many steps in all, and the longest. */
+  walks: { runs: number; steps: number; deepest: number };
+  /** What the reductions saved: steps not tried because their result was known. */
+  reductions: { orders: number; inputs: number; symmetric: string[][] };
+}
+
+/** What one step did, as far as commuting with another step goes. */
+interface Facts {
+  /** The instance whose state it changes. */
+  target: string;
+  /** When it happens: a delivery or timer moves the clock to when it is due, if later. */
+  time: number;
+  /** Whether when it happens shows: it sends, starts a timer, or reads the clock. */
+  timed: boolean;
+  /** It fires a timer, which only the earliest timer may. */
+  timer: boolean;
+  /** It starts a timer, which may become the earliest. */
+  starts: boolean;
+  observed: Observation;
+  failed: boolean;
 }
 
 interface Node {
@@ -102,12 +129,10 @@ interface Node {
   faults: number;
   /** Actions taken on this path, by `instance.key`. */
   acts: Record<string, number>;
-}
-
-/** A search state: the world, plus how many times each action was taken on the way. */
-function stateKey(world: World, acts: Record<string, number>): string {
-  const counts = Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1));
-  return canonical(world) + JSON.stringify(counts);
+  world: World;
+  /** Steps not to try from here: another order already reaches what they would. */
+  sleep: Map<string, Facts>;
+  expanded: boolean;
 }
 
 /** A world to explore from besides the initial one, such as where a scenario ends. */
@@ -118,89 +143,135 @@ export interface Seed {
 
 /**
  * Explore every interleaving within the bounds, from the initial world and from each seed
- * at once, breadth first. Seeding with where scenarios end puts the search where the
- * interesting states are, rather than spending its budget getting there.
+ * at once, breadth first, after a share of random runs. Seeding with where scenarios end puts
+ * the search where the interesting states are, rather than spending its budget getting there.
  */
 export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = []): Report {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
   const started = Date.now();
-  const roots: { name?: string; world: World }[] = [{ world: initialWorld(spec, b) }, ...seeds];
+  const roots: { name?: string; world: World; symmetry: Symmetry }[] = [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({
+    ...r,
+    symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY,
+  }));
+  const v = verdicts();
+  const walked: WalkResult = b.walks > 0 ? walk(spec, roots.map((r) => r.world), b, v, started + b.timeLimit * WALK_SHARE) : { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
+  // The search judges afresh, so it finds the shortest counterexample even for what a run found.
+  const search = verdicts();
+  search.futures = v.futures;
+
   const nodes: Node[] = [];
-  const seen = new Set<string>();
-  let frontier: { node: number; world: World }[] = [];
+  const seen = new Map<string, number>();
+  const saved = { orders: 0, inputs: 0 };
+  // A state is the world plus the budget spent getting there: actions repeated, faults used.
+  const keyOf = (world: World, acts: Record<string, number>, faults: number, root: number) => `${symmetricKey(world, roots[root].symmetry)}${actsKey(acts)}|${faults}`;
+  let frontier: { node: number; only?: Set<string> }[] = [];
   for (const [root, { world }] of roots.entries()) {
-    const key = stateKey(world, {});
+    const key = keyOf(world, {}, 0, root);
     if (seen.has(key)) continue;
-    seen.add(key);
-    nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {} });
-    frontier.push({ node: nodes.length - 1, world });
+    seen.set(key, nodes.length);
+    nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {}, world, sleep: new Map(), expanded: false });
+    frontier.push({ node: nodes.length - 1 });
   }
-  const failures = new Map<string, number>();
+  const failures = new Map<string, { node: number; then?: Event[] }>();
   const errors = new Map<string, number>();
-  const eventuallyChecked = new Map<string, { node: number; then: Event[] } | null>();
-  const futures = new Map<string, Futures>();
-  const tested = new Map<string, number>();
-  const reached = new Set<string>();
   let depthReached = 0;
   let stoppedBy: Report["stoppedBy"];
 
-  const examine = (index: number, world: World) => {
+  const examine = (index: number) => {
     const node = nodes[index];
-    const event = node.event;
-    if (event) {
-      reached.add(`${event.actor}.${event.key}`);
-      if (event.error && !errors.has(event.error)) errors.set(event.error, index);
-      for (const id of event.violations) if (!failures.has(id)) failures.set(id, index);
+    const { findings, error } = judge(spec, node.world, node.event, () => pathEvents(nodes, index), search);
+    for (const f of findings) {
+      search.broken.add(f.id);
+      failures.set(f.id, { node: index, then: f.then });
     }
-    for (const invariant of spec.invariants) {
-      if (failures.has(invariant.id)) continue;
-      if (invariant.kind === "never") {
-        if (event && safely(() => invariant.never(traceView(pathEvents(nodes, index))))) failures.set(invariant.id, index);
-      } else if (invariant.kind === "eventually") {
-        if (eventuallyChecked.get(invariant.id)) continue;
-        if (invariant.after && !holdsIn(spec, world, invariant.after)) continue;
-        if (holdsIn(spec, world, invariant.eventually)) continue;
-        tested.set(invariant.id, (tested.get(invariant.id) ?? 0) + 1);
-        if (!futures.has(invariant.id)) futures.set(invariant.id, new Map());
-        if (!neverWithin(spec, world, invariant.eventually, invariant.within, futures.get(invariant.id)!)) continue;
-        // Found: run it again, explained, for the counterexample.
-        const then = settles(spec, world, invariant.eventually, invariant.within);
-        if (then) eventuallyChecked.set(invariant.id, { node: index, then });
-      }
+    if (error) {
+      search.errors.add(error);
+      errors.set(error, index);
     }
   };
 
-  for (const { node, world } of frontier) examine(node, world);
+  /** A state reached again: anything it skipped that this path did not is tried after all. */
+  const revisit = (index: number, world: World, sleep: Map<string, Facts>, next: typeof frontier) => {
+    const node = nodes[index];
+    if (!node.sleep.size) return;
+    // A renamed twin's step names do not match; wake everything rather than translate them.
+    const same = !roots[node.root].symmetry.classes.length || canonical(world) === canonical(node.world);
+    const woken = new Set([...node.sleep.keys()].filter((k) => !same || !sleep.has(k)));
+    if (!woken.size) return;
+    for (const k of woken) node.sleep.delete(k);
+    if (node.expanded) next.push({ node: index, only: woken });
+  };
+
+  const expand = (index: number, only: Set<string> | undefined, next: typeof frontier): boolean => {
+    const node = nodes[index];
+    const world = node.world;
+    const tried: [string, Facts][] = [];
+    const inputsTried = new Map<string, { inputs: Record<string, unknown>; read: Set<string> }[]>();
+    for (const choice of branches(spec, world, node.faults < b.faults)) {
+      if (nodes.length >= b.maxStates) return (stoppedBy = "maxStates"), false;
+      if (Date.now() - started > b.timeLimit) return (stoppedBy = "timeLimit"), false;
+      const name = stepName(world, choice);
+      if (only ? !only.has(name) : node.sleep.has(name)) {
+        if (!only) saved.orders++;
+        continue;
+      }
+      let acts = node.acts;
+      if (choice.kind === "act") {
+        const id = `${choice.instance}.${choice.key}`;
+        if ((acts[id] ?? 0) >= b.repeats) continue;
+        acts = { ...acts, [id]: (acts[id] ?? 0) + 1 };
+        // An earlier try of this action read only inputs this one shares: same result.
+        const twin = b.reduce && inputsTried.get(id)?.find((t) => [...t.read].every((k) => Object.is(t.inputs[k], choice.inputs[k])));
+        if (twin) {
+          saved.inputs++;
+          continue;
+        }
+      }
+      const observed = observation();
+      const step = apply(spec, world, choice, { explain: false, observe: observed });
+      if (choice.kind === "act") {
+        const id = `${choice.instance}.${choice.key}`;
+        inputsTried.set(id, [...(inputsTried.get(id) ?? []), { inputs: choice.inputs, read: observed.inputs }]);
+      }
+      const facts: Facts = {
+        target: targetOf(world, choice),
+        time: step.world.clock,
+        timed: observed.readsNow || step.event.sent.length > 0 || step.event.started.length > 0,
+        timer: step.event.kind === "timer",
+        starts: step.event.started.length > 0,
+        observed,
+        failed: !!step.event.error,
+      };
+      // What the child need not try: what this node skipped or already tried, where it commutes with this step.
+      const sleep = new Map<string, Facts>();
+      if (b.reduce && !only) {
+        for (const [k, f] of node.sleep) if (commute(f, facts)) sleep.set(k, f);
+        for (const [k, f] of tried) if (commute(f, facts)) sleep.set(k, f);
+      }
+      tried.push([name, facts]);
+      const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
+      const key = keyOf(step.world, acts, faults, node.root);
+      const existing = seen.get(key);
+      if (existing !== undefined) {
+        if (b.reduce) revisit(existing, step.world, sleep, next);
+        continue;
+      }
+      seen.set(key, nodes.length);
+      nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts, world: step.world, sleep, expanded: false });
+      depthReached = Math.max(depthReached, node.depth + 1);
+      examine(nodes.length - 1);
+      if (!step.event.error) next.push({ node: nodes.length - 1 });
+    }
+    node.expanded = true;
+    return true;
+  };
+
+  for (const { node } of frontier) examine(node);
   search: while (frontier.length) {
     const next: typeof frontier = [];
-    for (const { node: index, world } of frontier) {
-      const node = nodes[index];
-      if (node.depth >= b.depth) continue;
-      for (const choice of branches(spec, world, node.faults < b.faults)) {
-        if (nodes.length >= b.maxStates) {
-          stoppedBy = "maxStates";
-          break search;
-        }
-        if (Date.now() - started > b.timeLimit) {
-          stoppedBy = "timeLimit";
-          break search;
-        }
-        let acts = node.acts;
-        if (choice.kind === "act") {
-          const id = `${choice.instance}.${choice.key}`;
-          if ((acts[id] ?? 0) >= b.repeats) continue;
-          acts = { ...acts, [id]: (acts[id] ?? 0) + 1 };
-        }
-        const step = apply(spec, world, choice, QUIET);
-        const key = stateKey(step.world, acts);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
-        nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts });
-        depthReached = Math.max(depthReached, node.depth + 1);
-        examine(nodes.length - 1, step.world);
-        if (!step.event.error) next.push({ node: nodes.length - 1, world: step.world });
-      }
+    for (const { node: index, only } of frontier) {
+      if (nodes[index].depth >= b.depth) continue;
+      if (!expand(index, only, next)) break search;
     }
     frontier = next;
   }
@@ -209,16 +280,23 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
     const root = roots[nodes[index].root];
     return { ...replay(spec, root.world, pathChoices(nodes, index)), ...(root.name ? { from: root.name } : {}) };
   };
+  const fromWalk = (id: string) => {
+    const found = walked.findings.find((f) => f.id === id);
+    if (!found) return undefined;
+    const root = roots[found.root];
+    const { path, then } = shrink(spec, root.world, found, replay(spec, root.world, found.choices));
+    return { counterexample: { ...path, ...(root.name ? { from: root.name } : {}) }, then };
+  };
   const properties: PropertyResult[] = spec.invariants.map((invariant) => {
-    const base = { id: invariant.id, kind: invariant.kind, description: invariant.description };
-    if (invariant.kind === "eventually") {
-      const found = eventuallyChecked.get(invariant.id);
-      const times = tested.get(invariant.id) ?? 0;
-      return found ? { ...base, holds: false, counterexample: counterexample(found.node), then: found.then, tested: times } : { ...base, holds: true, tested: times };
-    }
-    const index = failures.get(invariant.id);
-    return index === undefined ? { ...base, holds: true } : { ...base, holds: false, counterexample: counterexample(index) };
+    const base = { id: invariant.id, kind: invariant.kind, description: invariant.description, ...(invariant.kind === "eventually" ? { tested: (search.tested.get(invariant.id) ?? 0) + (v.tested.get(invariant.id) ?? 0) } : {}) };
+    const found = failures.get(invariant.id);
+    if (found) return { ...base, holds: false, counterexample: counterexample(found.node), ...(found.then ? { then: found.then } : {}), foundBy: "search" as const };
+    const walkedTo = fromWalk(invariant.id);
+    if (walkedTo) return { ...base, holds: false, counterexample: walkedTo.counterexample, ...(walkedTo.then ? { then: walkedTo.then } : {}), foundBy: "walk" as const };
+    return { ...base, holds: true };
   });
+  const walkErrors = walked.errors.filter((e) => !errors.has(e.message)).map((e) => ({ message: e.message, counterexample: replay(spec, roots[e.root].world, e.choices) }));
+  const reached = new Set([...search.reached, ...v.reached]);
   const all = allSteps(spec);
   return {
     spec: spec.name,
@@ -230,8 +308,10 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
     depthReached,
     durationMs: Date.now() - started,
     properties,
-    errors: [...errors].map(([message, index]) => ({ message, counterexample: counterexample(index) })),
+    errors: [...[...errors].map(([message, index]) => ({ message, counterexample: counterexample(index) })), ...walkErrors],
     coverage: { reached: all.filter((k) => reached.has(k)), missed: all.filter((k) => !reached.has(k)) },
+    walks: { runs: walked.runs, steps: walked.steps, deepest: walked.deepest },
+    reductions: { ...saved, symmetric: roots[0].symmetry.classes.map((c) => c.labels) },
   };
 }
 
@@ -245,175 +325,61 @@ export function initialWorld(spec: Spec, bounds: Pick<Bounds, "instances">): Wor
   return world;
 }
 
-/** Everything that can happen next from `world`. */
-export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[] {
-  const { actions, guards, pending } = choices(spec, world);
-  const out: Choice[] = [];
-  for (const action of actions) {
-    const instance = world.instances.find((i) => i.id === action.instance)!;
-    const info = actorNamed(spec, instance.actor).actions[action.key];
-    for (const inputs of inputCombinations(spec, world, info.inputs)) out.push({ kind: "act", instance: action.instance, key: action.key, inputs });
-  }
-  for (const g of guards) out.push({ kind: "guard", instance: g.instance, key: g.key });
-  const firstTimer = pending.find((p) => p.kind === "timer");
-  for (const p of pending) if (p.kind === "deliver" || p === firstTimer) out.push({ kind: "fire", pending: p.id });
-  if (faultsLeft) {
-    for (const p of pending) if (p.kind === "deliver") out.push({ kind: "lose", pending: p.id });
-    for (const instance of world.instances) if (!actorNamed(spec, instance.actor).singleton) out.push({ kind: "restart", instance: instance.id });
-  }
-  return out;
+// Commuting -------------------------------------------------------------------------------------------
+
+/**
+ * Whether two steps taken from one world reach the same world in either order. They must
+ * change different instances, neither may read another instance, and they may not both use
+ * a shared counter. Sends commute: a step never sees what is pending. Time: the clock ends
+ * at the later of the two either way, but a step taken second runs at the other's time if
+ * that is later, so that step must not show when it ran (send, start a timer, read now).
+ * And neither may disable the other: only the earliest timer fires, so a timer does not
+ * commute with a step that starts one.
+ */
+function commute(a: Facts, b: Facts): boolean {
+  return (
+    a.target !== b.target &&
+    !a.failed &&
+    !b.failed &&
+    !a.observed.readsOthers &&
+    !b.observed.readsOthers &&
+    !(a.observed.shared && b.observed.shared) &&
+    !(a.timer && b.starts) &&
+    !(b.timer && a.starts) &&
+    !(b.time > a.time && a.timed) &&
+    !(a.time > b.time && b.timed)
+  );
 }
 
-/** Exploring reads only the next world, errors, violations and what was sent; counterexamples are replayed in full. */
-const QUIET: StepOptions = { explain: false };
-/** Running by itself to check an `eventually` needs only the worlds. */
-const SILENT: StepOptions = { explain: false, invariants: false };
+/** The instance a step changes. */
+function targetOf(world: World, choice: Choice): string {
+  if (choice.kind === "fire" || choice.kind === "lose") return world.pending.find((p) => p.id === choice.pending)!.to;
+  return choice.instance;
+}
 
-export function apply(spec: Spec, world: World, choice: Choice, how?: StepOptions): Step {
+/** A step's name that stays the same along a path while other steps run, independent of ids. */
+function stepName(world: World, choice: Choice): string {
   switch (choice.kind) {
     case "act":
-      return act(spec, world, choice.instance, choice.key, choice.inputs, how);
-    case "fire":
-      return fire(spec, world, choice.pending, how);
+      return `a|${choice.instance}|${choice.key}|${JSON.stringify(choice.inputs)}`;
     case "guard":
-      return guard(spec, world, choice.instance, choice.key, how);
-    case "lose":
-      return lose(spec, world, choice.pending, how);
+      return `g|${choice.instance}|${choice.key}`;
     case "restart":
-      return restart(spec, world, choice.instance, how);
-  }
-}
-
-export function replay(spec: Spec, initial: World, choices: Choice[]): Counterexample {
-  const events: Event[] = [];
-  const worlds: World[] = [];
-  let world = initial;
-  for (const choice of choices) {
-    const step = apply(spec, world, choice);
-    events.push(step.event);
-    worlds.push(step.world);
-    world = step.world;
-  }
-  return { initial, choices, events, worlds };
-}
-
-/** Values to try for each input: its examples, or a small set per type. At most 12 combinations. */
-function inputCombinations(spec: Spec, world: World, inputs: Record<string, { type: string; values?: string[]; examples?: (w: never) => unknown[] }>): Record<string, unknown>[] {
-  let combos: Record<string, unknown>[] = [{}];
-  for (const [name, input] of Object.entries(inputs)) {
-    const values = input.examples
-      ? dedupe(safely(() => input.examples!(worldView(spec, world) as never)) || [])
-      : input.type === "choice"
-        ? (input.values ?? [])
-        : input.type === "number"
-          ? [0, 1]
-          : input.type === "boolean"
-            ? [true, false]
-            : ["", "x"];
-    combos = combos.flatMap((combo) => values.map((value) => ({ ...combo, [name]: value }))).slice(0, 12);
-  }
-  return combos;
-}
-
-/** Most events one run by itself may take, so a looping spec cannot hang the checker. */
-const SETTLE_LIMIT = 1000;
-
-/**
- * Run the system by itself (no actions, no faults) for `within` milliseconds of simulated
- * time; the events, if `predicate` never holds in that time.
- */
-function settles(spec: Spec, world: World, predicate: (w: never) => boolean, within: number): Event[] | null {
-  const events: Event[] = [];
-  const deadline = world.clock + within;
-  let current = world;
-  for (let n = 0; n < SETTLE_LIMIT; n++) {
-    const { guards, pending } = choices(spec, current);
-    if (!guards.length && (!pending.length || pending[0].at > deadline)) break;
-    const step = guards.length ? guard(spec, current, guards[0].instance, guards[0].key) : fire(spec, current, pending[0].id);
-    events.push(step.event);
-    current = step.world;
-    if (holdsIn(spec, current, predicate as never)) return null;
-  }
-  return events;
-}
-
-/** Each state's JSON, once: states are frozen and shared between worlds, so most are seen many times. */
-const stateText = new WeakMap<object, string>();
-
-function textOf(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  let text = stateText.get(value);
-  if (text === undefined) stateText.set(value, (text = JSON.stringify(value)));
-  return text;
-}
-
-/**
- * What the system does by itself from a world, per `eventually` property: how long until the
- * property holds, or that it does not for a while (or ever, once nothing is left to run).
- * The run by itself is deterministic, so every world on one such run shares its future, and
- * most explored worlds run into futures already seen. Keyed like deduplication, without
- * absolute time.
- */
-type Future = { holdsAfter: number } | { notFor: number };
-type Futures = Map<string, Future>;
-
-/** Whether the system, left alone from `world`, does not reach `predicate` within `within` ms. */
-function neverWithin(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures): boolean {
-  const chain: { key: string; clock: number }[] = [];
-  const deadline = world.clock + within;
-  const remember = (future: (clock: number) => Future) => {
-    for (const { key, clock } of chain) futures.set(key, future(clock));
-  };
-  let current = world;
-  for (let n = 0; n < SETTLE_LIMIT; n++) {
-    const key = canonical(current);
-    const known = futures.get(key);
-    if (known && "holdsAfter" in known) {
-      const at = current.clock + known.holdsAfter;
-      remember((clock) => ({ holdsAfter: at - clock }));
-      return at > deadline;
-    }
-    if (known && current.clock + known.notFor >= deadline) {
-      const until = current.clock + known.notFor;
-      remember((clock) => ({ notFor: until - clock }));
-      return true;
-    }
-    chain.push({ key, clock: current.clock });
-    const { guards, pending } = choices(spec, current);
-    if (!guards.length && !pending.length) {
-      remember(() => ({ notFor: Infinity }));
-      return true;
-    }
-    if (!guards.length && pending[0].at > deadline) {
-      remember((clock) => ({ notFor: deadline - clock }));
-      return true;
-    }
-    current = (guards.length ? guard(spec, current, guards[0].instance, guards[0].key, SILENT) : fire(spec, current, pending[0].id, SILENT)).world;
-    if (holdsIn(spec, current, predicate as never)) {
-      const at = current.clock;
-      remember((clock) => ({ holdsAfter: at - clock }));
-      return at > deadline;
+      return `r|${choice.instance}`;
+    case "fire":
+    case "lose": {
+      const p = world.pending.find((x) => x.id === choice.pending)!;
+      // When it is due, absolutely: along a path that never changes, while how soon does.
+      // (Across paths it may differ for one state; then the names miss and more is tried.)
+      return `${choice.kind[0]}|${p.at}|${pendingText(p)}`;
     }
   }
-  return true;
 }
 
-/** What is pending, apart from when: entries are shared between worlds, so this is worked out once each. */
-const pendingTexts = new WeakMap<object, string>();
+// Paths ----------------------------------------------------------------------------------------------
 
-function pendingText(p: World["pending"][number]): string {
-  let text = pendingTexts.get(p);
-  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}` : `t|${p.to}|${p.timer}`));
-  return text;
-}
-
-/** A world's identity for deduplication: instances and what is pending, without ids or absolute times. */
-export function canonical(world: World): string {
-  const pending = world.pending
-    .map((p) => `${p.at - world.clock}|${pendingText(p)}`)
-    .sort();
-  const instances = world.instances.map((i) => `${i.id}=${textOf(i.state)}`).join("\n");
-  return `${instances}\n--\n${pending.join("\n")}\n--\n${JSON.stringify(world.fresh)}|${world.rng}`;
+function actsKey(acts: Record<string, number>): string {
+  return JSON.stringify(Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
 function pathChoices(nodes: Node[], index: number): Choice[] {
@@ -431,20 +397,4 @@ function pathEvents(nodes: Node[], index: number): Event[] {
 
 function allSteps(spec: Spec): string[] {
   return spec.actors.flatMap((actor) => [...Object.keys(actor.actions), ...Object.keys(actor.transitions)].map((key) => `${actor.name}.${key}`));
-}
-
-function safely<T>(f: () => T): T | false {
-  try {
-    return f();
-  } catch {
-    return false;
-  }
-}
-
-function dedupe(values: unknown[]): unknown[] {
-  const seen = new Set<string>();
-  return values.filter((v) => {
-    const key = JSON.stringify(v);
-    return seen.has(key) ? false : (seen.add(key), true);
-  });
 }
