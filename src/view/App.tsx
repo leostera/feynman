@@ -1,7 +1,7 @@
 // The explorer's shell: a navigation rail (pages, commit, theme) and one page that fills the
 // rest; the playground's top bar picks the spec. Playground sessions are kept per spec while you move between pages.
-import { Badge, Button, Sidebar, useSidebar } from "@cloudflare/kumo";
-import { ArrowsSplitIcon, BookOpenIcon, GitCommitIcon, MoonIcon, PlayCircleIcon, ShieldCheckIcon, SidebarSimpleIcon, SunIcon } from "@phosphor-icons/react";
+import { Sidebar, useSidebar } from "@cloudflare/kumo";
+import { ArrowsSplitIcon, BookOpenIcon, GearIcon, PlayCircleIcon, ShieldCheckIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { Counterexample } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
@@ -10,10 +10,11 @@ import type { Bundle } from "./data";
 import { Flows, parseSelection, selectionItem, type FlowRun } from "./Flows";
 import { Playground } from "./Playground";
 import { Reference } from "./Reference";
+import { SettingsPage } from "./Settings";
 import { freshSession, replay, runScenarioSession, type Session } from "./sessions";
 import { ExplorerProvider, type Loaded } from "./ui";
 
-type Page = "play" | "flows" | "checks" | "reference";
+type Page = "play" | "flows" | "checks" | "reference" | "settings";
 const PAGES: { page: Page; label: string; icon: typeof PlayCircleIcon }[] = [
   { page: "play", label: "Playground", icon: PlayCircleIcon },
   { page: "flows", label: "Flows", icon: ArrowsSplitIcon },
@@ -31,7 +32,7 @@ function parseRoute(hash: string, fallback: string): Route {
   const [spec, page, ...item] = hash.replace(/^#\/?/, "").split("/");
   return {
     spec: spec ? decodeURIComponent(spec) : fallback,
-    page: PAGES.some((p) => p.page === page) ? (page as Page) : "play",
+    page: PAGES.some((p) => p.page === page) || page === "settings" ? (page as Page) : "play",
     item: item.length ? decodeURIComponent(item.join("/")) : null,
   };
 }
@@ -100,18 +101,21 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
               ))}
             </Sidebar.Menu>
           </Sidebar.Group>
-          <Sidebar.Group>
-            <Sidebar.Menu>
-              <SidebarToggle />
-            </Sidebar.Menu>
-          </Sidebar.Group>
         </Sidebar.Content>
-        <Sidebar.Footer>
-          <Footer bundle={bundle} />
+        {/* Kumo's footer is one row; this one holds two: settings, then the collapse button. */}
+        <Sidebar.Footer className="h-auto flex-col items-stretch gap-px py-2">
+          <Sidebar.Menu>
+            <Sidebar.MenuButton icon={GearIcon} href={href({ spec: current?.entry.id ?? "", page: "settings", item: null })} active={route.page === "settings"} tooltip="Settings">
+              Settings
+            </Sidebar.MenuButton>
+            <SidebarToggle />
+          </Sidebar.Menu>
         </Sidebar.Footer>
       </Sidebar>
       <main className="min-w-0 flex-1 overflow-hidden">
-        {!current ? (
+        {route.page === "settings" ? (
+          <SettingsPage bundle={bundle} />
+        ) : !current ? (
           <Empty text="No specs found. Write one in specs/<name>.ts next to a package.json." />
         ) : !current.spec || !session ? (
           <Empty text={current.entry.error ?? "This spec did not load."} />
@@ -190,23 +194,3 @@ function restore(id: string, spec: Spec, scenarioName: string | null): Session {
 function Empty({ text }: { text: string }) {
   return <div className="flex h-full items-center justify-center p-8 text-sm text-kumo-subtle">{text}</div>;
 }
-
-function Footer({ bundle }: { bundle: Bundle }) {
-  const [mode, setMode] = useState(() => document.documentElement.dataset.mode ?? "light");
-  useEffect(() => {
-    document.documentElement.dataset.mode = mode;
-    localStorage.setItem("feynman.mode", mode);
-  }, [mode]);
-  const { repository } = bundle;
-  return (
-    <div className="flex flex-col gap-1 px-1">
-      <div className="flex items-center gap-1.5 truncate text-xs text-kumo-subtle" title={`${repository.name} at ${repository.commit}${repository.dirty ? " with uncommitted changes" : ""}`}>
-        <GitCommitIcon size={14} className="shrink-0" />
-        <span className="font-mono group-data-[state=collapsed]/sidebar:hidden">{repository.commit.slice(0, 7)}</span>
-        {repository.dirty && <span className="group-data-[state=collapsed]/sidebar:hidden"><Badge variant="warning">+ changes</Badge></span>}
-      </div>
-      <Button variant="ghost" size="sm" shape="square" aria-label="Switch theme" onClick={() => setMode(mode === "dark" ? "light" : "dark")} icon={mode === "dark" ? <SunIcon /> : <MoonIcon />} />
-    </div>
-  );
-}
-

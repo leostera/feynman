@@ -10,8 +10,9 @@ import { App } from "./App";
 import type { Bundle, Embedded } from "./data";
 import type { Loaded } from "./ui";
 import "./index.css";
+import { applySettings } from "./preferences";
 
-document.documentElement.dataset.mode = localStorage.getItem("feynman.mode") ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+applySettings();
 
 /** A built page carries its data and modules; a served one (`feynman dev`) fetches them. */
 const embedded: Embedded | null = (() => {
