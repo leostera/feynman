@@ -19,6 +19,21 @@ from it:
 what matters in the domain (a terminal to type in, a Settings pane), add a small
 playground file beside the spec that composes Feynman's kit; see "Playground files".
 
+## Setup
+
+Feynman runs on [Bun](https://bun.sh) (1.3 or later). In the repository to model:
+
+```sh
+bun add -d @leostera/feynman   # the DSL's types for your editor, and the CLI
+bunx feynman list              # finds specs/*.ts
+```
+
+Without installing anything, `bunx @leostera/feynman check` works too: the CLI resolves
+`@leostera/feynman` in specs to itself. Specs import `@leostera/feynman` (the DSL) and
+playground files `@leostera/feynman/play`; a `tsconfig.json` for the editor needs
+`"moduleResolution": "bundler"` and `"allowImportingTsExtensions": true`, as Bun's default
+does. This file is at https://feynman.leostera.dev/SKILL.md.
+
 ## When to write one, and how big
 
 - **Explain:** one spec per behaviour a newcomer would ask about, such as "how does a Mac
@@ -97,7 +112,7 @@ Before you finish, go through the spec once more. For each actor, message and st
 ## The DSL
 
 ```ts
-import { defineSpec, message, MIN, SEC } from "@feynman/spec";
+import { defineSpec, message, MIN, SEC } from "@leostera/feynman";
 
 export default defineSpec(
   "Remote access",
@@ -386,7 +401,7 @@ open, with commands to click and their output; the status a group shows while cl
 flows and diffs never load this file, and removing it leaves a working playground.
 
 ```tsx
-import { definePlayground, Terminal } from "@feynman/play";
+import { definePlayground, Terminal } from "@leostera/feynman/play";
 import spec from "./remote-access.ts";
 
 const { Person, Manager, Axod } = spec.handles;
@@ -430,7 +445,7 @@ export default definePlayground(spec, (play) => {
   Keep them pure and cheap: they run on every frame while time runs. If one throws, that
   node falls back to the default drawing.
 - **Compose the kit:** `Node`, `Rows`, `Ticket`, `Terminal`, `Panel`, `Card`, `Badge`,
-  `Icon` and `countdown` from `@feynman/play`. They carry the playground's look in light
+  `Icon` and `countdown` from `@leostera/feynman/play`. They carry the playground's look in light
   and dark mode. For anything else, use the `style` prop with Kumo's CSS variables (such
   as `var(--color-kumo-line)`). Tailwind classes in a playground file are not compiled.
 - **What the playground needs in the spec:** a panel can only show what the state holds.
@@ -442,7 +457,7 @@ export default definePlayground(spec, (play) => {
 
 ### Types
 
-- `import { defineSpec, message, SEC, MIN } from "@feynman/spec"` is all a spec needs.
+- `import { defineSpec, message, SEC, MIN } from "@leostera/feynman"` is all a spec needs.
   For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
@@ -564,7 +579,7 @@ big usually means the spec models too much.
 A `feynman.config.ts` at the repository root can name spec globs and checker defaults:
 
 ```ts
-import { defineConfig } from "@feynman/cli";
+import { defineConfig } from "@leostera/feynman/config";
 export default defineConfig({ specs: ["docs/specs/*.ts"], check: { depth: 12, instances: { Mac: 2 } } });
 ```
 

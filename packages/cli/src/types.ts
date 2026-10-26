@@ -5,12 +5,13 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { CONFIG_NAMES, PLAY_NAMES, SPEC_NAMES } from "./names.ts";
 
 const TSC = join(dirname(Bun.resolveSync("typescript/package.json", import.meta.dir)), "bin", "tsc");
 const SPEC = Bun.resolveSync("@feynman/spec", import.meta.dir);
 const CLI = Bun.resolveSync("./index.ts", import.meta.dir);
-const PLAY_DIR = dirname(Bun.resolveSync("@feynman/play/package.json", import.meta.dir));
 const PLAY = Bun.resolveSync("@feynman/play", import.meta.dir);
+const PLAY_DIR = dirname(PLAY);
 const REACT_TYPES = dirname(Bun.resolveSync("@types/react/package.json", PLAY_DIR));
 const KUMO = dirname(Bun.resolveSync("@cloudflare/kumo/package.json", PLAY_DIR));
 
@@ -38,9 +39,9 @@ export function typecheck(root: string, files: string[]): TypeError[] {
       jsx: "react-jsx",
       types: [],
       paths: {
-        "@feynman/spec": [SPEC],
-        "@feynman/cli": [CLI],
-        "@feynman/play": [PLAY],
+        ...Object.fromEntries(SPEC_NAMES.map((n) => [n, [SPEC]])),
+        ...Object.fromEntries(CONFIG_NAMES.map((n) => [n, [CLI]])),
+        ...Object.fromEntries(PLAY_NAMES.map((n) => [n, [PLAY]])),
         react: [join(REACT_TYPES, "index.d.ts")],
         "react/*": [join(REACT_TYPES, "*")],
         "@cloudflare/kumo": [KUMO],
