@@ -259,7 +259,7 @@ function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first"
       fill="var(--text-color-kumo-subtle)"
       className="text-[11px]"
     >
-      <tspan className="uppercase tracking-wider">{zone.name}</tspan>
+      <tspan>{zone.name}</tspan>
       {description && <tspan opacity={0.75}> · {description}</tspan>}
     </text>
   );
