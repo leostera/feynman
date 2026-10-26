@@ -58,14 +58,18 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
   const live = current(session);
   const sceneRef = useRef<{ groups: GroupInfo[]; toggled: Set<string> }>({ groups, toggled });
   sceneRef.current = { groups, toggled };
-  const clock = useClock(spec, session, setSession, travelled === null && hover === null, (world, p) => {
-    // A message inside a closed group is not drawn travelling, so there is nothing to slow down for.
+  // A message inside a closed group is not drawn travelling, so there is nothing to slow down for.
+  const drawnFlying = (world: World, p: Extract<Pending, { kind: "deliver" }>) => {
     const scene = sceneOf(spec, world, sceneRef.current.groups, sceneRef.current.toggled);
     return scene.of.get(p.from) !== scene.of.get(p.to);
-  });
+  };
+  const clock = useClock(spec, session, setSession, travelled === null && hover === null, drawnFlying);
+  const replay = useReplay(spec, session, cursor, setCursor, clock.speed, drawnFlying);
   const base = travelled === null ? live : worldAt(session, travelled);
   const viewing = hover ?? travelled;
   const world = viewing === null ? live : worldAt(session, viewing);
+  /** The clock on screen: live time, the replay running between two recorded events, or the moment looked at. */
+  const shownClock = viewing === null ? clock.now : hover === null && replay.clock !== null ? replay.clock : world.clock;
   const { ref, view } = useView();
   const scene = sceneOf(spec, world, groups, toggled);
   const baseScene = sceneOf(spec, base, groups, toggled);
@@ -75,6 +79,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
   const focus = focusIndex >= 0 && session.steps[focusIndex].event ? { event: session.steps[focusIndex].event!, index: focusIndex } : null;
   const run = (op: Op) => {
     const from = travelled === null ? session : rollback(session, travelled + 1);
+    replay.stop();
     setCursor(null);
     setHover(null);
     setPacket(null);
@@ -87,24 +92,32 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
   const runAll = (ops: Op[]) => {
     let next = travelled === null ? session : rollback(session, travelled + 1);
     for (const op of ops) next = apply(spec, next, travelled === null ? { ...op, at: clock.now } : op);
+    replay.stop();
     setCursor(null);
     setSelected(null);
     setSession(next);
   };
   const back = () => {
     clock.setPlaying(false);
+    replay.stop();
     setCursor(Math.max(-1, (travelled ?? last) - 1));
   };
+  /** One step on, animated: in the past, to the next recorded event; at now, run the next events and play them in. */
   const forward = () => {
-    if (travelled !== null) setCursor(travelled + 1 >= last ? null : travelled + 1);
-    else setSession(stepPastRoutine(spec, session));
+    if (replay.running) return replay.finish();
+    if (travelled !== null) return replay.to(travelled + 1);
+    const next = stepPastRoutine(spec, session);
+    if (next.steps.length === session.steps.length) return;
+    setSession(next);
+    setCursor(last);
+    replay.to(next.steps.length - 1);
   };
-  // Playing in the past plays the recorded events back, then carries on live.
+  // Playing in the past plays the recorded events back, animated, then carries on live.
   useEffect(() => {
-    if (!clock.playing || travelled === null || hover !== null) return;
-    const timer = setTimeout(() => setCursor(travelled + 1 >= last ? null : travelled + 1), REPLAY_MS / Math.max(1, clock.speed));
-    return () => clearTimeout(timer);
-  }, [clock.playing, clock.speed, travelled, hover, last]);
+    if (!clock.playing || travelled === null || hover !== null || replay.running) return;
+    replay.to(travelled + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clock.playing, travelled, hover, replay.running]);
   const drag = useCarry(spec, base, baseScene, (target, drops) => {
     if (drops.length === 1 && drops[0].complete) run({ op: "act", instance: target, key: drops[0].action.key, inputs: drops[0].inputs });
     else if (drops.length === 1) setAsking({ instance: target, action: drops[0].action.key, inputs: drops[0].inputs });
@@ -170,7 +183,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
             scene={scene}
             graph={graph}
             fit={fit}
-            clock={viewing === null ? clock.now : world.clock}
+            clock={shownClock}
             live={canAct}
             focus={focus}
             bubble={bubble}
@@ -202,7 +215,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
         </div>
         <div className="pointer-events-none absolute inset-x-3 bottom-3 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
           <Legend />
-          <Transport clock={clock} shown={viewing === null ? clock.now : world.clock} canBack={(travelled ?? last) >= 0} canStep={canStep} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
+          <Transport clock={clock} shown={shownClock} canBack={(travelled ?? last) >= 0} canStep={canStep} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
         </div>
         {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
         {dropChoice && <DropChoice choice={dropChoice} world={base} onRun={run} onAsk={(drop) => (setDropChoice(null), setAsking({ instance: dropChoice.target, action: drop.action.key, inputs: drop.inputs }))} />}
@@ -212,7 +225,7 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
         preview={hover}
         cursor={travelled}
         onPreview={setHover}
-        onPick={(n) => (setHover(null), setCursor(n >= last ? null : n))}
+        onPick={(n) => (replay.stop(), setHover(null), setCursor(n >= last ? null : n))}
         foldOf={(event, w) => {
           if (event.routine) return "routine";
           // A message from one member of a closed group to another happened inside it.
@@ -318,6 +331,66 @@ function useClock(spec: Spec, session: Session, setSession: (s: Session) => void
     return () => cancelAnimationFrame(frame);
   }, [playing, active, speed, spec]);
   return { now, playing, speed, setPlaying, setSpeed };
+}
+
+/**
+ * Plays recorded events in, one at a time: within the world before each event the clock runs up to
+ * the moment it happened, so its message flies as it did live; then the cursor moves onto it. Reaching
+ * the last event returns to now.
+ */
+function useReplay(
+  spec: Spec,
+  session: Session,
+  cursor: number | null,
+  setCursor: (n: number | null) => void,
+  speed: number,
+  shown: (world: World, p: Extract<Pending, { kind: "deliver" }>) => boolean,
+) {
+  const [goal, setGoal] = useState<number | null>(null);
+  const [clock, setClock] = useState<number | null>(null);
+  const visible = useRef(shown);
+  visible.current = shown;
+  const last = session.steps.length - 1;
+  const at = cursor === null ? last : cursor;
+  const land = (n: number) => setCursor(n >= last ? null : n);
+  useEffect(() => setGoal(null), [session.origin, session.initial]);
+  useEffect(() => {
+    if (goal === null) return setClock(null);
+    if (at >= goal || at >= last) {
+      setGoal(null);
+      if (at >= last) setCursor(null);
+      return;
+    }
+    const plan = flightOf(spec, worldAt(session, at), session.steps[at + 1].world.clock, visible.current);
+    const duration = (plan.flying ? FLIGHT_MS : REPLAY_MS) / Math.max(1, speed);
+    const start = performance.now();
+    let frame = 0;
+    const tick = (t: number) => {
+      const done = Math.min(1, (t - start) / duration);
+      setClock(plan.from + (plan.to - plan.from) * done);
+      if (done < 1) frame = requestAnimationFrame(tick);
+      else land(at + 1);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal, at, speed, session]);
+  return {
+    clock: goal === null ? null : clock,
+    running: goal !== null,
+    to: (n: number) => setGoal(n),
+    stop: () => setGoal(null),
+    /** Skip the rest of the animation: land on the goal now. */
+    finish: () => (goal !== null && land(goal), setGoal(null)),
+  };
+}
+
+/** The stretch of time to animate before the next event: from when its visible messages left (or now), to when it happened. */
+function flightOf(spec: Spec, world: World, until: number, shown: (world: World, p: Extract<Pending, { kind: "deliver" }>) => boolean) {
+  const landing = world.pending.filter((p): p is Extract<Pending, { kind: "deliver" }> => p.kind === "deliver" && p.at <= until && shown(world, p));
+  if (!landing.length) return { from: until, to: until, flying: false };
+  const left = Math.min(...landing.map((p) => p.at - (spec.messages[p.message]?.latency ?? spec.latency)));
+  return { from: Math.max(world.clock, left), to: until, flying: true };
 }
 
 /** Run what is due, past routine events, until something worth seeing has happened. */
