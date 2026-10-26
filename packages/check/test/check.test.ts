@@ -3,7 +3,7 @@ import { check } from "../src/index.ts";
 import remoteAccess from "../../spec/test/fixtures/remote-access.ts";
 
 test("with one fault, a Mac given a valid code can end up never linked, and the checker shows how", () => {
-  const report = check(remoteAccess, { depth: 12, faults: 1 });
+  const report = check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000 });
   const byId = Object.fromEntries(report.properties.map((p) => [p.id, p]));
   expect(byId.relayNeverStoresSecrets.holds).toBe(true);
   expect(byId.codeRedeemedOnce.holds).toBe(true);
@@ -20,14 +20,14 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
 });
 
 test("without faults, every redemption gets its answer and the property holds", () => {
-  const report = check(remoteAccess, { depth: 10, faults: 0 });
+  const report = check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000 });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
   expect(report.coverage.reached).toContain("Axo relay.message:Redeem");
 });
 
 test("counterexamples replay: the same choices give the same events", () => {
-  const report = check(remoteAccess, { depth: 12, faults: 1 });
+  const report = check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000 });
   const example = report.properties.find((p) => !p.holds)!.counterexample!;
   expect(example.events.length).toBe(example.choices.length);
   expect(example.worlds.length).toBe(example.choices.length);

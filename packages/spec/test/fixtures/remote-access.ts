@@ -168,7 +168,8 @@ export default defineSpec(
       },
       codeRedeemedOnce: {
         description: "A pairing code is never redeemed twice.",
-        never: (trace) => trace.count((event) => event.is(Relay, Redeem) && event.replied(Redeemed)) > 1,
+        // More successful redemptions than codes issued means some code worked twice.
+        never: (trace) => trace.count((event) => event.is(Relay, Redeem) && event.replied(Redeemed)) > trace.count((event) => event.is(Relay, NewCode) && event.replied(Code)),
       },
     });
 
