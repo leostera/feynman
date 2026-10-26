@@ -32,6 +32,8 @@ interface Options {
 /** Build the view if its sources are newer than its last build. */
 export function ensureView() {
   const dist = join(VIEW, "dist", "index.html");
+  // An installed package ships the view prebuilt, without its sources.
+  if (!existsSync(join(VIEW, "vite.config.ts"))) return;
   const newest = (dir: string): number => Math.max(...readdirSync(dir, { withFileTypes: true }).map((d) => (d.isDirectory() ? newest(join(dir, d.name)) : statSync(join(dir, d.name)).mtimeMs)));
   // The explorer bundles @feynman/spec too: a change to either means a rebuild.
   const sources = Math.max(newest(join(VIEW, "src")), newest(join(VIEW, "..", "spec", "src")));

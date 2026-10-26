@@ -37,7 +37,7 @@ async function importSpec(url: string | null): Promise<Spec | null> {
  * there is one React, and the kit's classes are in the page's stylesheet.
  */
 (globalThis as { __feynman?: unknown }).__feynman = {
-  modules: { react: React, "react/jsx-runtime": JsxRuntime, "@cloudflare/kumo": Kumo, "@feynman/play": Play },
+  modules: { react: React, "react/jsx-runtime": JsxRuntime, "@cloudflare/kumo": Kumo, play: Play },
 };
 
 async function importPlayground(url: string | null): Promise<Playground | null> {
