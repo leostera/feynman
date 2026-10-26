@@ -5,7 +5,7 @@ import { Badge, Button, cn, Switch } from "@cloudflare/kumo";
 import { PlayIcon } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
 import { diffRuns, runScenario, type Event, type Run, type RunDiff, type ScenarioInfo, type StepStatus, type World } from "../spec/index.ts";
-import { labelOf, stepTitle, time } from "./format";
+import { labelOf, ordinal, stepTitle } from "./format";
 import { EventDetail, useExplorer } from "./ui";
 
 export interface FlowRun {
@@ -173,7 +173,7 @@ function Sequence({ rows, run, chosen, onChoose }: { rows: Row[]; run: Run; chos
             style={{ top: y(i) - ROW / 2, height: ROW, width }}
           >
             <span className={cn("absolute left-0 top-1 bottom-1 w-1 rounded-r", { same: "", changed: "bg-kumo-warning", added: "bg-kumo-success", removed: "bg-kumo-danger" }[row.status])} />
-            <span className="absolute left-3 w-16 text-right font-mono text-[10.5px] text-kumo-subtle">{time(e.at)}</span>
+            <span className="absolute left-3 w-16 text-right font-mono text-[10.5px] text-kumo-subtle">{ordinal(e.index + 1)}</span>
             <span
               className={cn("absolute size-2.5 -translate-x-1/2 rounded-full ring-2 ring-kumo-base", bad ? "bg-kumo-danger" : e.kind === "action" ? "bg-kumo-brand" : e.kind === "lose" || e.kind === "restart" ? "bg-kumo-warning" : "bg-(--text-color-kumo-subtle)")}
               style={{ left: x(e.instance) }}

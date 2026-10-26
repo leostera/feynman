@@ -6,7 +6,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Event, Spec, World } from "../spec/index.ts";
 import type { Playground } from "../play/index.ts";
 import type { Bundle, CallNode, SpecEntry } from "./data";
-import { labelOf, messageName, short, sourceUrl, stepTitle, time } from "./format";
+import { labelOf, messageName, short, sourceUrl, stepTitle } from "./format";
 
 export interface Loaded {
   entry: SpecEntry;
@@ -189,7 +189,7 @@ export function EventDetail({ event, world, compare, folded }: { event: Event; w
         {labelOf(world, event.instance)} · {stepTitle(spec, event)}
       </p>
       <p className="text-[13px] text-kumo-subtle">
-        {event.description} <span className="tabular-nums">at {time(event.at)}</span>
+        {event.description}
       </p>
     </div>
   );
@@ -232,7 +232,7 @@ export function EventDetail({ event, world, compare, folded }: { event: Event; w
           ))}
           {event.started.map((t) => (
             <div key={t.timer} className="font-mono text-[11px] text-kumo-subtle">
-              ⏱ {t.timer} at {time(t.at)}
+              ⏱ {t.timer} set
             </div>
           ))}
           {event.cancelled.map((t) => (

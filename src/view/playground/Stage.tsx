@@ -7,7 +7,7 @@ import { cn } from "@cloudflare/kumo";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { declaresLinks, labelled, worldView, type Actor, type Event, type InstanceState, type Pending, type Spec, type Token, type World } from "../../spec/index.ts";
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "../../play/index.ts";
-import { labelOf, messageName, short, time } from "../format";
+import { labelOf, messageName, short } from "../format";
 import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Sizes, type View, type ZoneBox } from "../layout";
 import { nodeLook, sceneLinks, shownAs, type NodeLook, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
@@ -96,7 +96,8 @@ export interface StageProps {
   scene: Scene;
   graph: Layout;
   fit: Fit;
-  clock: number;
+  /** The message landing on screen, if an event is being played in. */
+  flight: Flight | null;
   live: boolean;
   focus: { event: Event; index: number } | null;
   bubble: (Bubble & { fading: boolean }) | null;
@@ -122,7 +123,7 @@ export interface StageProps {
 }
 
 export function Stage(props: StageProps) {
-  const { world, scene, graph, fit, clock, live, focus, bubble, next, dragging, selected } = props;
+  const { world, scene, graph, fit, flight, live, focus, bubble, next, dragging, selected } = props;
   const { spec, playground } = useExplorer();
   const colors = identityColors(spec, world);
   const colorOf = (ref: string | null | undefined) => {
@@ -197,7 +198,7 @@ export function Stage(props: StageProps) {
           ) : null;
         })}
         {world.pending.map((p) =>
-          p.kind === "deliver" ? <Packet key={p.id} pending={p} scene={scene} graph={graph} world={world} clock={clock} next={next === p.id} live={live} onClick={() => props.onPacket(p)} /> : null,
+          p.kind === "deliver" ? <Packet key={p.id} pending={p} scene={scene} graph={graph} world={world} progress={flight?.pending === p.id ? flight.progress : 0} next={next === p.id} live={live} onClick={() => props.onPacket(p)} /> : null,
         )}
         {scene.nodes.map((node) => {
           const box = graph.nodes.get(node.id);
@@ -355,7 +356,7 @@ function renderProps(spec: Spec, world: World, node: SceneNode, look: NodeLook, 
     const [m] = node.members;
     return {
       kind: "actor" as const,
-      props: { instance: { id: m.id, label: m.label }, state: m.state, look, world: view, clock: stage.clock, live: stage.live, act: ((key: string, inputs?: Record<string, unknown>) => act(m.id, key, inputs)) as NodeProps["act"] } as NodeProps,
+      props: { instance: { id: m.id, label: m.label }, state: m.state, look, world: view, live: stage.live, act: ((key: string, inputs?: Record<string, unknown>) => act(m.id, key, inputs)) as NodeProps["act"] } as NodeProps,
     };
   }
   const members = node.members.map((m: InstanceState) => ({ instance: { id: m.id, label: m.label }, actor: m.actor, state: m.state, look: nodeLook(spec, world, { ...node, group: null, members: [m], id: m.id }) }));
@@ -364,7 +365,6 @@ function renderProps(spec: Spec, world: World, node: SceneNode, look: NodeLook, 
     members,
     look,
     world: view,
-    clock: stage.clock,
     live: stage.live,
     member: <A extends Actor<any, any>>(actor: A) => members.find((m) => m.actor === actor.name) as never,
     act,
@@ -419,7 +419,7 @@ function NodeView({
   stage: StageProps;
 }) {
   const { spec, playground } = useExplorer();
-  const { world, dragging, picking, live, clock } = stage;
+  const { world, dragging, picking, live } = stage;
   const look = presentedLook(spec, playground, world, node, stage);
   const identity = node.members.map((m) => colors.get(m.id)).find(Boolean);
   const owner = look.owner ? world.instances.find((i) => i.id === look.owner || i.label === look.owner) : identity ? node.members.find((m) => colors.get(m.id)) : undefined;
@@ -427,7 +427,7 @@ function NodeView({
   const drop = dragging ? (dragging.targets.has(node.id) ? "target" : dragging.fromNode === node.id ? "source" : "other") : null;
   const pickable = picking?.targets.has(node.id) ?? false;
   const timers = world.pending.filter((p): p is Extract<Pending, { kind: "timer" }> => p.kind === "timer" && node.members.some((m) => m.id === p.to));
-  const waiting = timers.map((t) => `${t.timer} in ${time(Math.max(0, t.at - world.clock))}`).join(", ");
+  const waiting = timers.map((t) => t.timer).join(", ");
   const custom = customNode(spec, playground, world, node, look, stage);
   const visual =
     custom && "content" in custom ? (
@@ -481,7 +481,7 @@ function NodeView({
   const tokens = held.length > 0 && (
     <div className={cn("absolute z-10 flex flex-col items-start gap-1", drop === "source" && "opacity-30")} style={{ left: box.anchor.x + box.anchor.r + 6, top: Math.max(0, box.anchor.y - box.anchor.r - 6) }}>
       {held.slice(-2).map(({ token, from }) => (
-        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} holder={world.instances.find((i) => i.id === from)!} clock={clock} onPick={live ? (e) => stage.onToken(from, node.id, token, e) : null} />
+        <TokenChip key={`${token.kind}:${String(token.value)}`} token={token} holder={world.instances.find((i) => i.id === from)!} onPick={live ? (e) => stage.onToken(from, node.id, token, e) : null} />
       ))}
     </div>
   );
@@ -519,19 +519,19 @@ function kindWidth(box: { kind: string; w: number; anchor: Anchor }): number | u
 }
 
 /** Something to carry to another node: drag it, or click it (or press Enter) to pick it up. */
-export function TokenChip({ token, holder, clock, onPick }: { token: Token; holder?: { id: string; label: string }; clock: number; onPick?: ((e: ReactPointerEvent | null) => void) | null }) {
+export function TokenChip({ token, holder, onPick }: { token: Token; holder?: { id: string; label: string }; onPick?: ((e: ReactPointerEvent | null) => void) | null }) {
   const { playground } = useExplorer();
   const name = token.label ?? String(token.value);
   const custom = playground?.token[token.kind];
   let body: ReactNode = null;
   if (custom) {
     try {
-      body = custom({ token, holder: holder ?? { id: "", label: "" }, clock });
+      body = custom({ token, holder: holder ?? { id: "", label: "" } });
     } catch (error) {
       console.warn(`feynman: the drawing for ${token.kind} failed`, error);
     }
   }
-  body ??= <Ticket code={String(token.value)} label={token.label} left={token.expires !== undefined ? token.expires - clock : null} />;
+  body ??= <Ticket code={String(token.value)} label={token.label} />;
   const tilt = "-rotate-3 drop-shadow-sm";
   if (!onPick) return <span className={cn("block select-none", tilt)}>{body}</span>;
   return (
@@ -567,14 +567,22 @@ function Trail({ pending, scene, graph }: { pending: Extract<Pending, { kind: "d
   return <path d={c.d} fill="none" stroke={toneColor(tone)} strokeOpacity={0.3} strokeWidth={1.5} strokeDasharray="2 5" />;
 }
 
-function Packet({ pending, scene, graph, world, clock, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout; world: World; clock: number; next: boolean; live: boolean; onClick: () => void }) {
+/** A message being delivered on screen: which one, and how far through its last stretch (0 to 1). */
+export interface Flight {
+  pending: number;
+  progress: number;
+}
+
+/** Where a message in flight waits along its path, as a share of it: on its way, not there yet. */
+const IN_FLIGHT = 0.35;
+
+/** A message in flight; `progress` (0 to 1) carries it from where it waits to its destination. */
+function Packet({ pending, scene, graph, world, progress, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout; world: World; progress: number; next: boolean; live: boolean; onClick: () => void }) {
   const { spec } = useExplorer();
   const message = spec.messages[pending.message];
   const c = flight(pending, scene, graph, message?.tone);
   if (!c) return null;
-  const latency = message?.latency ?? spec.latency;
-  const progress = Math.min(1, Math.max(0, (clock - (pending.at - latency)) / Math.max(1, latency)));
-  const at = c.at(0.04 + progress * 0.92);
+  const at = c.at(0.04 + (IN_FLIGHT + (1 - IN_FLIGHT) * progress) * 0.92);
   const color = toneColor(message?.tone);
   const name = messageName(spec, pending.message);
   if (routineDelivery(spec, world, pending)) {

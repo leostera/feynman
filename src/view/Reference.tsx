@@ -1,6 +1,6 @@
 // Reference: everything the spec declares, by actor, with the code each step stands for.
 import { Badge } from "@cloudflare/kumo";
-import { messageName, time } from "./format";
+import { messageName } from "./format";
 import { actorLinks } from "./layout";
 import { Section, Sources, useExplorer } from "./ui";
 
@@ -76,7 +76,7 @@ export function Reference() {
             {spec.limits.map((l) => (
               <div key={l.name} className="flex flex-col gap-1">
                 <p className="text-sm">
-                  <span className="font-medium">{l.name}</span>: {l.unit ? `${l.value} ${l.unit}` : time(l.value)}
+                  <span className="font-medium">{l.name}</span>: {l.unit ? `${l.value} ${l.unit}` : l.value}
                 </p>
                 <Sources sources={l.sources} />
               </div>
@@ -89,8 +89,7 @@ export function Reference() {
               <p key={i.id} className="text-sm">
                 <span className="font-medium">{i.description}</span>{" "}
                 <span className="font-mono text-[11px] text-kumo-subtle">
-                  {i.kind}
-                  {i.kind === "eventually" ? ` within ${time(i.within)}` : ""} · {i.id}
+                  {i.kind} · {i.id}
                 </span>
               </p>
             ))}

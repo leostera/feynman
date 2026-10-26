@@ -8,7 +8,7 @@ import { Badge, cn } from "@cloudflare/kumo";
 import { CaretRightIcon, CornersInIcon, HeartbeatIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Event, World } from "../spec/index.ts";
-import { clock, kindLabel, labelOf, stepTitle } from "./format";
+import { kindLabel, labelOf, ordinal, stepTitle } from "./format";
 import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
@@ -73,7 +73,7 @@ export function Timeline({
       nested={nested}
       onEnter={() => onPreview(index)}
       onClick={() => onPick(index)}
-      time={clock(event.at)}
+      time={ordinal(index + 1)}
       title={bubbleText(spec, event, world)}
       who={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
       flag={event.error || event.violations.length ? "broken" : event.kind === "lose" || event.kind === "restart" ? kindLabel(event) : null}
@@ -91,7 +91,7 @@ export function Timeline({
           active={focusIndex === -1}
           onEnter={() => onPreview(-1)}
           onClick={() => onPick(-1)}
-          time={clock(0)}
+          time={ordinal(0)}
           title={session.origin === "Fresh start" ? "The start" : `Start of “${session.origin}”`}
           who={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
         />
@@ -115,7 +115,7 @@ export function Timeline({
                   !expanded && focusIndex >= first.index && focusIndex <= lastIndex && "bg-kumo-tint",
                 )}
               >
-                <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums">{clock(first.event.at)}</span>
+                <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums">{ordinal(first.index + 1)}</span>
                 {inside ? <CornersInIcon size={14} className="shrink-0" /> : <HeartbeatIcon size={14} className="shrink-0" />}
                 <span className="min-w-0 flex-1 truncate text-[12.5px]">
                   {names.join(", ")} <span className="tabular-nums">{inside ? `· ${entry.events.length} steps` : `×${entry.events.length}`}</span>

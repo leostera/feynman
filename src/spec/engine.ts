@@ -102,18 +102,19 @@ export function instanceById(world: World, id: string): InstanceState {
   return instance;
 }
 
-/** Pending deliveries and timers, in the order they were created. */
+/**
+ * What is pending, in the order the system takes it when nobody interferes: messages in the
+ * order they were sent, then timers in the order they were set. Left alone, timeouts are
+ * slower than the network (RFD0004). Any of them may still go next.
+ */
 export function pendingInOrder(world: World): Pending[] {
-  return [...world.pending].sort((a, b) => a.id - b.id);
+  const rank = (p: Pending) => (p.kind === "deliver" ? 0 : 1);
+  return [...world.pending].sort((a, b) => rank(a) - rank(b) || a.id - b.id);
 }
 
-/**
- * What the system does next when nobody interferes: the message sent first, or when none is
- * in flight, the timer set first. Left alone, timeouts are slower than the network.
- */
+/** What the system does next when nobody interferes: the first of pendingInOrder. */
 export function nextLeftAlone(world: World): Pending | undefined {
-  const ordered = pendingInOrder(world);
-  return ordered.find((p) => p.kind === "deliver") ?? ordered[0];
+  return pendingInOrder(world)[0];
 }
 
 /** What can happen next: actions people can take, guarded transitions that hold, and what is pending. */
