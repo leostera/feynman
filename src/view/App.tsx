@@ -133,6 +133,11 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
                     setSession(scenario ? runScenarioSession(current.spec!, scenario) : freshSession(current.spec!));
                   },
                 }}
+                specs={{
+                  value: current.entry.id,
+                  items: loaded.map((l) => ({ value: l.entry.id, label: l.spec?.name ?? l.entry.id })),
+                  onPick: (id) => go({ spec: id, page: "play", item: null }),
+                }}
               />
             )}
             {route.page === "flows" && <Flows selected={route.item} onSelect={(item) => go({ ...route, item })} onOpen={openFlow} />}

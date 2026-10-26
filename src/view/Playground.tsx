@@ -18,8 +18,8 @@ import { apply, current, nextHint, nextLabel, rollback, type Op, type Session } 
 import { Timeline } from "./Timeline";
 import { useExplorer } from "./ui";
 
-/** Where a session can start from: "Fresh start" and every scenario. */
-export interface ReactNodeMenu {
+/** A choice in the top-left pill: where a session starts from, or which spec. */
+export interface Choice {
   items: { value: string; label: string }[];
   onPick: (value: string) => void;
 }
@@ -39,7 +39,7 @@ function worldAt(session: Session, index: number): World {
   return index < 0 ? session.initial : session.steps[index].world;
 }
 
-export function Playground({ session, setSession, scenarios }: { session: Session; setSession: (s: Session) => void; scenarios: ReactNodeMenu }) {
+export function Playground({ session, setSession, scenarios, specs }: { session: Session; setSession: (s: Session) => void; scenarios: Choice; specs: (Choice & { value: string }) | null }) {
   const { spec, playground } = useExplorer();
   const groups = groupsOf(spec, playground);
   /** Groups opened (or, for those that start open, closed) by node id. */
@@ -221,6 +221,9 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
         )}
         <div className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">
           <div className="pointer-events-auto flex items-center gap-1 justify-self-start rounded-full bg-kumo-elevated p-1 shadow ring ring-kumo-line">
+            {specs && specs.items.length > 1 && (
+              <Select size="sm" aria-label="Spec" className="w-48 rounded-full" value={specs.value} onValueChange={(v) => v && specs.onPick(String(v))} items={specs.items} />
+            )}
             <Select size="sm" aria-label="Start from" className="w-52 rounded-full" value={session.origin} onValueChange={(v) => v && scenarios.onPick(String(v))} items={scenarios.items} />
             <AddMenu world={base} groups={groups} onRun={runAll} />
           </div>
