@@ -7,7 +7,7 @@ import type { Counterexample } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
 import { Checks } from "./Checks";
 import type { Bundle } from "./data";
-import { Flows, type FlowRun } from "./Flows";
+import { Flows, parseSelection, selectionItem, type FlowRun } from "./Flows";
 import { Playground } from "./Playground";
 import { Reference } from "./Reference";
 import { freshSession, replay, runScenarioSession, type Session } from "./sessions";
@@ -135,7 +135,14 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
                 }}
               />
             )}
-            {route.page === "flows" && <Flows selected={route.item} onSelect={(item) => go({ ...route, item })} onOpen={openFlow} />}
+            {route.page === "flows" && (
+              <Flows
+                tree={loaded.map((l) => ({ id: l.entry.id, name: l.spec?.name ?? l.entry.id }))}
+                selection={parseSelection(route.item)}
+                onSelect={(spec, selection) => go({ spec, page: "flows", item: selectionItem(selection) })}
+                onOpen={openFlow}
+              />
+            )}
             {route.page === "checks" && <Checks onOpen={openCounterexample} onScenario={openScenario} />}
             {route.page === "reference" && <Reference />}
           </ExplorerProvider>
