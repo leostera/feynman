@@ -71,8 +71,7 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
   const [playing, setPlaying] = useState(settings.autoPlay);
   const [speed, setSpeed] = useState(1);
   const play: Play = { playing, speed, setPlaying, setSpeed };
-  // Reduced motion plays each event in within one frame.
-  const replay = useReplay(spec, session, cursor, setCursor, settings.reduceMotion ? Infinity : speed, drawnFlying);
+  const replay = useReplay(spec, session, cursor, setCursor, speed, settings.reduceMotion, drawnFlying);
   usePlay(spec, session, setSession, setCursor, replay, travelled === null && hover === null, [playing, setPlaying]);
   const base = travelled === null ? live : worldAt(session, travelled);
   const viewing = hover ?? travelled;
@@ -331,7 +330,8 @@ type Replay = ReturnType<typeof useReplay>;
 
 /**
  * Plays recorded events in, one at a time: a delivered message flies the rest of its way,
- * then the cursor moves onto its event. Reaching the last event returns to now.
+ * then the cursor moves onto its event. Reaching the last event returns to now. With motion
+ * reduced each event takes just as long, but nothing moves: the message waits, then lands.
  */
 function useReplay(
   spec: Spec,
@@ -339,6 +339,7 @@ function useReplay(
   cursor: number | null,
   setCursor: (n: number | null) => void,
   speed: number,
+  still: boolean,
   shown: (world: World, p: Extract<Pending, { kind: "deliver" }>) => boolean,
 ) {
   const [goal, setGoal] = useState<number | null>(null);
@@ -364,15 +365,15 @@ function useReplay(
     const start = performance.now();
     let frame = 0;
     const tick = (t: number) => {
-      const done = duration > 0 ? Math.min(1, (t - start) / duration) : 1;
-      setFlight(flying ? { pending: flying.id, progress: done } : null);
+      const done = Math.min(1, (t - start) / duration);
+      setFlight(flying ? { pending: flying.id, progress: still ? 0 : done } : null);
       if (done < 1) frame = requestAnimationFrame(tick);
       else land(at + 1);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goal, at, speed, session]);
+  }, [goal, at, speed, still, session]);
   return {
     flight: goal === null ? null : flight,
     running: goal !== null,
