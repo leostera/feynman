@@ -6,7 +6,7 @@
   "homepage": "https://feynman.leostera.dev",
   "keywords": ["specification", "model-checking", "simulation", "distributed-systems", "pi-package"],
   "engines": { "bun": ">=1.3" },
-  "bin": { "feynman": "./bin/feynman.ts" },
+  "bin": { "feynman": "bin/feynman.ts" },
   "exports": {
     ".": "./src/spec/index.ts",
     "./play": "./src/play/index.ts",
