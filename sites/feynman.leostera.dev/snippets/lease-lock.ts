@@ -1,4 +1,4 @@
-import { defineSpec, message, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export default defineSpec(
   "Lease lock",

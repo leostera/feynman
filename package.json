@@ -1,24 +1,46 @@
 {
-  "name": "feynman",
-  "private": true,
-  "description": "Executable specs of how software behaves, and the explorer, checker and diffs derived from them.",
-  "keywords": [
-    "pi-package"
-  ],
-  "pi": {
-    "skills": [
-      "./skills"
-    ]
+  "name": "@leostera/feynman",
+  "version": "0.1.0",
+  "description": "Executable specs of how a system behaves: a simulator, a model checker, flows and their diffs, derived from one TypeScript file.",
+  "type": "module",
+  "homepage": "https://feynman.leostera.dev",
+  "keywords": ["specification", "model-checking", "simulation", "distributed-systems", "pi-package"],
+  "engines": { "bun": ">=1.3" },
+  "bin": { "feynman": "./bin/feynman.ts" },
+  "exports": {
+    ".": "./src/spec/index.ts",
+    "./play": "./src/play/index.ts",
+    "./config": "./src/cli/index.ts"
   },
-  "workspaces": [
-    "packages/*",
-    "sites/*"
-  ],
+  "files": ["bin", "src", "!src/view", "src/view/data.ts", "dist/view", "examples", "!examples/oracles", "skills", "README.md"],
+  "pi": { "skills": ["./skills"] },
+  "workspaces": ["sites/*"],
   "scripts": {
-    "feynman": "bun packages/cli/bin/feynman.ts",
-    "test": "bun run --cwd packages/spec test && bun run --cwd packages/check test && bun run --cwd packages/code test && bun run --cwd packages/cli test && bun run --cwd packages/play test && bun run --cwd packages/examples test",
-    "oracles": "bun run --cwd packages/examples oracles",
-    "typecheck": "for p in spec check code play cli view examples; do (cd packages/$p && ./node_modules/.bin/tsc --noEmit -p .) || exit 1; done",
+    "feynman": "bun bin/feynman.ts",
+    "build": "vite build --config src/view/vite.config.ts",
+    "test": "bun test",
+    "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/p.oracle.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "prepublishOnly": "bun run build && bun run typecheck && bun run test",
     "site:deploy": "bun run --cwd sites/feynman.leostera.dev deploy"
+  },
+  "dependencies": {
+    "@cloudflare/kumo": "^2.15.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@types/react": "^19.3.0",
+    "calldiff": "0.5.0",
+    "react": "^19.3.1",
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/bun": "*",
+    "@types/node": "^24.0.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "elkjs": "^0.11.0",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.5"
   }
 }
