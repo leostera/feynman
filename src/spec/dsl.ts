@@ -45,8 +45,8 @@ export interface ZonePlace {
   region?: boolean;
   /** Where its instances sit in the column: at the top, the middle (default), or the bottom. A region's start at the top. */
   align?: "start" | "center" | "end";
-  /** How its instances line up: one under another (default), side by side, or in a grid. */
-  arrange?: "stack" | "row" | "grid";
+  /** How its instances line up: one under another (default), side by side, in a grid, or around a ring (peers in a cluster). */
+  arrange?: "stack" | "row" | "grid" | "ring";
 }
 
 /** Where an actor's instances sit within their zone. */

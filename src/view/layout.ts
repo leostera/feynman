@@ -182,7 +182,8 @@ function columnOrder(spec: Spec, zones: ZoneBox[]): ZoneBox[] {
 }
 
 /** Lay out a zone's nodes by its `arrange`, relative to the top left of their block. */
-function block(arrange: "stack" | "row" | "grid", boxes: Box[], vgap: number): { places: { x: number; y: number }[]; w: number; h: number } {
+function block(arrange: "stack" | "row" | "grid" | "ring", boxes: Box[], vgap: number): { places: { x: number; y: number }[]; w: number; h: number } {
+  if (arrange === "ring" && boxes.length > 2) return ring(boxes);
   if (arrange === "row") {
     let x = 0;
     const h = Math.max(0, ...boxes.map((b) => b.h));
@@ -201,6 +202,22 @@ function block(arrange: "stack" | "row" | "grid", boxes: Box[], vgap: number): {
   let y = 0;
   const places = boxes.map((b) => ((y += b.h + vgap), { x: (w - b.w) / 2, y: y - b.h - vgap }));
   return { places, w, h: Math.max(0, y - vgap) };
+}
+
+/**
+ * Peers around a circle, the first at the top, the rest clockwise. The radius keeps
+ * neighbours a box and two gaps apart (the chord between them), so the ring grows with the
+ * cluster instead of crowding.
+ */
+function ring(boxes: Box[]): { places: { x: number; y: number }[]; w: number; h: number } {
+  const cw = Math.max(...boxes.map((b) => b.w));
+  const ch = Math.max(...boxes.map((b) => b.h));
+  const r = (Math.max(cw, ch) + 2 * GAP) / (2 * Math.sin(Math.PI / boxes.length));
+  const places = boxes.map((b, i) => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / boxes.length;
+    return { x: r + cw / 2 + r * Math.cos(angle) - b.w / 2, y: r + ch / 2 + r * Math.sin(angle) - b.h / 2 };
+  });
+  return { places, w: 2 * r + cw, h: 2 * r + ch };
 }
 
 /**

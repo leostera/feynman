@@ -20,7 +20,7 @@ export function leaderElection(variant: "buggy" | "fixed") {
     { messages: { Elect: message<{ id: string }>({ name: "elect" }) } },
     (spec) => {
       const { Elect } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster" });
+      const zone = spec.defineZone({ name: "Cluster", place: { arrange: "ring" } });
       const Node = spec.defineActor({
         name: "Node",
         zone,
