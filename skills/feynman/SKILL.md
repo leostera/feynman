@@ -360,7 +360,7 @@ actor, add:
     - `region: true` draws the zone as the tinted area everything hangs off (a zone holding
       a singleton is one by default);
     - `align` is `"start"`, `"center"` or `"end"`;
-    - `arrange` is `"stack"`, `"row"` or `"grid"`.
+    - `arrange` is `"stack"`, `"row"`, `"grid"` (shards) or `"ring"` (peers in a cluster).
   - On an actor, `place: { order, edge }`:
     - `order` sorts its instances within the zone;
     - `edge: "left" | "right"` sets it on the zone's border, like a gate everything passes
