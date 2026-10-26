@@ -1,6 +1,7 @@
 // The published simulators, as sims.json lists them.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { refOf } from "./published.ts";
 
 export interface Sim {
   /** `<host>/<owner>/<repo>`: the page is served at /s/<slug>/. */
@@ -8,7 +9,12 @@ export interface Sim {
   title: string;
   summary: string;
   repository: string;
-  /** The commit the committed page was built from, and the specs it holds then. */
+  /**
+   * "deploy": built from this repository on every build and deploy (scripts/examples.ts),
+   * never committed. Otherwise the page is built with `bun run sim` and committed.
+   */
+  build?: "deploy";
+  /** The commit the committed page was built from (null when built on deploy), and the specs it holds. */
   commit: string | null;
   specs: { path: string; title: string }[];
 }
@@ -19,4 +25,5 @@ export const SITE = "https://feynman.leostera.dev";
 export const readSims = (): Sim[] => JSON.parse(readFileSync(FILE, "utf8"));
 export const writeSims = (sims: Sim[]) => writeFileSync(FILE, JSON.stringify(sims, null, 2) + "\n");
 export const simUrl = (sim: Sim) => `${SITE}/s/${sim.slug}/`;
-export const specUrl = (sim: Sim, path: string) => `${sim.repository}/blob/${sim.commit}/${path}`;
+export const specUrl = (sim: Sim, path: string) => `${sim.repository}/blob/${refOf(sim)}/${path}`;
+export { published, refLabel, refOf } from "./published.ts";

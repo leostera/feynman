@@ -1,8 +1,8 @@
 // /llms.txt: what Feynman is and where everything is, for agents (https://llmstxt.org).
-import { readSims, SITE, simUrl, specUrl } from "./sims.ts";
+import { published, readSims, refLabel, SITE, simUrl, specUrl } from "./sims.ts";
 
 export function llmsTxt(): string {
-  const sims = readSims().filter((sim) => sim.commit);
+  const sims = readSims().filter(published);
   return `# Feynman
 
 > Feynman specs are small, executable models of how a system behaves, written in TypeScript:
@@ -30,8 +30,8 @@ in the states explored before a limit (not a proof), ? never tested.
 ${sims
   .map((sim) =>
     [
-      `- [${sim.title}](${simUrl(sim)}): ${sim.summary} Built from ${sim.repository} at ${sim.commit!.slice(0, 7)}.`,
-      `  - [Check report](${simUrl(sim)}check.txt): the verdicts \`feynman check\` gave at that commit`,
+      `- [${sim.title}](${simUrl(sim)}): ${sim.summary} Built from ${sim.repository} at ${refLabel(sim)}.`,
+      `  - [Check report](${simUrl(sim)}check.txt): the verdicts \`feynman check\` gave there`,
       ...sim.specs.map((spec) => `  - [${spec.title}](${specUrl(sim, spec.path)}): the spec, ${spec.path}`),
     ].join("\n"),
   )

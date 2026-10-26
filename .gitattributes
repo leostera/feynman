@@ -1,0 +1,6 @@
+# Simulator pages built by `feynman build` and committed for the site: bundles of the view and
+# its dependencies, not code anyone edits here. Kept out of language stats and collapsed in diffs.
+sites/feynman.leostera.dev/public/s/**/*.html linguist-vendored linguist-generated -diff
+*.feynman/index.html linguist-vendored linguist-generated -diff
+
+bun.lock linguist-generated
