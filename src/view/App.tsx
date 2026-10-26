@@ -1,7 +1,7 @@
 // The explorer's shell: a navigation rail (pages, commit, theme) and one page that fills the
 // rest; the playground's top bar picks the spec. Playground sessions are kept per spec while you move between pages.
-import { Badge, Button, Sidebar } from "@cloudflare/kumo";
-import { ArrowsSplitIcon, BookOpenIcon, GitCommitIcon, MoonIcon, PlayCircleIcon, ShieldCheckIcon, SunIcon } from "@phosphor-icons/react";
+import { Badge, Button, Sidebar, useSidebar } from "@cloudflare/kumo";
+import { ArrowsSplitIcon, BookOpenIcon, GitCommitIcon, MoonIcon, PlayCircleIcon, ShieldCheckIcon, SidebarSimpleIcon, SunIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { Counterexample } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
@@ -76,9 +76,11 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
     setSession(runScenarioSession(current.spec!, scenario));
     go({ ...route, page: "play", item: null });
   };
+  const [sidebarOpen, setSidebarOpen] = useSidebarOpen();
   return (
-    <Sidebar.Provider defaultOpen={false} collapsible="icon" contained className="flex h-full">
+    <Sidebar.Provider open={sidebarOpen} onOpenChange={setSidebarOpen} collapsible="icon" contained className="flex h-full">
       <Sidebar>
+        <Sidebar.Rail />
         <Sidebar.Header>
           <a href={href({ spec: current?.entry.id ?? "", page: "play", item: null })} className="flex items-center gap-2 px-1 py-1">
             <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-kumo-contrast text-sm font-semibold text-kumo-inverse">F</span>
@@ -96,6 +98,11 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
                   )}
                 </Sidebar.MenuButton>
               ))}
+            </Sidebar.Menu>
+          </Sidebar.Group>
+          <Sidebar.Group>
+            <Sidebar.Menu>
+              <SidebarToggle />
             </Sidebar.Menu>
           </Sidebar.Group>
         </Sidebar.Content>
@@ -136,6 +143,23 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
       </main>
     </Sidebar.Provider>
   );
+}
+
+/** Collapses the sidebar to icons, or expands it to names. */
+function SidebarToggle() {
+  const { open, toggleSidebar } = useSidebar();
+  const label = open ? "Collapse sidebar" : "Expand sidebar";
+  return (
+    <Sidebar.MenuButton icon={SidebarSimpleIcon} onClick={toggleSidebar} tooltip={label} aria-label={label}>
+      {label}
+    </Sidebar.MenuButton>
+  );
+}
+
+/** Whether the sidebar is expanded, kept across reloads; it starts collapsed to icons. */
+function useSidebarOpen(): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => localStorage.getItem("feynman.sidebar") === "open");
+  return [open, (next) => (setOpen(next), localStorage.setItem("feynman.sidebar", next ? "open" : "closed"))];
 }
 
 function storageKey(id: string) {
