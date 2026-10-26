@@ -1,5 +1,5 @@
-// The explorer's shell: a navigation rail (spec, pages, commit, theme) and one page that
-// fills the rest. Playground sessions are kept per spec while you move between pages.
+// The explorer's shell: a navigation rail (pages, commit, theme) and one page that fills the
+// rest; the playground's top bar picks the spec. Playground sessions are kept per spec while you move between pages.
 import { Badge, Button, Sidebar } from "@cloudflare/kumo";
 import { ArrowsSplitIcon, BookOpenIcon, GitCommitIcon, MoonIcon, PlayCircleIcon, ShieldCheckIcon, SunIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
@@ -98,18 +98,6 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
               ))}
             </Sidebar.Menu>
           </Sidebar.Group>
-          {loaded.length > 1 && (
-            <Sidebar.Group>
-              <Sidebar.GroupLabel>Specs</Sidebar.GroupLabel>
-              <Sidebar.Menu>
-                {loaded.map((l) => (
-                  <Sidebar.MenuButton key={l.entry.id} href={href({ spec: l.entry.id, page: route.page, item: null })} active={l === current} tooltip={l.spec?.name ?? l.entry.id}>
-                    {l.spec?.name ?? l.entry.id}
-                  </Sidebar.MenuButton>
-                ))}
-              </Sidebar.Menu>
-            </Sidebar.Group>
-          )}
         </Sidebar.Content>
         <Sidebar.Footer>
           <Footer bundle={bundle} />

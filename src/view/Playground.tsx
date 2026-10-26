@@ -297,16 +297,17 @@ interface Play {
 }
 
 /**
- * Play, at now: run the next event the system would take left alone, animate it in, and
- * once it has landed, the next. There is no clock (RFD0004): play is a pace, events per
- * animation, never time passing.
+ * Play lets the system run: at now, the next event it would take left alone is run and
+ * animated in, then the next. With nothing to run it stays on and waits, so whatever a
+ * person does next plays out by itself. It pauses on a spec error or a broken invariant.
+ * There is no clock (RFD0004): play is a pace, events per animation, never time passing.
  */
 function usePlay(spec: Spec, session: Session, setSession: (s: Session) => void, setCursor: (n: number | null) => void, replay: Replay, active: boolean, [playing, setPlaying]: [boolean, (on: boolean) => void]) {
   useEffect(() => {
     if (!playing || !active || replay.running) return;
     const next = leftAloneStep(spec, session);
     const event = next?.steps.at(-1)?.event;
-    if (!next || !event) return setPlaying(false);
+    if (!next || !event) return; // waiting for someone to act
     if (event.error || event.violations.length) setPlaying(false);
     setSession(next);
     setCursor(session.steps.length - 1);
