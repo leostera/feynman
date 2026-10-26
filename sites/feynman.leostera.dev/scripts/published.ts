@@ -1,7 +1,7 @@
 // What the site says about a published simulator; pure, so the page can use it too.
 import type { Sim } from "./sims.ts";
 
-/** Whether a simulator has a page: built and committed at a commit, or built on every deploy. */
+/** Whether a simulator has a page: it names a commit, or is built from this repository. */
 export const published = (sim: Sim) => sim.commit !== null || sim.build === "deploy";
 
 /** The git ref its spec links point at: the commit it was built from, or main for what deploys build. */
