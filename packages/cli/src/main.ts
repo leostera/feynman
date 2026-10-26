@@ -24,8 +24,9 @@ Commands:
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
   dev [--port N]           Serve the explorer, reloading when specs change.
-  build [--out DIR]        Write the explorer as static files (default: .feynman/site).
-  open                     Build, then open the explorer.
+  build [--out FILE]       Write the explorer as one self-contained HTML file
+                           (default: .feynman/index.html).
+  open                     Build, then open that file.
 `;
 
 export async function main(argv: string[], cwd = process.cwd()): Promise<number> {

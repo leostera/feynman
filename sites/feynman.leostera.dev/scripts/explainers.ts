@@ -27,7 +27,7 @@ for (const { repository, ...explainer } of listed) {
     console.warn(`skipping ${explainer.name}: no repository at ${repository}`);
     continue;
   }
-  const build = spawnSync("bun", [cli, "build", "--out", join(out, explainer.name)], { cwd: dir, encoding: "utf8" });
+  const build = spawnSync("bun", [cli, "build", "--out", join(out, explainer.name, "index.html")], { cwd: dir, encoding: "utf8" });
   if (build.status !== 0) {
     console.warn(`skipping ${explainer.name}: ${(build.stderr || build.stdout).trim().split("\n")[0]}`);
     continue;

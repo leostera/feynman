@@ -7,16 +7,29 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Spec } from "@feynman/spec";
 import { App } from "./App";
-import type { Bundle } from "./data";
+import type { Bundle, Embedded } from "./data";
 import type { Loaded } from "./ui";
 import "./index.css";
 
 document.documentElement.dataset.mode = localStorage.getItem("feynman.mode") ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
+/** A built page carries its data and modules; a served one (`feynman dev`) fetches them. */
+const embedded: Embedded | null = (() => {
+  const tag = document.getElementById("feynman");
+  return tag?.textContent ? (JSON.parse(tag.textContent) as Embedded) : null;
+})();
+
+/** Import a page-relative module: from the page itself when built, else from the server. */
+async function importModule(url: string): Promise<{ default: unknown }> {
+  const code = embedded?.modules[url];
+  if (embedded && code === undefined) throw new Error(`${url} is not in this page`);
+  const href = code !== undefined ? URL.createObjectURL(new Blob([code], { type: "text/javascript" })) : new URL(url, location.href).href;
+  return import(/* @vite-ignore */ href);
+}
+
 async function importSpec(url: string | null): Promise<Spec | null> {
   if (!url) return null;
-  const module = await import(/* @vite-ignore */ new URL(url, location.href).href);
-  return module.default as Spec;
+  return (await importModule(url)).default as Spec;
 }
 
 /**
@@ -29,13 +42,13 @@ async function importSpec(url: string | null): Promise<Spec | null> {
 
 async function importPlayground(url: string | null): Promise<Playground | null> {
   if (!url) return null;
-  const module = await import(/* @vite-ignore */ new URL(url, location.href).href);
+  const module = await importModule(url);
   if (!isPlayground(module.default)) throw new Error(`${url} does not export a playground by default: export default definePlayground(spec, …)`);
   return module.default;
 }
 
 async function start() {
-  const bundle: Bundle = await (await fetch("./feynman.json", { cache: "no-store" })).json();
+  const bundle: Bundle = embedded?.bundle ?? (await (await fetch("./feynman.json", { cache: "no-store" })).json());
   const loaded: Loaded[] = await Promise.all(
     bundle.specs.map(async (entry) => {
       try {
