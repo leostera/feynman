@@ -94,10 +94,10 @@ export function Node({ shape, icon, label, status, mood, ring, accent, badge, in
       <Icon name={icon} size={within && shape !== "card" ? 24 : 26} style={accent ? { color: accent } : undefined} />
       {within && (
         <span className={cn("flex min-w-0 flex-col", shape === "card" ? "items-start" : "items-center px-1 text-center")}>
-          <span className="max-w-[64px] truncate text-[10.5px] font-semibold leading-tight" title={label}>
+          <span className="max-w-[64px] truncate text-[11px] font-semibold leading-tight" title={label}>
             {label}
           </span>
-          {shape !== "circle" && status && <span className="max-w-[64px] truncate text-[9.5px] leading-tight text-kumo-subtle">{status}</span>}
+          {shape !== "circle" && status && <span className="max-w-[64px] truncate text-[11px] leading-tight text-kumo-subtle">{status}</span>}
         </span>
       )}
       {badge && (
@@ -120,10 +120,10 @@ export function Node({ shape, icon, label, status, mood, ring, accent, badge, in
           <span className="max-w-full truncate text-[12px] font-semibold leading-tight" title={label}>
             {label}
           </span>
-          {status && <span className="max-w-full truncate text-[10px] leading-tight text-kumo-subtle">{status}</span>}
+          {status && <span className="max-w-full truncate text-[11px] leading-tight text-kumo-subtle">{status}</span>}
         </span>
       )}
-      {below && <span className="max-w-[240px] truncate text-[10px] leading-tight text-kumo-subtle">{below}</span>}
+      {below && <span className="max-w-[240px] truncate text-[11px] leading-tight text-kumo-subtle">{below}</span>}
     </span>
   );
 }
@@ -150,22 +150,18 @@ export function Rows({ rows, anchor, compact, limit, className }: { rows: Row[];
             {group && (
               <div className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-1.5">
                 <span className="size-2 rounded-full" style={{ background: owner ?? "var(--color-kumo-line)" }} />
-                <span className="truncate text-[11.5px] font-semibold">{group}</span>
+                <span className="truncate text-[12px] font-semibold">{group}</span>
               </div>
             )}
-            <div className={cn("flex flex-col", compact ? "py-0.5" : "gap-1 px-1.5 pb-1.5 pt-0.5")}>
+            <div className={cn("flex flex-col divide-y divide-kumo-hairline", compact ? "py-0.5" : "pb-0.5")}>
               {items.slice(0, max).map((row, i) => (
-                <div
-                  key={i}
-                  data-row={anchor ? `${anchor}::${row.label}` : undefined}
-                  className={cn("flex min-w-0 items-center gap-1.5", compact ? "px-2 py-0.5" : "rounded-md bg-kumo-recessed px-2 py-1")}
-                >
+                <div key={i} data-row={anchor ? `${anchor}::${row.label}` : undefined} className={cn("flex min-w-0 items-center gap-1.5 px-2.5", compact ? "py-0.5" : "py-1")}>
                   <span className="size-1.5 shrink-0 rounded-full" style={{ background: dot(row) }} />
-                  <span className="min-w-0 truncate text-[11px]">{row.label}</span>
-                  {row.detail && <span className="ml-auto truncate pl-2 font-mono text-[10px] text-kumo-subtle">{row.detail}</span>}
+                  <span className="min-w-0 truncate text-[11.5px]">{row.label}</span>
+                  {row.detail && <span className="ml-auto truncate pl-2 font-mono text-[11px] text-kumo-subtle">{row.detail}</span>}
                 </div>
               ))}
-              {items.length > max && <div className="px-2 pb-1 text-[10px] text-kumo-subtle">+{items.length - max} more</div>}
+              {items.length > max && <div className="px-2.5 py-1 text-[11px] text-kumo-subtle">+{items.length - max} more</div>}
             </div>
           </div>
         );
@@ -178,15 +174,15 @@ export function Rows({ rows, anchor, compact, limit, className }: { rows: Row[];
 export function Card({ title, children, className }: { title?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={cn("rounded-md bg-kumo-base px-2 py-1 ring-1 ring-kumo-line", className)}>
-      {title && <div className="text-[9.5px] text-kumo-subtle">{title}</div>}
-      <div className="text-[10.5px] leading-snug">{children}</div>
+      {title && <div className="text-[11px] text-kumo-subtle">{title}</div>}
+      <div className="text-[11px] leading-snug">{children}</div>
     </div>
   );
 }
 
 export function Badge({ children, mood }: { children: ReactNode; mood?: Mood }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-kumo-base px-1.5 py-px text-[10px] ring-1 ring-kumo-line">
+    <span className="inline-flex items-center gap-1 rounded-full bg-kumo-base px-1.5 py-px text-[11px] ring-1 ring-kumo-line">
       <span className="size-1.5 rounded-full" style={{ background: moodColor(mood) }} />
       {children}
     </span>
@@ -206,7 +202,7 @@ export function Ticket({ code, left, label }: { code: string; left?: number | nu
     >
       <TicketIcon size={13} weight="duotone" className="text-kumo-warning" />
       {code}
-      {left !== undefined && left !== null && <span className="font-sans text-[9.5px] font-normal text-kumo-subtle">{countdown(left)}</span>}
+      {left !== undefined && left !== null && <span className="font-sans text-[11px] font-normal text-kumo-subtle">{countdown(left)}</span>}
     </span>
   );
 }
@@ -233,7 +229,7 @@ export function Terminal({
   return (
     // A terminal is dark in either mode: Kumo's dark tokens, scoped to it.
     <div data-mode="dark" style={{ colorScheme: "dark" }} className="w-56 rounded-lg bg-kumo-recessed p-2 text-kumo-default shadow-xl ring-1 ring-kumo-line" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-1 flex items-center justify-between text-[10px] text-kumo-subtle">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-kumo-subtle">
         <span className="truncate">{title}</span>
         {onClose && (
           <button type="button" onClick={onClose} aria-label="Close the terminal" className="rounded p-0.5 hover:bg-kumo-tint">
@@ -241,7 +237,7 @@ export function Terminal({
           </button>
         )}
       </div>
-      <pre className="m-0 min-h-12 overflow-hidden whitespace-pre-wrap font-mono text-[10px] leading-4 text-kumo-success">
+      <pre className="m-0 min-h-12 overflow-hidden whitespace-pre-wrap font-mono text-[11px] leading-4 text-kumo-success">
         {lines.slice(-4).join("\n") || " "}
         {busy && <span className="animate-pulse">▍</span>}
       </pre>
@@ -253,7 +249,7 @@ export function Terminal({
               type="button"
               disabled={!onRun}
               onClick={() => onRun?.(command)}
-              className="rounded bg-kumo-fill px-1.5 py-0.5 font-mono text-[10px] hover:bg-kumo-fill-hover disabled:opacity-40"
+              className="rounded bg-kumo-fill px-1.5 py-0.5 font-mono text-[11px] hover:bg-kumo-fill-hover disabled:opacity-40"
             >
               {command}
             </button>
@@ -269,7 +265,7 @@ export function Panel({ title, children, onClose }: { title?: ReactNode; childre
   return (
     <div className="w-56 rounded-lg bg-kumo-elevated p-2 shadow-xl ring-1 ring-kumo-line" onClick={(e) => e.stopPropagation()}>
       {(title || onClose) && (
-        <div className="mb-1 flex items-center justify-between text-[10.5px] font-semibold">
+        <div className="mb-1 flex items-center justify-between text-[11px] font-semibold">
           <span className="truncate">{title}</span>
           {onClose && (
             <button type="button" onClick={onClose} aria-label="Close" className="rounded p-0.5 text-kumo-subtle hover:bg-kumo-tint">

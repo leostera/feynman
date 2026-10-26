@@ -82,7 +82,7 @@ export function Timeline({
   return (
     <aside className="flex w-[21rem] shrink-0 flex-col overflow-hidden rounded-2xl bg-kumo-elevated ring-1 ring-kumo-line">
       <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
-        <h2 className="text-sm font-semibold">Timeline</h2>
+        <h2 className="text-[14px] font-semibold">Timeline</h2>
         <span className="ml-auto text-xs tabular-nums text-kumo-subtle">{count} events</span>
       </div>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" onMouseLeave={() => onPreview(null)}>

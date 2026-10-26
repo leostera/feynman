@@ -234,13 +234,13 @@ export function InspectDialog({ ids, world, onClose }: { ids: string[] | null; w
                   {n === 0 && <Dialog.Close render={(props) => <Button {...props} variant="ghost" size="sm" shape="square" aria-label="Close" icon={<XIcon />} />} />}
                 </div>
                 <section>
-                  <h3 className="mb-1 text-[10.5px] font-medium uppercase tracking-wide text-kumo-subtle">State</h3>
+                  <h3 className="mb-1 text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">State</h3>
                   <StateTree value={instance.state} />
                   {actor.durable.length > 0 && <p className="mt-1 text-xs text-kumo-subtle">A restart keeps {actor.durable.join(", ")}.</p>}
                 </section>
                 {Object.values(actor.transitions).length > 0 && (
                   <section className="flex flex-col gap-1.5">
-                    <h3 className="text-[10.5px] font-medium uppercase tracking-wide text-kumo-subtle">What it does by itself</h3>
+                    <h3 className="text-[11px] font-medium uppercase tracking-wide text-kumo-subtle">What it does by itself</h3>
                     {Object.values(actor.transitions).map((t) => (
                       <div key={t.key} className="flex flex-col gap-1">
                         <p className="text-xs">

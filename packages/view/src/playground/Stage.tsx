@@ -9,7 +9,7 @@ import { declaresLinks, labelled, worldView, type Actor, type Event, type Instan
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "@feynman/play";
 import { labelOf, messageName, short, time } from "../format";
 import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Sizes, type View, type ZoneBox } from "../layout";
-import { nodeLook, sceneLinks, type NodeLook, type Scene, type SceneNode } from "../scene";
+import { nodeLook, sceneLinks, shownAs, type NodeLook, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
 
 export interface Bubble {
@@ -142,7 +142,7 @@ export function Stage(props: StageProps) {
           {graph.groups.map((g) => (
             <g key={g.id}>
               <rect x={g.box.x} y={g.box.y} width={g.box.w} height={g.box.h} rx={16} fill="none" stroke="var(--color-kumo-line)" strokeDasharray="3 5" />
-              <text x={g.box.x + 12} y={g.box.y + 14} fill="var(--text-color-kumo-subtle)" className="text-[10px] font-medium">
+              <text x={g.box.x + 12} y={g.box.y + 14} fill="var(--text-color-kumo-subtle)" className="text-[11px] font-medium">
                 {g.label}
               </text>
             </g>
@@ -152,7 +152,7 @@ export function Stage(props: StageProps) {
             const a = graph.nodes.get(link.fromNode);
             const b = graph.nodes.get(link.toNode);
             if (!a || !b) return null;
-            const row = link.row ? rows.get(`${link.toNode}::${labelled(world, link.row)}`) : undefined;
+            const row = link.row ? rows.get(`${link.toNode}::${shownAs(scene, world, labelled(world, link.row))}`) : undefined;
             const q = row ? rowAnchor(row, center(a)) : rim(b, center(a));
             const p = rim(a, q);
             const style = { ...(link.kind ? playground?.link[link.kind] : undefined) };
@@ -238,7 +238,7 @@ function Zone({ zone, side, width, description }: { zone: ZoneBox; side: "first"
       y={zone.y - 10}
       textAnchor={side === "first" ? "start" : side === "last" ? "end" : "middle"}
       fill="var(--text-color-kumo-subtle)"
-      className="text-[10.5px]"
+      className="text-[11px]"
     >
       <tspan className="uppercase tracking-wider">{zone.name}</tspan>
       {description && <tspan opacity={0.75}> · {description}</tspan>}
@@ -469,7 +469,8 @@ function NodeView({
   );
   const frame = cn("absolute transition-opacity duration-200", (drop === "other" || (picking && !pickable)) && "opacity-35");
   const place = { left: box.x, top: box.y, width: box.w, height: box.h };
-  const rows = <Rows rows={look.rows} anchor={node.id} compact={box.kind === "side"} className={box.kind === "hub" ? "mt-3 w-full" : "mt-1 w-[150px]"} />;
+  const shown = look.rows.map((r) => ({ ...r, label: shownAs(stage.scene, world, r.label) }));
+  const rows = <Rows rows={shown} anchor={node.id} compact={box.kind === "side"} className={box.kind === "hub" ? "mt-3 w-full" : "mt-1 w-[150px]"} />;
   return (
     <div data-node={node.id} className={cn(frame, box.kind === "side" ? "flex items-start" : "flex flex-col items-center")} style={place}>
       <div className="relative">
@@ -574,7 +575,7 @@ function Packet({ pending, scene, graph, world, clock, next, live, onClick }: { 
       title={`${name} ${short(pending.payload, 80)}. Click to deliver it now or lose it.`}
     >
       <span className={cn("block size-3 rounded-full", next && live && "feynman-pulse")} style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
-      <span className="absolute bottom-full left-1/2 mb-1 max-w-[200px] -translate-x-1/2 truncate whitespace-nowrap rounded-full px-2 py-px text-[10px] font-semibold text-kumo-inverse" style={{ background: color }}>
+      <span className="absolute bottom-full left-1/2 mb-1 max-w-[200px] -translate-x-1/2 truncate whitespace-nowrap rounded-full px-2 py-px text-[11px] font-semibold text-kumo-inverse" style={{ background: color }}>
         {name}
       </span>
     </button>

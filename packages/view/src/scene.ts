@@ -142,3 +142,13 @@ export function sceneLinks(spec: Spec, world: World, scene: Scene): (LiveLink & 
   }
   return out;
 }
+
+/**
+ * A name as the scene shows it: an instance drawn inside a closed group reads as the
+ * group's node ("Studio daemon" is "Studio" while the Mac is one node). Other text is left.
+ */
+export function shownAs(scene: Scene, world: World, text: string): string {
+  const instance = world.instances.find((i) => i.label === text || i.id === text);
+  const node = instance && scene.nodes.find((n) => n.id === scene.of.get(instance.id));
+  return node?.group ? node.label : text;
+}
