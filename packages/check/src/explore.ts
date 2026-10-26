@@ -21,6 +21,7 @@ import {
   type Event,
   type Spec,
   type Step,
+  type StepOptions,
   type World,
 } from "@feynman/spec";
 
@@ -66,6 +67,11 @@ export interface PropertyResult {
   counterexample?: Counterexample;
   /** For `eventually`: the system running by itself from the end of the counterexample, never reaching the property. */
   then?: Event[];
+  /**
+   * For `eventually`: in how many explored worlds it was put to the test, its `after` holding
+   * and the property not yet. Zero means exploration never got there, so holding says nothing.
+   */
+  tested?: number;
 }
 
 export interface Report {
@@ -132,6 +138,8 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
   const failures = new Map<string, number>();
   const errors = new Map<string, number>();
   const eventuallyChecked = new Map<string, { node: number; then: Event[] } | null>();
+  const futures = new Map<string, Futures>();
+  const tested = new Map<string, number>();
   const reached = new Set<string>();
   let depthReached = 0;
   let stoppedBy: Report["stoppedBy"];
@@ -152,6 +160,10 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
         if (eventuallyChecked.get(invariant.id)) continue;
         if (invariant.after && !holdsIn(spec, world, invariant.after)) continue;
         if (holdsIn(spec, world, invariant.eventually)) continue;
+        tested.set(invariant.id, (tested.get(invariant.id) ?? 0) + 1);
+        if (!futures.has(invariant.id)) futures.set(invariant.id, new Map());
+        if (!neverWithin(spec, world, invariant.eventually, invariant.within, futures.get(invariant.id)!)) continue;
+        // Found: run it again, explained, for the counterexample.
         const then = settles(spec, world, invariant.eventually, invariant.within);
         if (then) eventuallyChecked.set(invariant.id, { node: index, then });
       }
@@ -179,7 +191,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
           if ((acts[id] ?? 0) >= b.repeats) continue;
           acts = { ...acts, [id]: (acts[id] ?? 0) + 1 };
         }
-        const step = apply(spec, world, choice);
+        const step = apply(spec, world, choice, QUIET);
         const key = stateKey(step.world, acts);
         if (seen.has(key)) continue;
         seen.add(key);
@@ -201,7 +213,8 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
     const base = { id: invariant.id, kind: invariant.kind, description: invariant.description };
     if (invariant.kind === "eventually") {
       const found = eventuallyChecked.get(invariant.id);
-      return found ? { ...base, holds: false, counterexample: counterexample(found.node), then: found.then } : { ...base, holds: true };
+      const times = tested.get(invariant.id) ?? 0;
+      return found ? { ...base, holds: false, counterexample: counterexample(found.node), then: found.then, tested: times } : { ...base, holds: true, tested: times };
     }
     const index = failures.get(invariant.id);
     return index === undefined ? { ...base, holds: true } : { ...base, holds: false, counterexample: counterexample(index) };
@@ -251,18 +264,23 @@ export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[
   return out;
 }
 
-export function apply(spec: Spec, world: World, choice: Choice): Step {
+/** Exploring reads only the next world, errors, violations and what was sent; counterexamples are replayed in full. */
+const QUIET: StepOptions = { explain: false };
+/** Running by itself to check an `eventually` needs only the worlds. */
+const SILENT: StepOptions = { explain: false, invariants: false };
+
+export function apply(spec: Spec, world: World, choice: Choice, how?: StepOptions): Step {
   switch (choice.kind) {
     case "act":
-      return act(spec, world, choice.instance, choice.key, choice.inputs);
+      return act(spec, world, choice.instance, choice.key, choice.inputs, how);
     case "fire":
-      return fire(spec, world, choice.pending);
+      return fire(spec, world, choice.pending, how);
     case "guard":
-      return guard(spec, world, choice.instance, choice.key);
+      return guard(spec, world, choice.instance, choice.key, how);
     case "lose":
-      return lose(spec, world, choice.pending);
+      return lose(spec, world, choice.pending, how);
     case "restart":
-      return restart(spec, world, choice.instance);
+      return restart(spec, world, choice.instance, how);
   }
 }
 
@@ -319,13 +337,83 @@ function settles(spec: Spec, world: World, predicate: (w: never) => boolean, wit
   return events;
 }
 
+/** Each state's JSON, once: states are frozen and shared between worlds, so most are seen many times. */
+const stateText = new WeakMap<object, string>();
+
+function textOf(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  let text = stateText.get(value);
+  if (text === undefined) stateText.set(value, (text = JSON.stringify(value)));
+  return text;
+}
+
+/**
+ * What the system does by itself from a world, per `eventually` property: how long until the
+ * property holds, or that it does not for a while (or ever, once nothing is left to run).
+ * The run by itself is deterministic, so every world on one such run shares its future, and
+ * most explored worlds run into futures already seen. Keyed like deduplication, without
+ * absolute time.
+ */
+type Future = { holdsAfter: number } | { notFor: number };
+type Futures = Map<string, Future>;
+
+/** Whether the system, left alone from `world`, does not reach `predicate` within `within` ms. */
+function neverWithin(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures): boolean {
+  const chain: { key: string; clock: number }[] = [];
+  const deadline = world.clock + within;
+  const remember = (future: (clock: number) => Future) => {
+    for (const { key, clock } of chain) futures.set(key, future(clock));
+  };
+  let current = world;
+  for (let n = 0; n < SETTLE_LIMIT; n++) {
+    const key = canonical(current);
+    const known = futures.get(key);
+    if (known && "holdsAfter" in known) {
+      const at = current.clock + known.holdsAfter;
+      remember((clock) => ({ holdsAfter: at - clock }));
+      return at > deadline;
+    }
+    if (known && current.clock + known.notFor >= deadline) {
+      const until = current.clock + known.notFor;
+      remember((clock) => ({ notFor: until - clock }));
+      return true;
+    }
+    chain.push({ key, clock: current.clock });
+    const { guards, pending } = choices(spec, current);
+    if (!guards.length && !pending.length) {
+      remember(() => ({ notFor: Infinity }));
+      return true;
+    }
+    if (!guards.length && pending[0].at > deadline) {
+      remember((clock) => ({ notFor: deadline - clock }));
+      return true;
+    }
+    current = (guards.length ? guard(spec, current, guards[0].instance, guards[0].key, SILENT) : fire(spec, current, pending[0].id, SILENT)).world;
+    if (holdsIn(spec, current, predicate as never)) {
+      const at = current.clock;
+      remember((clock) => ({ holdsAfter: at - clock }));
+      return at > deadline;
+    }
+  }
+  return true;
+}
+
+/** What is pending, apart from when: entries are shared between worlds, so this is worked out once each. */
+const pendingTexts = new WeakMap<object, string>();
+
+function pendingText(p: World["pending"][number]): string {
+  let text = pendingTexts.get(p);
+  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}` : `t|${p.to}|${p.timer}`));
+  return text;
+}
+
 /** A world's identity for deduplication: instances and what is pending, without ids or absolute times. */
 export function canonical(world: World): string {
   const pending = world.pending
-    .map((p) => (p.kind === "deliver" ? ["d", p.at - world.clock, p.to, p.from, p.message, p.payload] : ["t", p.at - world.clock, p.to, p.timer]))
-    .map((p) => JSON.stringify(p))
+    .map((p) => `${p.at - world.clock}|${pendingText(p)}`)
     .sort();
-  return JSON.stringify([world.instances.map((i) => [i.id, i.state]), pending, world.fresh, world.rng]);
+  const instances = world.instances.map((i) => `${i.id}=${textOf(i.state)}`).join("\n");
+  return `${instances}\n--\n${pending.join("\n")}\n--\n${JSON.stringify(world.fresh)}|${world.rng}`;
 }
 
 function pathChoices(nodes: Node[], index: number): Choice[] {

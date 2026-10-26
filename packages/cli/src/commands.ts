@@ -88,6 +88,7 @@ export async function checkCommand(ctx: Context, named: string[], bounds: Partia
     const report = check(spec, merged, scenarioSeeds(spec, scenarios));
     console.log(formatReport(spec, report, brokenBy));
     if (!report.exhaustive) console.log(dim(`  "~" is not a proof: raise the limits or lower the bounds until exploration finishes.`));
+    if (report.properties.some((p) => p.holds && p.tested === 0)) console.log(dim(`  "?" was never tested: add a scenario that gets there, so exploration starts from its end.`));
     const statuses = checkSources(ctx.repository.root, specSources(spec));
     for (const line of formatSources(statuses)) console.log(line);
     for (const w of shapeWarnings(spec)) console.log(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));

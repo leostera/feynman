@@ -10,7 +10,7 @@ import { runScenario, type Event, type Spec, type World } from "@feynman/spec";
 import { labelOf, stepTitle, time } from "./format";
 import { Section, useExplorer } from "./ui";
 
-type Verdict = "broken" | "scenario" | "explored" | "holds";
+type Verdict = "broken" | "scenario" | "untested" | "explored" | "holds";
 
 /** Invariants a scenario breaks, by id, with the first scenario that does. */
 function brokenByScenarios(spec: Spec): Map<string, string> {
@@ -25,6 +25,7 @@ function brokenByScenarios(spec: Spec): Map<string, string> {
 function verdictOf(p: PropertyResult, report: Report, scenarios: Map<string, string>): Verdict {
   if (!p.holds) return "broken";
   if (scenarios.has(p.id)) return "scenario";
+  if (p.tested === 0) return "untested";
   return report.exhaustive ? "holds" : "explored";
 }
 
@@ -80,6 +81,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                           {p.kind} · {p.id}
                           {verdict === "scenario" && <span className="font-sans text-kumo-danger"> · broken by the scenario “{scenarios.get(p.id)}”; exploration did not reach it</span>}
                           {verdict === "explored" && <span className="font-sans"> · held in the states explored</span>}
+                          {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
                         </p>
                       </div>
                       {p.counterexample && (
