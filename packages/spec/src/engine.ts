@@ -1,6 +1,11 @@
 // The engine: pure steps from a world to the next world and the event that explains it.
 // Deterministic by construction: time is simulated, ids and randomness come from the
 // world, and every handler sees the world only through its state, input, and ctx.
+//
+// Worlds share structure: a step copies only the state of the instance taking it, and
+// every other state is the same object as in the world before. States are frozen once a
+// step is done, so sharing is safe, and a handler that tries to change another
+// instance's state fails loudly instead of corrupting the past.
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
 import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
 
@@ -11,6 +16,19 @@ export interface Step {
 
 /** A spec bug found while running a step: an undeclared send, a missing actor. */
 export class SpecError extends Error {}
+
+/**
+ * How much a step works out besides the next world. A reader needs everything; the checker,
+ * exploring, skips what it never reads and replays a counterexample in full afterwards.
+ */
+export interface StepOptions {
+  /** The event's changes and sentence (true). */
+  explain?: boolean;
+  /** Which `always` invariants the world after it breaks (true). */
+  invariants?: boolean;
+}
+
+const FULL: StepOptions = {};
 
 // Worlds ------------------------------------------------------------------------------------------
 
@@ -52,15 +70,36 @@ export function choices(spec: Spec, world: World) {
   const actions: { instance: string; key: string; inputs: string[] }[] = [];
   const guards: { instance: string; key: string }[] = [];
   for (const instance of world.instances) {
-    const actor = actorNamed(spec, instance.actor);
-    for (const action of Object.values(actor.actions)) {
-      if (!action.when || holds(action.when, instance.state)) actions.push({ instance: instance.id, key: action.key, inputs: Object.keys(action.inputs) });
+    const steps = stepsOf(spec, instance.actor);
+    for (const action of steps.actions) {
+      if (!action.when || holds(action.when, instance.state)) actions.push({ instance: instance.id, key: action.key, inputs: action.inputs });
     }
-    for (const transition of Object.values(actor.transitions)) {
-      if (!transition.message && transition.when && holds(transition.when, instance.state)) guards.push({ instance: instance.id, key: transition.key });
+    for (const transition of steps.guards) {
+      if (holds(transition.when, instance.state)) guards.push({ instance: instance.id, key: transition.key });
     }
   }
   return { actions, guards, pending: pendingInOrder(world) };
+}
+
+type Guarded = { key: string; when: (state: never) => boolean };
+type Steps = { actions: { key: string; when?: (state: never) => boolean; inputs: string[] }[]; guards: Guarded[] };
+
+/** Each actor's actions and guarded transitions as lists, worked out once per spec. */
+const stepLists = new WeakMap<Spec, Map<string, Steps>>();
+
+function stepsOf(spec: Spec, actorName: string): Steps {
+  let lists = stepLists.get(spec);
+  if (!lists) stepLists.set(spec, (lists = new Map()));
+  let steps = lists.get(actorName);
+  if (!steps) {
+    const actor = actorNamed(spec, actorName);
+    steps = {
+      actions: Object.values(actor.actions).map((a) => ({ key: a.key, when: a.when as Steps["actions"][number]["when"], inputs: Object.keys(a.inputs) })),
+      guards: Object.values(actor.transitions).filter((t) => !t.message && t.when).map((t) => ({ key: t.key, when: t.when as Guarded["when"] })),
+    };
+    lists.set(actorName, steps);
+  }
+  return steps;
 }
 
 function holds(when: (state: never) => boolean, state: unknown): boolean {
@@ -76,9 +115,8 @@ function holds(when: (state: never) => boolean, state: unknown): boolean {
 export function spawn(spec: Spec, world: World, actorName: string, label: string): Step {
   const actor = actorNamed(spec, actorName);
   const id = uniqueId(world, actor.singleton ? slug(actor.name) : slug(`${actor.name}-${label}`));
-  const next = clone(world);
   const state = actor.initialState({ id, label });
-  next.instances.push({ id, actor: actor.name, label, state: clone(state) });
+  const next = { ...world, instances: [...world.instances, { id, actor: actor.name, label, state: freeze(clone(state)) }] };
   return finish(spec, world, next, {
     kind: "spawn",
     instance: id,
@@ -91,16 +129,16 @@ export function spawn(spec: Spec, world: World, actorName: string, label: string
 }
 
 /** A person takes an action on an instance. */
-export function act(spec: Spec, world: World, instanceId: string, key: string, inputs: Record<string, unknown> = {}): Step {
+export function act(spec: Spec, world: World, instanceId: string, key: string, inputs: Record<string, unknown> = {}, how: StepOptions = FULL): Step {
   const instance = instanceById(world, instanceId);
   const actor = actorNamed(spec, instance.actor);
   const action = actor.actions[key];
   if (!action) throw new SpecError(`${actor.name} has no action "${key}"`);
-  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, inputs, ctx) });
+  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, inputs, ctx) }, how);
 }
 
 /** Deliver a pending message, or fire a pending timer. */
-export function fire(spec: Spec, world: World, pendingId: number): Step {
+export function fire(spec: Spec, world: World, pendingId: number, how: StepOptions = FULL): Step {
   const pending = world.pending.find((p) => p.id === pendingId);
   if (!pending) throw new SpecError(`Nothing pending has id ${pendingId}`);
   const consumed = { ...world, clock: Math.max(world.clock, pending.at), pending: world.pending.filter((p) => p.id !== pendingId) };
@@ -108,7 +146,7 @@ export function fire(spec: Spec, world: World, pendingId: number): Step {
   const actor = actorNamed(spec, instance.actor);
   if (pending.kind === "timer") {
     const transition = actor.transitions[pending.timer];
-    return runStep(spec, consumed, { kind: "timer", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) });
+    return runStep(spec, consumed, { kind: "timer", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) }, how);
   }
   const transition = actor.transitions[pending.message];
   const delivery = { message: pending.message, payload: pending.payload, from: pending.from };
@@ -123,7 +161,7 @@ export function fire(spec: Spec, world: World, pendingId: number): Step {
       ...delivery,
       changes: [],
       error: `${actor.name} has no transition for ${pending.message}`,
-    });
+    }, how);
   }
   const from = consumed.instances.find((i) => i.id === pending.from);
   return runStep(spec, consumed, {
@@ -135,20 +173,20 @@ export function fire(spec: Spec, world: World, pendingId: number): Step {
     notes: pending.text ? [pending.text] : [],
     from,
     call: (state, ctx) => transition.run(state, pending.payload, ctx),
-  });
+  }, how);
 }
 
 /** Run an internal transition whose `when` guard holds. */
-export function guard(spec: Spec, world: World, instanceId: string, key: string): Step {
+export function guard(spec: Spec, world: World, instanceId: string, key: string, how: StepOptions = FULL): Step {
   const instance = instanceById(world, instanceId);
   const actor = actorNamed(spec, instance.actor);
   const transition = actor.transitions[key];
   if (!transition || transition.message || !transition.when) throw new SpecError(`${actor.name}.${key} is not a guarded transition`);
-  return runStep(spec, world, { kind: "guard", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) });
+  return runStep(spec, world, { kind: "guard", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) }, how);
 }
 
 /** A fault: a pending delivery is lost. */
-export function lose(spec: Spec, world: World, pendingId: number): Step {
+export function lose(spec: Spec, world: World, pendingId: number, how: StepOptions = FULL): Step {
   const pending = world.pending.find((p) => p.id === pendingId);
   if (!pending || pending.kind !== "deliver") throw new SpecError(`No pending delivery has id ${pendingId}`);
   const next = { ...world, pending: world.pending.filter((p) => p.id !== pendingId) };
@@ -164,19 +202,21 @@ export function lose(spec: Spec, world: World, pendingId: number): Step {
     payload: pending.payload,
     from: pending.from,
     changes: [],
-  });
+  }, how);
 }
 
 /** A fault: an instance restarts. State returns to its initial value, except durable fields; its timers are gone. */
-export function restart(spec: Spec, world: World, instanceId: string): Step {
+export function restart(spec: Spec, world: World, instanceId: string, how: StepOptions = FULL): Step {
   const instance = instanceById(world, instanceId);
   const actor = actorNamed(spec, instance.actor);
   const fresh = clone(actor.initialState({ id: instance.id, label: instance.label })) as Record<string, unknown>;
   const old = instance.state as Record<string, unknown>;
   for (const field of actor.durable) fresh[field] = clone(old[field]);
-  const next = clone(world);
-  instanceById(next, instanceId).state = fresh;
-  next.pending = next.pending.filter((p) => !(p.kind === "timer" && p.to === instanceId));
+  const next = {
+    ...world,
+    instances: world.instances.map((i) => (i.id === instanceId ? { ...i, state: freeze(fresh) } : i)),
+    pending: world.pending.filter((p) => !(p.kind === "timer" && p.to === instanceId)),
+  };
   return finish(spec, world, next, {
     kind: "restart",
     instance: instance.id,
@@ -184,8 +224,8 @@ export function restart(spec: Spec, world: World, instanceId: string): Step {
     key: "restart",
     description: `${instance.label} restarts${actor.durable.length ? `, keeping ${actor.durable.join(", ")}` : ""}.`,
     sources: [],
-    changes: diff(instance.id, old, fresh),
-  });
+    changes: how.explain === false ? [] : diff(instance.id, old, fresh),
+  }, how);
 }
 
 // Running a step -----------------------------------------------------------------------------------
@@ -202,9 +242,12 @@ interface Running {
   call: (state: unknown, ctx: unknown) => void;
 }
 
-function runStep(spec: Spec, before: World, run: Running): Step {
-  const next = clone(before);
-  const self = instanceById(next, run.instance.id);
+function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Step {
+  // Only what a step can change is copied: the lists, the counters, and its own state.
+  const next: World = { ...before, fresh: { ...before.fresh }, instances: [...before.instances], pending: [...before.pending] };
+  const position = next.instances.findIndex((i) => i.id === run.instance.id);
+  const self = { ...next.instances[position] };
+  next.instances[position] = self;
   const state = clone(self.state);
   const effects = { sent: [] as Sent[], started: [] as { timer: string; at: number }[], cancelled: [] as string[], notes: [...(run.notes ?? [])] };
   const base = {
@@ -220,14 +263,19 @@ function runStep(spec: Spec, before: World, run: Running): Step {
   try {
     run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from));
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = readOnly(error)
+      ? `changes the state of another instance (${error instanceof Error ? error.message : String(error)}); a step may change only its own state, and tell others with a message`
+      : error instanceof Error
+        ? error.message
+        : String(error);
     // A step that fails has no effects: its sends, timers, and changes are discarded.
-    return finish(spec, before, before, { ...base, changes: [], error: `${run.actor.name}.${run.step.key}: ${message}` });
+    return finish(spec, before, before, { ...base, changes: [], error: `${run.actor.name}.${run.step.key}: ${message}` }, how);
   }
-  const changes = diff(self.id, self.state, state);
-  self.state = state;
-  const text = sentence(run.step, state, run.kind === "action" ? run.inputs : run.delivery?.payload);
-  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}), ...(run.step.routine ? { routine: true } : {}) });
+  const explain = how.explain !== false;
+  const changes = explain ? diff(self.id, self.state, state) : [];
+  self.state = freeze(state);
+  const text = explain ? sentence(run.step, state, run.kind === "action" ? run.inputs : run.delivery?.payload) : undefined;
+  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}), ...(run.step.routine ? { routine: true } : {}) }, how);
 }
 
 /** The step's `say` for this event; a `say` that throws is left out rather than failing the step. */
@@ -251,8 +299,10 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
     if (!target) throw new SpecError(`sends ${message} to an instance that does not exist`);
     const id = ++world.seq;
     const at = world.clock + (info.latency ?? spec.latency);
-    world.pending.push({ id, kind: "deliver", at, to: target.id, from: self.id, message, payload: clone(payload), text });
-    effects.sent.push({ id, to: target.id, message, payload: clone(payload), at, text });
+    // Copied once, so the sender's state and the message never share anything, then shared.
+    const body = freeze(clone(payload));
+    world.pending.push({ id, kind: "deliver", at, to: target.id, from: self.id, message, payload: body, text });
+    effects.sent.push({ id, to: target.id, message, payload: body, at, text });
   };
   return {
     id: self.id,
@@ -300,7 +350,13 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, actor: ActorInfo
 }
 
 /** Number the event, and check every `always` invariant on the world after it. */
-function finish(spec: Spec, before: World, after: World, partial: Omit<Event, "index" | "at" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes" | "text">>): Step {
+function finish(
+  spec: Spec,
+  before: World,
+  after: World,
+  partial: Omit<Event, "index" | "at" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes" | "text">>,
+  how: StepOptions = FULL,
+): Step {
   const world = { ...after, seq: Math.max(after.seq, before.seq) + 1 };
   const event: Event = {
     index: world.seq,
@@ -312,7 +368,7 @@ function finish(spec: Spec, before: World, after: World, partial: Omit<Event, "i
     ...partial,
     violations: [],
   };
-  event.violations = violatedAlways(spec, world);
+  event.violations = how.invariants === false ? [] : violatedAlways(spec, world);
   return { world, event };
 }
 
@@ -410,8 +466,32 @@ function uniqueId(world: World, base: string): string {
   for (let n = 2; ; n++) if (!world.instances.some((i) => i.id === `${base}-${n}`)) return `${base}-${n}`;
 }
 
+/** A deep copy. States and payloads are plain data, so plain objects and arrays are copied by hand, which is much faster than structuredClone; anything else (a Map, a Date) falls back to it. */
 export function clone<T>(value: T): T {
-  return value === undefined ? value : structuredClone(value);
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    const out = new Array(value.length);
+    for (let i = 0; i < value.length; i++) out[i] = clone(value[i]);
+    return out as T;
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype) return structuredClone(value);
+  const out: Record<string, unknown> = {};
+  for (const key in value) out[key] = clone((value as Record<string, unknown>)[key]);
+  return out as T;
+}
+
+/** Deep-freeze a value the engine is done changing; it may then be shared between worlds. */
+export function freeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  if (Array.isArray(value)) for (const child of value) freeze(child);
+  else for (const key in value) freeze((value as Record<string, unknown>)[key]);
+  return value;
+}
+
+/** Whether an error is a write to a frozen object: a step reaching into someone else's state. */
+function readOnly(error: unknown): boolean {
+  return error instanceof TypeError && /read[- ]only|not extensible|frozen|Attempted to assign/i.test(error.message);
 }
 
 /** Changes from `before` to `after`, by path. Arrays and leaves are compared whole. */

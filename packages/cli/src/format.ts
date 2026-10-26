@@ -83,6 +83,10 @@ export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, s
       lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}` + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
       continue;
     }
+    if (p.holds && p.tested === 0) {
+      lines.push(yellow(`  ? ${p.id}`) + dim(`  ${p.description}  never tested: exploration never reached a world where it applies`));
+      continue;
+    }
     if (p.holds && !report.exhaustive) {
       lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  held in the states explored, not all of them`));
       continue;
