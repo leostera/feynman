@@ -8,7 +8,7 @@ import { readConfig, type Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
 import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red, yellow } from "./format.ts";
 import { loadSpec } from "./load.ts";
-import { shapeWarnings, totalSteps, unbuilt } from "./shape.ts";
+import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt } from "./shape.ts";
 import { typecheck } from "./types.ts";
 
 export interface Context {
@@ -67,15 +67,18 @@ export async function checkCommand(ctx: Context, named: string[], bounds: Partia
     const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
     console.log(dim(path));
     const scenarios = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
+    const brokenBy = new Map<string, string>();
     for (const { scenario, run } of scenarios) {
       const broken = run.error ?? run.events.find((e) => e.error)?.error ?? run.events.find((e) => e.violations.length)?.violations.join(", ");
       if (broken) {
         status = 1;
         console.log(red(`  ✗ scenario "${scenario.name}": ${broken}`));
+        for (const invariant of spec.invariants) if (new RegExp(`\\b${invariant.id}\\b`).test(broken) && !brokenBy.has(invariant.id)) brokenBy.set(invariant.id, scenario.name);
       }
     }
-    const report = check(spec, merged);
-    console.log(formatReport(spec, report));
+    const report = check(spec, merged, scenarioSeeds(spec, scenarios));
+    console.log(formatReport(spec, report, brokenBy));
+    if (!report.exhaustive) console.log(dim(`  "~" is not a proof: raise the limits or lower the bounds until exploration finishes.`));
     const statuses = checkSources(ctx.repository.root, specSources(spec));
     for (const line of formatSources(statuses)) console.log(line);
     for (const w of shapeWarnings(spec)) console.log(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));

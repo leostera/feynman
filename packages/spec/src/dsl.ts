@@ -52,7 +52,7 @@ export interface ZonePlace {
 
 /** Where an actor's instances sit within their zone. */
 export interface ActorPlace {
-  /** Instances of actors with a lower order come first; by default, the order that crosses links least. */
+  /** Instances of actors with a lower order come first; within an order, by label, so "Studio app" and "Studio daemon" sit together. */
   order?: number;
   /** Sit on the zone's border rather than inside it, like a gate everything passes through. */
   edge?: "left" | "right";

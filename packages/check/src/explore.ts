@@ -50,6 +50,8 @@ export type Choice =
 
 /** A path from the initial world, replayed with every world along it. */
 export interface Counterexample {
+  /** The scenario whose end the path starts from; none for the empty world. */
+  from?: string;
   initial: World;
   choices: Choice[];
   events: Event[];
@@ -70,6 +72,8 @@ export interface Report {
   spec: string;
   bounds: Bounds;
   states: number;
+  /** How many scenario ends were explored from, besides the initial world. */
+  seeds: number;
   /** Whether every state within the bounds was explored. */
   exhaustive: boolean;
   /** Why the search stopped early, when it did. */
@@ -84,6 +88,8 @@ export interface Report {
 
 interface Node {
   parent: number;
+  /** Which start this path begins at: 0 is the initial world, then each seed. */
+  root: number;
   choice: Choice | null;
   event: Event | null;
   depth: number;
@@ -98,13 +104,31 @@ function stateKey(world: World, acts: Record<string, number>): string {
   return canonical(world) + JSON.stringify(counts);
 }
 
-export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
+/** A world to explore from besides the initial one, such as where a scenario ends. */
+export interface Seed {
+  name: string;
+  world: World;
+}
+
+/**
+ * Explore every interleaving within the bounds, from the initial world and from each seed
+ * at once, breadth first. Seeding with where scenarios end puts the search where the
+ * interesting states are, rather than spending its budget getting there.
+ */
+export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = []): Report {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
   const started = Date.now();
-  const initial = initialWorld(spec, b);
-  const nodes: Node[] = [{ parent: -1, choice: null, event: null, depth: 0, faults: 0, acts: {} }];
-  const seen = new Set<string>([stateKey(initial, {})]);
-  let frontier: { node: number; world: World }[] = [{ node: 0, world: initial }];
+  const roots: { name?: string; world: World }[] = [{ world: initialWorld(spec, b) }, ...seeds];
+  const nodes: Node[] = [];
+  const seen = new Set<string>();
+  let frontier: { node: number; world: World }[] = [];
+  for (const [root, { world }] of roots.entries()) {
+    const key = stateKey(world, {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {} });
+    frontier.push({ node: nodes.length - 1, world });
+  }
   const failures = new Map<string, number>();
   const errors = new Map<string, number>();
   const eventuallyChecked = new Map<string, { node: number; then: Event[] } | null>();
@@ -134,7 +158,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
     }
   };
 
-  examine(0, initial);
+  for (const { node, world } of frontier) examine(node, world);
   search: while (frontier.length) {
     const next: typeof frontier = [];
     for (const { node: index, world } of frontier) {
@@ -160,7 +184,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
         if (seen.has(key)) continue;
         seen.add(key);
         const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
-        nodes.push({ parent: index, choice, event: step.event, depth: node.depth + 1, faults, acts });
+        nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts });
         depthReached = Math.max(depthReached, node.depth + 1);
         examine(nodes.length - 1, step.world);
         if (!step.event.error) next.push({ node: nodes.length - 1, world: step.world });
@@ -169,7 +193,10 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
     frontier = next;
   }
 
-  const counterexample = (index: number) => replay(spec, initial, pathChoices(nodes, index));
+  const counterexample = (index: number) => {
+    const root = roots[nodes[index].root];
+    return { ...replay(spec, root.world, pathChoices(nodes, index)), ...(root.name ? { from: root.name } : {}) };
+  };
   const properties: PropertyResult[] = spec.invariants.map((invariant) => {
     const base = { id: invariant.id, kind: invariant.kind, description: invariant.description };
     if (invariant.kind === "eventually") {
@@ -183,6 +210,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}): Report {
   return {
     spec: spec.name,
     bounds: b,
+    seeds: seeds.length,
     states: nodes.length,
     exhaustive: !stoppedBy,
     stoppedBy,
@@ -302,13 +330,14 @@ export function canonical(world: World): string {
 
 function pathChoices(nodes: Node[], index: number): Choice[] {
   const out: Choice[] = [];
-  for (let i = index; i > 0; i = nodes[i].parent) out.push(nodes[i].choice!);
+  // Up to the path's start: a node with no parent (the initial world, or a seed).
+  for (let i = index; nodes[i].parent >= 0; i = nodes[i].parent) out.push(nodes[i].choice!);
   return out.reverse();
 }
 
 function pathEvents(nodes: Node[], index: number): Event[] {
   const out: Event[] = [];
-  for (let i = index; i > 0; i = nodes[i].parent) out.push(nodes[i].event!);
+  for (let i = index; nodes[i].parent >= 0; i = nodes[i].parent) out.push(nodes[i].event!);
   return out.reverse();
 }
 

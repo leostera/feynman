@@ -65,21 +65,35 @@ export function formatSources(statuses: SourceStatus[]): string[] {
   return lines;
 }
 
-export function formatReport(spec: Spec, report: Report): string {
+/**
+ * The checker's report. `brokenBy` names invariants a scenario already breaks, which show as
+ * broken whatever exploration found. A property that held while exploration stopped early
+ * says so, rather than claiming to hold.
+ */
+export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, string> = new Map()): string {
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
-  const scope = [instances || "1 of each actor", `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
+  const scope = [instances || "1 of each actor", ...(report.seeds ? [`and from the end of ${report.seeds} scenario(s)`] : []), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
   ];
   for (const p of report.properties) {
+    const scenario = brokenBy.get(p.id);
+    if (p.holds && scenario) {
+      lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}` + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
+      continue;
+    }
+    if (p.holds && !report.exhaustive) {
+      lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  held in the states explored, not all of them`));
+      continue;
+    }
     if (p.holds) {
       lines.push(green(`  ✓ ${p.id}`) + dim(`  ${p.description}`));
       continue;
     }
     lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}`);
     const ce = p.counterexample!;
-    lines.push(dim(`    shortest counterexample, ${ce.events.length} event(s):`));
+    lines.push(dim(`    shortest counterexample, ${ce.events.length} event(s)${ce.from ? `, from the end of scenario "${ce.from}"` : ""}:`));
     lines.push(indent(formatEvents(spec, ce.events, ce.worlds), 4));
     if (p.then?.length) {
       lines.push(dim(`    then, left to run by itself, it never holds:`));

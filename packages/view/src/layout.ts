@@ -196,11 +196,13 @@ function block(arrange: "stack" | "row" | "grid", boxes: Box[], vgap: number): {
  */
 function arrange(spec: Spec, world: World, ordered: Layout, view: View): Layout {
   const actorOf = (id: string) => spec.actors.find((a) => a.name === world.instances.find((i) => i.id === id)?.actor);
+  const labelOf = (id: string) => world.instances.find((i) => i.id === id)?.label ?? id;
   const columns = columnOrder(spec, ordered.zones).map((zone) => {
     const place = spec.zones.find((z) => z.name === zone.name)?.place ?? {};
     const all = [...ordered.nodes]
       .filter(([id]) => zoneOfInstance(spec, world, id) === zone.name)
-      .sort(([a, ba], [b, bb]) => (actorOf(a)?.place.order ?? 0) - (actorOf(b)?.place.order ?? 0) || ba.y - bb.y || ba.x - bb.x);
+      // By order, then by label, so things named alike sit together ("Studio app", "Studio daemon").
+      .sort(([a], [b]) => (actorOf(a)?.place.order ?? 0) - (actorOf(b)?.place.order ?? 0) || labelOf(a).localeCompare(labelOf(b), undefined, { numeric: true }));
     const inner = all.filter(([id]) => !actorOf(id)?.place.edge);
     const edges = all.filter(([id]) => actorOf(id)?.place.edge);
     const region = place.region ?? all.some(([id]) => actorOf(id)?.singleton);
