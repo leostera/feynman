@@ -54,7 +54,7 @@ able to point at every actor, message and step and say where it is.
   of them into one actor, and never split one process into several actors.
 - **Calls inside one process are steps, not messages.** If `pipeline.py` calls download,
   then transcribe, then analyze, those are three steps of one actor, each with its own
-  `sources`, chained with `ctx.start("transcribe", 0)` or a `when` guard on the state. A
+  `sources`, chained with a `when` guard on the state (it runs as soon as it holds). A
   message means something crosses a process or network boundary.
 - **One step per stage the code has.** A step whose sources span several functions in
   several files is hiding the system; split it.
@@ -112,7 +112,7 @@ Before you finish, go through the spec once more. For each actor, message and st
 ## The DSL
 
 ```ts
-import { defineSpec, message, MIN, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export default defineSpec(
   "Remote access",
@@ -133,9 +133,11 @@ export default defineSpec(
     const devices = spec.defineZone({ name: "People's devices", description: "signed in with Access" });
     const cloud = spec.defineZone({ name: "Cloudflare" });
 
-    const CODE_LIFETIME = spec.defineLimit({
+    // A number the code names. Specs have no clock: this documents the system, it does not run.
+    spec.defineLimit({
       name: "Pairing code lifetime",
-      value: 10 * MIN,
+      value: 10,
+      unit: "minutes",
       sources: ["packages/api/src/pairing.ts#CODE_TTL"],
     });
 
@@ -144,7 +146,7 @@ export default defineSpec(
       description: "The Worker that issues and redeems pairing codes.",
       zone: cloud,
       singleton: true, // exactly one, present from the start
-      initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean; expires: number }> }),
+      initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean }> }),
       durable: ["codes"], // survives a restart (it lives in a database)
       // How it is drawn in the playground: an icon, a status, and its state as rows.
       look: {
@@ -163,7 +165,7 @@ export default defineSpec(
           say: (_s, msg) => `Made a code for ${msg.account}, valid 10 minutes; only its hash is kept`,
           run(state, msg, ctx) {
             const code = ctx.fresh("code");
-            state.codes[ctx.hash(code)] = { account: msg.account, used: false, expires: ctx.now + CODE_LIFETIME.value };
+            state.codes[ctx.hash(code)] = { account: msg.account, used: false };
             ctx.reply(Code, { code });
           },
         },
@@ -173,7 +175,7 @@ export default defineSpec(
           sends: [Redeemed, Refused],
           run(state, msg, ctx) {
             const entry = state.codes[ctx.hash(msg.code)];
-            if (!entry || entry.used || entry.expires < ctx.now) return ctx.reply(Refused, { status: 404 }, "Unknown, used, or expired.");
+            if (!entry || entry.used) return ctx.reply(Refused, { status: 404 }, "Unknown or used.");
             entry.used = true;
             ctx.reply(Redeemed, { account: entry.account });
           },
@@ -236,7 +238,7 @@ export default defineSpec(
           run(state, { code }, ctx) {
             state.pending = code;
             ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id });
-            ctx.start("redeemTimeout", 5 * SEC);
+            ctx.start("redeemTimeout"); // may fire at any moment from now on
           },
         },
       },
@@ -254,6 +256,7 @@ export default defineSpec(
         // Keyed by a label: an internal transition, run as a timer (ctx.start) or whenever `when` holds.
         redeemTimeout: {
           description: "No answer in time; gives up.",
+          after: "5 seconds", // when the code fires it, for readers; it may fire at any moment
           sources: ["crates/axod/src/pairing.rs#timeout"],
           run: (s) => void (s.pending = null),
         },
@@ -263,8 +266,8 @@ export default defineSpec(
     spec.defineInvariants({
       // always: holds in every state.
       codesAreHashed: { description: "The relay stores only hashes of codes.", always: (w) => Object.keys(w.the(Relay).state.codes).every((k) => k.startsWith("hash:")) },
-      // eventually: once `after` holds, the system running by itself gets there within `within` ms.
-      pendingResolves: { description: "A Mac waiting for an answer gets one.", eventually: (w) => w.all(Mac).every((m) => m.state.pending === null), within: 10 * SEC },
+      // eventually: once `after` holds, the system left alone gets there.
+      pendingResolves: { description: "A Mac waiting for an answer gets one.", eventually: (w) => w.all(Mac).every((m) => m.state.pending === null) },
       // never: no trace has this shape.
       redeemedOnce: { description: "A code is never redeemed twice.", never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")) },
     });
@@ -277,7 +280,7 @@ export default defineSpec(
         const alice = s.spawn(Person, "Alice");
         const studio = s.spawn(Mac, "Studio");
         s.act(alice, "pair");
-        s.settle();
+        s.settle(); // left alone: messages in send order, then, when none is in flight, timers
         s.act(studio, "link", { code: alice.state.codes[0] });
         s.settle();
         // s.the(Actor) reaches singletons; s.world reads the whole world.
@@ -294,9 +297,9 @@ export default defineSpec(
 ### Rules the engine enforces
 
 - **Determinism.** Handlers see the world only through `ctx`:
-  - `now`, `id`, `label`;
+  - `id`, `label`;
   - `fresh(prefix)` for ids, `hash(value)` and `random()`;
-  - `send`, `reply`, `start(label, ms)` and `cancel(label)`;
+  - `send`, `reply`, `start(label)` and `cancel(label)`;
   - `the(Actor)`/`all(Actor)` to find instances, and `note(text)`.
 
   Don't use `Date`, `Math.random`, `async`, I/O or module-level mutable state.
@@ -409,8 +412,8 @@ const { Person, Manager, Axod } = spec.handles;
 export default definePlayground(spec, (play) => {
   // A group's status while closed, from its members' state.
   play.group("Axo relay", {
-    status: ({ member, clock }) => {
-      const waiting = Object.values(member(Manager)?.state.pairings ?? {}).filter((p) => !p.consumed && p.expires > clock).length;
+    status: ({ member }) => {
+      const waiting = Object.values(member(Manager)?.state.pairings ?? {}).filter((p) => !p.consumed && !p.expired).length;
       return waiting ? `${waiting} code(s) waiting` : "one room per account";
     },
   });
@@ -439,25 +442,25 @@ export default definePlayground(spec, (play) => {
   - `play.token(kind, render)` draws a token;
   - `play.link(kind, { style, flowing, color })` styles a kind of link.
 - **Render functions only draw and act.** They receive typed `state`, `look` (the
-  default, to build on), `world`, `clock`, `live` and `act`. They change the model only
+  default, to build on), `world`, `live` and `act`. They change the model only
   through `act(action, inputs)`, which runs a declared action exactly as the playground's
   buttons do, and does nothing while the reader looks at the past (`live` is false).
-  Keep them pure and cheap: they run on every frame while time runs. If one throws, that
+  Keep them pure and cheap: they run on every frame while events play. If one throws, that
   node falls back to the default drawing.
 - **Compose the kit:** `Node`, `Rows`, `Ticket`, `Terminal`, `Panel`, `Card`, `Badge`,
-  `Icon` and `countdown` from `@leostera/feynman/play`. They carry the playground's look in light
+  and `Icon` from `@leostera/feynman/play`. They carry the playground's look in light
   and dark mode. For anything else, use the `style` prop with Kumo's CSS variables (such
   as `var(--color-kumo-line)`). Tailwind classes in a playground file are not compiled.
 - **What the playground needs in the spec:** a panel can only show what the state holds.
-  To show the command typed, the state must keep it; to count down a code, its token
-  needs `expires`. Add such state only if it is true to the system, and keep the
+  To show the command typed, the state must keep it; to strike out an expired code, the
+  state must say it expired. Add such state only if it is true to the system, and keep the
   checker's result the same.
 - `feynman check` type-checks the playground file with the spec and loads it, which
   catches actors and state fields that do not exist.
 
 ### Types
 
-- `import { defineSpec, message, SEC, MIN } from "@leostera/feynman"` is all a spec needs.
+- `import { defineSpec, message } from "@leostera/feynman"` is all a spec needs.
   For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
@@ -499,19 +502,28 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   times on one path (2 by default). Raise it when a bug needs more.
 - **Faults.** The checker loses messages and restarts instances within `--faults N` (1 by
   default). State listed in `durable` survives a restart.
-- **Time.** Messages take `latency` ms (50 by default; set per message with
-  `message({ latency })`). Timers fire at `now + ms`. Use real values from the code, and
-  `defineLimit` for named ones. Reading `ctx.now` is fine, but it costs: from then on worlds
-  that differ only in when they are can no longer be merged. Prefer a timer to storing a time
-  when the code allows either.
+- **Time.** Specs have no clock: a run is an order of events, and anything pending may go
+  next. A timer (`ctx.start(name)`) may fire at any moment until it fires or is cancelled,
+  so "the retry fires before the reply arrives" is always possible, as it is in production.
+  Say how long the code waits with `after: "5 seconds"` on the timer's transition and
+  `defineLimit` for named values; they are for readers. An expiry is a timer that flips state
+  (`expired = true`), never a stored time. When an ordering really depends on durations (a
+  heartbeat always beats an expiry, on one machine), model it with state and say so; usually
+  the counterexample is a real risk.
+- **Left alone.** `s.settle()`, `eventually` and the playground's Play all run the system
+  left alone: messages in the order they were sent, and when none is in flight, the timers
+  that are set, oldest first, up to 200 events. So a scenario's `settle()` also fires
+  timeouts and expiries once the network is quiet: act before settling if something must
+  happen before a timer. `s.fire(who, "retry")` fires a timer early, ahead of what is in
+  flight.
 - **In the end.** `w.quiet` is true when nothing is in flight. "Once quiet, the nodes agree"
   is a safety property (`always: (w) => !w.quiet || …`), cheaper and sharper than an
   `eventually` when what you mean is "after everything has arrived".
 - **Never.** A `never` property sees the path through `trace.count` and `trace.some`; prefer
   those to reading `trace.events`, which makes every path its own state.
 - **Eventually.** An `eventually` property is judged on the system left alone from each
-  explored world: no actions, no faults, every event on time, simultaneous events in a fixed
-  order. The search itself tries the other orders.
+  explored world: no actions, no faults, messages before timers. The search itself tries the
+  other orders.
 - **Order.** Any message may overtake any other, as on separate connections. Messages on one
   WebSocket or stream cannot; if a counterexample depends on such an overtaking, say so in
   the report rather than "fixing" the system.

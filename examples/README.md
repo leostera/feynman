@@ -16,7 +16,7 @@ bun run feynman dev                # every example in the simulator
 | --- | --- | --- |
 | `payments.ts` | Retries without idempotency debit twice, with no fault at all | timers racing the network, durable state |
 | `two-phase-commit.ts` | A coordinator deciding on the first vote; 2PC blocking on a lost vote | symmetry, action inputs, faults |
-| `lease-lock.ts` | A stalled lock holder's write lands after the next holder's | the clock (`ctx.now`), fencing tokens |
+| `lease-lock.ts` | A stalled lock holder's write lands after the next holder's | a lease as an `expire` timer racing a stall, fencing tokens |
 | `cache.ts` | A stale fill overtaking an invalidation | `eventually`, a lost message versions cannot fix |
 | `leader-election.ts` | Adopting the last leader heard instead of the highest | a false symmetry claim the checker must refute |
 | `job-queue.ts` | Redelivery doing a job's side effect twice | `never` over the trace, guarded transitions |
@@ -38,7 +38,7 @@ that leaves it out, so TLC merges states as the checker does: the first time, at
 smallest depth.
 
 `test/examples/tla.oracle.ts` runs TLC on every configuration and checks that the checker reaches
-the same distinct states (its worlds projected onto the TLA+ variables: no times, no ids),
+the same distinct states (its worlds projected onto the TLA+ variables: no ids),
 the same verdict on every invariant, and counterexamples just as short. It needs Java and
 `tla2tools.jar` (the TLA+ Toolbox has one; or set `TLA_TOOLS_JAR`), and is skipped without.
 
