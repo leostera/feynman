@@ -1,6 +1,8 @@
-// The playground's topology, laid out by ELK: zones are boxes, instances are nodes inside
-// their actor's zone, and an edge joins two instances whose actors exchange messages.
-// Nothing is placed by hand; the layout depends only on which instances exist.
+// The playground's topology. ELK orders it: zones left to right in the direction messages
+// flow, instances within a zone so links cross least. That order is then spread over the
+// canvas: one column per zone, filling its width, and each column's instances spread down
+// its height. A zone holding a singleton (the service everyone talks to) is drawn as a
+// tinted region; the others are captioned columns. Nothing is placed by hand.
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk.bundled.js";
 import { appearance, type Spec, type World } from "@feynman/spec";
@@ -43,10 +45,25 @@ export interface Box {
   h: number;
 }
 
+export interface ZoneBox extends Box {
+  name: string;
+  /** Drawn as a tinted region, rather than a caption over a column. */
+  region: boolean;
+}
+
+/** The canvas the layout fills; room is kept at the top and bottom for the overlays. */
+export interface View {
+  w: number;
+  h: number;
+}
+
+/** Room for the tip and docks over the canvas, and the margin at the sides. */
+export const RESERVE = { top: 72, bottom: 76, side: 40, caption: 30 };
+
 export interface Layout {
   width: number;
   height: number;
-  zones: (Box & { name: string })[];
+  zones: ZoneBox[];
   /** Instances by id. */
   nodes: Map<string, Box>;
   /** By `a|b`, sorted ids: the route between them. */
@@ -73,12 +90,17 @@ export function edgeKey(a: string, b: string): string {
 }
 
 /** What the layout depends on: which instances exist, and how tall each hub is. */
-export function layoutKey(spec: Spec, world: World): string {
+export function layoutKey(spec: Spec, world: World, view: View): string {
   const hubs = world.instances.filter((i) => shapeOf(spec.actors.find((a) => a.name === i.actor)!) === "hub").map((i) => hubHeight(appearance(spec, world, i.id).rows));
-  return `${spec.name}:${world.instances.map((i) => i.id).join(",")}:${hubs.join(",")}`;
+  return `${spec.name}:${world.instances.map((i) => i.id).join(",")}:${hubs.join(",")}:${Math.round(view.w / 16)}x${Math.round(view.h / 16)}`;
 }
 
-export async function layout(spec: Spec, world: World): Promise<Layout> {
+export async function layout(spec: Spec, world: World, view: View): Promise<Layout> {
+  return arrange(spec, world, await order(spec, world), view);
+}
+
+/** ELK's answer to "in which order": zones by x, instances within a zone by y. */
+async function order(spec: Spec, world: World): Promise<Layout> {
   const links = actorLinks(spec);
   const byActor = new Map<string, string[]>();
   for (const i of world.instances) byActor.set(i.actor, [...(byActor.get(i.actor) ?? []), i.id]);
@@ -118,7 +140,7 @@ export async function layout(spec: Spec, world: World): Promise<Layout> {
   const out = await elk.layout(graph);
   const result: Layout = { width: out.width ?? 0, height: out.height ?? 0, zones: [], nodes: new Map(), edges: new Map() };
   for (const zone of out.children ?? []) {
-    result.zones.push({ name: zone.id.slice(5), x: zone.x!, y: zone.y!, w: zone.width!, h: zone.height! });
+    result.zones.push({ name: zone.id.slice(5), region: false, x: zone.x!, y: zone.y!, w: zone.width!, h: zone.height! });
     for (const node of zone.children ?? []) result.nodes.set(node.id, { x: node.x!, y: node.y!, w: node.width!, h: node.height! });
   }
   for (const edge of out.edges ?? []) {
@@ -127,6 +149,49 @@ export async function layout(spec: Spec, world: World): Promise<Layout> {
     result.edges.set(edgeKey(edge.sources[0], edge.targets[0]), [section.startPoint, ...(section.bendPoints ?? []), section.endPoint]);
   }
   return result;
+}
+
+/** Spread the ordered zones over the canvas: columns across, instances down. */
+function arrange(spec: Spec, world: World, ordered: Layout, view: View): Layout {
+  const columns = [...ordered.zones]
+    .sort((a, b) => a.x - b.x)
+    .map((zone) => {
+      const ids = [...ordered.nodes].filter(([id]) => zoneOfInstance(spec, world, id) === zone.name).sort(([, a], [, b]) => a.y - b.y || a.x - b.x);
+      const region = ids.some(([id]) => spec.actors.find((a) => a.name === world.instances.find((i) => i.id === id)?.actor)?.singleton);
+      const width = Math.max(...ids.map(([, b]) => b.w)) + (region ? 64 : 0);
+      return { zone, ids, region, width };
+    });
+  const used = columns.reduce((sum, c) => sum + c.width, 0);
+  const gaps = Math.max(1, columns.length - 1);
+  const gap = columns.length > 1 ? Math.min(280, Math.max(72, (view.w - RESERVE.side * 2 - used) / gaps)) : 0;
+  const width = Math.max(view.w, used + gap * (columns.length - 1) + RESERVE.side * 2);
+  const top = RESERVE.top + RESERVE.caption;
+  const bottom = RESERVE.bottom;
+  const tallest = Math.max(...columns.map((c) => c.ids.reduce((sum, [, b]) => sum + b.h, 0) + 32 * (c.ids.length - 1) + (c.region ? 96 : 0)));
+  const height = Math.max(view.h, top + tallest + bottom);
+  const room = height - top - bottom;
+  const out: Layout = { width, height, zones: [], nodes: new Map(), edges: new Map() };
+  let x = (width - used - gap * (columns.length - 1)) / 2;
+  for (const column of columns) {
+    const inner = column.region ? room - 96 : room;
+    const stack = column.ids.reduce((sum, [, b]) => sum + b.h, 0);
+    const vgap = column.ids.length > 1 ? Math.min(120, Math.max(32, (inner - stack) / column.ids.length)) : 0;
+    const total = stack + vgap * (column.ids.length - 1);
+    // The service sits at the top of its region, as the thing the rest hangs off; columns are centred.
+    let y = top + (column.region ? 40 : Math.max(0, (inner - total) / 2));
+    for (const [id, box] of column.ids) {
+      out.nodes.set(id, { x: x + (column.width - box.w) / 2, y, w: box.w, h: box.h });
+      y += box.h + vgap;
+    }
+    out.zones.push(column.region ? { name: column.zone.name, region: true, x, y: top - 12, w: column.width, h: room + 12 } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room });
+    x += column.width + gap;
+  }
+  return out;
+}
+
+function zoneOfInstance(spec: Spec, world: World, id: string): string | undefined {
+  const instance = world.instances.find((i) => i.id === id);
+  return instance && zoneOf(spec, instance.actor);
 }
 
 function zoneOf(spec: Spec, actor: string): string {

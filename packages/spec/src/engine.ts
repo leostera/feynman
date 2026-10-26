@@ -227,7 +227,7 @@ function runStep(spec: Spec, before: World, run: Running): Step {
   const changes = diff(self.id, self.state, state);
   self.state = state;
   const text = sentence(run.step, state, run.kind === "action" ? run.inputs : run.delivery?.payload);
-  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}) });
+  return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}), ...(run.step.routine ? { routine: true } : {}) });
 }
 
 /** The step's `say` for this event; a `say` that throws is left out rather than failing the step. */

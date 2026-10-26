@@ -27,7 +27,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
     name: "Peer",
     zone,
     initialState: () => ({ up: false, pings: 0 }),
-    look: { icon: "laptop", mood: (s) => (s.up ? "ok" : "off") },
+    look: { icon: "laptop", mood: (s) => (s.up ? "ok" : "off"), owner: (s) => (s.up ? "Hub" : null) },
     links: (s) => (s.up ? [{ to: "Hub", kind: "socket" }] : []),
     actions: {
       dial: {
@@ -38,7 +38,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
         sends: [Dial],
         run: (_s, { n }, ctx) => ctx.send(ctx.the(Hub), Dial, { n }),
       },
-      ping: { label: "Ping yourself", description: "Counts.", sources: ["peer.ts#ping"], run: (s, _i, ctx) => void (s.pings += ctx.self.id ? 1 : 0) },
+      ping: { label: "Ping yourself", description: "Counts.", routine: true, sources: ["peer.ts#ping"], run: (s, _i, ctx) => void (s.pings += ctx.self.id ? 1 : 0) },
     },
     transitions: { [Up]: { description: "Is up.", sources: ["peer.ts#up"], run: (s) => void (s.up = true) } },
   });
@@ -59,7 +59,10 @@ test("look, links and say: presentation as data, evaluated against the world", (
   const run = runScenario(spec, spec.scenarios[0]);
   expect(run.error).toBeUndefined();
   const world = run.worlds.at(-1)!;
-  expect(appearance(spec, world, "hub")).toEqual({ icon: "cloud", status: "1 connected", mood: null, rows: [{ label: "1", group: "peers", mood: "ok" }], tokens: [{ kind: "slot", value: 7 }] });
+  expect(appearance(spec, world, "hub")).toEqual({ icon: "cloud", status: "1 connected", mood: null, rows: [{ label: "1", group: "peers", mood: "ok" }], tokens: [{ kind: "slot", value: 7 }], owner: undefined });
+  expect(appearance(spec, world, "peer-p").owner).toBe("Hub");
+  expect(run.events.find((e) => e.key === "ping")?.routine).toBe(true);
+  expect(run.events.find((e) => e.key === "dial")?.routine).toBeUndefined();
   // Dropping the hub's token on the peer dials with it.
   const drops = dropsFor(spec, world, "peer-p", { kind: "slot", value: 7 });
   expect(drops.map((d) => [d.action.key, d.inputs, d.complete])).toEqual([["dial", { n: 7 }, true]]);

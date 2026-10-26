@@ -67,6 +67,11 @@ export interface Look<S> {
   status?: (state: Readonly<S>) => string;
   mood?: (state: Readonly<S>) => Mood;
   rows?: (state: Readonly<S>) => Row[];
+  /**
+   * Whose this is, as an instance id or label: a Mac belongs to the person whose account
+   * it is linked to. It then wears that instance's colour; with null it stays neutral.
+   */
+  owner?: (state: Readonly<S>) => string | null;
   /** Things to drag onto other nodes, floating beside this one. */
   tokens?: (state: Readonly<S>, self: { id: string; label: string }) => Token[];
 }
@@ -190,6 +195,8 @@ export interface MessageTransition<M extends Registry, S, P, Sends extends Messa
   run(state: S, msg: P, ctx: ReplyCtx<M, Sends, Starts>): void;
   /** What happened this time, as the timeline says it, from the state after the step: "Made code 19YP for alice". */
   say?: (state: Readonly<S>, msg: P) => string;
+  /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
+  routine?: boolean;
 }
 
 export interface InternalTransition<M extends Registry, S, Sends extends MessageKey<M> = never, Starts extends string = never>
@@ -199,6 +206,8 @@ export interface InternalTransition<M extends Registry, S, Sends extends Message
   run(state: S, ctx: Ctx<M, Sends, Starts>): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>) => string;
+  /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
+  routine?: boolean;
 }
 
 // Inputs --------------------------------------------------------------------------------------------
@@ -238,6 +247,8 @@ export interface ActionDef<M extends Registry, S, I, Sends extends MessageKey<M>
   run(state: S, inputs: InputsOf<I>, ctx: Ctx<M, Sends, Starts>): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>, inputs: InputsOf<I>) => string;
+  /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
+  routine?: boolean;
 }
 
 // Declarations ----------------------------------------------------------------------------------------
@@ -429,6 +440,7 @@ interface RawStep {
   when?: (state: unknown) => boolean;
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
+  routine?: boolean;
 }
 
 interface RawActor {
@@ -458,6 +470,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       starts: step.starts ?? [],
       when: step.when,
       say: step.say,
+      routine: step.routine ?? false,
       inputs: Object.fromEntries(
         Object.entries(step.inputs ?? {}).map(([name, input]) => [
           name,
@@ -480,6 +493,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       starts: step.starts ?? [],
       when: step.when,
       say: step.say,
+      routine: step.routine ?? false,
       run: step.run as TransitionInfo["run"],
     };
   }

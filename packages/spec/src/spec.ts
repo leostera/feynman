@@ -45,6 +45,8 @@ export interface StepInfo {
   description: string;
   /** The sentence for one event, from the state after it and the step's payload. */
   say?: (state: unknown, payload: unknown) => string;
+  /** Housekeeping, such as a heartbeat, that views fold away. */
+  routine: boolean;
   sources: string[];
   sends: string[];
   starts: string[];
@@ -191,6 +193,8 @@ export interface Event {
   notes: string[];
   /** What happened this time, in a sentence, from the step's `say`. */
   text?: string;
+  /** Whether the step is housekeeping (`routine`), which views fold away. */
+  routine?: boolean;
   /** A spec bug at this step, such as an undeclared send; the step's effects are discarded. */
   error?: string;
   /** Invariants (`always`) that do not hold after this event. */

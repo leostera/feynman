@@ -37,7 +37,7 @@ import {
   WifiHighIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
-import type { Icon, Mood, Spec, World } from "@feynman/spec";
+import { appearance, type Icon, type Mood, type Spec, type World } from "@feynman/spec";
 
 export const ICONS: Record<Icon, PhosphorIcon> = {
   person: UserIcon,
@@ -115,29 +115,29 @@ export function toneColor(tone: string | undefined): string {
 }
 
 /** Colours that tell instances apart: Alice blue, Bob purple. Singletons stay neutral. */
-const PALETTE = [
-  "var(--color-kumo-badge-blue)",
-  "var(--color-kumo-badge-purple)",
-  "var(--color-kumo-badge-teal)",
-  "var(--color-kumo-badge-orange)",
-  "var(--color-kumo-badge-green)",
-];
+const PALETTE = [1, 2, 3, 4, 5].map((n) => `var(--feynman-identity-${n})`);
 
-export function instanceColors(spec: Spec, world: World): Map<string, string> {
+/**
+ * Who wears which colour. Instances of actors that name an owner wear their owner's colour
+ * (a Mac, its person's), or none while they have no owner. Other instances that are not
+ * singletons each get their own (Alice blue, Bob purple).
+ */
+export function identityColors(spec: Spec, world: World): Map<string, string> {
   const colors = new Map<string, string>();
   let n = 0;
   for (const instance of world.instances) {
-    if (spec.actors.find((a) => a.name === instance.actor)?.singleton) continue;
+    const actor = spec.actors.find((a) => a.name === instance.actor);
+    if (!actor || actor.singleton || actor.look.owner) continue;
     colors.set(instance.id, PALETTE[n++ % PALETTE.length]);
   }
+  for (const instance of world.instances) {
+    const owner = appearance(spec, world, instance.id).owner;
+    if (!owner) continue;
+    const of = world.instances.find((i) => i.id === owner || i.label === owner);
+    const color = of && colors.get(of.id);
+    if (color) colors.set(instance.id, color);
+  }
   return colors;
-}
-
-/** The colour of an instance named by id or label, if it has one. */
-export function colorOf(colors: Map<string, string>, world: World, ref: string | undefined): string | undefined {
-  if (!ref) return undefined;
-  const instance = world.instances.find((i) => i.id === ref || i.label === ref);
-  return instance && colors.get(instance.id);
 }
 
 export const TONES = [

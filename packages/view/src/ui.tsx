@@ -176,19 +176,22 @@ export function StateTree({ value, changed = new Set<string>(), path = "" }: { v
 
 // Events -------------------------------------------------------------------------------------------
 
-export function EventDetail({ event, world, compare }: { event: Event; world?: World; compare?: Event }) {
+/** One event in words; `folded` keeps its changes, messages and code behind a disclosure. */
+export function EventDetail({ event, world, compare, folded }: { event: Event; world?: World; compare?: Event; folded?: boolean }) {
   const { spec } = useExplorer();
   const before = compare ? new Map(compare.changes.map((c) => [`${c.instance}:${c.path}`, c.after])) : null;
-  return (
+  const head = (
+    <div>
+      <p className="text-sm font-medium">
+        {labelOf(world, event.instance)} · {stepTitle(spec, event)}
+      </p>
+      <p className="text-[13px] text-kumo-subtle">
+        {event.description} <span className="tabular-nums">at {time(event.at)}</span>
+      </p>
+    </div>
+  );
+  const body = (
     <div className="flex flex-col gap-3">
-      <div>
-        <p className="text-sm font-medium">
-          {labelOf(world, event.instance)} · {stepTitle(spec, event)}
-        </p>
-        <p className="text-xs text-kumo-subtle">
-          {event.description} <span className="font-mono">at {time(event.at)}</span>
-        </p>
-      </div>
       {event.error && <p className="rounded-md bg-kumo-danger/10 px-2 py-1.5 text-xs text-kumo-danger">Spec error: {event.error}</p>}
       {event.violations.map((v) => (
         <p key={v} className="rounded-md bg-kumo-danger/10 px-2 py-1.5 text-xs text-kumo-danger">
@@ -241,6 +244,25 @@ export function EventDetail({ event, world, compare }: { event: Event; world?: W
           <Sources sources={event.sources} />
         </Section>
       )}
+    </div>
+  );
+  if (!folded)
+    return (
+      <div className="flex flex-col gap-3">
+        {head}
+        {body}
+      </div>
+    );
+  return (
+    <div className="flex flex-col gap-2">
+      {head}
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-1 text-[12px] text-kumo-subtle hover:text-kumo-default [&::-webkit-details-marker]:hidden">
+          <CaretRightIcon size={12} className="transition-transform duration-150 group-open:rotate-90" />
+          What changed, what it sent, and the code
+        </summary>
+        <div className="pt-2">{body}</div>
+      </details>
     </div>
   );
 }
