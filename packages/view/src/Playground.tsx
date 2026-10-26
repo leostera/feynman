@@ -54,7 +54,8 @@ export function Playground({ session, setSession, scenarios }: { session: Sessio
   const [dropChoice, setDropChoice] = useState<{ target: string; drops: Drop[] } | null>(null);
   const last = session.steps.length - 1;
   const travelled = cursor !== null && cursor < last ? cursor : null;
-  useEffect(() => setCursor(null), [session.origin, session.initial]);
+  // Starting from a scenario opens it at its start, its events ready to step or play through.
+  useEffect(() => setCursor(-1), [session.origin, session.initial]);
   const live = current(session);
   const sceneRef = useRef<{ groups: GroupInfo[]; toggled: Set<string> }>({ groups, toggled });
   sceneRef.current = { groups, toggled };
