@@ -146,7 +146,8 @@ export function Rows({ rows, anchor, compact, limit, className }: { rows: Row[];
       {[...groups].map(([group, items]) => {
         const owner = colorOf(items.find((r) => r.owner)?.owner);
         return (
-          <div key={group} className="overflow-hidden rounded-lg bg-kumo-base" style={{ boxShadow: `0 0 0 ${owner ? 1.5 : 1}px ${owner ?? "var(--color-kumo-line)"}` }}>
+          // A border, not an outer ring: the list clips what is outside its boxes, which cut a ring's edges.
+          <div key={group} className="shrink-0 overflow-hidden rounded-lg border-solid bg-kumo-base" style={{ borderWidth: owner ? 1.5 : 1, borderColor: owner ?? "var(--color-kumo-line)" }}>
             {group && (
               <div className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-1.5">
                 <span className="size-2 rounded-full" style={{ background: owner ?? "var(--color-kumo-line)" }} />
