@@ -7,7 +7,7 @@
 //
 // Expected: buggy breaks `debitedOnce` in 4 steps (pay, retry, debit, debit) with no fault;
 // fixed holds, and every payment settles even when one message is lost.
-import { defineSpec, message, SEC } from "@leostera/feynman";
+import { defineSpec, message } from "@leostera/feynman";
 
 export function payments(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -60,7 +60,7 @@ export function payments(variant: "buggy" | "fixed") {
               state.pending = ctx.fresh("payment");
               state.paid += 1;
               ctx.send(ctx.the(Bank), Debit, { id: state.pending, amount: 10 });
-              ctx.start("retry", 1 * SEC);
+              ctx.start("retry");
             },
           },
         },
@@ -75,12 +75,13 @@ export function payments(variant: "buggy" | "fixed") {
           },
           retry: {
             description: "No answer yet: send the same payment again.",
+            after: "1 second",
             sends: [Debit],
             starts: ["retry"],
             run(state, ctx) {
               if (!state.pending) return;
               ctx.send(ctx.the(Bank), Debit, { id: state.pending, amount: 10 });
-              ctx.start("retry", 1 * SEC);
+              ctx.start("retry");
             },
           },
         },
@@ -95,7 +96,6 @@ export function payments(variant: "buggy" | "fixed") {
           description: "A payment in flight is eventually confirmed.",
           after: (w) => w.all(Client).some((c) => c.state.pending !== null),
           eventually: (w) => w.all(Client).every((c) => c.state.pending === null),
-          within: 10 * SEC,
         },
       });
       return { Bank, Client };

@@ -1,10 +1,10 @@
 // Running a spec: a Runner applies steps and keeps the trace; scenarios script one.
-import { act, choices, emptyWorld, fire, guard, lose, pendingInOrder, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
+import { act, choices, emptyWorld, fire, guard, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
 
-/** Most events one settle may run before the spec is assumed to loop. */
-const SETTLE_LIMIT = 1000;
+/** Most events one settle runs: left alone, a retry loop never ends by itself. */
+export const SETTLE_LIMIT = 200;
 
 export class Runner {
   readonly events: Event[] = [];
@@ -42,11 +42,11 @@ export class Runner {
     return this.apply(act(this.spec, this.current, instance, key, inputs));
   }
 
-  /** Run the earliest due delivery or timer, or a guarded transition that holds first. */
+  /** What the system does next left alone: a guarded transition that holds, else the next message, else the next timer. */
   next(): Event | null {
     const { guards } = choices(this.spec, this.current);
     if (guards.length) return this.apply(guard(this.spec, this.current, guards[0].instance, guards[0].key));
-    const [first] = pendingInOrder(this.current);
+    const first = nextLeftAlone(this.current);
     if (!first) return null;
     const lost = first.kind === "deliver" ? this.toLose.indexOf(first.message) : -1;
     if (lost >= 0) {
@@ -56,24 +56,16 @@ export class Runner {
     return this.apply(fire(this.spec, this.current, first.id));
   }
 
-  /** Run what is due up to `until`, in time order. */
-  runUntil(until: number) {
-    for (let n = 0; ; n++) {
-      if (n >= SETTLE_LIMIT) throw new SpecError(`ran ${SETTLE_LIMIT} events without settling; a transition may loop`);
-      const { guards, pending } = choices(this.spec, this.current);
-      if (!guards.length && (!pending.length || pending[0].at > until)) break;
-      this.next();
-    }
+  /** Leave the system alone until nothing is pending, or for SETTLE_LIMIT events. */
+  settle() {
+    for (let n = 0; n < SETTLE_LIMIT && this.next(); n++);
   }
 
-  settle(horizon = 60_000) {
-    this.runUntil(this.current.clock + horizon);
-  }
-
-  wait(ms: number) {
-    const until = this.current.clock + ms;
-    this.runUntil(until);
-    this.current = { ...this.current, clock: Math.max(this.current.clock, until) };
+  /** Fire an instance's timer now, ahead of anything in flight. */
+  fireTimer(instance: string, timer: string): Event {
+    const pending = this.current.pending.find((p) => p.kind === "timer" && p.to === instance && p.timer === timer);
+    if (!pending) throw new SpecError(`${instance} has no ${timer} timer set`);
+    return this.apply(fire(this.spec, this.current, pending.id));
   }
 
   loseNext(message: string) {
@@ -127,8 +119,11 @@ function scriptFor(runner: Runner): Script {
       const event = runner.act(who.id, action, inputs);
       if (event.error) throw new SpecError(event.error);
     },
-    settle: (horizon) => runner.settle(horizon),
-    wait: (ms) => runner.wait(ms),
+    settle: () => runner.settle(),
+    fire(who, timer) {
+      const event = runner.fireTimer(who.id, timer);
+      if (event.error) throw new SpecError(event.error);
+    },
     lose: (key) => runner.loseNext(key),
     restart(who) {
       runner.restart(who.id);

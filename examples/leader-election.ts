@@ -7,12 +7,12 @@
 // This spec orders instances by id, so its instances are not interchangeable: swapping two
 // nodes changes who wins. Symmetry must not apply to it.
 //
-// Expected, with three nodes: buggy breaks `agree` in 4 steps: every node announces, and one
-// announcement arrives early; left alone, the rest arrive in an order that leaves the nodes on
-// different leaders. Fixed holds. Declaring the nodes symmetric is wrong for the fixed one,
-// which orders ids, and the checker must notice and say so; the buggy one never compares ids,
-// so for it the claim is true.
-import { defineSpec, message, SEC } from "@leostera/feynman";
+// Expected, with three nodes: buggy breaks `agree` in 3 steps: every node announces; left
+// alone, the announcements arrive in an order that leaves the nodes on different leaders.
+// Fixed holds. Declaring the nodes symmetric is wrong for the fixed one, which orders ids,
+// and the checker must notice and say so; the buggy one never compares ids, so for it the
+// claim is true.
+import { defineSpec, message } from "@leostera/feynman";
 
 export function leaderElection(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -57,7 +57,6 @@ export function leaderElection(variant: "buggy" | "fixed") {
           description: "Once every node has announced, they all end up agreeing on one leader.",
           after: (w) => w.all(Node).every((n) => n.state.announced),
           eventually: (w) => new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
-          within: 10 * SEC,
         },
       });
       return { Node };

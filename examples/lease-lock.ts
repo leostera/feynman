@@ -1,21 +1,19 @@
 // A lock with a lease, and fencing tokens.
 //
 // Clients take a lock from a server for a one-second lease, then write to storage. A client
-// can stall (a GC pause, here a two-second timer) between being granted the lock and writing,
-// by which time its lease has run out and another client holds the lock. Without fencing,
-// storage takes the stale write after the new holder's. With fencing, each grant carries a
-// larger token and storage refuses a token smaller than one it has seen.
+// can stall (a GC pause) between being granted the lock and writing, by which time its lease
+// has run out and another client holds the lock. Without fencing, storage takes the stale
+// write after the new holder's. With fencing, each grant carries a larger token and storage
+// refuses a token smaller than one it has seen.
 //
-// The server reads the clock (`ctx.now`) to judge leases, so this also covers the checker's
-// handling of absolute time.
+// There is no clock (RFD0004): the lease is an `expire` timer the server sets when it grants
+// the lock, and the stall is the client's `write` timer. Either may fire first, which is the
+// point: nothing makes a pause shorter than a lease.
 //
 // Expected, with two clients: buggy breaks `fenced` in 10 steps (A is granted the lock and
 // stalls; once the lease is over B is granted it, stalls, and writes; then A's write lands);
 // fixed holds.
-import { defineSpec, message, SEC } from "@leostera/feynman";
-
-const LEASE = 1 * SEC;
-const PAUSE = 2 * SEC;
+import { defineSpec, message } from "@leostera/feynman";
 
 export function leaseLock(variant: "buggy" | "fixed") {
   return defineSpec(
@@ -36,18 +34,26 @@ export function leaseLock(variant: "buggy" | "fixed") {
         name: "Lock server",
         zone,
         singleton: true,
-        initialState: () => ({ holder: null as string | null, until: 0, token: 0 }),
+        initialState: () => ({ holder: null as string | null, token: 0 }),
         transitions: {
           [Acquire]: {
             description: "Grants the lock unless someone else's lease is still running.",
             sends: [Granted, Denied],
+            starts: ["expire"],
             run(state, _msg, ctx) {
               const asker = ctx.from!.id;
-              if (state.holder && state.holder !== asker && ctx.now < state.until) return ctx.reply(Denied, {});
+              if (state.holder && state.holder !== asker) return ctx.reply(Denied, {});
               state.holder = asker;
-              state.until = ctx.now + LEASE;
               state.token += 1;
+              ctx.start("expire");
               ctx.reply(Granted, { token: state.token });
+            },
+          },
+          expire: {
+            description: "The lease runs out: the lock is free again.",
+            after: "1 second",
+            run(state) {
+              state.holder = null;
             },
           },
         },
@@ -94,12 +100,13 @@ export function leaseLock(variant: "buggy" | "fixed") {
             run(state, msg, ctx) {
               state.asking = false;
               state.token = msg.token;
-              ctx.start("write", PAUSE);
+              ctx.start("write");
             },
           },
           [Denied]: { description: "Someone else holds it.", run: (state) => void (state.asking = false) },
           write: {
             description: "Wakes up and writes, believing it still holds the lock.",
+            after: "2 seconds, a GC pause",
             sends: [Write],
             run(state, ctx) {
               if (state.token === null) return;

@@ -1,13 +1,13 @@
 // Judging one world reached by the search or a random run: which properties it breaks.
 // Shared, so both ways of exploring check properties identically.
-import { choices, fire, guard, holdsIn, traceView, type Event, type Spec, type StepOptions, type World } from "../spec/index.ts";
-import { canonical, pendingText } from "./keys.ts";
+import { choices, fire, guard, holdsIn, SETTLE_LIMIT, traceView, type Event, type Spec, type StepOptions, type World } from "../spec/index.ts";
+import { canonical, leastRenaming, NO_SYMMETRY, pendingText, renamed, type Symmetry } from "./keys.ts";
 
 /** Running by itself to check an `eventually` needs only the worlds. */
 const SILENT: StepOptions = { explain: false, invariants: false };
 
-/** Most events one run by itself may take, so a looping spec cannot hang the checker. */
-export const SETTLE_LIMIT = 1000;
+/** Most events the system left alone runs, as a scenario's settle() does. */
+export { SETTLE_LIMIT };
 
 /** What the exploring so far knows about properties: which broke, and what it remembers. */
 export interface Verdicts {
@@ -37,7 +37,7 @@ export interface Finding {
  * whether an `eventually` property that applies here is reached by the system left alone.
  * Only properties not yet broken are judged.
  */
-export function judge(spec: Spec, world: World, event: Event | null, path: () => Event[], v: Verdicts): { findings: Finding[]; error?: string } {
+export function judge(spec: Spec, world: World, event: Event | null, path: () => Event[], v: Verdicts, symmetry: Symmetry = NO_SYMMETRY): { findings: Finding[]; error?: string } {
   const findings: Finding[] = [];
   let error: string | undefined;
   if (event) {
@@ -54,9 +54,9 @@ export function judge(spec: Spec, world: World, event: Event | null, path: () =>
       if (holdsIn(spec, world, invariant.eventually)) continue;
       v.tested.set(invariant.id, (v.tested.get(invariant.id) ?? 0) + 1);
       if (!v.futures.has(invariant.id)) v.futures.set(invariant.id, new Map());
-      if (!neverWithin(spec, world, invariant.eventually, invariant.within, v.futures.get(invariant.id)!)) continue;
+      if (reaches(spec, world, invariant.eventually, v.futures.get(invariant.id)!, symmetry)) continue;
       // Found: run it again, explained, for the counterexample.
-      const then = settles(spec, world, invariant.eventually, invariant.within, v.futures.get(invariant.id)!);
+      const then = settles(spec, world, invariant.eventually, v.futures.get(invariant.id)!, symmetry);
       if (then) findings.push({ id: invariant.id, then });
     }
   }
@@ -64,89 +64,80 @@ export function judge(spec: Spec, world: World, event: Event | null, path: () =>
 }
 
 /**
- * The system left alone: no actions and no faults, every event on time. Events due at the
- * same moment go in the order of what they carry (then a guarded transition before any), not
- * of internal ids, so the run, and so an `eventually` verdict, is a function of the state
- * alone: merging worlds cannot change it. Other orders of simultaneous events are not the
- * system left alone's business: the search itself tries every order of deliveries, so it
- * reaches them, and judges from there.
+ * The system left alone: no actions and no faults. A guarded transition that holds runs
+ * first; then the message in flight that sorts first by what it carries; when none is in
+ * flight, the timer that sorts first. Ordering by content, not by internal ids, makes the
+ * run, and so an `eventually` verdict, a function of the state alone: merging worlds cannot
+ * change it. With symmetry, content is compared as the world's canonical twin has it
+ * (keys.ts), so twins the search merges are judged alike. Other orders are not the system
+ * left alone's business: the search itself tries every order, so it reaches them, and
+ * judges from there.
  */
-export function soloChoices(spec: Spec, world: World): ({ kind: "guard"; instance: string; key: string } | { kind: "fire"; pending: number })[] {
+export function soloChoices(spec: Spec, world: World, symmetry: Symmetry = NO_SYMMETRY): ({ kind: "guard"; instance: string; key: string } | { kind: "fire"; pending: number })[] {
   const { guards, pending } = choices(spec, world);
-  if (guards.length) return [{ kind: "guard", instance: guards[0].instance, key: guards[0].key }];
-  if (!pending.length) return [];
-  const due = Math.max(world.clock, pending[0].at);
-  const now = pending.filter((p) => p.at <= due);
-  // Most overdue first, then by what it carries.
-  now.sort((a, b) => a.at - b.at || (pendingText(a) < pendingText(b) ? -1 : pendingText(a) > pendingText(b) ? 1 : 0));
-  return [{ kind: "fire", pending: now[0].id }];
+  const { renaming } = symmetry.classes.length ? leastRenaming(world, symmetry) : { renaming: new Map<string, string>() };
+  const least = <T>(items: T[], text: (item: T) => string) =>
+    items.map((item) => [renamed(text(item), renaming), item] as const).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))[0]?.[1];
+  const guarded = least(guards, (g) => `${g.instance}|${g.key}`);
+  if (guarded) return [{ kind: "guard", instance: guarded.instance, key: guarded.key }];
+  const next = least(pending.filter((p) => p.kind === "deliver"), pendingText) ?? least(pending.filter((p) => p.kind === "timer"), pendingText);
+  return next ? [{ kind: "fire", pending: next.id }] : [];
 }
 
 function soloStep(spec: Spec, world: World, choice: ReturnType<typeof soloChoices>[number], how: StepOptions) {
   return choice.kind === "guard" ? guard(spec, world, choice.instance, choice.key, how) : fire(spec, world, choice.pending, how);
 }
 
-/** Per world: how long until the property holds, left alone; or that it is longer than some time. */
-type Worst = { exact: number } | { over: number };
-export type Futures = Map<string, Worst>;
+/** Per world: whether the system left alone from it reaches the property. */
+export type Futures = Map<string, boolean>;
 
 /**
- * How long the system left alone takes to reach `predicate` from `world`; Infinity when it
- * takes longer than `budget` ms, or never gets there (it stops, or loops). Remembered per
- * world, so runs that meet share the rest.
+ * Whether the system left alone from `world` reaches `predicate` before it stops, goes
+ * round, or runs SETTLE_LIMIT events. Remembered per world, so runs that meet share the rest.
  */
-function worst(spec: Spec, world: World, predicate: (w: never) => boolean, budget: number, futures: Futures, stack: Set<string>, depth = 0): number {
-  if (holdsIn(spec, world, predicate as never)) return 0;
-  const key = canonical(world);
-  const known = futures.get(key);
-  if (known && "exact" in known) return known.exact <= budget ? known.exact : Infinity;
-  if (known && known.over >= budget) return Infinity;
-  // Back where this order already was, without the property: an order can go round forever.
-  if (stack.has(key) || depth >= SETTLE_LIMIT) return Infinity;
-  const next = soloChoices(spec, world);
-  let longest = next.length ? 0 : Infinity;
-  stack.add(key);
-  for (const choice of next) {
-    const step = soloStep(spec, world, choice, SILENT);
-    const took = step.world.clock - world.clock;
-    const rest = took > budget ? Infinity : worst(spec, step.world, predicate, budget - took, futures, stack, depth + 1);
-    longest = Math.max(longest, took + rest);
-    if (longest > budget) break;
+function reaches(spec: Spec, world: World, predicate: (w: never) => boolean, futures: Futures, symmetry: Symmetry): boolean {
+  const path: string[] = [];
+  const seen = new Set<string>();
+  let current = world;
+  let answer = false;
+  for (let n = 0; n <= SETTLE_LIMIT; n++) {
+    if (holdsIn(spec, current, predicate as never)) {
+      answer = true;
+      break;
+    }
+    const key = canonical(current);
+    const known = futures.get(key);
+    if (known !== undefined) {
+      answer = known;
+      break;
+    }
+    // Back where this run already was, without the property: it goes round forever.
+    if (seen.has(key)) break;
+    seen.add(key);
+    path.push(key);
+    const [choice] = soloChoices(spec, current, symmetry);
+    if (!choice) break;
+    current = soloStep(spec, current, choice, SILENT).world;
   }
-  stack.delete(key);
-  futures.set(key, longest <= budget ? { exact: longest } : { over: budget });
-  return longest <= budget ? longest : Infinity;
+  for (const key of path) futures.set(key, answer);
+  return answer;
 }
 
-/** Whether the system left alone keeps `predicate` false for longer than `within`. */
-function neverWithin(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures): boolean {
-  return worst(spec, world, predicate, within, futures, new Set()) === Infinity;
-}
-
-/** The events of the system left alone not reaching `predicate` within `within` ms, explained; null if it does. */
-export function settles(spec: Spec, world: World, predicate: (w: never) => boolean, within: number, futures: Futures = new Map()): Event[] | null {
-  if (!neverWithin(spec, world, predicate, within, futures)) return null;
+/** The events of the system left alone not reaching `predicate`, explained; null if it does. */
+export function settles(spec: Spec, world: World, predicate: (w: never) => boolean, futures: Futures = new Map(), symmetry: Symmetry = NO_SYMMETRY): Event[] | null {
+  if (reaches(spec, world, predicate, futures, symmetry)) return null;
   const events: Event[] = [];
   const seen = new Set<string>();
-  const deadline = world.clock + within;
   let current = world;
   for (let n = 0; n < SETTLE_LIMIT; n++) {
     const key = canonical(current);
     if (seen.has(key)) break;
     seen.add(key);
-    const budget = deadline - current.clock;
-    let failing: ReturnType<typeof soloStep> | undefined;
-    for (const choice of soloChoices(spec, current)) {
-      const step = soloStep(spec, current, choice, {});
-      const took = step.world.clock - current.clock;
-      if (took > budget || worst(spec, step.world, predicate, budget - took, futures, new Set()) === Infinity) {
-        failing = step;
-        break;
-      }
-    }
-    if (!failing || failing.world.clock > deadline) break;
-    events.push(failing.event);
-    current = failing.world;
+    const [choice] = soloChoices(spec, current, symmetry);
+    if (!choice) break;
+    const step = soloStep(spec, current, choice, {});
+    events.push(step.event);
+    current = step.world;
   }
   return events;
 }

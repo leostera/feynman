@@ -27,9 +27,8 @@ export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[
     for (const inputs of inputCombinations(spec, world, info.inputs)) out.push({ kind: "act", instance: action.instance, key: action.key, inputs });
   }
   for (const g of guards) out.push({ kind: "guard", instance: g.instance, key: g.key });
-  // Timers fire in time order; timers due at the same moment, in any order.
-  const firstTimer = pending.find((p) => p.kind === "timer");
-  for (const p of pending) if (p.kind === "deliver" || (p.kind === "timer" && p.at === firstTimer!.at)) out.push({ kind: "fire", pending: p.id });
+  // Anything pending may happen next: any message may overtake any other, and a timer may fire at any moment (RFD0004).
+  for (const p of pending) out.push({ kind: "fire", pending: p.id });
   if (faultsLeft) {
     for (const p of pending) if (p.kind === "deliver") out.push({ kind: "lose", pending: p.id });
     for (const instance of world.instances) if (!actorNamed(spec, instance.actor).singleton) out.push({ kind: "restart", instance: instance.id });

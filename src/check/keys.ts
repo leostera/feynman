@@ -1,9 +1,7 @@
 // State identity for deduplication: when two worlds behave the same from here on.
 //
-// - Ids are left out, and so is absolute time until a step reads the clock (World.stamped):
-//   before that no state can hold a time, so what matters is what is pending and how soon.
-// - A pending event already due fires at the current time however overdue it is, so only
-//   the order of the overdue ones is kept, not by how much they are overdue.
+// - Ids are left out. Pending events are a bag: what is in flight and what is set, not the
+//   order it was created in, since any of it may happen next (RFD0004).
 // - Instances of one actor that are interchangeable (symmetry) are renamed to a canonical
 //   order, so "Alice did it, then Bob" and "Bob did it, then Alice" are one state.
 import { actorNamed, type Spec, type World } from "../spec/index.ts";
@@ -20,7 +18,7 @@ export function textOf(value: unknown): string {
   return text;
 }
 
-/** What is pending, apart from when: entries are shared between worlds, so worked out once each. */
+/** What a pending event carries: entries are shared between worlds, so worked out once each. */
 const pendingTexts = new WeakMap<object, string>();
 
 export function pendingText(p: Pending): string {
@@ -29,28 +27,12 @@ export function pendingText(p: Pending): string {
   return text;
 }
 
-/**
- * When each pending event is due, as part of a key: how far ahead, or, once due, its rank
- * among the overdue ones ("late0" is the most overdue). Ties share a rank: nothing depends on
- * the order events due at once were sent in (the search and the system left alone take them
- * in every order).
- */
-export function dueTimes(world: World): Map<Pending, string> {
-  const out = new Map<Pending, string>();
-  const overdue = world.pending.filter((p) => p.at <= world.clock);
-  const ranks = [...new Set(overdue.map((p) => p.at))].sort((a, b) => a - b);
-  for (const p of world.pending) out.set(p, p.at <= world.clock ? `late${ranks.indexOf(p.at)}` : String(p.at - world.clock));
-  return out;
-}
-
 /** The lines a world's key is made of, before renaming and sorting. */
 function keyParts(world: World): { instances: string[]; pending: string[]; rest: string } {
-  const due = dueTimes(world);
   return {
     instances: world.instances.map((i) => `${i.id}=${textOf(i.state)}`),
-    pending: world.pending.map((p) => `${due.get(p)}|${pendingText(p)}`),
-    // Once a state may hold an absolute time, when the world is matters too.
-    rest: `${JSON.stringify(world.fresh)}|${world.rng}${world.stamped ? `|@${world.clock}` : ""}`,
+    pending: world.pending.map(pendingText),
+    rest: `${JSON.stringify(world.fresh)}|${world.rng}`,
   };
 }
 
@@ -58,7 +40,7 @@ function joinParts(instances: string[], pending: string[], rest: string): string
   return `${instances.sort().join("\n")}\n--\n${pending.sort().join("\n")}\n--\n${rest}`;
 }
 
-/** A world's identity for deduplication: instances and what is pending, without ids or absolute times. */
+/** A world's identity for deduplication: instances and what is pending, without ids. */
 export function canonical(world: World): string {
   const { instances, pending, rest } = keyParts(world);
   return joinParts(instances, pending, rest);
@@ -101,18 +83,28 @@ export function symmetryOf(spec: Spec, world: World): Symmetry {
  * worlds that are renamings of each other get the same key.
  */
 export function symmetricKey(world: World, symmetry: Symmetry): string {
-  if (!symmetry.classes.length) return canonical(world);
+  return leastRenaming(world, symmetry).key;
+}
+
+/** The renaming that gives a world its least key, and that key; no renaming without symmetry. */
+export function leastRenaming(world: World, symmetry: Symmetry): { key: string; renaming: Map<string, string> } {
+  if (!symmetry.classes.length) return { key: canonical(world), renaming: new Map() };
   const { instances, pending, rest } = keyParts(world);
-  let best: string | undefined;
+  let best: { key: string; renaming: Map<string, string> } | undefined;
   for (const renaming of symmetry.renamings) {
     const key = joinParts(
       instances.map((line) => rename(line, renaming)),
       pending.map((line) => rename(line, renaming)),
       rest,
     );
-    if (best === undefined || key < best) best = key;
+    if (best === undefined || key < best.key) best = { key, renaming };
   }
   return best!;
+}
+
+/** A name, or text holding names, as the renaming has it. */
+export function renamed(text: string, renaming: Map<string, string>): string {
+  return renaming.size ? rename(text, renaming) : text;
 }
 
 /** Every renaming that permutes instances within their classes, ids and labels together. */

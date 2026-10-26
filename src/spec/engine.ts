@@ -32,21 +32,19 @@ export interface StepOptions {
 
 /**
  * What a step touched besides its own instance. A step that reads nobody else and uses no
- * world-wide counter commutes with a step on another instance, when neither moves the clock.
+ * world-wide counter commutes with a step on another instance.
  */
 export interface Observation {
   /** It looked at another instance (`the`, `all`, `from`). */
   readsOthers: boolean;
   /** It used a counter every instance shares (`fresh`, `random`). */
   shared: boolean;
-  /** It read the clock. */
-  readsNow: boolean;
   /** The action inputs it read; all of them when it enumerated them. */
   inputs: Set<string>;
 }
 
 export function observation(): Observation {
-  return { readsOthers: false, shared: false, readsNow: false, inputs: new Set() };
+  return { readsOthers: false, shared: false, inputs: new Set() };
 }
 
 /** The inputs, recording which ones the action reads. */
@@ -78,7 +76,7 @@ const FULL: StepOptions = {};
 
 /** A world with every singleton spawned. */
 export function startWorld(spec: Spec, seed = 1): Step[] {
-  let world: World = { clock: 0, seq: 0, fresh: {}, rng: seed >>> 0 || 1, instances: [], pending: [] };
+  let world: World = { seq: 0, fresh: {}, rng: seed >>> 0 || 1, instances: [], pending: [] };
   const steps: Step[] = [];
   for (const actor of spec.actors.filter((a) => a.singleton)) {
     const step = spawn(spec, world, actor.name, actor.name);
@@ -89,7 +87,7 @@ export function startWorld(spec: Spec, seed = 1): Step[] {
 }
 
 export function emptyWorld(seed = 1): World {
-  return { clock: 0, seq: 0, fresh: {}, rng: seed >>> 0 || 1, instances: [], pending: [] };
+  return { seq: 0, fresh: {}, rng: seed >>> 0 || 1, instances: [], pending: [] };
 }
 
 export function actorNamed(spec: Spec, name: string): ActorInfo {
@@ -104,9 +102,18 @@ export function instanceById(world: World, id: string): InstanceState {
   return instance;
 }
 
-/** Pending deliveries and timers, earliest first. */
+/** Pending deliveries and timers, in the order they were created. */
 export function pendingInOrder(world: World): Pending[] {
-  return [...world.pending].sort((a, b) => a.at - b.at || a.id - b.id);
+  return [...world.pending].sort((a, b) => a.id - b.id);
+}
+
+/**
+ * What the system does next when nobody interferes: the message sent first, or when none is
+ * in flight, the timer set first. Left alone, timeouts are slower than the network.
+ */
+export function nextLeftAlone(world: World): Pending | undefined {
+  const ordered = pendingInOrder(world);
+  return ordered.find((p) => p.kind === "deliver") ?? ordered[0];
 }
 
 /** What can happen next: actions people can take, guarded transitions that hold, and what is pending. */
@@ -186,7 +193,7 @@ export function act(spec: Spec, world: World, instanceId: string, key: string, i
 export function fire(spec: Spec, world: World, pendingId: number, how: StepOptions = FULL): Step {
   const pending = world.pending.find((p) => p.id === pendingId);
   if (!pending) throw new SpecError(`Nothing pending has id ${pendingId}`);
-  const consumed = { ...world, clock: Math.max(world.clock, pending.at), pending: world.pending.filter((p) => p.id !== pendingId) };
+  const consumed = { ...world, pending: world.pending.filter((p) => p.id !== pendingId) };
   const instance = instanceById(consumed, pending.to);
   const actor = actorNamed(spec, instance.actor);
   if (pending.kind === "timer") {
@@ -340,7 +347,7 @@ function makeCtx(
   self: InstanceState,
   actor: ActorInfo,
   step: StepInfo,
-  effects: { sent: Sent[]; started: { timer: string; at: number }[]; cancelled: string[]; notes: string[] },
+  effects: { sent: Sent[]; started: { timer: string }[]; cancelled: string[]; notes: string[] },
   from?: InstanceState,
   observe?: Observation,
 ) {
@@ -352,21 +359,15 @@ function makeCtx(
     const target = world.instances.find((i) => i.id === to?.id);
     if (!target) throw new SpecError(`sends ${message} to an instance that does not exist`);
     const id = ++world.seq;
-    const at = world.clock + (info.latency ?? spec.latency);
     // Copied once, so the sender's state and the message never share anything, then shared.
     const body = freeze(clone(payload));
-    world.pending.push({ id, kind: "deliver", at, to: target.id, from: self.id, message, payload: body, text });
-    effects.sent.push({ id, to: target.id, message, payload: body, at, text });
+    world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text });
+    effects.sent.push({ id, to: target.id, message, payload: body, text });
   };
   return {
     id: self.id,
     label: self.label,
     self: view.instance(self),
-    get now() {
-      if (observe) observe.readsNow = true;
-      world.stamped = true;
-      return world.clock;
-    },
     from: from ? view.instance(from) : undefined,
     the: view.the,
     all: view.all,
@@ -375,14 +376,13 @@ function makeCtx(
       if (!from) throw new SpecError("reply is only possible in a message transition");
       send(from, message, payload, text);
     },
-    start(label: string, after: number) {
+    start(label: string) {
       if (!step.starts.includes(label)) throw new SpecError(`starts ${label}, which it does not declare in starts`);
       const transition = actor.transitions[label];
       if (!transition || transition.message) throw new SpecError(`${label} is not an internal transition of ${actor.name}`);
       world.pending = world.pending.filter((p) => !(p.kind === "timer" && p.to === self.id && p.timer === label));
-      const at = world.clock + after;
-      world.pending.push({ id: ++world.seq, kind: "timer", at, to: self.id, timer: label });
-      effects.started.push({ timer: label, at });
+      world.pending.push({ id: ++world.seq, kind: "timer", to: self.id, timer: label });
+      effects.started.push({ timer: label });
     },
     cancel(label: string) {
       const had = world.pending.length;
@@ -414,13 +414,12 @@ function finish(
   spec: Spec,
   before: World,
   after: World,
-  partial: Omit<Event, "index" | "at" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes" | "text">>,
+  partial: Omit<Event, "index" | "violations" | "sent" | "started" | "cancelled" | "notes"> & Partial<Pick<Event, "sent" | "started" | "cancelled" | "notes" | "text">>,
   how: StepOptions = FULL,
 ): Step {
   const world = { ...after, seq: Math.max(after.seq, before.seq) + 1 };
   const event: Event = {
     index: world.seq,
-    at: world.clock,
     sent: [],
     started: [],
     cancelled: [],
@@ -462,7 +461,7 @@ export function worldView(spec: Spec, world: World, onRead?: (id: string) => voi
     const info = spec.actors.find((a) => a.name === actor?.name);
     throw new SpecError(found.length === 0 ? `there is no ${info?.name ?? "such actor"} yet` : `there are ${found.length} of ${info?.name}; use all() instead of the()`);
   };
-  return { now: world.clock, quiet: world.pending.length === 0, all, the, instance } as WorldView & { instance: typeof instance };
+  return { quiet: world.pending.length === 0, all, the, instance } as WorldView & { instance: typeof instance };
 }
 
 export function violatedAlways(spec: Spec, world: World): string[] {
@@ -490,7 +489,6 @@ export function holdsIn(spec: Spec, world: World, predicate: (world: WorldView) 
 export function traceView(events: readonly Event[]): Trace {
   const views: TraceEvent[] = events.map((e) => ({
     index: e.index,
-    at: e.at,
     actor: e.actor,
     key: e.key,
     is: (actor, key) => e.actor === actor.name && e.key === key && !e.error,
