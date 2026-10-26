@@ -1,6 +1,6 @@
 // What a spec is at runtime, and what the engine produces: plain data that views, the
 // checker, and diffs read. Functions (initial state, run, predicates) are the only code.
-import type { ActorPlace, Link, Look, Script, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
+import type { ActorPlace, Icon, Link, Look, Script, Shape, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
 
 export interface Spec {
   name: string;
@@ -14,6 +14,22 @@ export interface Spec {
   actors: ActorInfo[];
   invariants: InvariantInfo[];
   scenarios: ScenarioInfo[];
+  /** Actors shown as one thing, at a higher level of abstraction. */
+  groups: GroupInfo[];
+}
+
+export interface GroupInfo {
+  name: string;
+  description?: string;
+  icon?: Icon;
+  shape?: Shape;
+  collapsed: boolean;
+  names?: string[];
+  /**
+   * Its actors. With a suffix, instances group by label: "Studio app" (suffix "app") joins
+   * "Studio". Without, the actor is a singleton and the group is one node.
+   */
+  members: { actor: string; suffix: string | null }[];
 }
 
 export interface MessageInfo {

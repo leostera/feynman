@@ -14,7 +14,8 @@
     "@feynman/code": "workspace:*",
     "@feynman/spec": "workspace:*",
     "@feynman/view": "workspace:*",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@feynman/play": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "*",

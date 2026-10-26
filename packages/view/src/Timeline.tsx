@@ -1,10 +1,11 @@
 // The timeline: the event log of a playground session, one line per event. Runs of routine
-// events (heartbeats and other housekeeping) fold into one line that opens on click.
+// events (heartbeats and other housekeeping) fold into one line that opens on click, and so
+// do runs of events inside a closed group (the relay's Worker asking its Durable Object).
 // Hovering an event peeks at the world as it was then; clicking travels back to it, without
 // forgetting what came after until something else is done there. The focused event sits at
 // the bottom in words, with its changes, messages and code one click away.
 import { Badge, cn } from "@cloudflare/kumo";
-import { CaretRightIcon, HeartbeatIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, CornersInIcon, HeartbeatIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Event, World } from "@feynman/spec";
 import { clock, kindLabel, labelOf, stepTitle } from "./format";
@@ -12,18 +13,22 @@ import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
 
-type Entry = { kind: "event"; event: Event; world: World; index: number } | { kind: "fold"; events: { event: Event; world: World; index: number }[] };
+type Item = { event: Event; world: World; index: number; fold: string | null };
+type Entry = ({ kind: "event" } & Item) | { kind: "fold"; fold: string; events: Item[] };
 
-/** Events in order, with each run of two or more routine events folded into one entry. */
-function entriesOf(session: Session): Entry[] {
+/** Which run an event folds into: "routine", "inside:<group>", or none. */
+export type FoldOf = (event: Event, world: World) => string | null;
+
+/** Events in order, with each run of two or more events that fold alike folded into one entry. */
+function entriesOf(session: Session, foldOf: FoldOf): Entry[] {
   const out: Entry[] = [];
   session.steps.forEach(({ event, world }, index) => {
     if (!event) return;
-    const item = { event, world, index };
+    const item = { event, world, index, fold: foldOf(event, world) };
     const prev = out.at(-1);
-    if (!event.routine) out.push({ kind: "event", ...item });
-    else if (prev?.kind === "fold") prev.events.push(item);
-    else if (prev?.kind === "event" && prev.event.routine) out[out.length - 1] = { kind: "fold", events: [prev, item] };
+    if (!item.fold) out.push({ kind: "event", ...item });
+    else if (prev?.kind === "fold" && prev.fold === item.fold) prev.events.push(item);
+    else if (prev?.kind === "event" && prev.fold === item.fold) out[out.length - 1] = { kind: "fold", fold: item.fold, events: [prev, item] };
     else out.push({ kind: "event", ...item });
   });
   return out;
@@ -35,7 +40,10 @@ export function Timeline({
   cursor,
   onPreview,
   onPick,
+  foldOf,
 }: {
+  /** What folds together; routine events by default. */
+  foldOf: FoldOf;
   session: Session;
   preview: number | null;
   /** The moment travelled back to; later events are greyed out. */
@@ -46,7 +54,7 @@ export function Timeline({
   const { spec } = useExplorer();
   const list = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Set<number>>(new Set());
-  const entries = entriesOf(session);
+  const entries = entriesOf(session, foldOf);
   const count = session.steps.filter((s) => s.event).length;
   useEffect(() => {
     list.current?.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
@@ -92,7 +100,8 @@ export function Timeline({
           const first = entry.events[0];
           const expanded = open.has(first.index);
           const lastIndex = entry.events.at(-1)!.index;
-          const names = [...new Set(entry.events.map((e) => stepTitle(spec, e.event)))];
+          const inside = entry.fold.startsWith("inside:") ? entry.fold.slice(7) : null;
+          const names = inside ? [`inside ${inside}`] : [...new Set(entry.events.map((e) => stepTitle(spec, e.event)))];
           return (
             <div key={`fold-${first.index}`}>
               <button
@@ -107,9 +116,9 @@ export function Timeline({
                 )}
               >
                 <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums">{clock(first.event.at)}</span>
-                <HeartbeatIcon size={14} className="shrink-0" />
+                {inside ? <CornersInIcon size={14} className="shrink-0" /> : <HeartbeatIcon size={14} className="shrink-0" />}
                 <span className="min-w-0 flex-1 truncate text-[12.5px]">
-                  {names.join(", ")} <span className="tabular-nums">×{entry.events.length}</span>
+                  {names.join(", ")} <span className="tabular-nums">{inside ? `· ${entry.events.length} steps` : `×${entry.events.length}`}</span>
                 </span>
                 <CaretRightIcon size={12} className={cn("shrink-0 transition-transform duration-150", expanded && "rotate-90")} />
               </button>

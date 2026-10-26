@@ -16,8 +16,8 @@
   ],
   "scripts": {
     "feynman": "bun packages/cli/bin/feynman.ts",
-    "test": "bun run --cwd packages/spec test && bun run --cwd packages/check test && bun run --cwd packages/code test && bun run --cwd packages/cli test",
-    "typecheck": "for p in spec check code cli view; do (cd packages/$p && ./node_modules/.bin/tsc --noEmit -p .) || exit 1; done",
+    "test": "bun run --cwd packages/spec test && bun run --cwd packages/check test && bun run --cwd packages/code test && bun run --cwd packages/cli test && bun run --cwd packages/play test",
+    "typecheck": "for p in spec check code play cli view; do (cd packages/$p && ./node_modules/.bin/tsc --noEmit -p .) || exit 1; done",
     "site:deploy": "bun run --cwd sites/feynman.leostera.dev deploy"
   }
 }

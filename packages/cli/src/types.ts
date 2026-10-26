@@ -9,6 +9,10 @@ import { dirname, join, relative, resolve } from "node:path";
 const TSC = join(dirname(Bun.resolveSync("typescript/package.json", import.meta.dir)), "bin", "tsc");
 const SPEC = Bun.resolveSync("@feynman/spec", import.meta.dir);
 const CLI = Bun.resolveSync("./index.ts", import.meta.dir);
+const PLAY_DIR = dirname(Bun.resolveSync("@feynman/play/package.json", import.meta.dir));
+const PLAY = Bun.resolveSync("@feynman/play", import.meta.dir);
+const REACT_TYPES = dirname(Bun.resolveSync("@types/react/package.json", PLAY_DIR));
+const KUMO = dirname(Bun.resolveSync("@cloudflare/kumo/package.json", PLAY_DIR));
 
 export interface TypeError {
   file: string;
@@ -17,7 +21,7 @@ export interface TypeError {
   message: string;
 }
 
-/** Type errors in the given spec files (repository-relative), or [] when they check. */
+/** Type errors in the given spec and playground files (repository-relative), or [] when they check. */
 export function typecheck(root: string, files: string[]): TypeError[] {
   if (!files.length) return [];
   const dir = mkdtempSync(join(tmpdir(), "feynman-types-"));
@@ -31,8 +35,16 @@ export function typecheck(root: string, files: string[]): TypeError[] {
       moduleResolution: "Bundler",
       skipLibCheck: true,
       allowImportingTsExtensions: true,
+      jsx: "react-jsx",
       types: [],
-      paths: { "@feynman/spec": [SPEC], "@feynman/cli": [CLI] },
+      paths: {
+        "@feynman/spec": [SPEC],
+        "@feynman/cli": [CLI],
+        "@feynman/play": [PLAY],
+        react: [join(REACT_TYPES, "index.d.ts")],
+        "react/*": [join(REACT_TYPES, "*")],
+        "@cloudflare/kumo": [KUMO],
+      },
     },
     files: files.map((f) => join(root, f)),
   };

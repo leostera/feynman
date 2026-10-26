@@ -25,6 +25,7 @@
       "dependencies": {
         "@feynman/check": "workspace:*",
         "@feynman/code": "workspace:*",
+        "@feynman/play": "workspace:*",
         "@feynman/spec": "workspace:*",
         "@feynman/view": "workspace:*",
         "typescript": "^7.0.2",
@@ -46,6 +47,21 @@
         "typescript": "^7.0.2",
       },
     },
+    "packages/play": {
+      "name": "@feynman/play",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cloudflare/kumo": "^2.15.0",
+        "@feynman/spec": "workspace:*",
+        "@phosphor-icons/react": "^2.1.10",
+        "react": "^19.3.1",
+      },
+      "devDependencies": {
+        "@types/bun": "*",
+        "@types/react": "^19.3.0",
+        "typescript": "^7.0.2",
+      },
+    },
     "packages/spec": {
       "name": "@feynman/spec",
       "version": "0.1.0",
@@ -60,6 +76,7 @@
       "dependencies": {
         "@cloudflare/kumo": "^2.15.0",
         "@feynman/check": "workspace:*",
+        "@feynman/play": "workspace:*",
         "@feynman/spec": "workspace:*",
         "@phosphor-icons/react": "^2.1.10",
         "elkjs": "^0.11.0",
@@ -140,6 +157,8 @@
     "@feynman/cli": ["@feynman/cli@workspace:packages/cli"],
 
     "@feynman/code": ["@feynman/code@workspace:packages/code"],
+
+    "@feynman/play": ["@feynman/play@workspace:packages/play"],
 
     "@feynman/site": ["@feynman/site@workspace:sites/feynman.leostera.dev"],
 

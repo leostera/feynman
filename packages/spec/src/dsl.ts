@@ -3,6 +3,7 @@
 import type {
   ActionInfo,
   ActorInfo,
+  GroupInfo,
   InputInfo,
   InvariantInfo,
   LimitInfo,
@@ -58,6 +59,13 @@ export interface ActorPlace {
   edge?: "left" | "right";
 }
 
+/**
+ * What a node is drawn as. By default it follows the icon: a service (cloud, server,
+ * database…) is a circle with its name inside, a device (phone, laptop…) a rounded square,
+ * and an actor on a zone's edge a gate.
+ */
+export type Shape = "circle" | "device" | "gate" | "card";
+
 /** How things are going: colours a node, a row, or a link. */
 export type Mood = "ok" | "warn" | "bad" | "busy" | "off" | "info";
 
@@ -83,10 +91,15 @@ export interface Token {
   /** What the chip shows; the value by default. */
   label?: string;
   mood?: Mood;
+  /** When it stops being usable, in simulated milliseconds: the chip counts down to it. */
+  expires?: number;
 }
 
 export interface Look<S> {
   icon?: Icon;
+  shape?: Shape;
+  /** Labels for instances added in the playground, in order: "Alice", "Bob". */
+  names?: string[];
   /** A few words under the name: "connected", "not linked", "watching Studio". */
   status?: (state: Readonly<S>) => string;
   mood?: (state: Readonly<S>) => Mood;
@@ -154,8 +167,10 @@ export interface Actor<S, A> {
   readonly __actions?: A;
 }
 
-type StateOf<X> = X extends Actor<infer S, any> ? S : never;
-type ActionsOf<X> = X extends Actor<any, infer A> ? A : never;
+/** An actor handle's state type. */
+export type StateOf<X> = X extends Actor<infer S, any> ? S : never;
+/** An actor handle's actions: each action's key, to its inputs' types. */
+export type ActionsOf<X> = X extends Actor<any, infer A> ? A : never;
 
 export interface Instance<S, A> {
   readonly id: string;
@@ -263,7 +278,8 @@ type ValueOf<T> = T extends StringConstructor
         ? V
         : never;
 
-type InputsOf<I> = { [K in keyof I]: ValueOf<I[K]> };
+/** The values an action's inputs take, from their declared types. */
+export type InputsOf<I> = { [K in keyof I]: ValueOf<I[K]> };
 
 export interface ActionDef<M extends Registry, S, I, Sends extends MessageKey<M> = never, Starts extends string = never>
   extends StepFields<M, Sends, Starts> {
@@ -289,6 +305,27 @@ export interface Zone {
 export interface Limit {
   readonly name: string;
   readonly value: number;
+}
+
+/**
+ * Actors shown as one thing: the relay, rather than its Worker and Durable Objects. A list
+ * of singletons is one node. A record groups instances of other actors by label: with
+ * `{ app: App, daemon: Axod }`, "Studio app" and "Studio daemon" are one "Studio".
+ */
+export interface GroupDef {
+  name: string;
+  actors: Actor<any, any>[] | Record<string, Actor<any, any>>;
+  description?: string;
+  icon?: Icon;
+  shape?: Shape;
+  /** Shown as one node to begin with (true); it opens on demand. */
+  collapsed?: boolean;
+  /** Names for instances added in the playground, for a record group: "Studio", "iMac". */
+  names?: string[];
+}
+
+export interface Group {
+  readonly name: string;
 }
 
 /**
@@ -401,6 +438,7 @@ export interface SpecBuilder<M extends Registry> {
    */
   defineInput<const T extends InputType>(type: T, options?: { examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[]; accepts?: string }): InputDef<T>;
   defineInvariants(defs: Record<string, InvariantDef>): void;
+  defineGroup(def: GroupDef): Group;
   defineScenario(def: { name: string; description?: string; run(script: Script): void }): void;
 }
 
@@ -412,7 +450,15 @@ export interface SpecOptions<M extends Registry> {
   latency?: number;
 }
 
-export function defineSpec<M extends Registry>(name: string, options: SpecOptions<M>, body: (spec: SpecBuilder<M>) => void): Spec {
+/**
+ * A spec. The body may return its actors, `return { Person, Relay }`, so other files (a
+ * playground) can name them with their types: `spec.handles.Person`.
+ */
+export function defineSpec<M extends Registry, H extends Record<string, Actor<any, any>> = {}>(
+  name: string,
+  options: SpecOptions<M>,
+  body: (spec: SpecBuilder<M>) => H | void,
+): Spec & { handles: H } {
   const messages: Record<string, MessageInfo> = {};
   for (const [id, def] of Object.entries(options.messages)) {
     const key = `message:${id}`;
@@ -428,6 +474,7 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
     actors: [],
     invariants: [],
     scenarios: [],
+    groups: [],
   };
   const builder: SpecBuilder<M> = {
     messages: Object.fromEntries(Object.keys(options.messages).map((id) => [id, `message:${id}`])) as SpecBuilder<M>["messages"],
@@ -452,13 +499,27 @@ export function defineSpec<M extends Registry>(name: string, options: SpecOption
     defineInvariants(defs) {
       for (const [id, def] of Object.entries(defs)) spec.invariants.push(invariantInfo(id, def));
     },
+    defineGroup(def) {
+      const group = groupInfo(spec, def);
+      spec.groups.push(group);
+      return group;
+    },
     defineScenario(def) {
       const scenario: ScenarioInfo = { name: def.name, description: def.description, run: def.run as ScenarioInfo["run"] };
       spec.scenarios.push(scenario);
     },
   };
-  body(builder);
-  return spec;
+  const handles = body(builder) ?? ({} as H);
+  return Object.assign(spec, { handles });
+}
+
+function groupInfo(spec: Spec, def: GroupDef): GroupInfo {
+  if (spec.groups.some((g) => g.name === def.name)) throw new Error(`Two groups are named "${def.name}"`);
+  const members = Array.isArray(def.actors)
+    ? def.actors.map((a) => ({ actor: a.name, suffix: null }))
+    : Object.entries(def.actors).map(([suffix, a]) => ({ actor: a.name, suffix }));
+  for (const m of members) if (!spec.actors.some((a) => a.name === m.actor)) throw new Error(`Group "${def.name}": define ${m.actor} before the group`);
+  return { name: def.name, description: def.description, icon: def.icon, shape: def.shape, collapsed: def.collapsed ?? true, names: def.names, members };
 }
 
 // From declarations to the spec the engine runs ---------------------------------------------------------

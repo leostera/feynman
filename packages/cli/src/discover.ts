@@ -20,6 +20,12 @@ export function discoverSpecs(root: string, config: Config): string[] {
     .sort();
 }
 
+/** A spec's playground file, `<name>.play.tsx` beside it, if there is one (repository-relative). */
+export function playgroundFor(root: string, spec: string): string | null {
+  const path = spec.replace(/\.ts$/, ".play.tsx");
+  return path !== spec && existsSync(join(root, path)) ? path : null;
+}
+
 /** Specs named on the command line (paths or names), or every spec found. */
 export function selectSpecs(root: string, cwd: string, found: string[], named: string[]): string[] {
   if (!named.length) return found;

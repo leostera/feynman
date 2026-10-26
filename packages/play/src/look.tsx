@@ -1,4 +1,4 @@
-// Icons and moods: how the spec's presentation vocabulary is drawn, with Kumo tokens only.
+// Icons, shapes and moods: how the spec's presentation vocabulary is drawn, with Kumo tokens only.
 import {
   BellIcon,
   BrowserIcon,
@@ -37,7 +37,7 @@ import {
   WifiHighIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
-import { appearance, type Icon, type Mood, type Spec, type World } from "@feynman/spec";
+import { appearance, type Icon, type Mood, type Shape, type Spec, type World } from "@feynman/spec";
 
 export const ICONS: Record<Icon, PhosphorIcon> = {
   person: UserIcon,
@@ -82,6 +82,31 @@ export function iconFor(icon: Icon | null): PhosphorIcon {
   return (icon && ICONS[icon]) || CubeIcon;
 }
 
+/** Icons of things that serve others: drawn as circles with their name inside. */
+const SERVICES = new Set<Icon>(["cloud", "server", "database", "shield", "queue", "storage", "gear", "router", "pipeline", "globe", "cpu", "box", "lock", "key"]);
+/** Icons of things a person holds or sits at: drawn as rounded squares. */
+const DEVICES = new Set<Icon>(["phone", "laptop", "desktop", "browser", "terminal", "camera", "video"]);
+
+/** What a node is drawn as: what the spec says, or what its icon suggests. On a zone's edge, a gate. */
+export function shapeFor(look: { icon?: Icon | null; shape?: Shape | null }, edge = false): Shape {
+  if (look.shape) return look.shape;
+  if (edge) return "gate";
+  if (look.icon && DEVICES.has(look.icon)) return "device";
+  return "circle";
+}
+
+/** Whether a node's name goes inside it: services and gates carry a short name, the rest wear it below. */
+export function labelInside(shape: Shape, icon: Icon | null | undefined, label = ""): boolean {
+  if (shape === "card") return true;
+  if (label.length > 11) return false;
+  return shape === "gate" || (shape === "circle" && Boolean(icon && SERVICES.has(icon)));
+}
+
+/** A mood worth a ring: how it is doing says something. Without one, the ring is neutral. */
+export function telling(mood: Mood | null | undefined): mood is "ok" | "bad" | "warn" | "busy" {
+  return mood === "ok" || mood === "bad" || mood === "warn" || mood === "busy";
+}
+
 /** A mood as a CSS colour; "off" and no mood are the neutral line colour. */
 export function moodColor(mood: Mood | null | undefined): string {
   switch (mood) {
@@ -115,7 +140,7 @@ export function toneColor(tone: string | undefined): string {
 }
 
 /** Colours that tell instances apart: Alice blue, Bob purple. Singletons stay neutral. */
-const PALETTE = [1, 2, 3, 4, 5].map((n) => `var(--feynman-identity-${n})`);
+export const PALETTE = [1, 2, 3, 4, 5].map((n) => `var(--feynman-identity-${n})`);
 
 /**
  * Who wears which colour. When the spec says whose things are (look.owner, or rows with an
