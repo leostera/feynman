@@ -90,6 +90,10 @@ test("sources resolve to their text and hash; bad ones say why", () => {
   expect(resolveSource(root, "src/relay.ts")).toEqual({ ok: false, source: "src/relay.ts", reason: "is neither path#symbol nor path:start-end" });
   expect(resolveSource(root, "src/gone.ts#x")).toEqual({ ok: false, source: "src/gone.ts#x", reason: "src/gone.ts does not exist" });
   expect(resolveSource(root, "src/relay.ts:18-90")).toMatchObject({ ok: false, reason: "lines 18-90 are outside src/relay.ts (20 lines)" });
+  // A symbol a few letters off names the ones the file does define.
+  expect(resolveSource(root, "src/relay.ts#Relay.redeemCode")).toMatchObject({ ok: false, reason: "Relay.redeemCode is not defined in src/relay.ts; did you mean src/relay.ts#Relay.redeem?" });
+  expect(resolveSource(root, "src/relay.ts#createpairing")).toMatchObject({ reason: "createpairing is not defined in src/relay.ts; did you mean src/relay.ts#createPairing?" });
+  expect(resolveSource(root, "src/relay.ts#zzz")).toMatchObject({ reason: "zzz is not defined in src/relay.ts" });
 });
 
 test("the lock flags a source as stale only when its own code changes", () => {

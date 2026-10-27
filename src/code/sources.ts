@@ -50,7 +50,10 @@ export function resolveSource(root: string, source: string, read: (path: string)
     if (start < 1 || end < start || end > lines.length) return { ok: false, source, reason: `lines ${start}-${end} are outside ${parsed.path} (${lines.length} lines)` };
   } else {
     const found = findSymbol(lines, parsed.symbol!);
-    if (!found) return { ok: false, source, reason: `${parsed.symbol} is not defined in ${parsed.path}` };
+    if (!found) {
+      const close = closeSymbols(lines, parsed.symbol!).map((symbol) => `${parsed.path}#${symbol}`);
+      return { ok: false, source, reason: `${parsed.symbol} is not defined in ${parsed.path}${close.length ? `; did you mean ${close.join(" or ")}?` : ""}` };
+    }
     [start, end] = found;
   }
   const body = lines.slice(start - 1, end).join("\n");
@@ -75,6 +78,42 @@ function readFrom(root: string, path: string): string | null {
  * An outer name can have several definitions (a Rust struct and its impl blocks); the
  * first one that contains the rest of the symbol wins.
  */
+/**
+ * Symbols defined in the file whose name is close to the last part of `symbol`: the same
+ * in another case, one inside the other, or a few letters apart. The closest few first.
+ */
+export function closeSymbols(lines: string[], symbol: string): string[] {
+  const last = symbol.split(/\.|::/).at(-1)!;
+  const prefix = symbol.slice(0, symbol.length - last.length);
+  const wanted = last.toLowerCase();
+  const ids = new Set(lines.join("\n").match(/[A-Za-z_$][\w$]*/g) ?? []);
+  const distance = (id: string) => {
+    const lower = id.toLowerCase();
+    if (lower === wanted) return 0;
+    if (Math.min(lower.length, wanted.length) >= 4 && (lower.includes(wanted) || wanted.includes(lower))) return 1;
+    return editDistance(lower, wanted) + 1;
+  };
+  const most = Math.max(1, Math.floor(wanted.length / 4)) + 1;
+  return [...ids]
+    .filter((id) => id !== last)
+    .map((id) => [id, distance(id)] as const)
+    .filter(([, d]) => d <= most)
+    .sort(([a, x], [b, y]) => x - y || a.localeCompare(b))
+    .map(([id]) => prefix + id)
+    .filter((candidate) => findSymbol(lines, candidate) !== null)
+    .slice(0, 3);
+}
+
+function editDistance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length];
+}
+
 export function findSymbol(lines: string[], symbol: string): [number, number] | null {
   const search = (parts: string[], from: number, to: number): [number, number] | null => {
     const [first, ...rest] = parts;
