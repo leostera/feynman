@@ -21,6 +21,7 @@ bun run feynman dev                # every example in the simulator
 | `leader-election.ts` | Adopting the last leader heard instead of the highest | a false symmetry claim the checker must refute |
 | `job-queue.ts` | Redelivery doing a job's side effect twice | `never` over the trace, guarded transitions |
 | `alternating-bit.ts` | The alternating bit protocol over a network that reorders: a stale copy passes for the next item | retransmission timers, a protocol correct only on FIFO links |
+| `raft-vote.ts` | A vote not kept on disk: a node restarts, votes again in the same term, and two nodes lead | durable state, restarts |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
@@ -45,10 +46,10 @@ the same verdict on every invariant, and counterexamples just as short. It needs
 
 ### P
 
-`oracles/p/` models three of the systems in P: two-phase commit, payments and the job
-queue. P delivers each machine's messages in order, so every message goes through a
+`oracles/p/` models some of the systems in P (see `test/examples/corpus.ts`). P delivers each machine's messages in order, so every message goes through a
 `Network` machine that holds a bag and delivers (or, within the fault budget, loses) any
-message in it; timers may fire at any moment once set, as the checker's may. Properties are
+message in it; timers may fire at any moment once set, as the checker's may; a `Chaos`
+machine restarts an instance at any moment, within the same budget. Properties are
 monitors over announced events. P's checker runs seeded schedules rather than every state, so
 `test/examples/p.oracle.ts` compares verdicts only: P breaks the property (with the property's
 own assertion) exactly when the checker does. It needs .NET 8 and `dotnet tool install
