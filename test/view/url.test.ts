@@ -69,7 +69,7 @@ test("the layout choice round-trips, and auto stays out of the URL", () => {
 
 test("invalid URL state falls back to safe defaults", () => {
   const state = parsePlaygroundUrlState(new URLSearchParams({ speed: "999", camera: "{bad", state: "[null]", layout: "diagonal" }));
-  expect(state).toEqual({ speed: 1, camera: { zoom: parseZoomLevel(100000)!, x: 0, y: 0, fitScale: null, manual: false }, layout: "auto", ops: null });
+  expect(state).toEqual({ speed: 0.25, camera: { zoom: parseZoomLevel(100000)!, x: 0, y: 0, fitScale: null, manual: false }, layout: "auto", ops: null });
   const fractionalZoom = parsePlaygroundUrlState(new URLSearchParams({ camera: JSON.stringify({ zoom: 1.5, x: 0, y: 0, fitScale: null, manual: false }) }));
   expect(fractionalZoom.camera.zoom).toBe(parseZoomLevel(150000)!);
 });

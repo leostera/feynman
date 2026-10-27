@@ -728,16 +728,16 @@ function DropChoice({ choice, world, onRun, onAsk }: { choice: { target: string;
 
 function Transport({ play, shown, canBack, canStep, canEnd, onFirst, onBack, onStep, onEnd }: { play: Play; shown: number; canBack: boolean; canStep: boolean; canEnd: boolean; onFirst: () => void; onBack: () => void; onStep: () => void; onEnd: () => void }) {
   return (
-    <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-kumo-elevated p-1 shadow-lg ring-1 ring-kumo-line">
-      <span className="min-w-9 px-1 text-right font-mono text-[11px] tabular-nums">{ordinal(shown)}</span>
+    <div className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-kumo-elevated p-1.5 pl-3 shadow-lg ring-1 ring-kumo-line">
+      <span className="min-w-10 text-right font-mono text-[13px] tabular-nums">{ordinal(shown)}</span>
       <div className="flex items-center gap-1 rounded-lg bg-kumo-recessed p-0.5 ring-1 ring-kumo-line">
-        <Button size="xs" variant="secondary" shape="square" aria-label="Back to the start (Home)" title="Back to the start (Home)" icon={<SkipBackIcon size={12} />} disabled={!canBack} onClick={onFirst} />
-        <Button size="xs" variant="secondary" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={12} />} disabled={!canBack} onClick={onBack} />
-        <Button size="xs" variant="secondary" shape="square" aria-label={play.playing ? "Pause" : "Play"} title={play.playing ? "Pause" : "Play"} icon={play.playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />} onClick={() => play.setPlaying(!play.playing)} />
-        <Button size="xs" variant="secondary" shape="square" aria-label="Step forward (→)" title="Step forward (→)" icon={<ArrowRightIcon size={12} />} disabled={!canStep} onClick={onStep} />
-        <Button size="xs" variant="secondary" shape="square" aria-label="Go to the end" title="Go to the end" icon={<SkipForwardIcon size={12} />} disabled={!canEnd} onClick={onEnd} />
+        <Button size="sm" variant="secondary" shape="square" aria-label="Back to the start (Home)" title="Back to the start (Home)" icon={<SkipBackIcon size={16} />} disabled={!canBack} onClick={onFirst} />
+        <Button size="sm" variant="secondary" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={16} />} disabled={!canBack} onClick={onBack} />
+        <Button size="sm" variant="primary" shape="square" aria-label={play.playing ? "Pause" : "Play"} title={play.playing ? "Pause" : "Play"} icon={play.playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />} onClick={() => play.setPlaying(!play.playing)} />
+        <Button size="sm" variant="secondary" shape="square" aria-label="Step forward (→)" title="Step forward (→)" icon={<ArrowRightIcon size={16} />} disabled={!canStep} onClick={onStep} />
+        <Button size="sm" variant="secondary" shape="square" aria-label="Go to the end" title="Go to the end" icon={<SkipForwardIcon size={16} />} disabled={!canEnd} onClick={onEnd} />
       </div>
-      <Tabs size="sm" value={String(play.speed)} onValueChange={(v) => play.setSpeed(Number(v))} tabs={SPEEDS.map((s) => ({ value: String(s), label: `${s === 0.25 ? "¼" : s}×` }))} />
+      <Tabs value={String(play.speed)} onValueChange={(v) => play.setSpeed(Number(v))} tabs={SPEEDS.map((s) => ({ value: String(s), label: `${s === 0.25 ? "¼" : s}×` }))} />
     </div>
   );
 }

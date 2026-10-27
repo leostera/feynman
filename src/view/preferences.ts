@@ -17,7 +17,7 @@ const KEY = "feynman.settings";
 
 const defaults = (): Settings => ({
   theme: "system",
-  autoPlay: false,
+  autoPlay: true,
   reduceMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
 });
 
