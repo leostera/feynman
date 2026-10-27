@@ -25,7 +25,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Token, Ack } = spec.messages;
-      const zone = spec.defineZone({ name: "Ring", place: { arrange: "ring" } });
+      const zone = spec.defineZone({ name: "Ring", description: "one token, handed round", place: { arrange: "ring" } });
 
       const Node = spec.defineActor({
         name: "Node",
@@ -33,6 +33,11 @@ export function tokenRing(variant: "buggy" | "fixed") {
         durable: ["holds", "count", "unacked"],
         // The ring starts with the token at its first node.
         initialState: ({ label }) => ({ holds: label === "Node A", count: 0, unacked: null as number | null }),
+        look: {
+          icon: "key",
+          status: (s) => (s.holds ? "holds the token" : s.unacked !== null ? "passed it, waiting for an ack" : "waiting"),
+          mood: (s) => (s.holds ? "ok" : s.unacked !== null ? "busy" : "off"),
+        },
         actions: {
           pass: {
             label: "Pass the token",
@@ -54,6 +59,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
         transitions: {
           [Token]: {
             description: "Takes the token, if newer than any seen when fixed, and acknowledges it either way.",
+            say: (s, msg) => (s.holds && s.count === msg.count ? `Takes token #${msg.count}` : `Ignores token #${msg.count}, older than #${s.count}`),
             sends: [Ack],
             run(state, msg, ctx) {
               if (variant === "buggy" || msg.count > state.count) {
@@ -90,6 +96,33 @@ export function tokenRing(variant: "buggy" | "fixed") {
         oneToken: {
           description: "At most one node holds the token.",
           always: (w) => w.all(Node).filter((n) => n.state.holds).length <= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "Round the ring",
+        description: "The token goes from A to B to C and back to A, each hand-over acknowledged.",
+        run(s) {
+          const nodes = ["Node A", "Node B", "Node C"].map((name) => s.spawn(Node, name));
+          for (const n of nodes) {
+            s.act(n, "pass");
+            s.settle();
+          }
+        },
+      });
+      spec.defineScenario({
+        name: "A resend crosses the first copy",
+        description:
+          variant === "buggy"
+            ? "A resends before B's ack arrives; B takes the first copy and passes it on, then takes the second: B and C both hold the token."
+            : "A resends before B's ack arrives; B takes the first copy and passes it on, and ignores the second, which is older.",
+        run(s) {
+          const [a, b] = ["Node A", "Node B", "Node C"].map((name) => s.spawn(Node, name));
+          s.act(a, "pass");
+          s.fire(a, "resend");
+          s.deliver(b, "Token");
+          s.act(b, "pass");
+          s.deliver(b, "Token");
+          s.settle();
         },
       });
       return { Node };

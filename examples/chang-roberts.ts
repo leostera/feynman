@@ -22,12 +22,18 @@ export function changRoberts(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Election } = spec.messages;
-      const zone = spec.defineZone({ name: "Ring", place: { arrange: "ring" } });
+      const zone = spec.defineZone({ name: "Ring", description: "ids travel one way round; the largest should lead", place: { arrange: "ring" } });
 
       const Node = spec.defineActor({
         name: "Node",
         zone,
         initialState: () => ({ started: false, leader: false }),
+        look: {
+          icon: "server",
+          names: ["A", "B", "C"],
+          status: (s) => (s.leader ? "leader" : s.started ? "in an election" : "idle"),
+          mood: (s) => (s.leader ? "ok" : s.started ? "busy" : "off"),
+        },
         actions: {
           start: {
             label: "Start an election",
@@ -43,6 +49,7 @@ export function changRoberts(variant: "buggy" | "fixed") {
         transitions: {
           [Election]: {
             description: "Passes on a larger id, leads on its own, and drops a smaller one.",
+            say: (s, msg) => (s.leader ? `Leads, on hearing ${msg.id}` : `Heard ${msg.id}`),
             sends: [Election],
             run(state, msg, ctx) {
               if (msg.id > ctx.id) return ctx.send(nextOf(ctx), Election, { id: msg.id });
@@ -65,6 +72,24 @@ export function changRoberts(variant: "buggy" | "fixed") {
         oneLeader: {
           description: "At most one node leads.",
           always: (w) => w.all(Node).filter((n) => n.state.leader).length <= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "C starts",
+        description: "The largest id goes all the way round, and C leads.",
+        run(s) {
+          const [, , c] = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          s.act(c, "start");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A starts",
+        description: variant === "buggy" ? "B beats A's id and leads; C beats B's and leads too." : "B and C each drop the smaller id and start their own; C's comes back, and C alone leads.",
+        run(s) {
+          const [a] = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          s.act(a, "start");
+          s.settle();
         },
       });
       return { Node };

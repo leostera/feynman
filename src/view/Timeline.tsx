@@ -7,7 +7,7 @@
 import { Badge, cn, Tabs } from "@cloudflare/kumo";
 import { CaretRightIcon, CornersInIcon, HeartbeatIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { Event, World } from "../spec/index.ts";
+import type { Event, Spec, World } from "../spec/index.ts";
 import { CodeTrace } from "./CodeTrace";
 import { kindLabel, labelOf, ordinal, stepTitle } from "./format";
 import { bubbleText } from "./playground/Stage";
@@ -85,7 +85,7 @@ export function Timeline({
       onEnter={() => onPreview(index)}
       onClick={() => onPick(index)}
       time={ordinal(index + 1)}
-      title={bubbleText(spec, event, world)}
+      title={timelineText(spec, event, world)}
       who={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
       flag={event.error || event.violations.length ? "broken" : event.kind === "lose" || event.kind === "restart" ? kindLabel(event) : null}
     />
@@ -153,6 +153,13 @@ export function Timeline({
       )}
     </aside>
   );
+}
+
+/** The bubble's sentence, said by whom: a `say` line needs its speaker away from the node. */
+function timelineText(spec: Spec, event: Event, world: World): string {
+  const text = bubbleText(spec, event, world);
+  const label = labelOf(world, event.instance);
+  return event.kind === "lose" || text.startsWith(`${label}:`) ? text : `${label}: ${text}`;
 }
 
 function Row({

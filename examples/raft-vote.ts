@@ -24,7 +24,7 @@ export function raftVote(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { RequestVote, Vote } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster" });
+      const zone = spec.defineZone({ name: "Cluster", description: "one term; a majority is two of three", place: { arrange: "ring" } });
 
       const Node = spec.defineActor({
         name: "Node",
@@ -33,6 +33,12 @@ export function raftVote(variant: "buggy" | "fixed") {
         // Raft keeps `votedFor` on stable storage, so a restart cannot make a node vote twice.
         durable: variant === "fixed" ? ["votedFor"] : [],
         initialState: () => ({ votedFor: null as string | null, votes: [] as string[], leader: false }),
+        look: {
+          icon: "server",
+          names: ["A", "B", "C"],
+          status: (s) => (s.leader ? `leader, ${s.votes.length} votes` : s.votes.length ? `candidate, ${s.votes.length} vote(s)` : s.votedFor ? `voted for ${s.votedFor}` : "follower"),
+          mood: (s) => (s.leader ? "ok" : s.votes.length ? "busy" : s.votedFor ? "info" : "off"),
+        },
         actions: {
           campaign: {
             label: "Campaign",
@@ -49,6 +55,7 @@ export function raftVote(variant: "buggy" | "fixed") {
         transitions: {
           [RequestVote]: {
             description: "Votes for the candidate, unless it has voted in this term already.",
+            say: (s, _msg) => `Votes for ${s.votedFor}`,
             sends: [Vote],
             run(state, _msg, ctx) {
               if (state.votedFor !== null) return;
@@ -58,6 +65,7 @@ export function raftVote(variant: "buggy" | "fixed") {
           },
           [Vote]: {
             description: "Counts the vote; with a majority, leads.",
+            say: (s) => (s.leader ? `Leads, with ${s.votes.length} votes of three` : `Has ${s.votes.length} vote(s)`),
             run(state, _msg, ctx) {
               if (state.votes.includes(ctx.from!.id)) return;
               state.votes.push(ctx.from!.id);
@@ -71,6 +79,32 @@ export function raftVote(variant: "buggy" | "fixed") {
         oneLeader: {
           description: "At most one node leads the term.",
           always: (w) => w.all(Node).filter((n) => n.state.leader).length <= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "An election",
+        description: "A campaigns, wins B's and C's votes, and leads.",
+        run(s) {
+          const [a] = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          s.act(a, "campaign");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A voter restarts",
+        description:
+          variant === "buggy"
+            ? "B votes for A, which leads; B restarts and forgets its vote, votes for C too, and C leads as well."
+            : "B votes for A, which leads; B restarts, remembers its vote, and turns C down.",
+        run(s) {
+          const [a, b, c] = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          s.act(a, "campaign");
+          s.deliver(b, "RequestVote");
+          s.deliver(a, "Vote");
+          s.restart(b);
+          s.act(c, "campaign");
+          s.deliver(b, "RequestVote");
+          s.settle();
         },
       });
       return { Node };
