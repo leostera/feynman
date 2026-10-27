@@ -24,7 +24,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Prepare, Vote, Decide } = spec.messages;
-      const zone = spec.defineZone({ name: "Database" });
+      const zone = spec.defineZone({ name: "Database", description: "every participant commits, or none does" });
 
       const Participant = spec.defineActor({
         name: "Participant",
@@ -33,6 +33,11 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         // Votes are written to a log before they are sent, so restarts change nothing.
         durable: ["prepared", "vote", "outcome"],
         initialState: () => ({ prepared: false, vote: null as "yes" | "no" | null, outcome: null as "commit" | "abort" | null }),
+        look: {
+          icon: "database",
+          status: (s) => (s.outcome ? (s.outcome === "commit" ? "committed" : "aborted") : s.vote ? `voted ${s.vote}, waiting` : s.prepared ? "prepared" : "idle"),
+          mood: (s) => (s.outcome === "commit" ? "ok" : s.outcome === "abort" ? "warn" : s.vote ? "busy" : "off"),
+        },
         actions: {
           vote: {
             label: "Vote",
@@ -63,6 +68,12 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ begun: false, votes: {} as Record<string, boolean>, decided: null as boolean | null }),
+        look: {
+          icon: "gear",
+          status: (s) => (s.decided === null ? (s.begun ? `${Object.keys(s.votes).length} vote(s) in` : "idle") : s.decided ? "decided: commit" : "decided: abort"),
+          mood: (s) => (s.decided === null ? (s.begun ? "busy" : "off") : "ok"),
+          rows: (s) => Object.entries(s.votes).map(([id, yes]) => ({ label: id, detail: yes ? "yes" : "no", mood: yes ? ("ok" as const) : ("warn" as const) })),
+        },
         actions: {
           begin: {
             label: "Begin",
@@ -78,6 +89,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         transitions: {
           [Vote]: {
             description: "Counts a vote, and decides once it can.",
+            say: (s, msg) => (s.decided === null ? `Counts a ${msg.yes ? "yes" : "no"}, waits for the rest` : `Counts a ${msg.yes ? "yes" : "no"}: ${s.decided ? "commit" : "abort"}`),
             sends: [Decide],
             run(state, msg, ctx) {
               state.votes[ctx.from!.id] = msg.yes;
@@ -109,6 +121,50 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
           description: "Once everyone has voted, the coordinator decides.",
           after: (w) => w.all(Participant).every((p) => p.state.vote !== null),
           eventually: (w) => w.the(Coordinator).state.decided !== null,
+        },
+      });
+      const start = (s: Parameters<Parameters<typeof spec.defineScenario>[0]["run"]>[0]) => {
+        const [a, b] = ["Participant A", "Participant B"].map((name) => s.spawn(Participant, name));
+        s.act(s.the(Coordinator), "begin");
+        s.settle();
+        return [a, b];
+      };
+      spec.defineScenario({
+        name: "Everyone votes yes",
+        description: "Both participants vote yes, and both commit.",
+        run(s) {
+          const [a, b] = start(s);
+          s.act(a, "vote", { choice: "yes" });
+          s.act(b, "vote", { choice: "yes" });
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "One votes no",
+        description:
+          variant === "buggy"
+            ? "A's yes arrives first, and the coordinator commits on it; B has voted no and aborted."
+            : "A's yes arrives first, and the coordinator waits; B's no aborts everyone.",
+        run(s) {
+          const [a, b] = start(s);
+          s.act(a, "vote", { choice: "yes" });
+          s.deliver(s.the(Coordinator), "Vote");
+          s.act(b, "vote", { choice: "no" });
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A vote is lost",
+        description:
+          variant === "buggy"
+            ? "A's vote is lost; the coordinator decides on B's alone."
+            : "A's vote is lost, and the coordinator waits for it forever: two-phase commit blocks.",
+        run(s) {
+          const [a, b] = start(s);
+          s.act(a, "vote", { choice: "yes" });
+          s.act(b, "vote", { choice: "yes" });
+          s.drop(s.the(Coordinator), "Vote");
+          s.settle();
         },
       });
       return { Participant, Coordinator };

@@ -20,16 +20,24 @@ export function payments(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Debit, Debited } = spec.messages;
-      const zone = spec.defineZone({ name: "Payments" });
+      const people = spec.defineZone({ name: "Customers", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Payments", description: "the bank debits what it is asked to", place: { column: 1 } });
 
       const Bank = spec.defineActor({
         name: "Bank",
         zone,
         singleton: true,
         initialState: () => ({ balance: 100, debits: 0, seen: [] as string[] }),
+        look: {
+          icon: "database",
+          status: (s) => `balance ${s.balance} · ${s.debits} debit(s)`,
+          mood: (s) => (s.debits > s.seen.length ? "bad" : "ok"),
+          rows: (s) => s.seen.map((id) => ({ group: "payments", label: id, detail: "debited" })),
+        },
         transitions: {
           [Debit]: {
             description: "Debits the account and confirms.",
+            say: (s, msg) => (variant === "fixed" && s.seen.filter((id) => id === msg.id).length && s.debits === s.seen.length ? `Debited ${msg.id}, or had already: confirms` : `Debits ${msg.amount} for ${msg.id}: balance ${s.balance}`),
             sends: [Debited],
             run(state, msg, ctx) {
               if (variant === "fixed" && state.seen.includes(msg.id)) return ctx.reply(Debited, { id: msg.id });
@@ -44,11 +52,17 @@ export function payments(variant: "buggy" | "fixed") {
 
       const Client = spec.defineActor({
         name: "Client",
-        zone,
+        zone: people,
         symmetric: true,
         // A client that retries keeps its outbox on disk: a restart must not forget a payment.
         durable: ["paid", "pending"],
         initialState: () => ({ paid: 0, pending: null as string | null }),
+        look: {
+          icon: "phone",
+          names: ["Ada", "Grace"],
+          status: (s) => (s.pending ? `paying ${s.pending}` : s.paid ? `${s.paid} payment(s) made` : "ready to pay"),
+          mood: (s) => (s.pending ? "busy" : "ok"),
+        },
         actions: {
           pay: {
             label: "Pay",
@@ -96,6 +110,28 @@ export function payments(variant: "buggy" | "fixed") {
           description: "A payment in flight is eventually confirmed.",
           after: (w) => w.all(Client).some((c) => c.state.pending !== null),
           eventually: (w) => w.all(Client).every((c) => c.state.pending === null),
+        },
+      });
+      spec.defineScenario({
+        name: "A payment",
+        description: "Ada pays 10; the bank debits it and confirms.",
+        run(s) {
+          const ada = s.spawn(Client, "Ada");
+          s.act(ada, "pay");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "The retry fires first",
+        description:
+          variant === "buggy"
+            ? "Ada's retry goes out before the bank's answer arrives, and the bank debits the same payment twice."
+            : "Ada's retry goes out before the bank's answer arrives; the bank knows the payment, and confirms without debiting again.",
+        run(s) {
+          const ada = s.spawn(Client, "Ada");
+          s.act(ada, "pay");
+          s.fire(ada, "retry");
+          s.settle();
         },
       });
       return { Bank, Client };
