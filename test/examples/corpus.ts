@@ -6,6 +6,7 @@ import type { Bounds } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
 import { alternatingBit } from "../../examples/alternating-bit.ts";
 import { cache } from "../../examples/cache.ts";
+import { diningPhilosophers } from "../../examples/dining-philosophers.ts";
 import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
@@ -206,6 +207,16 @@ export const corpus: Example[] = [
     ],
     tla: { module: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
     p: { project: "WriteSkew", property: "covered", assertion: "nobody is on call", depth: 9 },
+  },
+  {
+    name: "dining philosophers",
+    spec: diningPhilosophers,
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { noDeadlock: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { noDeadlock: "holds" } },
+    ],
+    tla: { module: "DiningPhilosophers", invariants: ["noDeadlock"], configs: BOTH_WAYS },
+    p: { project: "DiningPhilosophers", property: "noDeadlock", assertion: "each philosopher holds one fork and waits for the other", depth: 8 },
   },
 ];
 
