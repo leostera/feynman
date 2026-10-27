@@ -289,3 +289,16 @@ test("a step that stores what is not plain data, or changes another's set, fails
   expect(messages[0]).toContain("Keeper.reach: changes the state of another instance");
   expect(messages[1]).toContain("Keeper.store: holds state.handler: a function, which is not plain data");
 });
+
+test("symmetry claims are tested on as many merged states as symmetryChecks says; 0 trusts them", async () => {
+  const { leaderElection } = await import("../../examples/leader-election.ts");
+  // The fixed nodes elect the highest id, so they are not interchangeable: a wrong claim.
+  const spec = leaderElection("fixed");
+  const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
+  const bounds = { depth: 12, faults: 0, walks: 0, instances: { Node: 3 } };
+  expect(check(safety, bounds).reductions.refuted).toEqual(["Node"]);
+  expect(check(safety, { ...bounds, symmetryChecks: 10 }).reductions.refuted).toEqual(["Node"]);
+  const trusted = check(safety, { ...bounds, symmetryChecks: 0 });
+  expect(trusted.reductions.refuted).toBeUndefined();
+  expect(trusted.reductions.symmetric).toEqual([["Node A", "Node B", "Node C"]]);
+});

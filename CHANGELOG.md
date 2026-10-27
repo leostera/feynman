@@ -19,6 +19,10 @@ after.
 - Stuck worlds: where nothing can happen, check reports it and fails, unless the spec calls
   that world final with `spec.defineFinalState({ description, when })`.
 - Sets and maps in state are compared by what they hold.
+- `--symmetry-checks N` (or `check: { symmetryChecks }` in the config): how many merged
+  states a symmetry claim is tested on, 2000 by default; 0 trusts it. The tests take a large
+  share of a symmetric search.
+- Checking is about 3× faster on symmetric specs: renamed state keys are cached.
 
 ### Migrating
 

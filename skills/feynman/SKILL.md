@@ -526,7 +526,8 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   the checker then treats "Alice, then Bob" and "Bob, then Alice" as one state. Declare it
   only when the spec compares the actor's ids and labels for equality and never orders or
   computes with them (electing the highest id, hashing an id). The checker tests the claim
-  and says when it is false.
+  on up to `--symmetry-checks N` merged states (2000) and says when it is false; testing
+  takes a large share of a symmetric search, so lower it for speed once the claim has held.
 - **State.** Keep only what decides behaviour. Use hashes, not secrets (`ctx.hash`).
 - **Repeats.** The checker lets each instance take the same action at most `--repeats N`
   times on one path (2 by default). Raise it when a bug needs more.
@@ -605,7 +606,7 @@ read worse. To update one:
 feynman list                   the specs found
 feynman run [spec] [--scenario NAME]
 feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
-              [--walks 2000] [--walk-depth 120] [--no-symmetry]
+              [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
               [--only P,Q] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
