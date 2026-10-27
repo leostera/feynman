@@ -27,7 +27,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Data, Ack } = spec.messages;
-      const zone = spec.defineZone({ name: "Link" });
+      const zone = spec.defineZone({ name: "Link", description: "a network that loses and reorders", place: { arrange: "row" } });
 
       // What tells items apart: one alternating bit, or the item's position, which never repeats.
       const tagOf = (position: number) => (variant === "buggy" ? position % 2 : position);
@@ -37,6 +37,12 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ delivered: [] as string[] }),
+        place: { order: 1 },
+        look: {
+          icon: "desktop",
+          status: (s) => (s.delivered.length ? `has ${s.delivered.join(", ")}` : "nothing yet"),
+          mood: (s) => (s.delivered.every((v, i) => v === ITEMS[i]) ? "ok" : "bad"),
+        },
         transitions: {
           [Data]: {
             description: "Keeps the item if its tag is the one it expects next, and acknowledges the tag either way.",
@@ -54,6 +60,12 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ next: 0, started: false }),
+        place: { order: 0 },
+        look: {
+          icon: "laptop",
+          status: (s) => (!s.started ? "ready" : s.next >= ITEMS.length ? "sent everything" : `sending ${ITEMS[s.next]}`),
+          mood: (s) => (!s.started ? "off" : s.next >= ITEMS.length ? "ok" : "busy"),
+        },
         actions: {
           send: {
             label: "Send",
@@ -103,6 +115,32 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         inOrder: {
           description: "The receiver has the items in order, each once.",
           always: (w) => w.the(Receiver).state.delivered.every((v, i) => v === ITEMS[i]),
+        },
+      });
+      spec.defineScenario({
+        name: "Sending x and y",
+        description: "Each item arrives and is acknowledged before the next goes out.",
+        run(s) {
+          s.act(s.the(Sender), "send");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A stale copy arrives late",
+        description:
+          variant === "buggy"
+            ? "A resent copy of x arrives after y, carrying tag 0, the tag the receiver expects next: it keeps x twice."
+            : "A resent copy of x arrives after y, carrying its position, 0: the receiver expects 2, and ignores it.",
+        run(s) {
+          const receiver = s.the(Receiver);
+          const sender = s.the(Sender);
+          s.act(sender, "send");
+          s.deliver(receiver, "Data");
+          s.fire(sender, "retry");
+          s.deliver(sender, "Ack");
+          s.deliver(receiver, "Data", { tag: 1, value: "y" });
+          s.deliver(receiver, "Data");
+          s.settle();
         },
       });
       return { Sender, Receiver };
