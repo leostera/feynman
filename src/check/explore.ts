@@ -15,7 +15,7 @@
 //   skipped is expanded again for the difference.
 // - Inputs an action did not read: other values for them would do exactly the same.
 // - Symmetry (keys.ts): interchangeable instances are renamed to one order.
-import { actorNamed, isLiveness, LIVENESS_KINDS, observation, spawn, startWorld, traceView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { actorNamed, isLiveness, observation, spawn, startWorld, traceView, type Event, type Fairness, type LivenessProperty, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { canonical, NO_SYMMETRY, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 import { judge, stepBreaks, stuck, verdicts } from "./judge.ts";
 import { judgeLiveness, type Edge, type Graph, type Lasso } from "./liveness.ts";
@@ -189,16 +189,16 @@ export interface Seed {
   world: World;
 }
 
-/**
- * Explore every interleaving within the bounds, from the initial world and from each seed
- * at once, breadth first, after a share of random runs. Seeding with where scenarios end puts
- * the search where the interesting states are, rather than spending its budget getting there.
- */
 /** Callbacks for tools that compare the checker with another: every distinct state, as the search first meets it. */
 export interface Watch {
   state?(world: World, budget: { acts: Record<string, number>; faults: number; memory: string }): void;
 }
 
+/**
+ * Explore every interleaving within the bounds, from the initial world and from each seed
+ * at once, breadth first, after a share of random runs. Seeding with where scenarios end puts
+ * the search where the interesting states are, rather than spending its budget getting there.
+ */
 export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = [], watch: Watch = {}): Report {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
   // A `never` property that reads the path's events in order tells orders apart, so no two orders commute for it.
@@ -630,7 +630,7 @@ function graphOf(nodes: Node[], edges: Edge[][], enabled: Map<string, Fairness>[
  * Each liveness property's verdict, by id. A property that held after the search stopped
  * early is unfinished; `seedOf` names the scenario a counterexample starts from, if any.
  */
-function livenessVerdicts(spec: Spec, liveness: Extract<PropertyInfo, { kind: (typeof LIVENESS_KINDS)[number] }>[], graph: Graph, seedOf: (root: number) => string | undefined, stoppedEarly: boolean): Map<string, PropertyResult> {
+function livenessVerdicts(spec: Spec, liveness: LivenessProperty[], graph: Graph, seedOf: (root: number) => string | undefined, stoppedEarly: boolean): Map<string, PropertyResult> {
   return new Map(
     liveness.map((property): [string, PropertyResult] => {
       const verdict = judgeLiveness(spec, graph, property);

@@ -545,10 +545,14 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
       return { type, examples: options?.examples, accepts: options?.accepts } as never;
     },
     defineProperties(defs) {
-      for (const [id, def] of Object.entries(defs)) spec.properties.push(propertyInfo(id, def));
+      for (const [id, def] of Object.entries(defs)) {
+        if (spec.properties.some((p) => p.id === id)) throw new Error(`Two properties are named "${id}"`);
+        spec.properties.push(propertyInfo(id, def));
+      }
     },
     defineFinalState(def) {
       if (spec.finalState) throw new Error("defineFinalState is called once; say every final world in one predicate");
+      if (typeof def.when !== "function") throw new Error("defineFinalState: `when` is a predicate on the world, like (w) => w.the(Client).state.done");
       spec.finalState = { description: def.description, when: def.when as never };
     },
     defineGroup(def) {
@@ -609,6 +613,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
   if (raw.durable !== undefined && !Array.isArray(raw.durable)) throw new Error(`${raw.name}: durable lists state fields, like durable: ["codes"]`);
   const actions: Record<string, ActionInfo> = {};
   for (const [key, step] of Object.entries(raw.actions ?? {})) {
+    if (step.fair !== undefined) throw new Error(`${raw.name}.${key}: actions are never fair (a person may stop); fair is for transitions`);
     actions[key] = {
       key,
       label: step.label,
@@ -641,7 +646,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       starts: step.starts ?? [],
       when: step.when,
       after: step.after,
-      ...(step.fair === undefined ? {} : { fair: step.fair }),
+      ...fairnessOf(`${raw.name}.${key}`, step.fair),
       say: step.say,
       routine: step.routine ?? false,
       run: step.run as TransitionInfo["run"],
@@ -676,13 +681,30 @@ function inputKind(type: InputType): "string" | "number" | "boolean" | "choice" 
   return "choice";
 }
 
+/** A step's fairness, as declared: weak or strong, or false for none; anything else is a mistake. */
+function fairnessOf(step: string, fair: unknown): { fair?: Fairness | false } {
+  if (fair === undefined) return {};
+  if (fair === "weak" || fair === "strong" || fair === false) return { fair };
+  throw new Error(`${step}: fair is "weak", "strong" or false, not ${JSON.stringify(fair)}`);
+}
+
+/** Every kind of property, by the key a definition declares it with: a Record, so the compiler keeps it complete. */
+const PROPERTY_KINDS = Object.keys({ always: 0, everyStep: 0, never: 0, eventually: 0, leadsTo: 0, infinitelyOften: 0, eventuallyAlways: 0 } satisfies Record<PropertyInfo["kind"], 0>);
+
+/** A property definition, read into the one kind it declares; a definition with none, several, or a predicate that is not a function is a mistake. */
 function propertyInfo(id: string, def: PropertyDef): PropertyInfo {
+  const kinds = PROPERTY_KINDS.filter((k) => k in def);
+  if (kinds.length !== 1) throw new Error(`Property "${id}": say what it checks with one of ${PROPERTY_KINDS.join(", ")}${kinds.length ? `, not ${kinds.join(" and ")}` : ""}`);
+  const predicate = (value: unknown, what: string) => {
+    if (typeof value !== "function") throw new Error(`Property "${id}": ${what} is a function, like (w) => …`);
+    return value as never;
+  };
   const base = { id, description: def.description, ...(def.known === undefined ? {} : { known: def.known }) };
-  if ("always" in def) return { ...base, kind: "always", always: def.always };
-  if ("everyStep" in def) return { ...base, kind: "everyStep", everyStep: def.everyStep };
-  if ("never" in def) return { ...base, kind: "never", never: def.never };
-  if ("eventually" in def) return { ...base, kind: "eventually", eventually: def.eventually };
-  if ("leadsTo" in def) return { ...base, kind: "leadsTo", whenever: def.leadsTo.whenever, then: def.leadsTo.then };
-  if ("infinitelyOften" in def) return { ...base, kind: "infinitelyOften", infinitelyOften: def.infinitelyOften };
-  return { ...base, kind: "eventuallyAlways", eventuallyAlways: def.eventuallyAlways };
+  if ("always" in def) return { ...base, kind: "always", always: predicate(def.always, "always") };
+  if ("everyStep" in def) return { ...base, kind: "everyStep", everyStep: predicate(def.everyStep, "everyStep") };
+  if ("never" in def) return { ...base, kind: "never", never: predicate(def.never, "never") };
+  if ("eventually" in def) return { ...base, kind: "eventually", eventually: predicate(def.eventually, "eventually") };
+  if ("leadsTo" in def) return { ...base, kind: "leadsTo", whenever: predicate(def.leadsTo?.whenever, "leadsTo.whenever"), then: predicate(def.leadsTo?.then, "leadsTo.then") };
+  if ("infinitelyOften" in def) return { ...base, kind: "infinitelyOften", infinitelyOften: predicate(def.infinitelyOften, "infinitelyOften") };
+  return { ...base, kind: "eventuallyAlways", eventuallyAlways: predicate(def.eventuallyAlways, "eventuallyAlways") };
 }

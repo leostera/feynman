@@ -139,7 +139,10 @@ export type PropertyInfo = (
 /** The liveness kinds: judged on fair infinite behaviours, after exploring (RFD0006). */
 export const LIVENESS_KINDS = ["eventually", "leadsTo", "infinitelyOften", "eventuallyAlways"] as const;
 
-export function isLiveness(p: PropertyInfo): p is Extract<PropertyInfo, { kind: (typeof LIVENESS_KINDS)[number] }> {
+/** A liveness property: judged on fair infinite behaviours. */
+export type LivenessProperty = Extract<PropertyInfo, { kind: (typeof LIVENESS_KINDS)[number] }>;
+
+export function isLiveness(p: PropertyInfo): p is LivenessProperty {
   return (LIVENESS_KINDS as readonly string[]).includes(p.kind);
 }
 

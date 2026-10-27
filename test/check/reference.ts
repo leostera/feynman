@@ -11,7 +11,7 @@
 // properties are left to the checker.
 import { initialWorld } from "../../src/check/explore.ts";
 import { inputCombinations } from "../../src/check/steps.ts";
-import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, lose, restart, type Spec, type Step, type World } from "../../src/spec/index.ts";
+import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, lose, restart, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
 import { sortedJson } from "../../src/spec/json.ts";
 
 export interface ReferenceBounds {
@@ -144,8 +144,6 @@ function fairOf(spec: Spec, world: World, instance: string, key: string, id: str
   return fair === false ? undefined : { id, kind: fair ?? "weak" };
 }
 
-type Liveness = Extract<Spec["properties"][number], { kind: "eventually" | "leadsTo" | "infinitelyOften" | "eventuallyAlways" }>;
-
 /**
  * Is there a fair behaviour that breaks the property? The behaviours that might: those that
  * stay, from some point, among the worlds `inside` allows. Of those worlds, keep pruning
@@ -154,7 +152,7 @@ type Liveness = Extract<Spec["properties"][number], { kind: "eventually" | "lead
  * the worlds where it is possible). A set that owes nothing is fair; it breaks the property
  * if `bad` says so. A world staying put forever is a set of its own.
  */
-function livenessOf(spec: Spec, graph: GraphNode[], p: Liveness): "holds" | "broken" | "unfinished" {
+function livenessOf(spec: Spec, graph: GraphNode[], p: LivenessProperty): "holds" | "broken" | "unfinished" {
   const holds = (pred: (w: never) => boolean) => graph.map((n) => holdsIn(spec, n.world, pred as never));
   const all = graph.map((_, i) => i);
   let from: number[];
@@ -181,6 +179,7 @@ function livenessOf(spec: Spec, graph: GraphNode[], p: Liveness): "holds" | "bro
   const region = reach(graph, from.filter(inside), inside);
   const open = [...region].some((i) => !graph[i].closed);
   let alive = new Set([...region].filter((i) => graph[i].closed));
+  // Prune one strongly connected set at a time, until a pass prunes nothing.
   for (let changed = true; changed; ) {
     changed = false;
     for (const i of alive) {
@@ -197,7 +196,6 @@ function livenessOf(spec: Spec, graph: GraphNode[], p: Liveness): "holds" | "bro
       changed = true;
       break;
     }
-    if (!changed) break;
   }
   return open ? "unfinished" : "holds";
 }
