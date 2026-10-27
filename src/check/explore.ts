@@ -17,7 +17,7 @@
 // - Symmetry (keys.ts): interchangeable instances are renamed to one order.
 import { actorNamed, isLiveness, observation, spawn, startWorld, traceView, type Event, type Fairness, type LivenessProperty, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { canonical, NO_SYMMETRY, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
-import { judge, stepBreaks, stuck, verdicts } from "./judge.ts";
+import { judge, stepBreaks, stuck, verdicts, type Verdicts } from "./judge.ts";
 import { judgeLiveness, type Edge, type Graph, type Lasso } from "./liveness.ts";
 import { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
 import { rebind, shrink, walk, type WalkResult } from "./walk.ts";
@@ -200,246 +200,342 @@ export interface Watch {
  * the search where the interesting states are, rather than spending its budget getting there.
  */
 export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = [], watch: Watch = {}): Report {
+  const b = boundsFor(spec, bounds);
+  const started = Date.now();
+  const roots = rootsOf(spec, b, seeds);
+  const walkVerdicts = verdicts();
+  const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
+  const search = new Search(spec, b, roots, watch, started);
+  search.run();
+  if (search.refuted) return withoutSymmetry(spec, bounds, seeds, watch, roots, started);
+  return reportOf(spec, b, seeds.length, search, walked, walkVerdicts, started);
+}
+
+const NO_WALKS: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
+
+/** The bounds asked for, with the reductions the spec's properties rule out turned off. */
+function boundsFor(spec: Spec, bounds: Partial<Bounds>): Bounds {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
   // A `never` property that reads the path's events in order tells orders apart, so no two orders commute for it.
   if (spec.properties.some((p) => p.kind === "never" && /\.events\b/.test(String(p.never)))) b.reduce = false;
   // Step properties and liveness need every edge, which skipping orders drops; liveness is
   // judged without symmetry for now (RFD0006: a property naming one instance is not symmetric).
-  const liveness = spec.properties.filter(isLiveness);
-  if (liveness.length || spec.properties.some((p) => p.kind === "everyStep")) b.reduce = false;
-  if (liveness.length) b.symmetry = false;
-  const started = Date.now();
-  // Interchangeable instances: merged in keys only with the symmetry bound.
-  const roots: { name?: string; world: World; symmetry: Symmetry }[] = [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({ ...r, symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY }));
-  const v = verdicts();
-  const walked: WalkResult = b.walks > 0 ? walk(spec, roots, b, v, started + b.timeLimit * WALK_SHARE) : { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
-  // The search judges afresh, so it finds the shortest counterexample even for what a run found.
-  const search = verdicts();
-  // For liveness: every edge, and the fair steps possible in each node (liveness.ts).
-  const edges: Edge[][] = [];
-  const enabled: Map<string, Fairness>[] = [];
-  let stuckAt: number | undefined;
+  const liveness = spec.properties.some(isLiveness);
+  if (liveness || spec.properties.some((p) => p.kind === "everyStep")) b.reduce = false;
+  if (liveness) b.symmetry = false;
+  return b;
+}
 
-  const nodes: Node[] = [];
-  const seen = new Map<string, number>();
-  const saved = { orders: 0, inputs: 0 };
-  // A state is the world plus the budget spent getting there (actions repeated, faults used),
-  // plus what `never` properties remember of the way there (see memoryOf).
-  const nevers = spec.properties.filter((p) => p.kind === "never");
-  const memory = (events: () => Event[]) => (nevers.length ? memoryOf(nevers, events()) : "");
-  const keyOf = (world: World, acts: Record<string, number>, faults: number, root: number, remembered: string) => `${symmetricKey(world, roots[root].symmetry)}${actsKey(acts)}|${faults}|${remembered}`;
-  let frontier: { node: number; only?: Set<string> }[] = [];
-  for (const [root, { world }] of roots.entries()) {
-    const key = keyOf(world, {}, 0, root, memory(() => []));
-    if (seen.has(key)) continue;
-    seen.set(key, nodes.length);
-    nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {}, world, sleep: new Map(), expanded: false });
-    watch.state?.(world, { acts: {}, faults: 0, memory: memory(() => []) });
-    frontier.push({ node: nodes.length - 1 });
+/** Where the search starts: the initial world, then each seed; with the symmetry of each, when the bounds use it. */
+interface Root {
+  name?: string;
+  world: World;
+  symmetry: Symmetry;
+}
+
+function rootsOf(spec: Spec, b: Bounds, seeds: Seed[]): Root[] {
+  return [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({ ...r, symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY }));
+}
+
+/** A symmetry claim turned out false: search again without it, and say which actors claimed it. */
+function withoutSymmetry(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], watch: Watch, roots: Root[], started: number): Report {
+  const again = check(spec, { ...bounds, symmetry: false }, seeds, watch);
+  const classes = roots.flatMap((r) => r.symmetry.classes.map((c) => c.ids));
+  const actors = [...new Set(classes.flatMap((ids) => ids.map((id) => roots[0].world.instances.find((i) => i.id === id)?.actor ?? id)))];
+  return { ...again, durationMs: Date.now() - started, reductions: { ...again.reductions, refuted: actors } };
+}
+
+/** Nodes to expand next; `only`, for a node expanded before, the steps to try now (see revisit). */
+type Frontier = { node: number; only?: Set<string> }[];
+
+/** What one expansion has done so far, for the sleep sets and the inputs reduction. */
+interface Expansion {
+  only: Set<string> | undefined;
+  tried: [string, Facts][];
+  inputsTried: Map<string, { inputs: Record<string, unknown>; read: Set<string> }[]>;
+  next: Frontier;
+}
+
+/**
+ * The breadth-first search: the nodes it found, and what it judged of them. Each node is a
+ * world plus the budget spent getting there; the search judges afresh (not trusting what the
+ * random runs found), so its counterexamples are the shortest.
+ */
+class Search {
+  readonly nodes: Node[] = [];
+  readonly verdicts = verdicts();
+  /** The node where each property first broke. */
+  readonly failures = new Map<string, number>();
+  /** The node where each spec error was first met. */
+  readonly errors = new Map<string, number>();
+  readonly saved = { orders: 0, inputs: 0 };
+  /** For liveness: the edges out of each expanded node, and the fair steps possible in it (liveness.ts). */
+  readonly edges: Edge[][] = [];
+  readonly enabled: Map<string, Fairness>[] = [];
+  stuckAt: number | undefined;
+  depthReached = 0;
+  stoppedBy: Report["stoppedBy"];
+  refuted = false;
+  private readonly seen = new Map<string, number>();
+  private readonly nevers: PropertyInfo[];
+  private readonly keepsEdges: boolean;
+  private twinChecks = 0;
+
+  constructor(
+    private readonly spec: Spec,
+    private readonly b: Bounds,
+    readonly roots: Root[],
+    private readonly watch: Watch,
+    private readonly started: number,
+  ) {
+    this.nevers = spec.properties.filter((p) => p.kind === "never");
+    this.keepsEdges = spec.properties.some(isLiveness);
   }
-  const failures = new Map<string, { node: number }>();
-  const errors = new Map<string, number>();
-  let depthReached = 0;
-  let stoppedBy: Report["stoppedBy"];
 
-  // Symmetry is a claim; test it on the twins the search merges: both must have the same next steps.
-  let twinChecks = 0;
-  let refuted = false;
-  const twinsAgree = (a: World, b: World, root: number) => {
-    if (twinChecks >= TWIN_CHECKS || canonical(a) === canonical(b)) return true;
-    twinChecks++;
-    return sameSet(successors(spec, a, roots[root].symmetry), successors(spec, b, roots[root].symmetry));
-  };
+  run(): void {
+    let frontier = this.start();
+    search: while (frontier.length) {
+      const next: Frontier = [];
+      for (const { node, only } of frontier) {
+        if (this.nodes[node].depth >= this.b.depth) continue;
+        if (!this.expand(node, only, next)) break search;
+      }
+      frontier = next;
+    }
+    // Liveness needs the edges out of the worlds at the depth bound too. Where every step from
+    // one lands on a known state, nothing lies past it, and its edges are added: in a space the
+    // bound does not cut, liveness is then judged in full, as TLC would.
+    if (this.keepsEdges && !this.stoppedBy) for (const [index, node] of this.nodes.entries()) if (!node.expanded && !node.shadow) this.close(index);
+  }
 
-  const examine = (index: number, alsoBroken: string[] = []) => {
-    const node = nodes[index];
-    const { findings, error } = judge(spec, node.event, () => pathEvents(nodes, index), search);
+  /** A node's path as a counterexample, from its root. */
+  counterexample(index: number): Counterexample {
+    const root = this.roots[this.nodes[index].root];
+    return { ...replay(this.spec, root.world, pathChoices(this.nodes, index)), ...(root.name ? { from: root.name } : {}) };
+  }
+
+  graph(): Graph {
+    return graphOf(this.nodes, this.edges, this.enabled);
+  }
+
+  /** One node per distinct root, judged. */
+  private start(): Frontier {
+    const frontier: Frontier = [];
+    for (const [root, { world }] of this.roots.entries()) {
+      const key = this.keyOf(world, {}, 0, root, this.memory(() => []));
+      if (this.seen.has(key)) continue;
+      this.seen.set(key, this.nodes.length);
+      this.nodes.push({ parent: -1, root, choice: null, event: null, depth: 0, faults: 0, acts: {}, world, sleep: new Map(), expanded: false });
+      this.watch.state?.(world, { acts: {}, faults: 0, memory: this.memory(() => []) });
+      frontier.push({ node: this.nodes.length - 1 });
+    }
+    for (const { node } of frontier) this.examine(node);
+    return frontier;
+  }
+
+  /** Every step from a node; false if the search must stop (out of budget, or symmetry refuted). */
+  private expand(index: number, only: Set<string> | undefined, next: Frontier): boolean {
+    const node = this.nodes[index];
+    const options = branches(this.spec, node.world, node.faults < this.b.faults);
+    if (this.keepsEdges) {
+      this.edges[index] = [];
+      this.enabled[index] = fairStepsIn(this.spec, node.world, options);
+    }
+    const expansion: Expansion = { only, tried: [], inputsTried: new Map(), next };
+    for (const choice of options) {
+      if (this.nodes.length >= this.b.maxStates) return (this.stoppedBy = "maxStates"), false;
+      if (Date.now() - this.started > this.b.timeLimit) return (this.stoppedBy = "timeLimit"), false;
+      if (!this.take(index, choice, expansion)) return false;
+    }
+    node.expanded = true;
+    return true;
+  }
+
+  /** One step from a node: skipped if a reduction says its result is known, else taken and its world recorded. False if symmetry is refuted. */
+  private take(index: number, choice: Choice, expansion: Expansion): boolean {
+    const node = this.nodes[index];
+    const name = stepName(node.world, choice);
+    if (expansion.only ? !expansion.only.has(name) : node.sleep.has(name)) {
+      if (!expansion.only) this.saved.orders++;
+      return true;
+    }
+    const budget = spend(node, choice, this.b.repeats);
+    if (!budget) return true;
+    if (this.sameInputsTried(choice, expansion)) {
+      this.saved.inputs++;
+      return true;
+    }
+    const observed = observation();
+    const step = apply(this.spec, node.world, choice, { explain: false, observe: observed });
+    if (choice.kind === "act") {
+      const id = `${choice.instance}.${choice.key}`;
+      expansion.inputsTried.set(id, [...(expansion.inputsTried.get(id) ?? []), { inputs: choice.inputs, read: observed.inputs }]);
+    }
+    const facts: Facts = { target: targetOf(node.world, choice), observed, failed: !!step.event.error, setsTimer: step.event.started.length > 0 };
+    const sleep = this.childSleep(node, facts, expansion);
+    expansion.tried.push([name, facts]);
+    return this.land(index, choice, step, budget, sleep, expansion.next);
+  }
+
+  /** An earlier try of this action read only inputs this one shares: same result. */
+  private sameInputsTried(choice: Choice, expansion: Expansion): boolean {
+    if (!this.b.reduce || choice.kind !== "act") return false;
+    const tries = expansion.inputsTried.get(`${choice.instance}.${choice.key}`) ?? [];
+    return tries.some((t) => [...t.read].every((k) => Object.is(t.inputs[k], choice.inputs[k])));
+  }
+
+  /** What the child need not try: what this node skipped or already tried, where it commutes with this step. */
+  private childSleep(node: Node, facts: Facts, expansion: Expansion): Map<string, Facts> {
+    const sleep = new Map<string, Facts>();
+    if (!this.b.reduce || expansion.only) return sleep;
+    for (const [k, f] of node.sleep) if (commute(f, facts)) sleep.set(k, f);
+    for (const [k, f] of expansion.tried) if (commute(f, facts)) sleep.set(k, f);
+    return sleep;
+  }
+
+  /**
+   * Where a step lands. A step that lands on a known state still ran: it counts as reached.
+   * A step that fails, or breaks a step property, is judged all the same: its counterexample
+   * ends with the step itself, so it gets a node of its own that stands for nothing else (a
+   * shadow). False if the known state's twin refutes the symmetry claim.
+   */
+  private land(index: number, choice: Choice, step: ReturnType<typeof apply>, budget: { acts: Record<string, number>; faults: number }, sleep: Map<string, Facts>, next: Frontier): boolean {
+    const node = this.nodes[index];
+    const remembered = this.memory(() => [...pathEvents(this.nodes, index), step.event]);
+    const key = this.keyOf(step.world, budget.acts, budget.faults, node.root, remembered);
+    this.verdicts.reached.add(`${step.event.actor}.${step.event.key}`);
+    const failed = !!step.event.error;
+    const breaks = failed ? [] : stepBreaks(this.spec, node.world, step.world, step.event, this.verdicts.broken);
+    const existing = this.seen.get(key);
+    // A failed step goes nowhere: no edge for liveness.
+    const edgeTo = (to: number) => this.keepsEdges && !failed && this.edges[index].push(edgeOf(this.spec, node.world, choice, to));
+    const news = breaks.length > 0 || (failed && !this.verdicts.errors.has(step.event.error!));
+    if (existing !== undefined) {
+      edgeTo(existing);
+      if (!news) {
+        if (this.roots[node.root].symmetry.classes.length && !this.twinsAgree(this.nodes[existing].world, step.world, node.root)) return (this.refuted = true), false;
+        if (this.b.reduce) this.revisit(existing, step.world, sleep, next);
+        return true;
+      }
+    }
+    const shadow = failed || existing !== undefined;
+    if (!shadow) {
+      this.seen.set(key, this.nodes.length);
+      edgeTo(this.nodes.length);
+    }
+    this.nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults: budget.faults, acts: budget.acts, world: step.world, sleep, expanded: false, ...(shadow ? { shadow } : {}) });
+    if (!shadow) this.watch.state?.(step.world, { acts: budget.acts, faults: budget.faults, memory: remembered });
+    this.depthReached = Math.max(this.depthReached, node.depth + 1);
+    this.examine(this.nodes.length - 1, breaks);
+    if (!shadow) next.push({ node: this.nodes.length - 1 });
+    return true;
+  }
+
+  /** A world at the depth bound: its edges, if each lands on a known state; else it stays open. */
+  private close(index: number): void {
+    const node = this.nodes[index];
+    const options = branches(this.spec, node.world, node.faults < this.b.faults);
+    const out: Edge[] = [];
+    for (const choice of options) {
+      const budget = spend(node, choice, this.b.repeats);
+      if (!budget) continue;
+      const step = apply(this.spec, node.world, choice, QUIET);
+      if (step.event.error) continue;
+      const to = this.seen.get(this.keyOf(step.world, budget.acts, budget.faults, node.root, this.memory(() => [...pathEvents(this.nodes, index), step.event])));
+      if (to === undefined) return;
+      out.push(edgeOf(this.spec, node.world, choice, to));
+    }
+    this.edges[index] = out;
+    this.enabled[index] = fairStepsIn(this.spec, node.world, options);
+    node.expanded = true;
+  }
+
+  /** Judge a new node: the properties and errors its step meets, and whether it is stuck. */
+  private examine(index: number, alsoBroken: string[] = []): void {
+    const node = this.nodes[index];
+    const { findings, error } = judge(this.spec, node.event, () => pathEvents(this.nodes, index), this.verdicts);
     for (const id of [...findings, ...alsoBroken.filter((id) => !findings.includes(id))]) {
-      search.broken.add(id);
-      failures.set(id, { node: index });
+      this.verdicts.broken.add(id);
+      this.failures.set(id, index);
     }
     if (error) {
-      search.errors.add(error);
-      errors.set(error, index);
+      this.verdicts.errors.add(error);
+      this.errors.set(error, index);
     }
     // Fewest faults first, then shortest (the search goes breadth first).
-    if (!node.shadow && (stuckAt === undefined || node.faults < nodes[stuckAt].faults) && stuck(spec, node.world)) stuckAt = index;
-  };
+    if (!node.shadow && (this.stuckAt === undefined || node.faults < this.nodes[this.stuckAt].faults) && stuck(this.spec, node.world)) this.stuckAt = index;
+  }
 
   /** A state reached again: anything it skipped that this path did not is tried after all. */
-  const revisit = (index: number, world: World, sleep: Map<string, Facts>, next: typeof frontier) => {
-    const node = nodes[index];
+  private revisit(index: number, world: World, sleep: Map<string, Facts>, next: Frontier): void {
+    const node = this.nodes[index];
     if (!node.sleep.size) return;
     // A renamed twin's step names do not match; wake everything rather than translate them.
-    const same = !roots[node.root].symmetry.classes.length || canonical(world) === canonical(node.world);
+    const same = !this.roots[node.root].symmetry.classes.length || canonical(world) === canonical(node.world);
     const woken = new Set([...node.sleep.keys()].filter((k) => !same || !sleep.has(k)));
     if (!woken.size) return;
     for (const k of woken) node.sleep.delete(k);
     if (node.expanded) next.push({ node: index, only: woken });
-  };
-
-  const expand = (index: number, only: Set<string> | undefined, next: typeof frontier): boolean => {
-    const node = nodes[index];
-    const world = node.world;
-    const tried: [string, Facts][] = [];
-    const inputsTried = new Map<string, { inputs: Record<string, unknown>; read: Set<string> }[]>();
-    const options = branches(spec, world, node.faults < b.faults);
-    if (liveness.length) {
-      edges[index] = [];
-      enabled[index] = fairStepsIn(spec, world, options);
-    }
-    for (const choice of options) {
-      if (nodes.length >= b.maxStates) return (stoppedBy = "maxStates"), false;
-      if (Date.now() - started > b.timeLimit) return (stoppedBy = "timeLimit"), false;
-      const name = stepName(world, choice);
-      if (only ? !only.has(name) : node.sleep.has(name)) {
-        if (!only) saved.orders++;
-        continue;
-      }
-      const budget = spend(node, choice, b.repeats);
-      if (!budget) continue;
-      const { acts, faults } = budget;
-      if (choice.kind === "act") {
-        // An earlier try of this action read only inputs this one shares: same result.
-        const twin = b.reduce && inputsTried.get(`${choice.instance}.${choice.key}`)?.find((t) => [...t.read].every((k) => Object.is(t.inputs[k], choice.inputs[k])));
-        if (twin) {
-          saved.inputs++;
-          continue;
-        }
-      }
-      const observed = observation();
-      const step = apply(spec, world, choice, { explain: false, observe: observed });
-      if (choice.kind === "act") {
-        const id = `${choice.instance}.${choice.key}`;
-        inputsTried.set(id, [...(inputsTried.get(id) ?? []), { inputs: choice.inputs, read: observed.inputs }]);
-      }
-      const facts: Facts = {
-        target: targetOf(world, choice),
-        observed,
-        failed: !!step.event.error,
-        setsTimer: step.event.started.length > 0,
-      };
-      // What the child need not try: what this node skipped or already tried, where it commutes with this step.
-      const sleep = new Map<string, Facts>();
-      if (b.reduce && !only) {
-        for (const [k, f] of node.sleep) if (commute(f, facts)) sleep.set(k, f);
-        for (const [k, f] of tried) if (commute(f, facts)) sleep.set(k, f);
-      }
-      tried.push([name, facts]);
-      const remembered = memory(() => [...pathEvents(nodes, index), step.event]);
-      const key = keyOf(step.world, acts, faults, node.root, remembered);
-      // A step that lands on a known state still ran: count it as reached. A step that fails,
-      // or breaks a step property, is judged all the same: its counterexample ends with the
-      // step itself, so it gets a node of its own that stands for nothing else (a shadow).
-      search.reached.add(`${step.event.actor}.${step.event.key}`);
-      const failed = !!step.event.error;
-      const breaks = failed ? [] : stepBreaks(spec, world, step.world, step.event, search.broken);
-      const existing = seen.get(key);
-      // A failed step goes nowhere: no edge for liveness.
-      const edgeTo = (to: number) => liveness.length && !failed && edges[index].push(edgeOf(spec, world, choice, to));
-      const news = breaks.length > 0 || (failed && !search.errors.has(step.event.error!));
-      if (existing !== undefined) edgeTo(existing);
-      if (existing !== undefined && !news) {
-        if (roots[node.root].symmetry.classes.length && !twinsAgree(nodes[existing].world, step.world, node.root)) return (refuted = true), false;
-        if (b.reduce) revisit(existing, step.world, sleep, next);
-        continue;
-      }
-      const shadow = failed || existing !== undefined;
-      if (!shadow) {
-        seen.set(key, nodes.length);
-        edgeTo(nodes.length);
-      }
-      nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts, world: step.world, sleep, expanded: false, ...(shadow ? { shadow } : {}) });
-      if (!shadow) watch.state?.(step.world, { acts, faults, memory: remembered });
-      depthReached = Math.max(depthReached, node.depth + 1);
-      examine(nodes.length - 1, breaks);
-      if (!shadow) next.push({ node: nodes.length - 1 });
-    }
-    node.expanded = true;
-    return true;
-  };
-
-  /** A world at the depth bound: its edges, if each lands on a known state; else it stays open. */
-  const close = (index: number) => {
-    const node = nodes[index];
-    const options = branches(spec, node.world, node.faults < b.faults);
-    const out: Edge[] = [];
-    for (const choice of options) {
-      const budget = spend(node, choice, b.repeats);
-      if (!budget) continue;
-      const step = apply(spec, node.world, choice, QUIET);
-      if (step.event.error) continue;
-      const to = seen.get(keyOf(step.world, budget.acts, budget.faults, node.root, memory(() => [...pathEvents(nodes, index), step.event])));
-      if (to === undefined) return;
-      out.push(edgeOf(spec, node.world, choice, to));
-    }
-    edges[index] = out;
-    enabled[index] = fairStepsIn(spec, node.world, options);
-    node.expanded = true;
-  };
-
-  for (const { node } of frontier) examine(node);
-  search: while (frontier.length) {
-    const next: typeof frontier = [];
-    for (const { node: index, only } of frontier) {
-      if (nodes[index].depth >= b.depth) continue;
-      if (!expand(index, only, next)) break search;
-    }
-    frontier = next;
-  }
-  // Liveness needs the edges out of the worlds at the depth bound too. Where every step from
-  // one lands on a known state, nothing lies past it, and its edges are added: in a space the
-  // bound does not cut, liveness is then judged in full, as TLC would.
-  if (liveness.length && !stoppedBy) for (const [index, node] of nodes.entries()) if (!node.expanded && !node.shadow) close(index);
-
-  if (refuted) {
-    const again = check(spec, { ...bounds, symmetry: false }, seeds, watch);
-    const classes = roots.flatMap((r) => r.symmetry.classes.map((c) => c.ids));
-    const actors = [...new Set(classes.flatMap((ids) => ids.map((id) => roots[0].world.instances.find((i) => i.id === id)?.actor ?? id)))];
-    return { ...again, durationMs: Date.now() - started, reductions: { ...again.reductions, refuted: actors } };
   }
 
-  const counterexample = (index: number) => {
-    const root = roots[nodes[index].root];
-    return { ...replay(spec, root.world, pathChoices(nodes, index)), ...(root.name ? { from: root.name } : {}) };
-  };
-  const fromWalk = (id: string) => {
+  /** Symmetry is a claim; test it on the twins the search merges: both must have the same next steps. */
+  private twinsAgree(a: World, b: World, root: number): boolean {
+    if (this.twinChecks >= TWIN_CHECKS || canonical(a) === canonical(b)) return true;
+    this.twinChecks++;
+    return sameSet(successors(this.spec, a, this.roots[root].symmetry), successors(this.spec, b, this.roots[root].symmetry));
+  }
+
+  /** A state: the world, plus the budget spent getting there, plus what `never` properties remember of the way there (see memoryOf). */
+  private keyOf(world: World, acts: Record<string, number>, faults: number, root: number, remembered: string): string {
+    return `${symmetricKey(world, this.roots[root].symmetry)}${actsKey(acts)}|${faults}|${remembered}`;
+  }
+
+  private memory(events: () => Event[]): string {
+    return this.nevers.length ? memoryOf(this.nevers, events()) : "";
+  }
+}
+
+/** The report: each property's verdict (from the search, else a random run), errors, stuck, coverage. */
+function reportOf(spec: Spec, b: Bounds, seeds: number, search: Search, walked: WalkResult, walkVerdicts: Verdicts, started: number): Report {
+  const { roots, nodes } = search;
+  const named = (root: number, ce: Counterexample): Counterexample => ({ ...ce, ...(roots[root].name ? { from: roots[root].name } : {}) });
+  const fromRoot = (root: number, choices: Choice[]) => named(root, replay(spec, roots[root].world, choices));
+  const fromWalk = (id: string): Counterexample | undefined => {
     const found = walked.findings.find((f) => f.id === id);
-    if (!found) return undefined;
-    const root = roots[found.root];
-    const path = shrink(spec, root.world, found, replay(spec, root.world, found.choices));
-    return { ...path, ...(root.name ? { from: root.name } : {}) };
+    return found && named(found.root, shrink(spec, roots[found.root].world, found, fromRoot(found.root, found.choices)));
   };
-  const judgedLive = liveness.length ? livenessVerdicts(spec, liveness, graphOf(nodes, edges, enabled), (root) => roots[nodes[root].root].name, !!stoppedBy) : new Map<string, PropertyResult>();
-  const properties: PropertyResult[] = spec.properties.map((property) => {
+  const liveness = spec.properties.filter(isLiveness);
+  const judgedLive = liveness.length ? livenessVerdicts(spec, liveness, search.graph(), (root) => roots[nodes[root].root].name, !!search.stoppedBy) : new Map<string, PropertyResult>();
+  const properties = spec.properties.map((property): PropertyResult => {
     const live = judgedLive.get(property.id);
     if (live) return live;
     const base = verdictBase(property);
-    const found = failures.get(property.id);
-    if (found) return { ...base, holds: false, counterexample: counterexample(found.node), foundBy: "search" };
+    const found = search.failures.get(property.id);
+    if (found !== undefined) return { ...base, holds: false, counterexample: search.counterexample(found), foundBy: "search" };
     const walkedTo = fromWalk(property.id);
     if (walkedTo) return { ...base, holds: false, counterexample: walkedTo, foundBy: "walk" };
     return { ...base, holds: true };
   });
-  const stuckFound = stuckAt !== undefined ? { counterexample: counterexample(stuckAt), foundBy: "search" as const } : walked.stuck ? { counterexample: replay(spec, roots[walked.stuck.root].world, walked.stuck.choices), foundBy: "walk" as const } : undefined;
-  const walkErrors = walked.errors.filter((e) => !errors.has(e.message)).map((e) => ({ message: e.message, counterexample: replay(spec, roots[e.root].world, e.choices) }));
-  const reached = new Set([...search.reached, ...v.reached]);
+  const stuckFound =
+    search.stuckAt !== undefined ? { counterexample: search.counterexample(search.stuckAt), foundBy: "search" as const } : walked.stuck ? { counterexample: fromRoot(walked.stuck.root, walked.stuck.choices), foundBy: "walk" as const } : undefined;
+  const walkErrors = walked.errors.filter((e) => !search.errors.has(e.message)).map((e) => ({ message: e.message, counterexample: fromRoot(e.root, e.choices) }));
+  const reached = new Set([...search.verdicts.reached, ...walkVerdicts.reached]);
   const all = allSteps(spec);
   return {
     spec: spec.name,
     bounds: b,
-    seeds: seeds.length,
+    seeds,
     states: nodes.length,
-    exhaustive: !stoppedBy,
-    stoppedBy,
-    depthReached,
+    exhaustive: !search.stoppedBy,
+    stoppedBy: search.stoppedBy,
+    depthReached: search.depthReached,
     durationMs: Date.now() - started,
     properties,
-    errors: [...[...errors].map(([message, index]) => ({ message, counterexample: counterexample(index) })), ...walkErrors],
+    errors: [...[...search.errors].map(([message, index]) => ({ message, counterexample: search.counterexample(index) })), ...walkErrors],
     ...(stuckFound ? { stuck: stuckFound } : {}),
     coverage: { reached: all.filter((k) => reached.has(k)), missed: all.filter((k) => !reached.has(k)) },
     walks: { runs: walked.runs, steps: walked.steps, deepest: walked.deepest },
-    reductions: { ...saved, symmetric: roots[0].symmetry.classes.map((c) => c.labels) },
+    reductions: { ...search.saved, symmetric: roots[0].symmetry.classes.map((c) => c.labels) },
   };
 }
 
