@@ -229,3 +229,35 @@ test("states that hold different sets or maps are different states, and changing
   const pick = neverSeven.counterexample!.events.find((e) => e.key === "pick")!;
   expect(pick.changes.map((c) => c.path).sort()).toEqual(["counts", "done", "picked"]);
 });
+
+test("a step that fails is reported, and a step is reached, even when its state was seen before", async () => {
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  // `poke` is a guarded step, which no counter tells apart, and it throws, which changes
+  // nothing: its state is its parent's. Judging only new states missed both the error and
+  // the step itself.
+  const spec = defineSpec("errors", { messages: {} }, (spec) => {
+    const zone = spec.defineZone({ name: "Z" });
+    const Counter = spec.defineActor({
+      name: "Counter",
+      singleton: true,
+      zone,
+      initialState: () => ({ n: 0 }),
+      actions: { inc: { label: "Inc", description: "Counts one.", when: (state) => state.n < 1, run: (state) => void (state.n += 1) } },
+      transitions: {
+        poke: {
+          description: "Fails at one.",
+          when: (state) => state.n === 1,
+          run() {
+            throw new Error("boom");
+          },
+        },
+      },
+    });
+    return { Counter };
+  });
+  for (const reduce of [false, true]) {
+    const report = check(spec, { depth: 4, walks: 0, reduce });
+    expect(report.errors.map((e) => e.message)).toEqual(["Counter.poke: boom"]);
+    expect(report.coverage.missed).toEqual([]);
+  }
+});
