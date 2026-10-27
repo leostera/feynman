@@ -15,6 +15,7 @@ import { leaseLock } from "../../examples/lease-lock.ts";
 import { logReplication } from "../../examples/log-replication.ts";
 import { lwwRegister } from "../../examples/lww-register.ts";
 import { gCounter } from "../../examples/g-counter.ts";
+import { orSet } from "../../examples/or-set.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -373,6 +374,29 @@ export const corpus: Example[] = [
       project: "GCounter",
       property: "countsEveryIncrementOnceQuiet",
       assertion: "GCounter detected liveness bug in hot state 'Missing'",
+      depth: 10,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcFixed", variant: "fixed", faults: 0 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
+  },
+  {
+    name: "or-set",
+    spec: orSet,
+    instances: { Replica: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 6, faults: 0 }, expect: { convergesOnceQuiet: { events: 4, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 10, faults: 0 }, expect: { convergesOnceQuiet: "holds" } },
+      // An operation-based CRDT needs every operation everywhere: a lost one needs anti-entropy.
+      { variant: "fixed", bounds: { depth: 4, faults: 1 }, expect: { convergesOnceQuiet: { events: 2, faults: 1 } } },
+    ],
+    tla: { module: "OrSet", invariants: ["convergesOnceQuiet"], configs: BOTH_WAYS },
+    p: {
+      project: "OrSet",
+      property: "convergesOnceQuiet",
+      assertion: "OrSet detected liveness bug in hot state 'Apart'",
       depth: 10,
       cases: [
         { testCase: "tcBuggy", variant: "buggy", faults: 0 },
