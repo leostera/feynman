@@ -10,6 +10,7 @@ import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { payments } from "../../examples/payments.ts";
+import { raftVote } from "../../examples/raft-vote.ts";
 import { lightSwitch } from "../../examples/switch.ts";
 import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
 
@@ -147,6 +148,28 @@ export const corpus: Example[] = [
     ],
     tla: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
     p: { project: "AlternatingBit", property: "inOrder", assertion: "the receiver kept an item out of order", depth: 9 },
+  },
+  {
+    name: "raft vote",
+    spec: raftVote,
+    instances: { Node: 3 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { oneLeader: { events: 7, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { oneLeader: "holds" } },
+    ],
+    tla: { module: "RaftVote", invariants: ["oneLeader"], configs: BOTH_WAYS },
+    p: {
+      project: "RaftVote",
+      property: "oneLeader",
+      assertion: "two nodes lead the same term",
+      depth: 8,
+      // The bug needs a restart: the P model's one fault is a restart, never a lost message.
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
   },
 ];
 
