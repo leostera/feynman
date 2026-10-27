@@ -13,6 +13,7 @@ import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { logReplication } from "../../examples/log-replication.ts";
+import { lwwRegister } from "../../examples/lww-register.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -332,6 +333,29 @@ export const corpus: Example[] = [
     ],
     tla: { module: "LogReplication", invariants: ["followerIsPrefix"], configs: BOTH_WAYS },
     p: { project: "LogReplication", property: "followerIsPrefix", assertion: "the follower's log is not the start of the leader's", depth: 14 },
+  },
+  {
+    name: "lww register",
+    spec: lwwRegister,
+    instances: { Writer: 2, Replica: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { convergesOnceQuiet: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 10, faults: 0 }, expect: { convergesOnceQuiet: "holds" } },
+      // Last-writer-wins needs every write everywhere: a lost one needs anti-entropy.
+      { variant: "fixed", bounds: { depth: 6, faults: 1 }, expect: { convergesOnceQuiet: { events: 3, faults: 1 } } },
+    ],
+    tla: { module: "LwwRegister", invariants: ["convergesOnceQuiet"], configs: BOTH_WAYS },
+    p: {
+      project: "LwwRegister",
+      property: "convergesOnceQuiet",
+      assertion: "LWW detected liveness bug in hot state 'Apart'",
+      depth: 10,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcFixed", variant: "fixed", faults: 0 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
   },
 ];
 
