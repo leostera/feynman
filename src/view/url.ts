@@ -4,6 +4,8 @@ export type Page = "play" | "flows" | "checks" | "settings";
 export const NEW_SCENARIO = "new";
 const PAGES: Page[] = ["play", "flows", "checks", "settings"];
 const SPEEDS = [0.25, 1, 5, 25];
+/** Slow enough to follow each message as it moves. */
+export const DEFAULT_SPEED = 0.25;
 
 export interface Route {
   spec: string;
@@ -98,7 +100,7 @@ export function scaleZoom(zoom: ZoomLevel, factor: number): ZoomLevel {
 
 export function parsePlaygroundUrlState(query: URLSearchParams): PlaygroundUrlState {
   const speedValue = Number(query.get("speed"));
-  const speed = SPEEDS.includes(speedValue) ? speedValue : 1;
+  const speed = SPEEDS.includes(speedValue) ? speedValue : DEFAULT_SPEED;
   return {
     speed,
     camera: parseCamera(query.get("camera")) ?? { ...DEFAULT_CAMERA },
