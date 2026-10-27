@@ -19,9 +19,9 @@
 // cannot be sent).
 import type { Fairness, Spec, World } from "../spec/index.ts";
 import { isLiveness } from "../spec/index.ts";
-import { fingerprint, symmetricKeys, type Symmetry } from "./keys.ts";
+import { statePrint, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
-import { FAILED, FAULT, rootMemory, SLEEPY, stateText, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
+import { budgetText, FAILED, FAULT, rootMemory, SLEEPY, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
 import type { Driver, InlineDriver } from "./pool.ts";
 import { PrintMap } from "./prints.ts";
 import type { Choice } from "./steps.ts";
@@ -210,10 +210,10 @@ export class Search {
     const round = emptyRound(1);
     const memory = rootMemory(this.spec);
     for (const [r, { world, symmetry }] of this.roots.entries()) {
-      const keys = symmetricKeys(world, symmetry);
-      const [hi, lo] = fingerprint(stateText(keys.key, { acts: {}, faults: 0 }, memory));
+      const { print, plain } = statePrint(world, symmetry, budgetText({ acts: {}, faults: 0 }, memory));
+      const [hi, lo] = print;
       if (this.seen.get(hi, lo) !== undefined) continue;
-      const gid = this.node({ parent: -1, root: r, option: -1, fault: false, holder: 0, shadow: false, sleepy: false, plain: symmetry.classes.length ? fingerprint(keys.plain) : undefined });
+      const gid = this.node({ parent: -1, root: r, option: -1, fault: false, holder: 0, shadow: false, sleepy: false, plain: symmetry.classes.length ? plain : undefined });
       this.seen.set(hi, lo, gid);
       this.states++;
       round.keep[0].push(-(r + 1), gid);
