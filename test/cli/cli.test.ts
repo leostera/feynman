@@ -141,3 +141,58 @@ test("check type-checks specs: a send that is not declared is an error before an
   expect(check.status).toBe(1);
   expect(check.out).toMatch(/specs\/echo\.ts:\d+:\d+ /);
 }, 60_000);
+
+/** The Echo spec with a property the empty example breaks, marked known or not. */
+const NEVER_EMPTY = (known?: string) =>
+  SPEC(false).replace(
+    "spec.defineInvariants({",
+    `spec.defineInvariants({
+    nothingEmpty: { description: "The server never hears nothing.", always: (w) => !w.the(Server).state.heard.includes("")${known ? `, known: ${JSON.stringify(known)}` : ""} },`,
+  );
+
+test("check --brief, --only, --json and --as-scenario: what agents read", async () => {
+  const { root, commit } = repo();
+  writeFileSync(join(root, "specs/echo.ts"), NEVER_EMPTY());
+  commit("echo");
+  const brief = await capture(["check", "--depth", "4", "--brief"], root);
+  expect(brief.status).toBe(1);
+  expect(brief.out).toContain("✗ nothingEmpty");
+  expect(brief.out).toContain("shortest counterexample, 2 event(s), needs no faults; see it with feynman check specs/echo.ts --only nothingEmpty");
+  expect(brief.out).not.toContain("Repeats what it hears.");
+
+  const only = await capture(["check", "--depth", "4", "--only", "nothingEmpty"], root);
+  expect(only.out).toContain("Repeats what it hears.");
+  expect(only.out).not.toContain("serverHearsEverything");
+
+  const json = JSON.parse((await capture(["check", "--depth", "4", "--json"], root)).out);
+  expect(json.ok).toBe(false);
+  const [spec] = json.specs;
+  expect(spec.scenarios).toEqual([{ name: "Say nothing", broken: "nothingEmpty", known: false }]);
+  const property = spec.properties.find((p: { id: string }) => p.id === "nothingEmpty");
+  expect(property.verdict).toBe("broken");
+  expect(property.counterexample.faults).toBe(0);
+  expect(property.counterexample.events.map((e: { instance: string; step: string }) => `${e.instance} ${e.step}`)).toEqual(["Client say", "Server message:Say"]);
+
+  const code = await capture(["check", "--depth", "4", "--only", "nothingEmpty", "--as-scenario"], root);
+  expect(code.out).toContain('const client = s.spawn(Client, "Client");');
+  expect(code.out).toContain('s.act(client, "say", {"text":""});');
+  expect(code.out).toContain('s.deliver(server, "Say"); // from client');
+
+  await expect(main(["check", "--as-scenario"], root)).rejects.toThrow("name its property with --only");
+  await expect(main(["check", "--only", "nope"], root)).rejects.toThrow("No property named nope");
+}, 60_000);
+
+test("check: a property marked known is reported but does not fail, until it holds", async () => {
+  const { root, commit } = repo();
+  writeFileSync(join(root, "specs/echo.ts"), NEVER_EMPTY("ECHO-1: empty messages are not refused yet"));
+  commit("echo");
+  const known = await capture(["check", "--depth", "4"], root);
+  expect(known.out).toContain('✗ scenario "Say nothing": nothingEmpty (known bug)');
+  expect(known.out).toContain("known bug: ECHO-1: empty messages are not refused yet");
+  expect(known.status).toBe(0);
+  // Fixed: the mark is stale, and check says so.
+  writeFileSync(join(root, "specs/echo.ts"), NEVER_EMPTY("ECHO-1").replace("state.heard.push(msg.text);", "if (msg.text) state.heard.push(msg.text);"));
+  const fixed = await capture(["check", "--depth", "4"], root);
+  expect(fixed.out).toContain('marked known ("ECHO-1"), but holds now: remove known');
+  expect(fixed.status).toBe(1);
+}, 60_000);

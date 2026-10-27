@@ -390,7 +390,7 @@ export interface Trace {
   some(predicate: (event: TraceEvent) => boolean): boolean;
 }
 
-export type InvariantDef =
+export type InvariantDef = (
   | { description: string; always: (world: World) => boolean }
   | {
       description: string;
@@ -398,7 +398,15 @@ export type InvariantDef =
       eventually: (world: World) => boolean;
       after?: (world: World) => boolean;
     }
-  | { description: string; never: (trace: Trace) => boolean };
+  | { description: string; never: (trace: Trace) => boolean }
+) & {
+  /**
+   * A known bug: the property states what should hold, the system does not do it yet, and
+   * `check` expects it broken. Say why, or link the issue. Check reports it, but it does not
+   * fail; once the property holds, check fails until `known` is removed.
+   */
+  known?: string;
+};
 
 type ActionInputs<A, K extends keyof A> = InputsOf<A[K]>;
 type NoInputs<A> = { [K in keyof A & string]: keyof A[K] extends never ? K : never }[keyof A & string];
@@ -428,6 +436,15 @@ export interface Script {
   lose(key: string): void;
   /** Restart an instance: its state returns to its initial value, except durable fields. */
   restart(who: Instance<any, any>): void;
+  /**
+   * Deliver a message in flight to `who` now, ahead of the rest: the oldest one named
+   * `message`, or the oldest carrying `payload` when given. Any message may overtake another.
+   */
+  deliver(who: Instance<any, any>, message: string, payload?: unknown): void;
+  /** Lose a message in flight to `who` now, picked as `deliver` picks it. A fault. */
+  drop(who: Instance<any, any>, message: string, payload?: unknown): void;
+  /** Run one of `who`'s internal transitions whose `when` guard holds now. */
+  step(who: Instance<any, any>, transition: string): void;
   /** The world now, to read state between steps. */
   readonly world: World;
 }
@@ -628,7 +645,8 @@ function inputKind(type: InputType): "string" | "number" | "boolean" | "choice" 
 }
 
 function invariantInfo(id: string, def: InvariantDef): InvariantInfo {
-  if ("always" in def) return { id, description: def.description, kind: "always", always: def.always };
-  if ("eventually" in def) return { id, description: def.description, kind: "eventually", eventually: def.eventually, after: def.after };
-  return { id, description: def.description, kind: "never", never: def.never };
+  const known = def.known === undefined ? {} : { known: def.known };
+  if ("always" in def) return { id, description: def.description, kind: "always", always: def.always, ...known };
+  if ("eventually" in def) return { id, description: def.description, kind: "eventually", eventually: def.eventually, after: def.after, ...known };
+  return { id, description: def.description, kind: "never", never: def.never, ...known };
 }

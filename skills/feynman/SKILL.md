@@ -70,6 +70,10 @@ able to point at every actor, message and step and say where it is.
 - **Scope follows the request.** "The whole pipeline" means all of it. If that is too much
   for one spec, write several specs, one per behaviour. Never compress it into fewer,
   vaguer steps.
+- **More specs, not bigger ones.** When a new behaviour comes up (a race, a recovery path,
+  a second flow through the same actors), write a new spec for it rather than growing an
+  existing one. Each spec stays small enough to explore exhaustively, and its
+  counterexamples stay short enough to read. Actors may appear in several specs.
 
 What to leave out: logging, metrics, retries the user can't observe. Leave state out only
 if it never decides what happens next.
@@ -98,9 +102,23 @@ Before you finish, go through the spec once more. For each actor, message and st
    Fix what it reports. "Stands for N pieces of code in M files" means one step is
    hiding several stages: split it. "Never ran" means no scenario or explored path
    reached those steps, so nothing about them was tested.
-4. **When a counterexample appears**, decide whether it is a bug in the spec (the model
-   is wrong) or a finding in the system (the code really does this). Do not weaken an
-   invariant to make a finding go away; report it.
+4. **When a counterexample appears**, read it (`feynman check <behaviour> --only <property>`)
+   and sort it into one of three:
+   - **A spec mistake:** the model does something the code does not. Fix the model.
+   - **Intended behaviour:** the code means to do this, and the invariant asked for too
+     much. Rewrite the invariant to state what the code does guarantee, and show the
+     behaviour in a scenario whose description says it is intended.
+   - **A finding:** the code really does this, and should not. Do not weaken the invariant
+     to make it go away; report it.
+
+   Then judge how likely a finding is before anyone writes tests or files issues. Check
+   says how many faults each counterexample needs (it searches again with fewer, so "needs
+   no faults" means it happens in normal operation, without a lost message or a restart).
+   One fault on a rare path is a different finding from a plain delete-then-create. When
+   you can reach production evidence (logs, error tracking, metrics), look for whether it
+   happens, and say what you found; keep only findings with evidence or a severe outcome.
+   A finding that stays until it is fixed gets `known: "why, or the issue"` on its
+   property: check still reports it, but no longer fails on it.
 5. Run `feynman run <behaviour>` to read the traces of the scenarios as text.
 6. Once the spec is right, run `feynman lock`. It records the code each source stands
    for, so later checks flag sources whose code changed.
@@ -270,6 +288,8 @@ export default defineSpec(
       pendingResolves: { description: "A Mac waiting for an answer gets one.", eventually: (w) => w.all(Mac).every((m) => m.state.pending === null) },
       // never: no trace has this shape.
       redeemedOnce: { description: "A code is never redeemed twice.", never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")) },
+      // known: a bug found and not fixed yet. Check reports it without failing, and fails once it holds.
+      // codesExpire: { description: "…", always: (w) => …, known: "RELAY-12: expiry is not enforced yet" },
     });
 
     // Scenarios: the flows a reader should see, scripted. Each becomes a flow and a playground start.
@@ -285,6 +305,9 @@ export default defineSpec(
         s.settle();
         // s.the(Actor) reaches singletons; s.world reads the whole world.
         if (!s.the(Relay).state.codes) throw new Error("unreachable");
+        // One step at a time, in any order: s.deliver(relay, "Redeem") delivers a message in
+        // flight now, s.drop(relay, "Redeem") loses it, s.fire(studio, "retry") fires a timer,
+        // s.step(who, "transition") runs a guarded transition, s.restart(who) restarts.
       },
     });
 
@@ -566,6 +589,7 @@ feynman list                   the specs found
 feynman run [spec] [--scenario NAME]
 feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
               [--walks 2000] [--walk-depth 120] [--no-symmetry]
+              [--only P,Q] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
@@ -582,7 +606,22 @@ Read the verdicts as:
 - `✓` holds in every state within the bounds;
 - `~` held in the states explored, but the search stopped early: not a proof;
 - `?` never tested: no explored world got to where it applies (add a scenario that does);
-- `✗` broken, by the search, a random run, or a scenario.
+- `✗` broken, by the search, a random run, or a scenario; in yellow with "known bug" when
+  the property is marked `known`, which does not fail the check.
+
+Each counterexample says how many faults it needs: the fewest with which the property
+breaks within the bounds, and the length of a shorter path that needs more, if there is one.
+
+Read check's output with its own flags, not with grep:
+
+- `--brief`: one line per property, and for each counterexample its length and faults.
+  Start here when several specs or properties fail.
+- `--only P`: check and show only property P, with its counterexample.
+- `--json`: everything, structured: verdicts, counterexamples with their events, scenario
+  failures, sources. For scripts, and for reading many results at once.
+- `--only P --as-scenario`: P's counterexample as `spec.defineScenario` code that replays
+  it step by step. Paste it into the spec to keep the bug as a flow, and use it as the
+  outline of a regression test in the system's own test suite.
 
 When `check` stops at its limits, it says so. If that happens, lower `--depth`, use
 fewer instances, or narrow the examples of inputs. An explored state space that is too
@@ -603,5 +642,6 @@ When you finish, report:
 - what it covers and what it leaves out;
 - the scenarios;
 - the check result: which properties hold, within which bounds, and every counterexample,
-  each classified as a spec mistake (fixed) or a system finding (with the trace);
+  each classified as a spec mistake (fixed), intended behaviour (invariant rewritten), or a
+  system finding (with the trace, the faults it needs, and any production evidence);
 - any sources you could not pin down.

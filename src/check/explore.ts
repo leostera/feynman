@@ -95,6 +95,13 @@ export interface PropertyResult {
   tested?: number;
   /** Who found the counterexample: the search (shortest), or a random run (shrunk, maybe not shortest). */
   foundBy?: "search" | "walk";
+  /** A known bug: why the property is expected to break. */
+  known?: string;
+  /**
+   * When the counterexample is not the shortest because a shorter one needs more faults:
+   * that one's length and faults (see withFewestFaults).
+   */
+  shorter?: { events: number; faults: number };
 }
 
 export interface Report {
@@ -334,7 +341,7 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
     return { counterexample: { ...path, ...(root.name ? { from: root.name } : {}) }, then };
   };
   const properties: PropertyResult[] = spec.invariants.map((invariant) => {
-    const base = { id: invariant.id, kind: invariant.kind, description: invariant.description, ...(invariant.kind === "eventually" ? { tested: (search.tested.get(invariant.id) ?? 0) + (v.tested.get(invariant.id) ?? 0) } : {}) };
+    const base = { id: invariant.id, kind: invariant.kind, description: invariant.description, ...(invariant.known === undefined ? {} : { known: invariant.known }), ...(invariant.kind === "eventually" ? { tested: (search.tested.get(invariant.id) ?? 0) + (v.tested.get(invariant.id) ?? 0) } : {}) };
     const found = failures.get(invariant.id);
     if (found) return { ...base, holds: false, counterexample: counterexample(found.node), ...(found.then ? { then: found.then } : {}), foundBy: "search" as const };
     const walkedTo = fromWalk(invariant.id);
