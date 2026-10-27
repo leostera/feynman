@@ -26,14 +26,20 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Take, Granted, Release } = spec.messages;
-      const zone = spec.defineZone({ name: "Table", place: { arrange: "ring" } });
+      const zone = spec.defineZone({ name: "Table", description: "a fork between each pair of philosophers", place: { arrange: "ring" } });
 
-      const fork = (name: string) =>
+      const fork = (name: string, order: number) =>
         spec.defineActor({
           name,
           zone,
           singleton: true,
+          place: { order },
           initialState: () => ({ holder: null as string | null, queue: [] as string[] }),
+          look: {
+            icon: "lock",
+            status: (s) => (s.holder ? `held by ${s.holder}${s.queue.length ? `, ${s.queue.join(", ")} waiting` : ""}` : "on the table"),
+            mood: (s) => (s.holder ? (s.queue.length ? "warn" : "busy") : "off"),
+          },
           transitions: {
             [Take]: {
               description: "Hands the fork over if it is free; otherwise queues the request.",
@@ -55,15 +61,21 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
             },
           },
         });
-      const ForkOne = fork("Fork one");
-      const ForkTwo = fork("Fork two");
+      const ForkOne = fork("Fork one", 1);
+      const ForkTwo = fork("Fork two", 3);
 
-      const philosopher = (name: string, order: [typeof ForkOne, typeof ForkOne]) =>
+      const philosopher = (name: string, order: [typeof ForkOne, typeof ForkOne], seat: number) =>
         spec.defineActor({
           name,
           zone,
           singleton: true,
+          place: { order: seat },
           initialState: () => ({ phase: "thinking" as "thinking" | "first" | "second" | "eating", meals: 0 }),
+          look: {
+            icon: "person",
+            status: (s) => ({ thinking: "thinking", first: "reaching for a fork", second: "holds one fork, waits for the other", eating: "eating" })[s.phase] + (s.meals ? ` · ${s.meals} meal(s)` : ""),
+            mood: (s) => ({ thinking: "off", first: "busy", second: "warn", eating: "ok" })[s.phase] as "off" | "busy" | "warn" | "ok",
+          },
           actions: {
             eat: {
               label: "Get hungry",
@@ -100,13 +112,35 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
             },
           },
         });
-      const Plato = philosopher("Plato", [ForkOne, ForkTwo]);
-      const Kant = philosopher("Kant", variant === "buggy" ? [ForkTwo, ForkOne] : [ForkOne, ForkTwo]);
+      const Plato = philosopher("Plato", [ForkOne, ForkTwo], 0);
+      const Kant = philosopher("Kant", variant === "buggy" ? [ForkTwo, ForkOne] : [ForkOne, ForkTwo], 2);
 
       spec.defineInvariants({
         noDeadlock: {
           description: "Never does each philosopher hold one fork while waiting for the other's.",
           always: (w) => !(w.the(Plato).state.phase === "second" && w.the(Kant).state.phase === "second"),
+        },
+      });
+      spec.defineScenario({
+        name: "Plato eats",
+        description: "Plato takes both forks, eats, and puts them back.",
+        run(s) {
+          s.act(s.the(Plato), "eat");
+          s.settle();
+          s.act(s.the(Plato), "finish");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Both get hungry",
+        description:
+          variant === "buggy"
+            ? "Plato takes fork one and Kant fork two; each waits for the other's: deadlock."
+            : "Both reach for fork one first: Plato gets it and eats, and Kant waits his turn.",
+        run(s) {
+          s.act(s.the(Plato), "eat");
+          s.act(s.the(Kant), "eat");
+          s.settle();
         },
       });
       return { ForkOne, ForkTwo, Plato, Kant };
