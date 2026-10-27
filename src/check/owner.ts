@@ -10,7 +10,7 @@
 // node ids of the ones to keep (`prepare`), before the next round of expanding (`expand`).
 import { actorNamed, freeze, holdsIn, isLiveness, observation, traceView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { stepBreaks, stuck } from "./judge.ts";
-import { fingerprint, nameHash, NO_SYMMETRY, pendingText, symmetricKey, symmetricKeys, symmetryOf, type Symmetry } from "./keys.ts";
+import { fingerprint, nameHash, NO_SYMMETRY, pendingText, statePrint, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 import { predicatesOf, type FairId, type Predicate } from "./liveness.ts";
 import { apply, branches, QUIET, type Choice } from "./steps.ts";
 import type { Bounds } from "./explore.ts";
@@ -267,7 +267,7 @@ export class Owner {
         if (!budget) return;
         const step = apply(this.spec, node.world, choice, QUIET);
         if (step.event.error) return;
-        prints.push(...fingerprint(stateText(symmetricKey(step.world, this.roots[node.root].symmetry), budget, this.memory(() => [...eventsOf(node.trail), step.event]))));
+        prints.push(...statePrint(step.world, this.roots[node.root].symmetry, budgetText(budget, this.memory(() => [...eventsOf(node.trail), step.event]))).print);
         indexes.push(option);
         faults.push(isFault(choice) ? 1 : 0);
         fair.push(fairness(this.spec, node.world, choice)?.id ?? NaN);
@@ -336,9 +336,9 @@ export class Owner {
     const k = this.candidates.length;
     this.candidates.push({ world: step.world, acts: budget.acts, faults: budget.faults, depth: node.depth + 1, root: node.root, sleep, trail, memory });
     const symmetry = this.roots[node.root].symmetry;
-    const keys = symmetricKeys(step.world, symmetry);
-    out.prints.push(...fingerprint(stateText(keys.key, budget, memory)));
-    out.plains.push(...(symmetry.classes.length ? fingerprint(keys.plain) : [0, 0]));
+    const { print, plain } = statePrint(step.world, symmetry, budgetText(budget, memory));
+    out.prints.push(...print);
+    out.plains.push(...(symmetry.classes.length ? plain : [0, 0]));
     out.options.push(option);
     out.flags.push((event.error ? FAILED : 0) | (isFault(choice) ? FAULT : 0) | (sleep.size ? SLEEPY : 0));
     if (this.keepsEdges) out.fair.push(fairness(this.spec, node.world, choice)?.id ?? NaN);
@@ -411,11 +411,11 @@ export class Owner {
 }
 
 /**
- * The text a state's fingerprint is taken of: the world's key up to symmetry, the budget spent,
- * and what `never` properties remember. The coordinator takes the roots' with it too.
+ * What a state is besides its world: the budget spent getting there, and what `never`
+ * properties remember of the way. The coordinator fingerprints the roots with it too.
  */
-export function stateText(worldKey: string, budget: { acts: Acts; faults: number }, memory: string): string {
-  return `${worldKey}${actsKey(budget.acts)}|${budget.faults}|${memory}`;
+export function budgetText(budget: { acts: Acts; faults: number }, memory: string): string {
+  return `${actsKey(budget.acts)}|${budget.faults}|${memory}`;
 }
 
 /** What `never` properties remember of no path at all: a root's memory. */
@@ -466,8 +466,13 @@ function isFault(choice: Choice): boolean {
   return choice.kind === "lose" || choice.kind === "restart";
 }
 
+/** Actions taken, written once per budget object: steps other than actions pass theirs on. */
+const actsKeys = new WeakMap<Acts, string>();
+
 function actsKey(acts: Acts): string {
-  return JSON.stringify(Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1)));
+  let key = actsKeys.get(acts);
+  if (key === undefined) actsKeys.set(acts, (key = JSON.stringify(Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1)))));
+  return key;
 }
 
 function eventsOf(trail: Trail | undefined): Event[] {

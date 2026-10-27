@@ -532,7 +532,11 @@ function uniqueId(world: World, base: string): string {
   for (let n = 2; ; n++) if (!world.instances.some((i) => i.id === `${base}-${n}`)) return `${base}-${n}`;
 }
 
-/** A deep copy. States and payloads are plain data, so plain objects and arrays are copied by hand, which is much faster than structuredClone; anything else (a Map, a Date) falls back to it. */
+/**
+ * A deep copy. States and payloads are plain data, so plain objects, arrays, sets, maps and
+ * dates are copied by hand, which is much faster than structuredClone; anything else falls
+ * back to it.
+ */
 export function clone<T>(value: T): T {
   if (value === null || typeof value !== "object") return value;
   if (Array.isArray(value)) {
@@ -540,7 +544,18 @@ export function clone<T>(value: T): T {
     for (let i = 0; i < value.length; i++) out[i] = clone(value[i]);
     return out as T;
   }
-  if (Object.getPrototypeOf(value) !== Object.prototype) return structuredClone(value);
+  if (value instanceof Set) {
+    const out = new Set();
+    for (const member of value) out.add(clone(member));
+    return out as T;
+  }
+  if (value instanceof Map) {
+    const out = new Map();
+    for (const [k, v] of value) out.set(clone(k), clone(v));
+    return out as T;
+  }
+  if (value instanceof Date) return new Date(value.getTime()) as T;
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return structuredClone(value);
   const out: Record<string, unknown> = {};
   for (const key in value) out[key] = clone((value as Record<string, unknown>)[key]);
   return out as T;

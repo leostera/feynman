@@ -14,36 +14,68 @@
  * `{"$number": "NaN"}`, `{"$undefined": true}`, `{"$bigint": "12"}`, `{"$date": "..."}`.
  */
 export function sortedJson(value: unknown): string {
-  return JSON.stringify(value, sortReplacer) ?? "null";
+  return write(value, "") ?? "null";
 }
 
-function sortReplacer(this: unknown, key: string, v: unknown): unknown {
-  // A date has already become its toJSON text (null, if invalid); the holder still has the date.
-  const raw = (this as Record<string, unknown>)[key];
-  if (raw instanceof Date) return { $date: Number.isNaN(raw.getTime()) ? "invalid" : raw.toISOString() };
+/**
+ * A value's text, written directly (the checker writes one for every state it meets). The
+ * key it is held under matters only for `$set` and `$map`: an array under one is a set's or a
+ * map's members, written in the order of their text. Undefined for what JSON leaves out of an
+ * object: functions and symbols, which states never hold (see unstorable).
+ */
+function write(v: unknown, key: string): string | undefined {
   switch (typeof v) {
+    case "string":
+      return JSON.stringify(v);
+    case "boolean":
+      return v ? "true" : "false";
     case "undefined":
-      return { $undefined: true };
+      return '{"$undefined":true}';
     case "number":
-      return Number.isFinite(v) && !Object.is(v, -0) ? v : { $number: Object.is(v, -0) ? "-0" : String(v) };
+      return Number.isFinite(v) && !Object.is(v, -0) ? JSON.stringify(v) : `{"$number":${JSON.stringify(Object.is(v, -0) ? "-0" : String(v))}}`;
     case "bigint":
-      return { $bigint: String(v) };
-    case "object":
-      if (v === null) return v;
-      if (v instanceof Set) return { $set: [...v] };
-      if (v instanceof Map) return { $map: [...v] };
-      if (Array.isArray(v)) return key === "$set" || key === "$map" ? byText(v) : v;
-      return Object.fromEntries(Object.keys(v).sort().map((k) => [k, (v as Record<string, unknown>)[k]]));
+      return `{"$bigint":${JSON.stringify(String(v))}}`;
+    case "object": {
+      if (v === null) return "null";
+      if (v instanceof Date) return `{"$date":${JSON.stringify(Number.isNaN(v.getTime()) ? "invalid" : v.toISOString())}}`;
+      if (v instanceof Set) return `{"$set":${members([...v])}}`;
+      if (v instanceof Map) return `{"$map":${members([...v])}}`;
+      if (Array.isArray(v)) return key === "$set" || key === "$map" ? members(v) : `[${v.map((x) => write(x, "") ?? "null").join(",")}]`;
+      const parts: string[] = [];
+      for (const k of keyOrder(v)) {
+        const text = write((v as Record<string, unknown>)[k], k);
+        if (text !== undefined) parts.push(`${JSON.stringify(k)}:${text}`);
+      }
+      return `{${parts.join(",")}}`;
+    }
     default:
-      return v;
+      return undefined;
   }
 }
 
-/** Members in the order of their text. Sorted as pairs: Array.sort puts undefined last without asking. */
-function byText(values: unknown[]): unknown[] {
-  const keyed = values.map((v) => [sortedJson(v), v] as const);
-  keyed.sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0));
-  return keyed.map(([, v]) => v);
+/**
+ * An object's keys in the order the text has always had them: integer-like keys first, in
+ * numeric order (as JavaScript keeps them in any object), then the rest sorted.
+ */
+function keyOrder(v: object): string[] {
+  const keys = Object.keys(v);
+  // Object.keys lists integer-like keys first, already in numeric order.
+  let integers = 0;
+  while (integers < keys.length && isIndex(keys[integers])) integers++;
+  if (integers === keys.length) return keys;
+  return [...keys.slice(0, integers), ...keys.slice(integers).sort()];
+}
+
+function isIndex(key: string): boolean {
+  const n = Number(key);
+  return Number.isInteger(n) && n >= 0 && n < 2 ** 32 - 1 && String(n) === key;
+}
+
+/** A set's or a map's members, in the order of their text. */
+function members(values: unknown[]): string {
+  const texts = values.map((x) => write(x, "") ?? "null");
+  texts.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  return `[${texts.join(",")}]`;
 }
 
 /**
@@ -58,15 +90,32 @@ export function unstorable(value: unknown, path: string): string | undefined {
     case "symbol":
       return `${path}: a symbol`;
     case "object": {
+      // Paths are written only for what is found: the engine checks every state it makes.
       if (value === null || value instanceof Date) return undefined;
-      if (Array.isArray(value)) return firstOf(value.map((v, i) => () => unstorable(v, `${path}[${i}]`)));
-      if (value instanceof Set) return firstOf([...value].map((v) => () => unstorable(v, `${path} (a member)`)));
-      if (value instanceof Map) return firstOf([...value].flatMap(([k, v]) => [() => unstorable(k, `${path} (a key)`), () => unstorable(v, `${path}.get(${String(k)})`)]));
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) if (!plain(value[i])) return unstorable(value[i], `${path}[${i}]`);
+        return undefined;
+      }
+      if (value instanceof Set) {
+        for (const v of value) if (!plain(v)) return unstorable(v, `${path} (a member)`);
+        return undefined;
+      }
+      if (value instanceof Map) {
+        for (const [k, v] of value) {
+          if (!plain(k)) return unstorable(k, `${path} (a key)`);
+          if (!plain(v)) return unstorable(v, `${path}.get(${String(k)})`);
+        }
+        return undefined;
+      }
       const proto = Object.getPrototypeOf(value);
       if (proto !== Object.prototype && proto !== null) return `${path}: an instance of ${proto?.constructor?.name ?? "a class"}`;
       const keys = Object.keys(value);
       if (keys.length === 1 && MARKERS.has(keys[0])) return `${path}: an object whose only key is ${keys[0]}, which is how a key writes another kind of value`;
-      return firstOf(Object.keys(value).map((k) => () => unstorable((value as Record<string, unknown>)[k], `${path}.${k}`)));
+      for (const k of keys) {
+        const v = (value as Record<string, unknown>)[k];
+        if (!plain(v)) return unstorable(v, `${path}.${k}`);
+      }
+      return undefined;
     }
     default:
       return undefined;
@@ -76,10 +125,34 @@ export function unstorable(value: unknown, path: string): string | undefined {
 /** The keys `sortedJson` writes values plain JSON loses with; a plain object made of one is refused. */
 const MARKERS = new Set(["$set", "$map", "$number", "$undefined", "$bigint", "$date"]);
 
-function firstOf(checks: (() => string | undefined)[]): string | undefined {
-  for (const check of checks) {
-    const found = check();
-    if (found) return found;
+/** Whether a value is plain data all the way down: what `unstorable` finds nothing in, without writing paths. */
+function plain(value: unknown): boolean {
+  switch (typeof value) {
+    case "function":
+    case "symbol":
+      return false;
+    case "object": {
+      if (value === null || value instanceof Date) return true;
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) if (!plain(value[i])) return false;
+        return true;
+      }
+      if (value instanceof Set) {
+        for (const v of value) if (!plain(v)) return false;
+        return true;
+      }
+      if (value instanceof Map) {
+        for (const [k, v] of value) if (!plain(k) || !plain(v)) return false;
+        return true;
+      }
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) return false;
+      const keys = Object.keys(value);
+      if (keys.length === 1 && MARKERS.has(keys[0])) return false;
+      for (const k of keys) if (!plain((value as Record<string, unknown>)[k])) return false;
+      return true;
+    }
+    default:
+      return true;
   }
-  return undefined;
 }
