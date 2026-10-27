@@ -2,6 +2,7 @@
 import { act, choices, emptyWorld, fire, guard, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
+import { sortedJson } from "./json.ts";
 
 /** Most events one settle runs: left alone, a retry loop never ends by itself. */
 export const SETTLE_LIMIT = 200;
@@ -79,11 +80,11 @@ export class Runner {
   /** A message in flight to `instance`: the oldest named `message`, or the oldest carrying `payload`. */
   inFlight(instance: string, message: string, payload?: unknown): number {
     const key = message.startsWith("message:") ? message : `message:${message}`;
-    const wanted = payload === undefined ? undefined : JSON.stringify(payload);
+    const wanted = payload === undefined ? undefined : sortedJson(payload);
     const match = this.current.pending
       .filter((p) => p.kind === "deliver" && p.to === instance && p.message === key)
       .sort((a, b) => a.id - b.id)
-      .find((p) => wanted === undefined || (p.kind === "deliver" && JSON.stringify(p.payload) === wanted));
+      .find((p) => wanted === undefined || (p.kind === "deliver" && sortedJson(p.payload) === wanted));
     if (!match) throw new SpecError(`No ${key.slice("message:".length)}${wanted ? ` carrying ${wanted}` : ""} is in flight to ${instance}`);
     return match.id;
   }

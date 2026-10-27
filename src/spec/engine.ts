@@ -8,6 +8,7 @@
 // instance's state fails loudly instead of corrupting the past.
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
 import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
+import { sortedJson } from "./json.ts";
 
 export interface Step {
   world: World;
@@ -560,12 +561,13 @@ export function diff(instance: string, before: unknown, after: unknown, path = "
     const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
     return keys.flatMap((key) => diff(instance, before[key], after[key], join(path, key)));
   }
-  if (JSON.stringify(before) === JSON.stringify(after)) return [];
+  if (sortedJson(before) === sortedJson(after)) return [];
   return [{ instance, path, before: clone(before), after: clone(after) }];
 }
 
+/** A plain object, walked key by key; sets, maps and other objects are compared whole. */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 }
 
 function join(path: string, key: string): string {
