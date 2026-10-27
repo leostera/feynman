@@ -2,7 +2,7 @@
   {
     "slug": "github.com/leostera/axo",
     "title": "axo: remote access",
-    "summary": "People pair their Macs with a one-time code, then open a terminal on them from a browser, through Cloudflare Access and a relay of Durable Objects. Add Macs and phones, lose messages, revoke a Mac.",
+    "summary": "Follow remote access from a one-time pairing code to a browser terminal, through Cloudflare Access and Durable Objects. Try adding a Mac, dropping messages, or revoking access.",
     "repository": "https://github.com/leostera/axo",
     "commit": "3f5d3c28f7106c8cdbf021fb89126a7848d806b6",
     "specs": [
@@ -15,7 +15,7 @@
   {
     "slug": "github.com/leostera/feynman",
     "title": "Feynman's examples",
-    "summary": "Seven well-known systems, each with a real bug: retries that debit twice, two-phase commit deciding too early, a lease lock without fencing, a stale cache fill, leader election, a job queue doing work twice, and a switch. Step through them, lose messages, and read the checker's counterexamples.",
+    "summary": "Explore seven models: payments, two-phase commit, lease locks, caches, leader election, job queues, and a switch. Several include deliberate bugs; inspect the counterexamples and see what message loss changes.",
     "repository": "https://github.com/leostera/feynman",
     "build": "deploy",
     "commit": null,
