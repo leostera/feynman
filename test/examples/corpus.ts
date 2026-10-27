@@ -12,6 +12,7 @@ import { diningPhilosophers } from "../../examples/dining-philosophers.ts";
 import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
+import { logReplication } from "../../examples/log-replication.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -321,6 +322,16 @@ export const corpus: Example[] = [
     ],
     tla: { module: "ChainReplication", invariants: ["monotonicReads"], configs: BOTH_WAYS },
     p: { project: "ChainReplication", property: "monotonicReads", assertion: "a read came back older than one already read", depth: 14 },
+  },
+  {
+    name: "log replication",
+    spec: logReplication,
+    cases: [
+      { variant: "buggy", bounds: { depth: 6, faults: 0 }, expect: { followerIsPrefix: { events: 3, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 14, faults: 1 }, expect: { followerIsPrefix: "holds" } },
+    ],
+    tla: { module: "LogReplication", invariants: ["followerIsPrefix"], configs: BOTH_WAYS },
+    p: { project: "LogReplication", property: "followerIsPrefix", assertion: "the follower's log is not the start of the leader's", depth: 14 },
   },
 ];
 
