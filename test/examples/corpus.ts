@@ -6,6 +6,7 @@ import type { Bounds } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
 import { alternatingBit } from "../../examples/alternating-bit.ts";
 import { cache } from "../../examples/cache.ts";
+import { changRoberts } from "../../examples/chang-roberts.ts";
 import { diningPhilosophers } from "../../examples/dining-philosophers.ts";
 import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
@@ -241,6 +242,17 @@ export const corpus: Example[] = [
     ],
     tla: { module: "TokenRing", invariants: ["oneToken"], depth: 8, configs: BOTH_WAYS },
     p: { project: "TokenRing", property: "oneToken", assertion: "two nodes hold the token", depth: 8 },
+  },
+  {
+    name: "chang-roberts",
+    spec: changRoberts,
+    instances: { Node: 3 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { oneLeader: { events: 3, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { oneLeader: "holds" } },
+    ],
+    tla: { module: "ChangRoberts", invariants: ["oneLeader"], configs: BOTH_WAYS },
+    p: { project: "ChangRoberts", property: "oneLeader", assertion: "two nodes lead", depth: 9 },
   },
 ];
 
