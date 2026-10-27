@@ -35,6 +35,7 @@ bun run feynman dev                # every example in the simulator
 | `chain-replication.ts` | Reading from the head, then the tail: a value goes back in time | monotonic reads, an input that picks the instance to ask |
 | `log-replication.ts` | A follower appending whatever entry arrives: the second overtakes the first and the logs differ | ordering by index, catching up by asking |
 | `lww-register.ts` | Last-writer-wins without a tie-break: two writes stamped alike, kept in different orders, and the replicas never agree | convergence as a safety property, total orders; a lost write needs anti-entropy |
+| `g-counter.ts` | A counter merged by its larger total: increments made at the same time are lost | state-based CRDTs, merges that keep what both sides know |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was

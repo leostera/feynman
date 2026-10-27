@@ -14,6 +14,7 @@ import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { logReplication } from "../../examples/log-replication.ts";
 import { lwwRegister } from "../../examples/lww-register.ts";
+import { gCounter } from "../../examples/g-counter.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -349,6 +350,29 @@ export const corpus: Example[] = [
       project: "LwwRegister",
       property: "convergesOnceQuiet",
       assertion: "LWW detected liveness bug in hot state 'Apart'",
+      depth: 10,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcFixed", variant: "fixed", faults: 0 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
+  },
+  {
+    name: "g-counter",
+    spec: gCounter,
+    instances: { Replica: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 6, faults: 0 }, expect: { countsEveryIncrementOnceQuiet: { events: 4, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 10, faults: 0 }, expect: { countsEveryIncrementOnceQuiet: "holds" } },
+      // A state-based CRDT needs every state to arrive eventually: a lost one needs anti-entropy.
+      { variant: "fixed", bounds: { depth: 4, faults: 1 }, expect: { countsEveryIncrementOnceQuiet: { events: 2, faults: 1 } } },
+    ],
+    tla: { module: "GCounter", invariants: ["countsEveryIncrementOnceQuiet"], configs: BOTH_WAYS },
+    p: {
+      project: "GCounter",
+      property: "countsEveryIncrementOnceQuiet",
+      assertion: "GCounter detected liveness bug in hot state 'Missing'",
       depth: 10,
       cases: [
         { testCase: "tcBuggy", variant: "buggy", faults: 0 },
