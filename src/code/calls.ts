@@ -15,19 +15,33 @@ const MAX_NODES = 200;
 const WORKER = join(import.meta.dirname, "calls-worker.ts");
 const MANIFESTS = ["package.json", "Cargo.toml", "go.mod", "Package.swift", "pyproject.toml", "build.gradle", "pom.xml", "mix.exs", "Gemfile"];
 
+/** Where a function is defined: its file and its lines, both ends included. */
+export interface Definition {
+  file: string;
+  line: number;
+  endLine: number;
+}
+
 export interface CallNode {
   label: string;
+  /** The root: where it is defined. A call: where it is made, in its caller. */
   file?: string;
   line?: number;
+  /** calldiff's name for the function: "foo", "Class.method". */
+  key?: string;
+  /** For a call: where the function it calls is defined, when it is in our own code. */
+  def?: Definition;
   external?: boolean;
   children: CallNode[];
 }
 
 interface RawNode {
+  key?: string;
   label: string;
   kind?: "call" | "branch";
   file?: string;
   line?: number;
+  def?: Definition;
   children?: RawNode[];
 }
 
@@ -97,6 +111,13 @@ function prune(root: RawNode): CallNode {
     budget -= 1;
     return { label: node.label, ...location(node), external: true, children: [] };
   };
+  // A call's definition comes along with it; the root is its own definition.
+  const location = (node: RawNode): Pick<CallNode, "file" | "line" | "key" | "def"> => ({
+    ...(node.file ? { file: node.file } : {}),
+    ...(node.line ? { line: node.line } : {}),
+    ...(node.key ? { key: node.key } : {}),
+    ...(node.def ? { def: node.def } : {}),
+  });
   return convert(root);
 }
 
@@ -109,6 +130,3 @@ function resolved(node: RawNode): boolean {
   return (node.children?.length ?? 0) > 0 || !/\(\)$/.test(node.label);
 }
 
-function location(node: RawNode): Pick<CallNode, "file" | "line"> {
-  return { ...(node.file ? { file: node.file } : {}), ...(node.line ? { line: node.line } : {}) };
-}

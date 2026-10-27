@@ -94,6 +94,8 @@ export interface Playground {
   groups: GroupInfo[];
   group: Record<string, GroupPresentation>;
   actor: Record<string, ActorPresentation>;
+  /** Preferred lifeline order in the sequence diagram, by scenario name. */
+  flowOrder: Record<string, string[]>;
   token: Record<string, (props: TokenProps) => ReactNode>;
   link: Record<string, LinkStyle>;
 }
@@ -117,6 +119,8 @@ export interface PlayBuilder {
   group(name: string, actors: Actors, options?: GroupOptions): void;
   group(name: string, options: GroupOptions): void;
   actor<A extends Actor<any, any>>(actor: A, presentation: ActorPresentation<A>): void;
+  /** Set the preferred left-to-right actor order in a scenario's sequence diagram, e.g. `play.flow("Import", [Person, Worker, Artifacts])`. */
+  flow(scenario: string, actors: readonly (Actor<any, any> | string)[]): void;
   /** How a token of this kind is drawn, such as a ticket. */
   token(kind: string, render: (props: TokenProps) => ReactNode): void;
   link(kind: string, style: LinkStyle): void;
@@ -130,7 +134,7 @@ function isActors(value: unknown): value is Actors {
 }
 
 export function definePlayground<S extends Spec>(spec: S, body: (play: PlayBuilder) => void): Playground {
-  const out: Playground = { kind: "feynman.playground", spec: spec.name, groups: [], group: {}, actor: {}, token: {}, link: {} };
+  const out: Playground = { kind: "feynman.playground", spec: spec.name, groups: [], group: {}, actor: {}, flowOrder: {}, token: {}, link: {} };
   const known = (actor: Actor<any, any>) => {
     if (!spec.actors.some((a) => a.name === actor.name)) throw new Error(`The playground names ${actor.name}, which is not an actor of ${spec.name}`);
   };
@@ -153,6 +157,13 @@ export function definePlayground<S extends Spec>(spec: S, body: (play: PlayBuild
     actor(actor, presentation) {
       known(actor);
       out.actor[actor.name] = presentation;
+    },
+    flow(scenario, actors) {
+      if (!spec.scenarios.some((item) => item.name === scenario)) throw new Error(`The playground orders a flow for unknown scenario “${scenario}”`);
+      const names = actors.map((actor) => typeof actor === "string" ? actor : actor.name);
+      if (names.some((name) => !spec.actors.some((actor) => actor.name === name))) throw new Error(`The playground flow “${scenario}” names an unknown actor`);
+      if (new Set(names).size !== names.length) throw new Error(`The playground flow “${scenario}” lists an actor more than once`);
+      out.flowOrder[scenario] = names;
     },
     token(kind, render) {
       out.token[kind] = render;

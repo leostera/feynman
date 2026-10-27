@@ -23,7 +23,7 @@ Commands:
       --no-symmetry              keep interchangeable instances apart
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
-  dev [--port N]           Serve the explorer, reloading when specs change.
+  dev [--port N]           Serve the explorer on the first free port from N (default: 4321).
   build [--out FILE]       Write the explorer as one self-contained HTML file
                            (default: .feynman/index.html).
   open                     Build, then open that file.

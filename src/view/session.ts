@@ -12,6 +12,53 @@ export type Op =
   | { op: "guard"; instance: string; key: string }
   | { op: "restart"; instance: string };
 
+/** Parse JSON from a shared URL into operations the session runner understands. */
+export function parseOps(value: unknown): Op[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed: Op[] = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate) || typeof candidate.op !== "string") return null;
+    switch (candidate.op) {
+      case "spawn":
+        if (typeof candidate.actor !== "string" || typeof candidate.label !== "string") return null;
+        parsed.push({ op: "spawn", actor: candidate.actor, label: candidate.label });
+        break;
+      case "act":
+        if (typeof candidate.instance !== "string" || typeof candidate.key !== "string" || !isRecord(candidate.inputs) || !isJsonValue(candidate.inputs)) return null;
+        parsed.push({ op: "act", instance: candidate.instance, key: candidate.key, inputs: candidate.inputs });
+        break;
+      case "fire":
+      case "lose": {
+        if (typeof candidate.pending !== "number" || !Number.isSafeInteger(candidate.pending) || candidate.pending < 0) return null;
+        parsed.push(candidate.op === "fire" ? { op: "fire", pending: candidate.pending } : { op: "lose", pending: candidate.pending });
+        break;
+      }
+      case "guard":
+      case "restart":
+        if (typeof candidate.instance !== "string") return null;
+        if (candidate.op === "guard") {
+          if (typeof candidate.key !== "string") return null;
+          parsed.push({ op: "guard", instance: candidate.instance, key: candidate.key });
+        } else parsed.push({ op: "restart", instance: candidate.instance });
+        break;
+      default:
+        return null;
+    }
+  }
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isRecord(value) && Object.values(value).every(isJsonValue);
+}
+
 export interface Step {
   event: Event | null;
   world: World;
@@ -20,7 +67,7 @@ export interface Step {
 export interface Session {
   initial: World;
   steps: Step[];
-  /** Null for sessions loaded from a trace, which cannot be replayed as operations. */
+  /** Null only when a trace contains steps that cannot be represented as playground operations. */
   ops: Op[] | null;
   /** Where the session came from, for the timeline header. */
   origin: string;
@@ -28,11 +75,103 @@ export interface Session {
 
 export function freshSession(spec: Spec): Session {
   const steps = startWorld(spec);
-  return { initial: steps.at(-1)?.world ?? emptyWorld(), steps: [], ops: [], origin: "Fresh start" };
+  return { initial: steps.at(-1)?.world ?? emptyWorld(), steps: [], ops: [], origin: "New scenario" };
 }
 
 export function sessionFromRun(run: Pick<Run, "initial" | "events" | "worlds">, origin: string): Session {
-  return { initial: run.initial, steps: run.events.map((event, i) => ({ event, world: run.worlds[i] })), ops: null, origin };
+  return { initial: run.initial, steps: run.events.map((event, i) => ({ event, world: run.worlds[i] })), ops: operationsFromRun(run), origin };
+}
+
+/** Reconstruct the operations behind a trace, so scenarios remain replayable and shareable. */
+function operationsFromRun(run: Pick<Run, "initial" | "events" | "worlds">): Op[] | null {
+  let before = run.initial;
+  const operations: Op[] = [];
+  for (const [index, event] of run.events.entries()) {
+    let operation: Op | null = null;
+    switch (event.kind) {
+      case "spawn": {
+        const instance = run.worlds[index]?.instances.find((item) => item.id === event.instance);
+        if (instance) operation = { op: "spawn", actor: instance.actor, label: instance.label };
+        break;
+      }
+      case "action":
+        operation = { op: "act", instance: event.instance, key: event.key, inputs: event.inputs ?? {} };
+        break;
+      case "guard":
+        operation = { op: "guard", instance: event.instance, key: event.key };
+        break;
+      case "restart":
+        operation = { op: "restart", instance: event.instance };
+        break;
+      case "deliver":
+      case "lose": {
+        const pending = before.pending.find((item) => item.kind === "deliver" && item.to === event.instance && item.message === event.message && item.from === event.from && JSON.stringify(item.payload) === JSON.stringify(event.payload));
+        if (pending) operation = event.kind === "lose" ? { op: "lose", pending: pending.id } : { op: "fire", pending: pending.id };
+        break;
+      }
+      case "timer": {
+        const pending = before.pending.find((item) => item.kind === "timer" && item.to === event.instance && item.timer === event.key);
+        if (pending) operation = { op: "fire", pending: pending.id };
+        break;
+      }
+    }
+    if (!operation) return null;
+    operations.push(operation);
+    before = run.worlds[index];
+  }
+  return operations;
+}
+
+/** A prompt-ready, readable trace for asking an agent to add a matching spec scenario. */
+export function scenarioDump(spec: Spec, session: Session): unknown {
+  const operations: Record<string, unknown>[] = [];
+  let before = session.initial;
+  for (const [index, op] of (session.ops ?? []).entries()) {
+    const actorFor = (id: string) => before.instances.find((instance) => instance.id === id);
+    switch (op.op) {
+      case "spawn":
+        operations.push({ operation: "spawn", actor: op.actor, label: op.label });
+        break;
+      case "act": {
+        const instance = actorFor(op.instance);
+        const action = spec.actors.find((actor) => actor.name === instance?.actor)?.actions[op.key];
+        operations.push({ operation: "act", actor: instance?.actor, instance: instance?.label ?? op.instance, action: action?.label ?? op.key, key: op.key, inputs: op.inputs });
+        break;
+      }
+      case "guard": {
+        const instance = actorFor(op.instance);
+        operations.push({ operation: "guard", actor: instance?.actor, instance: instance?.label ?? op.instance, transition: op.key });
+        break;
+      }
+      case "restart": {
+        const instance = actorFor(op.instance);
+        operations.push({ operation: "restart", actor: instance?.actor, instance: instance?.label ?? op.instance });
+        break;
+      }
+      case "fire":
+      case "lose": {
+        const pending = before.pending.find((item) => item.id === op.pending);
+        if (pending?.kind === "deliver") {
+          operations.push({ operation: op.op, from: actorFor(pending.from)?.label ?? pending.from, to: actorFor(pending.to)?.label ?? pending.to, message: pending.message, payload: pending.payload });
+        } else if (pending?.kind === "timer") {
+          operations.push({ operation: op.op, instance: actorFor(pending.to)?.label ?? pending.to, timer: pending.timer });
+        } else operations.push({ operation: op.op, pending: op.pending });
+        break;
+      }
+    }
+    before = session.steps[index]?.world ?? before;
+  }
+  const timeline = session.steps.flatMap(({ event }, index) => event ? [{ step: index + 1, actor: beforeLabel(session, index, event.instance), kind: event.kind, description: event.text ?? event.description }] : []);
+  return {
+    request: "Add a Feynman scenario that reproduces this playground timeline. Use the spec's scenario DSL and preserve the order of meaningful actions.",
+    spec: spec.name,
+    scenario: { name: session.origin === "New scenario" ? "Choose a descriptive name" : session.origin, operations },
+    timeline,
+  };
+}
+
+function beforeLabel(session: Session, index: number, instanceId: string): string {
+  return session.steps[index]?.world.instances.find((instance) => instance.id === instanceId)?.label ?? instanceId;
 }
 
 export function current(session: Session): World {

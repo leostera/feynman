@@ -6,23 +6,28 @@
 // the event log: hover to peek, click to travel back, step through it with ← and →; acting
 // in the past continues from there.
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, ArrowLeftIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CopyIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
 import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
 import { labelOf, messageName, ordinal } from "./format";
-import { ActionBar, actionsOf, InputsDialog, InspectDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
+import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
 import { bubbleText, fitOf, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Flight, type Picking } from "./playground/Stage";
 import { nodeLook, sceneOf, type Scene } from "./scene";
-import { apply, current, nextHint, nextLabel, rollback, type Op, type Session } from "./session";
-import { Timeline } from "./Timeline";
-import { useExplorer } from "./ui";
+import { apply, current, nextHint, nextLabel, rollback, scenarioDump, type Op, type Session } from "./session";
+import { Timeline, type TimelineTab } from "./Timeline";
+import { EntityDetails, useExplorer } from "./ui";
 import { useSettings } from "./preferences";
+import { DEFAULT_ZOOM, FIT_SCALE_UNITS, POSITION_UNITS_PER_PIXEL, ZOOM_FACTOR_UNITS, ZOOM_UNITS_PER_PERCENT, scaleZoom, zoomScale, type CameraState } from "./url";
 
 /** A choice in the top-left pill: where a session starts from, or which spec. */
 export interface Choice {
   items: { value: string; label: string }[];
   onPick: (value: string) => void;
+}
+
+function sameCamera(a: CameraState, b: CameraState): boolean {
+  return a.zoom === b.zoom && a.x === b.x && a.y === b.y && a.fitScale === b.fitScale && a.manual === b.manual;
 }
 
 const SPEEDS = [0.25, 1, 5, 25];
@@ -40,7 +45,7 @@ function worldAt(session: Session, index: number): World {
   return index < 0 ? session.initial : session.steps[index].world;
 }
 
-export function Playground({ session, setSession, scenarios, specs }: { session: Session; setSession: (s: Session) => void; scenarios: Choice; specs: (Choice & { value: string }) | null }) {
+export function Playground({ session, setSession, scenarios, specs, initialSpeed, initialCamera, onViewStateChange }: { session: Session; setSession: (s: Session) => void; scenarios: Choice; specs: (Choice & { value: string }) | null; initialSpeed: number; initialCamera: CameraState; onViewStateChange: (state: { speed: number; camera: CameraState }) => void }) {
   const { spec, playground } = useExplorer();
   const groups = groupsOf(spec, playground);
   /** Groups opened (or, for those that start open, closed) by node id. */
@@ -53,8 +58,10 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
   const [cursor, setCursor] = useState<number | null>(null);
   const [packet, setPacket] = useState<Extract<Pending, { kind: "deliver" }> | null>(null);
   const [asking, setAsking] = useState<Asking | null>(null);
-  const [inspecting, setInspecting] = useState<string[] | null>(null);
   const [dropChoice, setDropChoice] = useState<{ target: string; drops: Drop[] } | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"copied" | "failed" | null>(null);
+  const [paneTab, setPaneTab] = useState<TimelineTab>("timeline");
+  const [selectPortal, setSelectPortal] = useState<HTMLDivElement | null>(null);
   const last = session.steps.length - 1;
   const travelled = cursor !== null && cursor < last ? cursor : null;
   // Starting from a scenario opens it at its start, its events ready to step or play through.
@@ -69,7 +76,21 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
   };
   const settings = useSettings();
   const [playing, setPlaying] = useState(settings.autoPlay);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(initialSpeed);
+  const [camera, setCamera] = useState<CameraState>(initialCamera);
+  const incomingViewKey = `${initialSpeed}:${JSON.stringify(initialCamera)}`;
+  const appliedViewKey = useRef(incomingViewKey);
+  const onViewStateChangeRef = useRef(onViewStateChange);
+  onViewStateChangeRef.current = onViewStateChange;
+  useEffect(() => {
+    if (appliedViewKey.current === incomingViewKey) return;
+    appliedViewKey.current = incomingViewKey;
+    setSpeed((current) => current === initialSpeed ? current : initialSpeed);
+    setCamera((current) => sameCamera(current, initialCamera) ? current : initialCamera);
+  }, [incomingViewKey, initialCamera, initialSpeed]);
+  useEffect(() => onViewStateChangeRef.current({ speed, camera }), [speed, camera]);
+  const panStart = useRef<{ x: number; y: number; cameraX: number; cameraY: number } | null>(null);
+  const wheelHandler = useRef<(event: WheelEvent) => void>(() => {});
   const play: Play = { playing, speed, setPlaying, setSpeed };
   const replay = useReplay(spec, session, cursor, setCursor, speed, settings.reduceMotion, drawnFlying);
   usePlay(spec, session, setSession, setCursor, replay, travelled === null && hover === null, [playing, setPlaying]);
@@ -84,7 +105,59 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
   const graph = useLayout(spec, world, scene, view, sizesOf(playground, scene));
   const fit = fitOf(graph, view);
   const focusIndex = viewing ?? last;
+  // Auto-fit untouched views; once navigated, keep the original scale across scene changes.
+  const baseScale = camera.manual ? camera.fitScale === null ? fit.scale : camera.fitScale / FIT_SCALE_UNITS : fit.scale;
+  const zoom = zoomScale(camera.zoom);
+  const cameraZoom = (baseScale * zoom) / fit.scale;
+  const stageFit = {
+    scale: baseScale * zoom,
+    x: view.w / 2 + camera.x / POSITION_UNITS_PER_PIXEL + (fit.x - view.w / 2) * cameraZoom,
+    y: view.h / 2 + camera.y / POSITION_UNITS_PER_PIXEL + (fit.y - view.h / 2) * cameraZoom,
+  };
+  const zoomBy = (factor: number, x = view.w / 2, y = view.h / 2) => {
+    const next = scaleZoom(camera.zoom, factor);
+    const ratio = next / camera.zoom;
+    const cameraX = camera.x / POSITION_UNITS_PER_PIXEL;
+    const cameraY = camera.y / POSITION_UNITS_PER_PIXEL;
+    setCamera({ zoom: next, fitScale: camera.fitScale ?? Math.round(fit.scale * FIT_SCALE_UNITS), manual: true, x: Math.round((x - view.w / 2 - (x - view.w / 2 - cameraX) * ratio) * POSITION_UNITS_PER_PIXEL), y: Math.round((y - view.h / 2 - (y - view.h / 2 - cameraY) * ratio) * POSITION_UNITS_PER_PIXEL) });
+  };
+  const onPanStart = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, select, [role=menu], [role=dialog], [data-node], [data-overlay]")) return;
+    panStart.current = { x: e.clientX, y: e.clientY, cameraX: camera.x / POSITION_UNITS_PER_PIXEL, cameraY: camera.y / POSITION_UNITS_PER_PIXEL };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPanMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!panStart.current) return;
+    setCamera((c) => ({ ...c, manual: true, fitScale: c.fitScale ?? Math.round(fit.scale * FIT_SCALE_UNITS), x: Math.round((panStart.current!.cameraX + e.clientX - panStart.current!.x) * POSITION_UNITS_PER_PIXEL), y: Math.round((panStart.current!.cameraY + e.clientY - panStart.current!.y) * POSITION_UNITS_PER_PIXEL) }));
+  };
+  const onPanEnd = () => { panStart.current = null; };
+  wheelHandler.current = (event) => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    if (event.cancelable) event.preventDefault();
+    const bounds = canvas.getBoundingClientRect();
+    const factor = Math.round(Math.exp(-event.deltaY * 0.0015) * ZOOM_FACTOR_UNITS);
+    zoomBy(factor, event.clientX - bounds.left, event.clientY - bounds.top);
+  };
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const onWheel = (event: WheelEvent) => wheelHandler.current(event);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [ref]);
   const focus = focusIndex >= 0 && session.steps[focusIndex].event ? { event: session.steps[focusIndex].event!, index: focusIndex } : null;
+  const copyScenario = async () => {
+    if (!session.ops) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(scenarioDump(spec, session), null, 2));
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  };
+  useEffect(() => setCopyStatus(null), [session.origin, session.steps.length]);
   const run = (op: Op) => {
     const from = travelled === null ? session : rollback(session, travelled + 1);
     replay.stop();
@@ -169,7 +242,6 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
       onRun={run}
       onAsk={(a) => (setChoosing(null), setAsking(a))}
       onBack={() => setChoosing(null)}
-      onInspect={setInspecting}
       onToggleGroup={() => {
         if (!openGroup) return;
         setToggled((t) => (t.has(openGroup.id) ? new Set([...t].filter((x) => x !== openGroup.id)) : new Set([...t, openGroup.id])));
@@ -190,14 +262,14 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
     : travelled !== null && !replay.running ? pastTip(session, travelled)
     : tipFor(spec, base, baseScene, spentTokens(spec, session, travelled ?? last));
   return (
-    <div className="flex h-full min-h-0 gap-3 bg-kumo-recessed p-3">
-      <div ref={ref} className="relative min-w-0 flex-1 overflow-hidden rounded-2xl bg-kumo-canvas ring-1 ring-kumo-line" onClick={() => (setPacket(null), setDropChoice(null), setSelected(null), setChoosing(null))}>
+    <div className="relative h-full min-h-0 overflow-hidden bg-kumo-canvas">
+      <div ref={ref} aria-label="Playground canvas. Drag to pan; use the wheel or zoom controls to zoom." className="absolute inset-0 select-none overflow-hidden touch-none" onPointerDown={onPanStart} onPointerMove={onPanMove} onPointerUp={onPanEnd} onPointerCancel={onPanEnd} onClick={() => (setPacket(null), setDropChoice(null), setSelected(null), setChoosing(null))} style={{ cursor: panStart.current ? "grabbing" : "grab" }}>
         {graph && (
           <Stage
             world={world}
             scene={scene}
             graph={graph}
-            fit={fit}
+            fit={stageFit}
             flight={flight}
             live={canAct}
             focus={focus}
@@ -221,29 +293,41 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
             barStacked={!!selectedNode && !choosing && actionsOf(spec, selectedNode).length >= STACK_FROM}
           />
         )}
-        <div className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">
-          <div className="pointer-events-auto flex items-center gap-1 justify-self-start rounded-full bg-kumo-elevated p-1 shadow ring ring-kumo-line">
+        <div data-overlay className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">
+          <div className="pointer-events-auto relative z-40 flex items-center gap-1 justify-self-start rounded-full bg-kumo-elevated p-1 shadow ring ring-kumo-line">
             {specs && specs.items.length > 1 && (
-              <Select size="sm" aria-label="Spec" className="w-48 rounded-full" value={specs.value} onValueChange={(v) => v && specs.onPick(String(v))} items={specs.items} />
+              <Select container={selectPortal ?? undefined} size="sm" aria-label="Spec" className="w-48 rounded-full" value={specs.value} onValueChange={(v) => v && specs.onPick(String(v))} items={specs.items} />
             )}
-            <Select size="sm" aria-label="Start from" className="w-52 rounded-full" value={session.origin} onValueChange={(v) => v && scenarios.onPick(String(v))} items={scenarios.items} />
+            <Select container={selectPortal ?? undefined} size="sm" aria-label="Start from" className="w-52 rounded-full" value={session.origin} onValueChange={(v) => v && scenarios.onPick(String(v))} items={scenarios.items} />
             <AddMenu world={base} groups={groups} onRun={runAll} />
+
           </div>
+          <div ref={setSelectPortal} className="feynman-select-portal pointer-events-none absolute inset-0 z-50" />
           <Tip text={tip} action={travelled !== null && hover === null && !replay.running ? { label: "Back to now", onClick: () => setCursor(null) } : null} />
         </div>
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+        <div data-overlay className="pointer-events-none absolute bottom-[3.5rem] left-3">
           <Legend />
-          <Transport play={play} shown={focusIndex + 1} canBack={(travelled ?? last) >= 0} canStep={canStep} onFirst={toStart} onBack={back} onStep={forward} onReset={() => scenarios.onPick(session.origin)} />
+        </div>
+        <div data-overlay className="pointer-events-auto absolute bottom-3 left-3 z-30">
+          <ZoomControls zoom={camera.zoom} onZoomFactor={(factor) => zoomBy(factor)} onReset={() => setCamera({ zoom: DEFAULT_ZOOM, x: 0, y: 0, fitScale: null, manual: false })} />
         </div>
         {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
         {dropChoice && <DropChoice choice={dropChoice} world={base} onRun={run} onAsk={(drop) => (setDropChoice(null), setAsking({ instance: dropChoice.target, action: drop.action.key, inputs: drop.inputs }))} />}
       </div>
+      <div data-overlay className={`absolute bottom-3 right-3 top-3 z-30 max-w-[calc(100%-1.5rem)] transition-[width] duration-200 ${paneTab === "code" ? "w-[max(22rem,50vw)]" : "w-[22rem]"}`}>
       <Timeline
         session={session}
+        tab={paneTab}
+        onTab={setPaneTab}
+        actions={(() => {
+          const label = copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy failed" : "Copy timeline";
+          return <Button size="xs" variant="ghost" shape="square" aria-label={label} title={label} icon={copyStatus === "copied" ? <CheckIcon size={12} /> : <CopyIcon size={12} />} disabled={!session.ops} onClick={copyScenario} />;
+        })()}
         preview={hover}
         cursor={travelled}
         onPreview={setHover}
         onPick={(n) => (replay.stop(), setHover(null), setCursor(n >= last ? null : n))}
+        details={<EntityDetails ids={baseScene.nodes.find((node) => node.id === selected)?.members.map((member) => member.id) ?? []} world={base} />}
         foldOf={(event, w) => {
           if (event.routine) return "routine";
           // A message from one member of a closed group to another happened inside it.
@@ -253,13 +337,26 @@ export function Playground({ session, setSession, scenarios, specs }: { session:
           return node && node === scene.of.get(event.from) && scene.groups.has(node) ? `inside:${scene.groups.get(node)!.label}` : null;
         }}
       />
+      </div>
+      <div data-overlay className="pointer-events-none absolute bottom-3 left-1/2 z-40 -translate-x-1/2">
+        <Transport
+          play={play}
+          shown={focusIndex + 1}
+          canBack={(travelled ?? last) >= 0}
+          canStep={canStep}
+          canEnd={travelled !== null || hover !== null}
+          onFirst={toStart}
+          onBack={back}
+          onStep={forward}
+          onEnd={() => (play.setPlaying(false), replay.stop(), setHover(null), setCursor(null))}
+        />
+      </div>
       {drag.dragging && drag.at && !drag.dragging.carried && (
         <div className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 scale-110" style={{ left: drag.at.x, top: drag.at.y }}>
           <TokenChip token={drag.dragging.token} />
         </div>
       )}
       <InputsDialog target={asking} world={base} onClose={() => setAsking(null)} onRun={run} />
-      <InspectDialog ids={inspecting} world={base} onClose={() => setInspecting(null)} />
     </div>
   );
 }
@@ -583,20 +680,29 @@ function DropChoice({ choice, world, onRun, onAsk }: { choice: { target: string;
 
 // Overlays ----------------------------------------------------------------------------------------------
 
-function Transport({ play, shown, canBack, canStep, onFirst, onBack, onStep, onReset }: { play: Play; shown: number; canBack: boolean; canStep: boolean; onFirst: () => void; onBack: () => void; onStep: () => void; onReset: () => void }) {
+function Transport({ play, shown, canBack, canStep, canEnd, onFirst, onBack, onStep, onEnd }: { play: Play; shown: number; canBack: boolean; canStep: boolean; canEnd: boolean; onFirst: () => void; onBack: () => void; onStep: () => void; onEnd: () => void }) {
   return (
-    <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-kumo-elevated p-1 shadow-lg ring ring-kumo-line">
-      <span className="w-[4.5rem] px-2 text-right font-mono text-xs tabular-nums">{ordinal(shown)}</span>
-      <Button size="xs" variant="ghost" shape="square" aria-label="Back to the start (Home)" title="Back to the start (Home)" icon={<SkipBackIcon size={12} />} disabled={!canBack} onClick={onFirst} />
-      <Button size="xs" variant="ghost" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={12} />} disabled={!canBack} onClick={onBack} />
-      <Button size="xs" variant={play.playing ? "secondary" : "primary"} icon={play.playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />} onClick={() => play.setPlaying(!play.playing)}>
-        {play.playing ? "Pause" : "Play"}
-      </Button>
-      <Button size="xs" variant="ghost" icon={<SkipForwardIcon size={12} />} title="Next event (→)" disabled={!canStep} onClick={onStep}>
-        Step
-      </Button>
+    <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-kumo-elevated p-1 shadow-lg ring-1 ring-kumo-line">
+      <span className="min-w-9 px-1 text-right font-mono text-[11px] tabular-nums">{ordinal(shown)}</span>
+      <div className="flex items-center gap-1 rounded-lg bg-kumo-recessed p-0.5 ring-1 ring-kumo-line">
+        <Button size="xs" variant="secondary" shape="square" aria-label="Back to the start (Home)" title="Back to the start (Home)" icon={<SkipBackIcon size={12} />} disabled={!canBack} onClick={onFirst} />
+        <Button size="xs" variant="secondary" shape="square" aria-label="Back one event (←)" title="Back one event (←)" icon={<ArrowLeftIcon size={12} />} disabled={!canBack} onClick={onBack} />
+        <Button size="xs" variant="secondary" shape="square" aria-label={play.playing ? "Pause" : "Play"} title={play.playing ? "Pause" : "Play"} icon={play.playing ? <PauseIcon size={12} /> : <PlayIcon size={12} />} onClick={() => play.setPlaying(!play.playing)} />
+        <Button size="xs" variant="secondary" shape="square" aria-label="Step forward (→)" title="Step forward (→)" icon={<ArrowRightIcon size={12} />} disabled={!canStep} onClick={onStep} />
+        <Button size="xs" variant="secondary" shape="square" aria-label="Go to the end" title="Go to the end" icon={<SkipForwardIcon size={12} />} disabled={!canEnd} onClick={onEnd} />
+      </div>
       <Tabs size="sm" value={String(play.speed)} onValueChange={(v) => play.setSpeed(Number(v))} tabs={SPEEDS.map((s) => ({ value: String(s), label: `${s === 0.25 ? "¼" : s}×` }))} />
-      <Button size="xs" variant="ghost" shape="square" aria-label="Start over" title="Start over" icon={<ArrowCounterClockwiseIcon size={12} />} onClick={onReset} />
+    </div>
+  );
+}
+
+function ZoomControls({ zoom, onZoomFactor, onReset }: { zoom: number; onZoomFactor: (factor: number) => void; onReset: () => void }) {
+  return (
+    <div className="flex items-center gap-0.5 rounded-full bg-kumo-elevated p-1 shadow ring-1 ring-kumo-line">
+      <Button size="xs" variant="ghost" shape="square" aria-label="Zoom out" title="Zoom out" onClick={() => onZoomFactor(800)}>−</Button>
+      <span className="min-w-9 text-center font-mono text-[10px] tabular-nums">{Math.round(zoom / ZOOM_UNITS_PER_PERCENT)}%</span>
+      <Button size="xs" variant="ghost" shape="square" aria-label="Zoom in" title="Zoom in" onClick={() => onZoomFactor(1250)}>+</Button>
+      <Button size="xs" variant="ghost" shape="square" aria-label="Reset zoom" title="Reset zoom" onClick={onReset}>↺</Button>
     </div>
   );
 }

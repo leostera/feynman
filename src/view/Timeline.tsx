@@ -4,14 +4,17 @@
 // Hovering an event peeks at the world as it was then; clicking travels back to it, without
 // forgetting what came after until something else is done there. The focused event sits at
 // the bottom in words, with its changes, messages and code one click away.
-import { Badge, cn } from "@cloudflare/kumo";
+import { Badge, cn, Tabs } from "@cloudflare/kumo";
 import { CaretRightIcon, CornersInIcon, HeartbeatIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Event, World } from "../spec/index.ts";
+import { CodeTrace } from "./CodeTrace";
 import { kindLabel, labelOf, ordinal, stepTitle } from "./format";
 import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
+
+export type TimelineTab = "timeline" | "code" | "details";
 
 type Item = { event: Event; world: World; index: number; fold: string | null };
 type Entry = ({ kind: "event" } & Item) | { kind: "fold"; fold: string; events: Item[] };
@@ -40,8 +43,14 @@ export function Timeline({
   cursor,
   onPreview,
   onPick,
+  actions,
+  details,
   foldOf,
+  tab,
+  onTab,
 }: {
+  tab: TimelineTab;
+  onTab: (tab: TimelineTab) => void;
   /** What folds together; routine events by default. */
   foldOf: FoldOf;
   session: Session;
@@ -50,6 +59,8 @@ export function Timeline({
   cursor: number | null;
   onPreview: (index: number | null) => void;
   onPick: (index: number) => void;
+  actions?: ReactNode;
+  details: ReactNode;
 }) {
   const { spec } = useExplorer();
   const list = useRef<HTMLDivElement>(null);
@@ -80,19 +91,25 @@ export function Timeline({
     />
   );
   return (
-    <aside className="flex w-[21rem] shrink-0 flex-col overflow-hidden rounded-2xl bg-kumo-elevated ring-1 ring-kumo-line">
-      <div className="flex items-baseline gap-2 px-4 pb-2 pt-3.5">
-        <h2 className="text-[14px] font-semibold">Timeline</h2>
-        <span className="ml-auto text-xs tabular-nums text-kumo-subtle">{count} events</span>
+    <aside className="flex h-full w-full flex-col overflow-hidden rounded-2xl bg-kumo-elevated/95 shadow-xl backdrop-blur-sm ring-1 ring-kumo-line">
+      <div className="flex items-center gap-2 px-3 pb-2 pt-3">
+        <Tabs
+          size="sm"
+          value={tab}
+          onValueChange={(value) => value && onTab(value as TimelineTab)}
+          tabs={[{ value: "timeline", label: "Timeline" }, { value: "code", label: "Code" }, { value: "details", label: "Details" }]}
+        />
+        {tab !== "details" && <span className="ml-auto text-xs tabular-nums text-kumo-subtle">{count} events</span>}
+        {tab === "timeline" && actions}
       </div>
-      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" onMouseLeave={() => onPreview(null)}>
+      {tab === "timeline" ? <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2" onMouseLeave={() => onPreview(null)}>
         <Row
           step={-1}
           active={focusIndex === -1}
           onEnter={() => onPreview(-1)}
           onClick={() => onPick(-1)}
           time={ordinal(0)}
-          title={session.origin === "Fresh start" ? "The start" : `Start of “${session.origin}”`}
+          title={session.origin === "New scenario" ? "The start" : `Start of “${session.origin}”`}
           who={session.initial.instances.map((i) => i.label).join(", ") || "Nobody yet"}
         />
         {entries.map((entry) => {
@@ -126,8 +143,10 @@ export function Timeline({
             </div>
           );
         })}
-      </div>
-      {focused?.event && (
+      </div> : tab === "code" ? <div className="min-h-0 flex-1 overflow-y-auto">
+        <CodeTrace session={session} focus={focusIndex} cursor={cursor} onPreview={onPreview} onPick={onPick} />
+      </div> : <div className="min-h-0 flex-1 overflow-y-auto">{details}</div>}
+      {tab === "timeline" && focused?.event && (
         <div className="max-h-[45%] shrink-0 overflow-y-auto border-t border-kumo-line px-4 py-3">
           <EventDetail event={focused.event} world={focused.world} folded />
         </div>

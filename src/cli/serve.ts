@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createServer as createViteServer, type Plugin } from "vite";
 import { check } from "../check/index.ts";
 import { scenarioSeeds } from "./shape.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "../code/index.ts";
@@ -12,6 +13,9 @@ import type { Bundle, Embedded, SourceEntry, SpecEntry } from "../view/data.ts";
 import { specSources, type Context } from "./commands.ts";
 import { dim, green, red, yellow } from "./format.ts";
 import { playgroundFor } from "./discover.ts";
+import type { EnrichMessage, EnrichRequest } from "./enrich-worker.ts";
+import { functionCode } from "./functions.ts";
+import { highlightLines } from "./highlight.ts";
 import { bundle as bundleModule, loadSpec } from "./load.ts";
 
 /** This installation: the package root, and the view as built. */
@@ -62,7 +66,7 @@ function specId(path: string, taken: Set<string>): string {
   return id;
 }
 
-export async function prepare(ctx: Context, options: Options): Promise<Prepared> {
+export async function prepare(ctx: Context, options: Options, onProgress?: (message: string) => void): Promise<Prepared> {
   const { repository } = ctx;
   const modules = new Map<string, string>();
   const taken = new Set<string>();
@@ -74,9 +78,10 @@ export async function prepare(ctx: Context, options: Options): Promise<Prepared>
     });
   }
   const specs: SpecEntry[] = [];
-  for (const path of ctx.found) {
+  for (const [index, path] of ctx.found.entries()) {
+    onProgress?.(`[${index + 1}/${ctx.found.length}] ${path}`);
     const id = specId(path, taken);
-    const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, report: null };
+    const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, functions: {}, report: null };
     specs.push(entry);
     try {
       const spec = await loadSpec(join(repository.root, path));
@@ -91,8 +96,11 @@ export async function prepare(ctx: Context, options: Options): Promise<Prepared>
         modules.set(`specs/${id}.base.js`, bases.get(path)!);
         entry.baseModule = `specs/${id}.base.js`;
       }
-      entry.sources = sourceEntries(ctx, spec);
-      if (options.calls) entry.calls = callTrees(repository.root, specSources(spec)).trees as Record<string, CallNode>;
+      entry.sources = await sourceEntries(ctx, spec);
+      if (options.calls) {
+        entry.calls = callTrees(repository.root, specSources(spec)).trees as Record<string, CallNode>;
+        entry.functions = await functionCode(repository.root, repository.fileUrl, entry.calls);
+      }
       if (options.check) entry.report = check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
     } catch (error) {
       entry.error = error instanceof Error ? error.message : String(error);
@@ -108,7 +116,7 @@ export async function prepare(ctx: Context, options: Options): Promise<Prepared>
   return { bundle, modules };
 }
 
-function sourceEntries(ctx: Context, spec: Spec): Record<string, SourceEntry> {
+async function sourceEntries(ctx: Context, spec: Spec): Promise<Record<string, SourceEntry>> {
   const out: Record<string, SourceEntry> = {};
   const { fileUrl } = ctx.repository;
   for (const s of checkSources(ctx.repository.root, specSources(spec))) {
@@ -118,7 +126,8 @@ function sourceEntries(ctx: Context, spec: Spec): Record<string, SourceEntry> {
     }
     const { path, start, end, text } = s.resolved;
     const url = fileUrl ? `${fileUrl.replace("{path}", path)}${/gitlab/.test(fileUrl) ? `#L${start}-${end}` : `#L${start}-L${end}`}` : undefined;
-    out[s.source] = { status: s.status, start, end, text, url };
+    const lines = await highlightLines(path, text).catch(() => null);
+    out[s.source] = { status: s.status, start, end, text, url, ...(lines ? { lines } : {}) };
   }
   return out;
 }
@@ -164,54 +173,104 @@ export async function devCommand(ctx: Context, options: { port: number; base?: s
 }
 
 async function serve(ctx: Context, options: { port: number; base?: string; open: boolean; watch: boolean }): Promise<number> {
-  ensureView();
-  let prepared = await prepare(ctx, { base: options.base, check: false, calls: false });
+  console.log(dim(`compiling ${ctx.found.length} spec(s)…`));
+  let prepared = await prepare(ctx, { base: options.base, check: false, calls: false }, (message) => console.log(dim(`  ${message}`)));
   prepared.bundle.dev = options.watch;
-  const clients = new Set<ReadableStreamDefaultController<string>>();
-  const reload = () => clients.forEach((c) => c.enqueue("event: reload\ndata: {}\n\n"));
-
-  const server = Bun.serve({
-    port: options.port,
-    idleTimeout: 0,
-    fetch(request) {
-      const path = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, "");
-      if (path === "__feynman/events") {
-        let self: ReadableStreamDefaultController<string>;
-        const stream = new ReadableStream<string>({
-          start(controller) {
-            self = controller;
-            clients.add(controller);
-            controller.enqueue(": connected\n\n");
-          },
-          cancel() {
-            clients.delete(self);
-          },
-        });
-        return new Response(stream, { headers: { "content-type": "text/event-stream", "cache-control": "no-store" } });
-      }
-      if (path === "feynman.json") return Response.json(prepared.bundle, { headers: { "cache-control": "no-store" } });
-      const module = prepared.modules.get(path);
-      if (module) return new Response(module, { headers: { "content-type": "text/javascript", "cache-control": "no-store" } });
-      const file = join(DIST, path || "index.html");
-      if (file.startsWith(DIST) && existsSync(file) && statSync(file).isFile()) return new Response(Bun.file(file));
-      return new Response(Bun.file(join(DIST, "index.html")));
+  const clients = new Set<import("node:http").ServerResponse>();
+  const reload = () => clients.forEach((client) => client.write("event: reload\ndata: {}\n\n"));
+  const api: Plugin = {
+    name: "feynman-dev-api",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        let path: string;
+        try {
+          path = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname).replace(/^\/+/, "");
+        } catch {
+          next();
+          return;
+        }
+        if (path === "__feynman/events") {
+          response.statusCode = 200;
+          response.setHeader("content-type", "text/event-stream");
+          response.setHeader("cache-control", "no-store");
+          response.write(": connected\n\n");
+          clients.add(response);
+          request.on("close", () => clients.delete(response));
+          return;
+        }
+        if (path === "feynman.json") {
+          response.statusCode = 200;
+          response.setHeader("content-type", "application/json");
+          response.setHeader("cache-control", "no-store");
+          response.end(JSON.stringify(prepared.bundle));
+          return;
+        }
+        const module = prepared.modules.get(path);
+        if (module) {
+          response.statusCode = 200;
+          response.setHeader("content-type", "text/javascript; charset=utf-8");
+          response.setHeader("cache-control", "no-store");
+          response.end(module);
+          return;
+        }
+        next();
+      });
     },
+  };
+  // In a checkout of Feynman, Vite serves the view from source with hot reload; an installed copy
+  // ships only the built view (package.json leaves src/view out), which Vite serves as it is.
+  const viewConfig = join(ROOT, "src", "view", "vite.config.ts");
+  const fromSource = existsSync(viewConfig);
+  if (!fromSource) ensureView();
+  const vite = await createViteServer({
+    ...(fromSource ? { configFile: viewConfig } : { configFile: false, root: DIST, appType: "spa" as const }),
+    plugins: [api],
+    server: { port: options.port, strictPort: false },
   });
-  const url = `http://localhost:${server.port}/`;
+  await vite.listen();
+  const address = vite.httpServer?.address();
+  const port = address && typeof address === "object" ? address.port : options.port;
+  const url = vite.resolvedUrls?.local[0] ?? `http://localhost:${port}/`;
   console.log(`${green("feynman")} ${url}  ${dim(`${prepared.bundle.specs.length} spec(s)${options.watch ? ", watching for changes" : ""}`)}`);
   if (options.open) spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [url]);
 
-  // The slow parts (checker, call trees) run after the page is up, then reload it.
-  const enrich = async () => {
-    const started = Date.now();
-    const full = await prepare(ctx, { base: options.base, check: true, calls: true });
-    full.bundle.dev = options.watch;
-    prepared = full;
-    const problems = full.bundle.specs.filter((s) => s.error || s.report?.properties.some((p) => !p.holds));
-    console.log(dim(`checked in ${Math.round((Date.now() - started) / 1000)}s`) + (problems.length ? yellow(`  ${problems.length} spec(s) with problems`) : ""));
-    reload();
+  // The slow parts (checks, call trees) run on a worker so the server keeps answering; each
+  // lands in the bundle, and reloads the page, as soon as it is ready. One run at a time: a
+  // change during a run asks for another once it ends.
+  const worker = new Worker(join(import.meta.dir, "enrich-worker.ts"));
+  let running = false;
+  let again = false;
+  const enrich = () => {
+    if (running) return void (again = true);
+    running = true;
+    worker.postMessage({ cwd: ctx.cwd } satisfies EnrichRequest);
   };
-  void enrich();
+  worker.onmessage = (event: MessageEvent<EnrichMessage>) => {
+    const message = event.data;
+    if (message.kind === "progress") return console.log(dim(`  ${message.message}`));
+    if (message.kind === "reports") {
+      for (const s of prepared.bundle.specs) s.report = message.reports[s.path] ?? s.report;
+      const problems = prepared.bundle.specs.filter((s) => s.error || s.report?.properties.some((p) => !p.holds));
+      console.log(dim("checks ready") + (problems.length ? yellow(`  ${problems.length} spec(s) with problems`) : ""));
+      return reload();
+    }
+    if (message.kind === "calls") {
+      for (const s of prepared.bundle.specs) {
+        s.calls = message.calls[s.path] ?? s.calls;
+        s.functions = message.functions[s.path] ?? s.functions;
+      }
+      console.log(dim("call trees ready"));
+      return reload();
+    }
+    if (message.error) console.log(red(`checking stopped: ${message.error}`));
+    else console.log(dim(`checked in ${message.seconds.toFixed(1)}s`));
+    running = false;
+    if (again) {
+      again = false;
+      enrich();
+    }
+  };
+  enrich();
 
   if (options.watch) {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -221,17 +280,22 @@ async function serve(ctx: Context, options: { port: number; base?: string; open:
         clearTimeout(timer);
         timer = setTimeout(async () => {
           try {
-            const next = await prepare(ctx, { base: options.base, check: false, calls: false });
-            // Keep what the last full pass found until the next one finishes.
+            console.log(dim("compiling changed specs…"));
+            const next = await prepare(ctx, { base: options.base, check: false, calls: false }, (message) => console.log(dim(`  ${message}`)));
+            // Keep what the last checks and call trees found until the next ones are ready.
             for (const s of next.bundle.specs) {
-              const was = prepared.bundle.specs.find((p) => p.id === s.id);
-              if (was) s.calls = was.calls;
+              const was = prepared.bundle.specs.find((p) => p.path === s.path);
+              if (was) {
+                s.calls = was.calls;
+                s.functions = was.functions;
+                s.report = was.report;
+              }
             }
             next.bundle.dev = true;
             prepared = next;
             console.log(dim("spec changed, reloading"));
             reload();
-            void enrich();
+            enrich();
           } catch (error) {
             console.log(red(String(error)));
           }

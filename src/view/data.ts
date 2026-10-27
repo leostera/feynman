@@ -44,6 +44,8 @@ export interface SpecEntry {
   sources: Record<string, SourceEntry>;
   /** Call trees under `path#symbol` sources. */
   calls: Record<string, CallNode>;
+  /** The code of each function the call trees reach, by `functionId(def)`; each once, however often it is called. */
+  functions: Record<string, FunctionCode>;
   report: Report | null;
 }
 
@@ -53,13 +55,42 @@ export interface SourceEntry {
   start?: number;
   end?: number;
   text?: string;
+  /** `text` highlighted, one array of tokens per line; absent for languages shown plain. */
+  lines?: CodeToken[][];
   url?: string;
+}
+
+/** A run of highlighted code: its text, and its colour in light and dark mode. */
+export interface CodeToken {
+  t: string;
+  c?: string;
+  d?: string;
 }
 
 export interface CallNode {
   label: string;
+  /** The root: where it is defined. A call: where it is made, in its caller. */
   file?: string;
   line?: number;
+  /** calldiff's name for the function: "foo", "Class.method". */
+  key?: string;
+  /** For a call: where the function it calls is defined, when it is in our own code. */
+  def?: { file: string; line: number; endLine: number };
   external?: boolean;
   children: CallNode[];
+}
+
+/** A function's code, as the Code view shows it when its call is opened. */
+export interface FunctionCode {
+  file: string;
+  start: number;
+  end: number;
+  text: string;
+  lines?: CodeToken[][];
+  url?: string;
+}
+
+/** The key a function's code is kept under: where it is defined. */
+export function functionId(def: { file: string; line: number }): string {
+  return `${def.file}:${def.line}`;
 }

@@ -74,7 +74,7 @@ export function flowTitle(spec: Spec, run: Run, flow: Flow): string {
 }
 
 export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[]; selection: FlowSelection; onSelect: (spec: string, selection: FlowSelection) => void; onOpen: (flow: FlowRun) => void }) {
-  const { spec, bundle, loaded } = useExplorer();
+  const { spec, bundle, loaded, playground } = useExplorer();
   const flows = useFlows();
   const flow = flows.find((f) => f.scenario.name === selection.scenario) ?? flows[0];
   const parts = useMemo(() => (flow ? flowsOf(flow.run) : []), [flow]);
@@ -87,7 +87,12 @@ export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[];
     return (
       <div className="flex h-full min-h-0">
         {nav}
-        <p className="p-8 text-sm text-kumo-subtle">This spec has no scenarios yet. Add one with spec.defineScenario.</p>
+        <div className="flex min-w-0 flex-1 items-center justify-center bg-kumo-canvas p-6">
+          <div className="max-w-md rounded-xl bg-kumo-base p-8 ring-1 ring-kumo-hairline">
+            <h1 className="text-base font-semibold">No flows yet</h1>
+            <p className="mt-1 text-sm text-kumo-subtle">Add a scenario with <code>spec.defineScenario</code> to show how events move through this system.</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -102,8 +107,8 @@ export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[];
   return (
     <div className="flex h-full min-h-0">
       {nav}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-start gap-4 border-b border-kumo-hairline bg-kumo-base px-6 py-4">
+      <div className="flex min-w-0 flex-1 flex-col bg-kumo-canvas">
+        <div className="flex items-start gap-4 border-b border-kumo-hairline bg-kumo-base px-5 py-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">{part ? flowTitle(spec, flow.run, part) : flow.scenario.name}</h1>
             {part ? (
@@ -114,14 +119,25 @@ export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[];
               flow.scenario.description && <p className="max-w-3xl text-sm text-kumo-subtle">{flow.scenario.description}</p>
             )}
             {flow.run.error && <p className="mt-1 text-sm text-kumo-danger">The scenario stopped: {flow.run.error}</p>}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge variant="neutral">{rows.length} events</Badge>
+              <Badge variant="neutral">{new Set(rows.map((row) => row.event.actor)).size} participants</Badge>
+            </div>
           </div>
           {flow.diff && bundle.base && <Switch size="sm" label={`Compare with ${bundle.base.ref}`} checked={compare} onCheckedChange={setCompare} />}
           <Button size="sm" icon={<PlayIcon />} onClick={() => onOpen(flow)}>
             Open in playground
           </Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">
-          <Sequence rows={rows} run={flow.run} chosen={step} onChoose={setStep} />
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-5">
+          {rows.length ? (
+            <Sequence rows={rows} run={flow.run} actorOrder={playground?.flowOrder[flow.scenario.name] ?? []} chosen={step} onChoose={setStep} />
+          ) : (
+            <div className="mx-auto flex min-h-64 max-w-xl flex-col items-center justify-center rounded-xl bg-kumo-base p-8 text-center ring-1 ring-kumo-hairline">
+              <h2 className="text-sm font-semibold">No events in this flow</h2>
+              <p className="mt-1 text-sm text-kumo-subtle">Choose a scenario or flow from the list to see its sequence.</p>
+            </div>
+          )}
         </div>
       </div>
       {chosen && (
@@ -172,7 +188,7 @@ function FlowTree({
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const toggle = (key: string) => setClosed((c) => (c.has(key) ? new Set([...c].filter((k) => k !== key)) : new Set([...c, key])));
   return (
-    <nav className="w-72 shrink-0 overflow-y-auto border-r border-kumo-hairline bg-kumo-base p-2" aria-label="Specs, scenarios and flows">
+    <nav className="w-64 shrink-0 overflow-y-auto border-r border-kumo-hairline bg-kumo-base p-2" aria-label="Specs, scenarios and flows">
       {tree.map((node) => {
         const isCurrent = node.id === current;
         const specOpen = isCurrent && !closed.has(node.id);
@@ -238,25 +254,31 @@ function worldAfter(run: Run, event: Event): World {
 }
 
 const ROW = 46;
-const COL = 168;
-const LEFT = 88;
+const COL = 196;
+const LEFT = 76;
 
-function Sequence({ rows, run, chosen, onChoose }: { rows: Row[]; run: Run; chosen: number | null; onChoose: (i: number) => void }) {
+function Sequence({ rows, run, actorOrder, chosen, onChoose }: { rows: Row[]; run: Run; actorOrder: string[]; chosen: number | null; onChoose: (i: number) => void }) {
   const { spec } = useExplorer();
   // A lifeline for each instance the rows involve: those present from the start first, in
   // their order, then the rest as they appear.
-  const lanes: { id: string; label: string }[] = [];
-  const addLane = (id: string, world: World) => !lanes.some((l) => l.id === id) && lanes.push({ id, label: labelOf(world, id) });
+  const lanes: { id: string; label: string; actor: string; appearance: number }[] = [];
+  const addLane = (id: string, world: World) => {
+    if (lanes.some((lane) => lane.id === id)) return;
+    const instance = world.instances.find((item) => item.id === id);
+    lanes.push({ id, label: labelOf(world, id), actor: instance?.actor ?? id, appearance: lanes.length });
+  };
   const involved = new Set(rows.map((r) => r.event.instance));
   run.initial.instances.filter((i) => involved.has(i.id)).forEach((i) => addLane(i.id, run.initial));
   rows.forEach((r) => addLane(r.event.instance, r.world));
+  const preferredOrder = new Map(actorOrder.map((actor, index) => [actor, index]));
+  lanes.sort((a, b) => (preferredOrder.get(a.actor) ?? Infinity) - (preferredOrder.get(b.actor) ?? Infinity) || a.appearance - b.appearance);
   const x = (id: string) => LEFT + lanes.findIndex((l) => l.id === id) * COL + COL / 2;
   const y = (i: number) => 56 + i * ROW + ROW / 2;
-  const width = LEFT + lanes.length * COL + 280;
+  const width = LEFT + lanes.length * COL + 48;
   const height = 56 + rows.length * ROW + 24;
   const arrows = messageArrows(rows);
   return (
-    <div className="relative" style={{ width, height }}>
+    <div className="relative mx-auto" style={{ width, height }}>
       <svg width={width} height={height} className="absolute inset-0">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">

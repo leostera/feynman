@@ -264,9 +264,9 @@ function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: { zones: ZoneB
   const gap = columns.length > 1 ? Math.min(260, Math.max(minGap, (view.w - RESERVE.side * 2 - used) / (columns.length - 1))) : 0;
   const width = Math.max(view.w, used + gap * (columns.length - 1) + RESERVE.side * 2);
   const top = RESERVE.top + RESERVE.caption;
-  const tallest = Math.max(...columns.map((c) => c.height + (c.region ? 80 : 0)));
+  const tallest = Math.max(...columns.map((c) => c.height + (c.region ? 64 : 0)));
   const height = Math.max(view.h, top + tallest + RESERVE.bottom);
-  const room = height - top - RESERVE.bottom;
+  const defaultRoom = height - top - RESERVE.bottom;
   const out: Layout = { width, height, zones: [], nodes: new Map(), groups: [] };
   const put = (id: string, at: Box) => {
     const b = boxes.get(id)!;
@@ -274,16 +274,20 @@ function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: { zones: ZoneB
   };
   let x = (width - used - gap * (columns.length - 1)) / 2;
   for (const column of columns) {
-    const inner = column.region ? room - 80 : room;
-    // Spread a stack down the room it has, within reason; rows and grids keep their spacing.
-    const vgap = column.arrange === "stack" && column.inner.length > 1 ? Math.min(96, Math.max(GAP, (inner - column.inner.reduce((s, [, b]) => s + b.h, 0)) / column.inner.length)) : GAP;
+    const stretch = column.place.align !== undefined;
+    const room = stretch ? Math.max(defaultRoom, column.height) : column.height;
+    const inner = room;
+    // Keep default zone contents snug; explicit align opts into the available vertical space.
+    const vgap = GAP;
     const laid = block(column.arrange, column.inner.map(([, b]) => b), vgap);
-    const align = column.place.align ?? (column.region ? "start" : "center");
+    const align = column.place.align ?? "start";
     const free = Math.max(0, inner - laid.h);
+    const zoneY = top - (column.region ? 12 : 0);
     const y0 = top + (column.region ? 32 : 0) + (align === "start" ? 0 : align === "end" ? free : free / 2);
     const x0 = x + (column.width - laid.w) / 2;
     column.inner.forEach(([id, box], i) => put(id, { x: x0 + laid.places[i].x, y: y0 + laid.places[i].y, w: box.w, h: box.h }));
-    const zone: ZoneBox = column.region ? { name: column.zone.name, region: true, x, y: top - 12, w: column.width, h: room + 12 } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room };
+    const regionHeight = room + 64;
+    const zone: ZoneBox = column.region ? { name: column.zone.name, region: true, x, y: zoneY, w: column.width, h: regionHeight } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room };
     // On the edge: straddling the border, spread around the middle of the zone's height.
     for (const side of ["left", "right"] as const) {
       const list = column.edges.filter(([id]) => nodeOf.get(id)!.edge === side);

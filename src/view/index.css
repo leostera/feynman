@@ -10,6 +10,14 @@ body,
   height: 100%;
 }
 
+/* Highlighted code (snippets by cli/highlight.ts, payloads by view/highlight.ts): each token carries both modes' colours. */
+.feynman-code span[style] { color: var(--shiki-light); }
+[data-mode="dark"] .feynman-code span[style] { color: var(--shiki-dark); }
+
+
+/* Kumo Select popups portal here so they can rise above the floating Timeline panel. */
+.feynman-select-portal > * { pointer-events: auto; }
+
 /* "Try me": an outline that breathes outwards, leaving the node's own ring alone. */
 @keyframes feynman-pulse {
   0% { outline-offset: 2px; outline-color: color-mix(in oklab, var(--color-kumo-brand) 70%, transparent); }
