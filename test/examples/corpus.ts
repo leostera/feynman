@@ -12,6 +12,7 @@ import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { payments } from "../../examples/payments.ts";
+import { ricartAgrawala } from "../../examples/ricart-agrawala.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
 import { writeSkew } from "../../examples/write-skew.ts";
 import { lightSwitch } from "../../examples/switch.ts";
@@ -217,6 +218,17 @@ export const corpus: Example[] = [
     ],
     tla: { module: "DiningPhilosophers", invariants: ["noDeadlock"], configs: BOTH_WAYS },
     p: { project: "DiningPhilosophers", property: "noDeadlock", assertion: "each philosopher holds one fork and waits for the other", depth: 8 },
+  },
+  {
+    name: "ricart-agrawala",
+    spec: ricartAgrawala,
+    instances: { Node: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { mutex: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { mutex: "holds" } },
+    ],
+    tla: { module: "RicartAgrawala", invariants: ["mutex"], configs: BOTH_WAYS },
+    p: { project: "RicartAgrawala", property: "mutex", assertion: "both nodes are in the critical section", depth: 9 },
   },
 ];
 
