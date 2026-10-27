@@ -14,6 +14,7 @@ import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
+import { readYourWrites } from "../../examples/read-your-writes.ts";
 import { payments } from "../../examples/payments.ts";
 import { ricartAgrawala } from "../../examples/ricart-agrawala.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
@@ -286,6 +287,16 @@ export const corpus: Example[] = [
     ],
     tla: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
     p: { project: "PrimaryBackup", property: "ackedIsReplicated", assertion: "acknowledged a write the backup does not have", depth: 8 },
+  },
+  {
+    name: "read-your-writes",
+    spec: readYourWrites,
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { readsOwnWrites: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 12, faults: 1 }, expect: { readsOwnWrites: "holds" } },
+    ],
+    tla: { module: "ReadYourWrites", invariants: ["readsOwnWrites"], configs: BOTH_WAYS },
+    p: { project: "ReadYourWrites", property: "readsOwnWrites", assertion: "a read came back older than the client's own write", depth: 12 },
   },
 ];
 
