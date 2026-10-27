@@ -14,6 +14,7 @@ import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
+import { chainReplication } from "../../examples/chain-replication.ts";
 import { quorum } from "../../examples/quorum.ts";
 import { readYourWrites } from "../../examples/read-your-writes.ts";
 import { payments } from "../../examples/payments.ts";
@@ -309,6 +310,16 @@ export const corpus: Example[] = [
     ],
     tla: { module: "Quorum", invariants: ["readSeesWrite"], configs: BOTH_WAYS },
     p: { project: "Quorum", property: "readSeesWrite", assertion: "a read after a successful write missed it", depth: 14 },
+  },
+  {
+    name: "chain replication",
+    spec: chainReplication,
+    cases: [
+      { variant: "buggy", bounds: { depth: 10, faults: 0 }, expect: { monotonicReads: { events: 8, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 14, faults: 1 }, expect: { monotonicReads: "holds" } },
+    ],
+    tla: { module: "ChainReplication", invariants: ["monotonicReads"], configs: BOTH_WAYS },
+    p: { project: "ChainReplication", property: "monotonicReads", assertion: "a read came back older than one already read", depth: 14 },
   },
 ];
 
