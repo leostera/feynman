@@ -13,6 +13,7 @@ import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
 import { outbox } from "../../examples/outbox.ts";
+import { primaryBackup } from "../../examples/primary-backup.ts";
 import { payments } from "../../examples/payments.ts";
 import { ricartAgrawala } from "../../examples/ricart-agrawala.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
@@ -275,6 +276,16 @@ export const corpus: Example[] = [
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
       ],
     },
+  },
+  {
+    name: "primary-backup",
+    spec: primaryBackup,
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { ackedIsReplicated: { events: 3, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { ackedIsReplicated: "holds" } },
+    ],
+    tla: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
+    p: { project: "PrimaryBackup", property: "ackedIsReplicated", assertion: "acknowledged a write the backup does not have", depth: 8 },
   },
 ];
 

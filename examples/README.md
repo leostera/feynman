@@ -28,6 +28,8 @@ bun run feynman dev                # every example in the simulator
 | `ricart-agrawala.ts` | Equal timestamps counted as "not mine first": both nodes answer each other and both go in | Lamport clocks, deferred answers; the fix also needs a durable clock and answers that name their request |
 | `token-ring.ts` | A resent token crossing a slow first copy: two nodes hold the one token | a ring, resends until acknowledged, counting hand-overs |
 | `chang-roberts.ts` | Leading on beating a smaller id instead of on one's own id coming back: two leaders | ring election by comparing ids |
+| `barrier.ts` | A coordinator counting arrivals, not workers: one restarts, arrives again, and the barrier opens early | durable state, restarts, counting by identity |
+| `primary-backup.ts` | The primary acknowledges a write before the backup has it | replies sent before the step that makes them true |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
