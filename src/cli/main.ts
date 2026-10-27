@@ -23,6 +23,7 @@ Commands:
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
+      --symmetry-checks N        merged twins to test a symmetry claim on (2000; 0 trusts it)
       --only P,Q                 check and show only these properties
       --brief                    verdicts and counterexample sizes, without traces
       --json                     the whole result as JSON, for scripts and agents
@@ -55,6 +56,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       walks: { type: "string" },
       "walk-depth": { type: "string" },
       "no-symmetry": { type: "boolean" },
+      "symmetry-checks": { type: "string" },
       instances: { type: "string" },
       base: { type: "string" },
       port: { type: "string" },
@@ -117,6 +119,7 @@ function bounds(values: Record<string, string | boolean | undefined>): Partial<B
   if (int("walks") !== undefined) out.walks = int("walks");
   if (int("walk-depth") !== undefined) out.walkDepth = int("walk-depth");
   if (values["no-symmetry"]) out.symmetry = false;
+  if (int("symmetry-checks") !== undefined) out.symmetryChecks = int("symmetry-checks");
   if (typeof values.instances === "string") {
     out.instances = Object.fromEntries(
       values.instances.split(",").map((pair) => {

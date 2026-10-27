@@ -44,6 +44,12 @@ export interface Bounds {
   walkDepth: number;
   /** Treat interchangeable instances of one actor as one (see keys.ts). */
   symmetry: boolean;
+  /**
+   * How many merged twins to test a symmetry claim on: both must have the same next steps.
+   * Each test runs every step from two worlds, so more tests catch a subtly wrong claim more
+   * surely, at a cost; 0 trusts the claim.
+   */
+  symmetryChecks: number;
   /** Skip orders and inputs that cannot make a difference. Off only to compare. */
   reduce: boolean;
 }
@@ -58,11 +64,9 @@ export const DEFAULT_BOUNDS: Bounds = {
   walks: 2_000,
   walkDepth: 120,
   symmetry: true,
+  symmetryChecks: 2_000,
   reduce: true,
 };
-
-/** Merged twins whose next steps are compared, to test a symmetry claim. */
-const TWIN_CHECKS = 2_000;
 
 /** The keys of the worlds one step away, faults aside. */
 function successors(spec: Spec, world: World, symmetry: Symmetry): Set<string> {
@@ -480,7 +484,7 @@ class Search {
 
   /** Symmetry is a claim; test it on the twins the search merges: both must have the same next steps. */
   private twinsAgree(a: World, b: World, root: number): boolean {
-    if (this.twinChecks >= TWIN_CHECKS || canonical(a) === canonical(b)) return true;
+    if (this.twinChecks >= this.b.symmetryChecks || canonical(a) === canonical(b)) return true;
     this.twinChecks++;
     return sameSet(successors(this.spec, a, this.roots[root].symmetry), successors(this.spec, b, this.roots[root].symmetry));
   }
