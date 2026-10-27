@@ -2,7 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bundle, loadPlayground } from "../../src/cli/load.ts";
+import { bundleBrowser } from "../../src/cli/bundle-browser.ts";
+import { loadPlayground } from "../../src/cli/load.ts";
 
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "feynman-play-"));
@@ -30,7 +31,7 @@ export const unused = useState;`,
 }
 
 test("a playground bundle for the browser uses the page's React, Kumo and kit", async () => {
-  const code = await bundle(fixture(), "browser");
+  const code = await bundleBrowser(fixture());
   expect(code).toContain("globalThis.__feynman.modules");
   expect(code).not.toContain("react.production");
   expect(code).toContain('"Lamp"');

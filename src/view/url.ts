@@ -33,9 +33,14 @@ export interface CameraState {
   manual: boolean;
 }
 
+/** How the diagram is laid out: whichever fits the free room best, or always one way. */
+export type LayoutChoice = "auto" | "horizontal" | "vertical";
+const LAYOUT_CHOICES: readonly LayoutChoice[] = ["auto", "horizontal", "vertical"];
+
 export interface PlaygroundUrlState {
   speed: number;
   camera: CameraState;
+  layout: LayoutChoice;
   ops: Op[] | null;
 }
 
@@ -97,6 +102,7 @@ export function parsePlaygroundUrlState(query: URLSearchParams): PlaygroundUrlSt
   return {
     speed,
     camera: parseCamera(query.get("camera")) ?? { ...DEFAULT_CAMERA },
+    layout: LAYOUT_CHOICES.find((choice) => choice === query.get("layout")) ?? "auto",
     ops: parseOperations(query.get("state")),
   };
 }
@@ -106,6 +112,9 @@ export function writePlaygroundUrlState(query: URLSearchParams, state: Playgroun
   next.set("speed", String(state.speed));
   const { camera } = state;
   next.set("camera", JSON.stringify({ v: 2, zoom: camera.zoom, x: camera.x, y: camera.y, fitScale: camera.fitScale, manual: camera.manual }));
+  // Auto is the default: left out, so ordinary links stay short.
+  if (state.layout === "auto") next.delete("layout");
+  else next.set("layout", state.layout);
   if (state.ops) next.set("state", JSON.stringify(state.ops));
   else next.delete("state");
   return next;

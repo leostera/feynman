@@ -63,7 +63,7 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
     replaceRoute(updated);
     setActiveSession({ key: sessionKey(updated), session: next });
   };
-  const updateViewState = (next: { speed: number; camera: ReturnType<typeof parsePlaygroundUrlState>["camera"] }) => {
+  const updateViewState = (next: Omit<ReturnType<typeof parsePlaygroundUrlState>, "ops">) => {
     const source = currentRoute();
     const currentView = parsePlaygroundUrlState(source.query);
     const shouldSerializeTimeline = source.query.has("state") || session?.origin === "New scenario";
@@ -177,6 +177,7 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
                 }}
                 initialSpeed={viewState.speed}
                 initialCamera={viewState.camera}
+                initialLayout={viewState.layout}
                 onViewStateChange={updateViewState}
               />
             )}
