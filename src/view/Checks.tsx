@@ -5,12 +5,13 @@
 import { Badge, Button, cn } from "@cloudflare/kumo";
 import { CheckCircleIcon, CircleDashedIcon, PlayIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
-import type { Counterexample, PropertyResult, Report } from "../check/index.ts";
+import type { Counterexample, PropertyBroken, PropertyResult } from "../check/index.ts";
+import { verdictOf, type Verdict } from "../check/verdict.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { labelOf, ordinal, stepTitle, time } from "./format";
 import { Section, Sources, useExplorer } from "./ui";
 
-type Verdict = "broken" | "scenario" | "known" | "fixed" | "untested" | "explored" | "holds";
+type Open = (ce: Counterexample, origin: string) => void;
 
 /** Properties a scenario breaks, by id, with the first scenario that does. */
 function brokenByScenarios(spec: Spec): Map<string, string> {
@@ -22,21 +23,13 @@ function brokenByScenarios(spec: Spec): Map<string, string> {
   return out;
 }
 
-function verdictOf(p: PropertyResult, report: Report, scenarios: Map<string, string>): Verdict {
-  if (p.known !== undefined) return !p.holds || scenarios.has(p.id) ? "known" : "fixed";
-  if (!p.holds) return "broken";
-  if (scenarios.has(p.id)) return "scenario";
-  if (p.tested === 0) return "untested";
-  return report.exhaustive && !p.unfinished ? "holds" : "explored";
-}
-
 function headline(verdicts: Verdict[], errors: number, exhaustive: boolean): string {
-  const problems = verdicts.filter((v) => v === "broken" || v === "scenario" || v === "fixed").length + errors;
+  const problems = verdicts.filter((v) => v === "broken" || v === "fixed").length + errors;
   if (problems) return `${problems} problem(s)`;
   return exhaustive ? "Every property holds" : "Nothing broke in the states explored";
 }
 
-export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, origin: string) => void; onScenario: (name: string) => void }) {
+export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name: string) => void }) {
   const { spec, loaded } = useExplorer();
   const report = loaded.entry.report;
   const scenarios = useMemo(() => brokenByScenarios(spec), [spec]);
@@ -49,7 +42,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
         ) : (
           <>
             <div>
-              <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, report, scenarios)), report.errors.length, report.exhaustive)}</h1>
+              <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, { report, brokenBy: scenarios })), report.errors.length, report.exhaustive)}</h1>
               <p className="text-sm text-kumo-subtle">
                 Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events up to {report.bounds.depth} steps deep, with up to {report.bounds.faults} fault(s)
                 {Object.keys(report.bounds.instances).length ? `, and ${Object.entries(report.bounds.instances).map(([a, n]) => `${n} ${a}`).join(", ")}` : ""}.
@@ -64,58 +57,9 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
             </div>
             <Section title="Properties">
               <div className="flex flex-col gap-2">
-                {report.properties.map((p) => {
-                  const verdict = verdictOf(p, report, scenarios);
-                  const bad = verdict === "broken" || verdict === "scenario" || verdict === "fixed";
-                  const faults = p.counterexample?.events.filter((e) => e.kind === "lose" || e.kind === "restart").length ?? 0;
-                  return (
-                  <div key={p.id} className={cn("rounded-lg px-4 py-3 ring-1", bad ? "ring-kumo-danger/40" : "ring-kumo-hairline")}>
-                    <div className="flex items-start gap-2">
-                      {bad ? (
-                        <XCircleIcon size={18} className="mt-px text-kumo-danger" />
-                      ) : verdict === "known" ? (
-                        <XCircleIcon size={18} className="mt-px text-kumo-warning" />
-                      ) : verdict === "holds" ? (
-                        <CheckCircleIcon size={18} className="mt-px text-kumo-success" />
-                      ) : (
-                        <CircleDashedIcon size={18} className="mt-px text-kumo-warning" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{p.description}</p>
-                        <p className="font-mono text-[11px] text-kumo-subtle">
-                          {p.kind} · {p.id}
-                          {verdict === "scenario" && <span className="font-sans text-kumo-danger"> · broken by the scenario “{scenarios.get(p.id)}”; exploration did not reach it</span>}
-                          {verdict === "explored" && <span className="font-sans"> · held in the states explored</span>}
-                          {verdict === "known" && <span className="font-sans text-kumo-warning"> · known bug: {p.known}</span>}
-                          {verdict === "fixed" && <span className="font-sans text-kumo-danger"> · marked known (“{p.known}”), but holds now: remove known</span>}
-                          {p.counterexample && <span className="font-sans"> · {faults ? `needs ${faults} fault(s)` : "needs no faults"}</span>}
-                          {p.foundBy === "walk" && <span className="font-sans"> · found by a random run, shrunk to {p.counterexample!.events.length} steps; maybe not the shortest</span>}
-                          {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
-                        </p>
-                      </div>
-                      {p.counterexample && (
-                        <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(withLoop(p.counterexample!, p.loop), `Counterexample: ${p.id}`)}>
-                          Open in playground
-                        </Button>
-                      )}
-                      {verdict === "scenario" && (
-                        <Button size="xs" icon={<PlayIcon />} onClick={() => onScenario(scenarios.get(p.id)!)}>
-                          Open the scenario
-                        </Button>
-                      )}
-                    </div>
-                    {p.counterexample && <Steps events={p.counterexample.events} worlds={p.counterexample.worlds} />}
-                    {p.loop?.events.length ? (
-                      <>
-                        <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then this repeats forever, and it never gets there:</p>
-                        <Steps events={p.loop.events} worlds={p.loop.worlds} />
-                      </>
-                    ) : p.loop ? (
-                      <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then nothing fair can happen: it stays there forever, and never gets there.</p>
-                    ) : null}
-                  </div>
-                  );
-                })}
+                {report.properties.map((p) => (
+                  <PropertyCard key={p.id} p={p} verdict={verdictOf(p, { report, brokenBy: scenarios })} scenario={scenarios.get(p.id)} onOpen={onOpen} onScenario={onScenario} />
+                ))}
               </div>
             </Section>
             {report.stuck && (
@@ -176,6 +120,79 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
         {spec.properties.length === 0 && <p className="text-sm text-kumo-subtle">This spec declares no properties; add some with spec.defineProperties.</p>}
       </div>
     </div>
+  );
+}
+
+/** One property: its verdict, and how it breaks, if it does. */
+function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: PropertyResult; verdict: Verdict; scenario?: string; onOpen: Open; onScenario: (name: string) => void }) {
+  // Broken while exploration found it holding: a scenario broke it.
+  const byScenario = (verdict === "broken" || verdict === "known") && p.holds ? scenario : undefined;
+  const broken = p.holds ? undefined : p;
+  const bad = verdict === "broken" || verdict === "fixed";
+  return (
+    <div className={cn("rounded-lg px-4 py-3 ring-1", bad ? "ring-kumo-danger/40" : "ring-kumo-hairline")}>
+      <div className="flex items-start gap-2">
+        <VerdictIcon verdict={verdict} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{p.description}</p>
+          <p className="font-mono text-[11px] text-kumo-subtle">
+            {p.kind} · {p.id}
+            {byScenario && <span className="font-sans text-kumo-danger"> · broken by the scenario “{byScenario}”; exploration did not reach it</span>}
+            {verdict === "unfinished" && <span className="font-sans"> · held in the states explored</span>}
+            {verdict === "known" && <span className="font-sans text-kumo-warning"> · known bug: {p.known}</span>}
+            {verdict === "fixed" && <span className="font-sans text-kumo-danger"> · marked known (“{p.known}”), but holds now: remove known</span>}
+            {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
+            {broken && <HowFound p={broken} />}
+          </p>
+        </div>
+        {broken && (
+          <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(withLoop(broken.counterexample, broken.loop), `Counterexample: ${p.id}`)}>
+            Open in playground
+          </Button>
+        )}
+        {byScenario && (
+          <Button size="xs" icon={<PlayIcon />} onClick={() => onScenario(byScenario)}>
+            Open the scenario
+          </Button>
+        )}
+      </div>
+      {broken && <BrokenSteps p={broken} />}
+    </div>
+  );
+}
+
+function VerdictIcon({ verdict }: { verdict: Verdict }) {
+  if (verdict === "broken" || verdict === "fixed") return <XCircleIcon size={18} className="mt-px text-kumo-danger" />;
+  if (verdict === "known") return <XCircleIcon size={18} className="mt-px text-kumo-warning" />;
+  if (verdict === "holds") return <CheckCircleIcon size={18} className="mt-px text-kumo-success" />;
+  return <CircleDashedIcon size={18} className="mt-px text-kumo-warning" />;
+}
+
+function HowFound({ p }: { p: PropertyBroken }) {
+  const faults = p.counterexample.events.filter((e) => e.kind === "lose" || e.kind === "restart").length;
+  return (
+    <>
+      <span className="font-sans"> · {faults ? `needs ${faults} fault(s)` : "needs no faults"}</span>
+      {p.foundBy === "walk" && <span className="font-sans"> · found by a random run, shrunk to {p.counterexample.events.length} steps; maybe not the shortest</span>}
+    </>
+  );
+}
+
+/** The way to the break, and for liveness the loop after it. */
+function BrokenSteps({ p }: { p: PropertyBroken }) {
+  const { counterexample: ce, loop } = p;
+  return (
+    <>
+      <Steps events={ce.events} worlds={ce.worlds} />
+      {loop?.events.length ? (
+        <>
+          <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then this repeats forever, and it never gets there:</p>
+          <Steps events={loop.events} worlds={loop.worlds} />
+        </>
+      ) : loop ? (
+        <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then nothing fair can happen: it stays there forever, and never gets there.</p>
+      ) : null}
+    </>
   );
 }
 

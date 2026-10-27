@@ -3,6 +3,7 @@
 import type {
   ActionInfo,
   ActorInfo,
+  Fairness,
   GroupInfo,
   InputInfo,
   PropertyInfo,
@@ -241,7 +242,7 @@ export interface MessageTransition<M extends Registry, S, P, Sends extends Messa
    * Fairness for delivering this message (RFD0006): weak by default, so a message in flight
    * arrives unless a fault loses it. "strong", or false for a delivery that may never happen.
    */
-  fair?: "weak" | "strong" | false;
+  fair?: Fairness | false;
 }
 
 export interface InternalTransition<M extends Registry, S, Sends extends MessageKey<M> = never, Starts extends string = never>
@@ -261,7 +262,7 @@ export interface InternalTransition<M extends Registry, S, Sends extends Message
    * happens ("weak", the default); "strong": one possible again and again eventually happens;
    * false: it may never happen.
    */
-  fair?: "weak" | "strong" | false;
+  fair?: Fairness | false;
   /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
   routine?: boolean;
 }
@@ -582,7 +583,7 @@ interface RawStep {
   starts?: string[];
   when?: (state: unknown) => boolean;
   after?: string;
-  fair?: "weak" | "strong" | false;
+  fair?: Fairness | false;
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
   routine?: boolean;

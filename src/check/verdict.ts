@@ -1,5 +1,5 @@
-// How check reads a property out: from the report, the scenarios that break it, and `known`.
-import type { PropertyResult, Report } from "../check/index.ts";
+// How a property is read out: from the report, the scenarios that break it, and `known`.
+import type { PropertyResult, Report } from "./explore.ts";
 
 /** A property's verdict, as `check` reads it out. */
 export type Verdict =

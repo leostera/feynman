@@ -1,8 +1,8 @@
 // Text output: what agents and people read in a terminal.
-import { faultsIn, type PropertyResult, type Report } from "../check/index.ts";
+import { faultsIn, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
 import type { Event, RunDiff, Spec, World } from "../spec/index.ts";
-import { verdictOf, type Verdict } from "./verdict.ts";
+import { verdictOf, type Verdict } from "../check/verdict.ts";
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: number) => (text: string) => (color ? `\x1b[${code}m${text}\x1b[0m` : text);
@@ -125,27 +125,12 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
       continue;
     }
     const mark = v === "known" ? yellow(`  ✗ ${p.id}`) + `  ${p.description}` + yellow(`  known bug: ${p.known}`) : red(`  ✗ ${p.id}`) + `  ${p.description}`;
-    if (p.holds && scenario) {
+    // Broken, or known, yet held: a scenario broke it (any other held verdict is handled above).
+    if (p.holds) {
       lines.push(mark + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
       continue;
     }
-    lines.push(mark);
-    const ce = p.counterexample!;
-    const faults = faultsIn(ce.events);
-    const found = p.foundBy === "walk" ? `found by a random run past the search's depth, shrunk to ${ce.events.length} event(s)` : `shortest counterexample, ${ce.events.length} event(s)`;
-    const needs = faults ? `needs ${faults} fault(s)` : "needs no faults";
-    const shorter = p.shorter ? `; a shorter one, ${p.shorter.events} event(s), needs ${p.shorter.faults} fault(s)` : "";
-    const from = ce.from ? `, from the end of scenario "${ce.from}"` : "";
-    if (options.brief) {
-      lines.push(dim(`    ${found}, ${needs}${from}${shorter}${options.command ? `; see it with ${options.command} --only ${p.id}` : ""}`));
-      continue;
-    }
-    lines.push(dim(`    ${found}, ${needs}${from}${shorter}:`));
-    lines.push(indent(formatEvents(spec, ce.events, ce.worlds), 4));
-    if (p.loop?.events.length) {
-      lines.push(dim(`    then this repeats forever, and it never holds:`));
-      lines.push(indent(formatEvents(spec, p.loop.events, p.loop.worlds), 4));
-    } else if (p.loop) lines.push(dim(`    then nothing fair can happen: it stays there forever, and never holds`));
+    lines.push(mark, ...formatBroken(spec, p, options));
   }
   for (const e of report.errors) {
     lines.push(red(`  ✗ spec error: ${e.message}`));
@@ -157,6 +142,21 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   }
   if (report.coverage.missed.length) lines.push(yellow(`  never ran: ${report.coverage.missed.join(", ")}`));
   return lines.join("\n");
+}
+
+/** How a broken property breaks: the counterexample, how it was found, and for liveness the loop. */
+function formatBroken(spec: Spec, p: PropertyBroken, options: ReportOptions): string[] {
+  const { counterexample: ce, loop } = p;
+  const faults = faultsIn(ce.events);
+  const found = p.foundBy === "walk" ? `found by a random run past the search's depth, shrunk to ${ce.events.length} event(s)` : `shortest counterexample, ${ce.events.length} event(s)`;
+  const needs = faults ? `needs ${faults} fault(s)` : "needs no faults";
+  const shorter = p.shorter ? `; a shorter one, ${p.shorter.events} event(s), needs ${p.shorter.faults} fault(s)` : "";
+  const from = ce.from ? `, from the end of scenario "${ce.from}"` : "";
+  if (options.brief) return [dim(`    ${found}, ${needs}${from}${shorter}${options.command ? `; see it with ${options.command} --only ${p.id}` : ""}`)];
+  const lines = [dim(`    ${found}, ${needs}${from}${shorter}:`), indent(formatEvents(spec, ce.events, ce.worlds), 4)];
+  if (loop?.events.length) lines.push(dim(`    then this repeats forever, and it never holds:`), indent(formatEvents(spec, loop.events, loop.worlds), 4));
+  else if (loop) lines.push(dim(`    then nothing fair can happen: it stays there forever, and never holds`));
+  return lines;
 }
 
 export function formatDiff(spec: Spec, scenario: string, diff: RunDiff | "added" | "removed"): string {

@@ -2,7 +2,7 @@
 // outcome is gathered first (SpecCheck), then shown as text, briefly, as JSON, or as the
 // scenario replaying one counterexample.
 import { join } from "node:path";
-import { check, faultsIn, withFewestFaults, type Bounds, type Report } from "../check/index.ts";
+import { check, faultsIn, withFewestFaults, type Bounds, type PropertyBroken, type Report } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
@@ -12,7 +12,7 @@ import { loadPlayground } from "./load.ts";
 import { scenarioCode } from "./scenario-code.ts";
 import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt, type ShapeWarning } from "./shape.ts";
 import { typecheck } from "./types.ts";
-import { verdictOf } from "./verdict.ts";
+import { verdictOf } from "../check/verdict.ts";
 
 export interface CheckOptions {
   bounds: Partial<Bounds>;
@@ -100,6 +100,18 @@ function focus(spec: Spec, only: string[]): Spec | null {
   return properties.length ? { ...spec, properties } : null;
 }
 
+function counterexampleJson(p: PropertyBroken) {
+  const { counterexample: ce, loop } = p;
+  return {
+    foundBy: p.foundBy,
+    from: ce.from ?? null,
+    faults: faultsIn(ce.events),
+    ...(p.shorter ? { shorter: p.shorter } : {}),
+    events: ce.events.map((e, i) => eventJson(e, ce.worlds[i])),
+    ...(loop ? { loop: loop.events.map((e, i) => eventJson(e, loop.worlds[i])) } : {}),
+  };
+}
+
 function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>): SpecCheck {
   const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
   const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
@@ -169,18 +181,7 @@ function toJson(result: SpecCheck) {
       verdict: verdictOf(p, result),
       ...(p.known !== undefined ? { known: p.known } : {}),
       ...(result.brokenBy.has(p.id) ? { brokenByScenario: result.brokenBy.get(p.id) } : {}),
-      ...(p.counterexample
-        ? {
-            counterexample: {
-              foundBy: p.foundBy,
-              from: p.counterexample.from ?? null,
-              faults: faultsIn(p.counterexample.events),
-              ...(p.shorter ? { shorter: p.shorter } : {}),
-              events: p.counterexample.events.map((e, i) => eventJson(e, p.counterexample!.worlds[i])),
-              ...(p.loop ? { loop: p.loop.events.map((e, i) => eventJson(e, p.loop!.worlds[i])) } : {}),
-            },
-          }
-        : {}),
+      ...(p.holds ? {} : { counterexample: counterexampleJson(p) }),
     })),
     errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(ev, e.counterexample.worlds[i])) })),
     ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(ev, report.stuck!.counterexample.worlds[i])) } } : {}),

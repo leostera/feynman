@@ -1,7 +1,7 @@
 // Judging what the search or a random run meets: which properties a world, a step, or a path
 // breaks, and whether the system is stuck. Shared, so both ways of exploring judge alike.
 // Liveness is judged after exploring, on the whole graph (liveness.ts).
-import { choices, holdsIn, traceView, worldView, type Event, type Spec, type World } from "../spec/index.ts";
+import { choices, holdsIn, traceView, worldView, type Event, type Spec, type TraceEvent, type World, type WorldView } from "../spec/index.ts";
 
 /** What the exploring so far knows: which properties broke, which errors were met, which steps ran. */
 export interface Verdicts {
@@ -36,12 +36,13 @@ export function judge(spec: Spec, event: Event | null, path: () => Event[], v: V
 /** The `everyStep` properties a step breaks, of those not yet broken. A predicate that cannot be evaluated holds, as an `always` one does. */
 export function stepBreaks(spec: Spec, before: World, after: World, event: Event, broken: Set<string>): string[] {
   const out: string[] = [];
-  let views: [ReturnType<typeof worldView>, ReturnType<typeof worldView>, ReturnType<typeof traceView>["events"][number]] | undefined;
+  // Built once, and only if some step property is still to judge.
+  let views: { before: WorldView; after: WorldView; event: TraceEvent } | undefined;
   for (const p of spec.properties) {
     if (p.kind !== "everyStep" || broken.has(p.id)) continue;
-    views ??= [worldView(spec, before), worldView(spec, after), traceView([event]).events[0]];
+    views ??= { before: worldView(spec, before), after: worldView(spec, after), event: traceView([event]).events[0] };
     try {
-      if (!p.everyStep(views[0], views[1], views[2])) out.push(p.id);
+      if (!p.everyStep(views.before, views.after, views.event)) out.push(p.id);
     } catch {
       // Holds vacuously, like an `always` that looks at an instance not there yet.
     }

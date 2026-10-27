@@ -22,7 +22,7 @@ describe("the checker against a reference explorer", () => {
       expect(ours.exhaustive).toBe(true);
       expect(worlds.size).toBe(theirs.worlds.size);
       expect([...worlds].filter((w) => !theirs.worlds.has(w))).toEqual([]);
-      const broken = Object.fromEntries(ours.properties.filter((p) => p.kind === "always" && !p.holds).map((p) => [p.id, p.counterexample!.events.length]));
+      const broken = Object.fromEntries(ours.properties.filter((p) => !p.holds).filter((p) => p.kind === "always").map((p) => [p.id, p.counterexample.events.length]));
       expect(broken).toEqual(Object.fromEntries(theirs.broken));
       expect(ours.errors.map((e) => e.message).sort()).toEqual([...theirs.errors].sort());
       expect([...ours.coverage.reached].sort()).toEqual([...theirs.reached].sort());

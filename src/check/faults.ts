@@ -2,7 +2,7 @@
 // a message or restart an instance when a longer path breaks the property with none. For
 // judging how likely a bug is, the fewest faults matter more than the fewest events.
 import type { Event, Spec } from "../spec/index.ts";
-import { check, type PropertyResult, type Report, type Seed } from "./explore.ts";
+import { check, type PropertyBroken, type PropertyResult, type Report, type Seed } from "./explore.ts";
 
 /** Faults on a path: lost deliveries and restarts. */
 export function faultsIn(events: readonly Event[]): number {
@@ -15,7 +15,7 @@ export function faultsIn(events: readonly Event[]): number {
  * keeps the length of the shortest path in `shorter`, when that one used more faults.
  */
 export function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = []): Report {
-  const faultsOf = (p: PropertyResult) => (!p.holds && p.counterexample ? faultsIn(p.counterexample.events) : 0);
+  const faultsOf = (p: PropertyResult) => (p.holds ? 0 : faultsIn(p.counterexample.events));
   const top = Math.max(0, ...report.properties.map(faultsOf));
   const settled = new Set<string>();
   let properties = report.properties;
@@ -24,11 +24,11 @@ export function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = [])
     if (!open.size) break;
     const again = check(spec, { ...report.bounds, faults }, seeds);
     properties = properties.map((p) => {
-      const found = open.has(p.id) ? again.properties.find((q) => q.id === p.id && !q.holds && q.counterexample) : undefined;
-      if (!found) return p;
+      const found = open.has(p.id) ? again.properties.find((q): q is PropertyBroken => q.id === p.id && !q.holds) : undefined;
+      if (!found || p.holds) return p;
       settled.add(p.id);
-      const shortest = p.counterexample!.events;
-      const shorter = shortest.length < found.counterexample!.events.length ? { shorter: { events: shortest.length, faults: faultsIn(shortest) } } : {};
+      const shortest = p.counterexample.events;
+      const shorter = shortest.length < found.counterexample.events.length ? { shorter: { events: shortest.length, faults: faultsIn(shortest) } } : {};
       return { ...found, ...(p.known === undefined ? {} : { known: p.known }), ...shorter };
     });
   }

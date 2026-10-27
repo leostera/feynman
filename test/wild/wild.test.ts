@@ -20,7 +20,7 @@ describe("specs from the wild", () => {
       // Each counterexample replays: a way in, then a loop back to where it started.
       for (const p of report.properties.filter((x) => !x.holds)) {
         expect(p.loop!.events.length).toBeGreaterThan(0);
-        expect(p.loop!.initial).toEqual(p.counterexample!.worlds.at(-1) ?? p.counterexample!.initial);
+        expect(p.loop!.initial).toEqual(p.counterexample.worlds.at(-1) ?? p.counterexample.initial);
       }
     });
   }

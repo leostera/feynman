@@ -72,7 +72,7 @@ export interface StepInfo {
    * (strong) possible, must eventually happen. Deliveries, timers and guards are weak unless
    * they say otherwise; actions are never fair.
    */
-  fair?: "weak" | "strong" | false;
+  fair?: Fairness | false;
   /** For a timer, when the code fires it, in words; it does not change when it can fire. */
   after?: string;
 }
@@ -113,6 +113,12 @@ export interface ActorInfo {
   actions: Record<string, ActionInfo>;
   transitions: Record<string, TransitionInfo>;
 }
+
+/**
+ * How fair a step is (RFD0006): weakly, it must happen once it stays possible; strongly, once
+ * it keeps becoming possible, even if not for good.
+ */
+export type Fairness = "weak" | "strong";
 
 /** A property, as the engine and checker read it (see `PropertyDef` in dsl.ts). */
 export type PropertyInfo = (
