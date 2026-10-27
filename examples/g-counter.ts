@@ -36,7 +36,8 @@ export function gCounter(variant: "buggy" | "fixed") {
       const Replica = spec.defineActor({
         name: "Replica",
         zone,
-        symmetric: true,
+        // Not `symmetric`: the checker renames ids in state but does not re-sort the keys they
+        // name, so swapping replicas would give counts in another order, and it refutes the claim.
         durable: ["total", "counts", "increments"],
         // `increments`: how many this replica took itself, to judge the count by.
         initialState: () => ({ total: 0, counts: {} as Record<string, number>, increments: 0 }),
