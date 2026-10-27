@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { check, pendingText, type Bounds, type Report } from "../../src/check/index.ts";
 import type { Spec, World } from "../../src/spec/index.ts";
+import { sortedJson } from "../../src/spec/json.ts";
 
 const JAR_PLACES = [process.env.TLA_TOOLS_JAR, "/Applications/TLA+ Toolbox.app/Contents/Eclipse/tla2tools.jar", "/opt/homebrew/share/tla2tools.jar"];
 
@@ -62,20 +63,13 @@ export function tlc(module: string, constants: Record<string, string | number | 
   }
 }
 
-/** JSON with object keys sorted: two states that differ only in the order fields were added are one. */
-function stable(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stable((value as Record<string, unknown>)[k])}`).join(",")}}`;
-}
-
 /** A world as TLA+ sees it: states, what is in flight (as a bag, no times), counters, the budget spent, and what `never` properties remember. */
 function projection(world: World, budget: { acts: Record<string, number>; faults: number; memory: string }): string {
   return [
-    world.instances.map((i) => `${i.id}=${stable(i.state)}`).sort().join("\n"),
+    world.instances.map((i) => `${i.id}=${sortedJson(i.state)}`).sort().join("\n"),
     world.pending.map((p) => pendingText(p)).sort().join("\n"),
-    stable(world.fresh),
-    stable(budget.acts),
+    sortedJson(world.fresh),
+    sortedJson(budget.acts),
     budget.faults,
     budget.memory,
   ].join("\n--\n");

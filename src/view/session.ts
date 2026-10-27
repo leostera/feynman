@@ -2,6 +2,7 @@
 // that produced them, so a session survives reloads by replaying its operations against
 // the (possibly edited) spec.
 import { act, fire, guard, lose, pendingInOrder, restart, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
+import { sortedJson } from "../spec/json.ts";
 
 /** What a person did in the playground. */
 export type Op =
@@ -105,7 +106,7 @@ function operationsFromRun(run: Pick<Run, "initial" | "events" | "worlds">): Op[
         break;
       case "deliver":
       case "lose": {
-        const pending = before.pending.find((item) => item.kind === "deliver" && item.to === event.instance && item.message === event.message && item.from === event.from && JSON.stringify(item.payload) === JSON.stringify(event.payload));
+        const pending = before.pending.find((item) => item.kind === "deliver" && item.to === event.instance && item.message === event.message && item.from === event.from && sortedJson(item.payload) === sortedJson(event.payload));
         if (pending) operation = event.kind === "lose" ? { op: "lose", pending: pending.id } : { op: "fire", pending: pending.id };
         break;
       }

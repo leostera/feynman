@@ -193,3 +193,39 @@ test("a map that gained its entries in another order is the same state, renamed 
   expect(folded.reductions.refuted).toBeUndefined();
   expect(folded.states).toBeLessThan(plain.states);
 });
+
+test("states that hold different sets or maps are different states, and changing one is a change", async () => {
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  // Picking 7 is the bug. Plain JSON writes every set and map as {}, which made picking 1 and
+  // picking 7 one state, so the 7 was never judged.
+  const spec = defineSpec("sets", { messages: {} }, (spec) => {
+    const zone = spec.defineZone({ name: "Z" });
+    const Picker = spec.defineActor({
+      name: "Picker",
+      singleton: true,
+      zone,
+      initialState: () => ({ picked: new Set<number>(), counts: new Map<number, number>(), done: false, sawSeven: false }),
+      actions: {
+        pick: {
+          label: "Pick",
+          description: "Picks a number.",
+          when: (state) => !state.done,
+          inputs: { n: { type: [1, 7] as const } },
+          run(state, inputs) {
+            state.done = true;
+            state.picked.add(inputs.n);
+            state.counts.set(inputs.n, 1);
+          },
+        },
+        look: { label: "Look", description: "Looks at what it picked.", when: (state) => state.done, run: (state) => void (state.sawSeven = state.picked.has(7) && state.counts.has(7)) },
+      },
+    });
+    spec.defineInvariants({ neverSeven: { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven } });
+    return { Picker };
+  });
+  const report = check(spec, { depth: 4, walks: 0 });
+  const [neverSeven] = report.properties;
+  expect(neverSeven.holds).toBe(false);
+  const pick = neverSeven.counterexample!.events.find((e) => e.key === "pick")!;
+  expect(pick.changes.map((c) => c.path).sort()).toEqual(["counts", "done", "picked"]);
+});

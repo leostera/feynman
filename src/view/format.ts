@@ -14,10 +14,17 @@ export function time(ms: number): string {
   return `${+(ms / 3_600_000).toFixed(1)}h`;
 }
 
+/** For JSON.stringify: sets as arrays and maps as objects, which plain JSON writes as `{}`. */
+export function asJson(_key: string, value: unknown): unknown {
+  if (value instanceof Set) return [...value];
+  if (value instanceof Map) return Object.fromEntries(value);
+  return value;
+}
+
 export function short(value: unknown, max = 48): string {
   if (value === undefined) return "—";
   if (typeof value === "string") return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-  const text = JSON.stringify(value);
+  const text = JSON.stringify(value, asJson);
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 

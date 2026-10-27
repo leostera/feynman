@@ -9,6 +9,7 @@
 //   This assumes no handler's behaviour depends on key order, which is safe for messages
 //   (in flight they are a bag) and true of any spec that uses an object as a map.
 import { actorNamed, type Spec, type World } from "../spec/index.ts";
+import { sortedJson } from "../spec/json.ts";
 
 type Pending = World["pending"][number];
 
@@ -20,11 +21,6 @@ export function textOf(value: unknown): string {
   let text = texts.get(value);
   if (text === undefined) texts.set(value, (text = sortedJson(value)));
   return text;
-}
-
-/** JSON with every object's keys in order. */
-function sortedJson(value: unknown): string {
-  return JSON.stringify(value, (_key, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v)) ?? "null";
 }
 
 /** A key line after renaming: names that were object keys may now be out of order, so sort them again. */

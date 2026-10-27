@@ -6,7 +6,7 @@ import { createContext, useContext, useState, type CSSProperties, type ReactNode
 import type { Event, Spec, World } from "../spec/index.ts";
 import type { Playground } from "../play/index.ts";
 import type { Bundle, CallNode, CodeToken, SpecEntry } from "./data";
-import { labelOf, messageName, short, sourceUrl, stepTitle } from "./format";
+import { labelOf, messageName, short, asJson, sourceUrl, stepTitle } from "./format";
 
 export interface Loaded {
   entry: SpecEntry;
@@ -276,7 +276,7 @@ export function EventDetail({ event, world, compare, folded }: { event: Event; w
         <Section title="Changed">
           {event.changes.map((c, i) => {
             const was = before?.get(`${c.instance}:${c.path}`);
-            const differs = before && JSON.stringify(was) !== JSON.stringify(c.after);
+            const differs = before && JSON.stringify(was, asJson) !== JSON.stringify(c.after, asJson);
             return (
               <div key={i} className="font-mono text-[11px]">
                 <span className="text-kumo-subtle">{labelOf(world, c.instance)}.</span>

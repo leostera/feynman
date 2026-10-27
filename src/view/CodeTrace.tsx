@@ -8,7 +8,7 @@ import { ArrowSquareOutIcon, CaretRightIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Event, World } from "../spec/index.ts";
 import { functionId, type CallNode } from "./data";
-import { labelOf, messageName, short, sourceUrl, stepTitle } from "./format";
+import { labelOf, messageName, short, asJson, sourceUrl, stepTitle } from "./format";
 import { highlightJson } from "./highlight";
 import type { Session } from "./session";
 import { CodeExcerpt, STATUS_BADGE, useExplorer } from "./ui";
@@ -132,7 +132,7 @@ function Frame({ source }: { source: string }) {
 
 /** A value pretty-printed as JSON, highlighted by Shiki like the code snippets. */
 function Json({ value }: { value: unknown }) {
-  const text = JSON.stringify(value, null, 2) ?? String(value);
+  const text = JSON.stringify(value, asJson, 2) ?? String(value);
   const lines = useMemo(() => highlightJson(text), [text]);
   return (
     <code className="feynman-code">
