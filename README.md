@@ -34,6 +34,10 @@ bunx feynman dev      # the simulator, reloading as the spec changes
 bunx feynman build    # minified standalone .feynman/index.html, plus .gz/.br for static hosting
 ```
 
+`feynman check --brief` gives one line per property; `--only P` shows one property's
+counterexample, `--json` the whole result, and `--only P --as-scenario` the counterexample
+as a scenario you can paste into the spec.
+
 Specs live in `specs/*.ts` and import `@leostera/feynman`:
 
 ```ts
