@@ -29,7 +29,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Request, Ok } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster" });
+      const zone = spec.defineZone({ name: "Cluster", description: "one node at a time in the critical section", place: { arrange: "row" } });
 
       const Node = spec.defineActor({
         name: "Node",
@@ -37,6 +37,12 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         // A clock that goes back on a restart can stamp a request no later than one already granted.
         durable: variant === "fixed" ? ["clock"] : [],
         initialState: () => ({ clock: 0, asking: null as number | null, oks: 0, inside: false, deferred: [] as { id: string; ts: number }[] }),
+        look: {
+          icon: "server",
+          status: (s) => (s.inside ? "in the critical section" : s.asking !== null ? `asking, at ${s.asking}` : "outside") + ` · clock ${s.clock}`,
+          mood: (s) => (s.inside ? "ok" : s.asking !== null ? "busy" : "off"),
+          rows: (s) => s.deferred.map((d) => ({ label: `${d.id} waits`, detail: `asked at ${d.ts}`, mood: "warn" as const })),
+        },
         actions: {
           request: {
             label: "Ask to go in",
@@ -66,6 +72,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         transitions: {
           [Request]: {
             description: "Answers at once, unless it is inside or its own request comes first.",
+            say: (s, msg) => (s.deferred.some((d) => d.ts === msg.ts) ? `Keeps a request stamped ${msg.ts} waiting` : `Says ok to a request stamped ${msg.ts}`),
             sends: [Ok],
             run(state, msg, ctx) {
               state.clock = Math.max(state.clock, msg.ts);
@@ -90,6 +97,34 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         mutex: {
           description: "At most one node is in the critical section.",
           always: (w) => w.all(Node).filter((n) => n.state.inside).length <= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "In and out",
+        description: "A asks, B says ok, A goes in, and leaves.",
+        run(s) {
+          const a = s.spawn(Node, "Node A");
+          s.spawn(Node, "Node B");
+          s.act(a, "request");
+          s.settle();
+          s.act(a, "exit");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Both ask at once",
+        description:
+          variant === "buggy"
+            ? "Both stamp their request 1; neither counts its own as first, both say ok, and both go in."
+            : "Both stamp their request 1; the tie goes to A, which goes in, and lets B in when it leaves.",
+        run(s) {
+          const a = s.spawn(Node, "Node A");
+          const b = s.spawn(Node, "Node B");
+          s.act(a, "request");
+          s.act(b, "request");
+          s.settle();
+          s.act(a, "exit");
+          s.settle();
         },
       });
       return { Node };

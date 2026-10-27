@@ -21,16 +21,23 @@ export function barrier(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Arrived, Go } = spec.messages;
-      const zone = spec.defineZone({ name: "Job" });
+      const zone = spec.defineZone({ name: "Job", description: "nobody goes on until everyone is here" });
 
       const Coordinator = spec.defineActor({
         name: "Coordinator",
         zone,
         singleton: true,
         initialState: () => ({ count: 0, arrived: [] as string[], open: false }),
+        look: {
+          icon: "gear",
+          status: (s) => (s.open ? "open" : `${variant === "buggy" ? s.count : s.arrived.length} arrival(s)`),
+          mood: (s) => (s.open ? "ok" : "busy"),
+          rows: (s) => s.arrived.map((id) => ({ label: id, detail: "here", mood: "ok" as const })),
+        },
         transitions: {
           [Arrived]: {
             description: "Notes the arrival; once everyone is here, lets them all through.",
+            say: (s) => (s.open ? "Everyone is here, it thinks: opens the barrier" : variant === "buggy" ? `Counts ${s.count} arrival(s)` : `${s.arrived.length} worker(s) here`),
             sends: [Go],
             run(state, _msg, ctx) {
               if (state.open) return;
@@ -51,6 +58,11 @@ export function barrier(variant: "buggy" | "fixed") {
         // `reached` is what happened, which a restart cannot undo; `arrived` is what the worker remembers.
         durable: ["reached"],
         initialState: () => ({ arrived: false, reached: false, through: false }),
+        look: {
+          icon: "cpu",
+          status: (s) => (s.through ? "through" : s.arrived ? "waiting at the barrier" : s.reached ? "restarted" : "working"),
+          mood: (s) => (s.through ? "ok" : s.arrived ? "busy" : "off"),
+        },
         actions: {
           arrive: {
             label: "Reach the barrier",
@@ -71,6 +83,30 @@ export function barrier(variant: "buggy" | "fixed") {
         waitsForAll: {
           description: "The barrier opens only once every worker has reached it.",
           always: (w) => !w.the(Coordinator).state.open || w.all(Worker).every((x) => x.state.reached),
+        },
+      });
+      spec.defineScenario({
+        name: "Both arrive",
+        description: "Both workers reach the barrier, and it lets them through.",
+        run(s) {
+          const workers = ["Worker A", "Worker B"].map((name) => s.spawn(Worker, name));
+          for (const w of workers) s.act(w, "arrive");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A worker restarts",
+        description:
+          variant === "buggy"
+            ? "Worker A arrives, restarts, and arrives again: two arrivals, so the barrier opens without Worker B."
+            : "Worker A arrives, restarts, and arrives again: still one worker, so the barrier waits for Worker B.",
+        run(s) {
+          const [a] = ["Worker A", "Worker B"].map((name) => s.spawn(Worker, name));
+          s.act(a, "arrive");
+          s.settle();
+          s.restart(a);
+          s.act(a, "arrive");
+          s.settle();
         },
       });
       return { Coordinator, Worker };
