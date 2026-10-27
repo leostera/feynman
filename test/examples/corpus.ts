@@ -18,6 +18,7 @@ import { gCounter } from "../../examples/g-counter.ts";
 import { orSet } from "../../examples/or-set.ts";
 import { idempotentConsumer } from "../../examples/idempotent-consumer.ts";
 import { readRepair } from "../../examples/read-repair.ts";
+import { lostUpdate } from "../../examples/lost-update.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -440,6 +441,18 @@ export const corpus: Example[] = [
     ],
     tla: { module: "ReadRepair", invariants: ["neverGoesBack"], configs: BOTH_WAYS },
     p: { project: "ReadRepair", property: "neverGoesBack", assertion: "a replica went back to an older version", depth: 30 },
+  },
+  {
+    name: "lost update",
+    spec: lostUpdate,
+    instances: { Teller: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 10, faults: 0 }, expect: { moneyAddsUp: { events: 8, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 40, faults: 0 }, expect: { moneyAddsUp: "holds" } },
+      { variant: "fixed", bounds: { depth: 40, faults: 1 }, expect: { moneyAddsUp: "holds" } },
+    ],
+    tla: { module: "LostUpdate", invariants: ["moneyAddsUp"], configs: BOTH_WAYS },
+    p: { project: "LostUpdate", property: "moneyAddsUp", assertion: "the balance and what was paid out do not add up", depth: 40 },
   },
 ];
 
