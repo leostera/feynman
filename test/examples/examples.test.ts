@@ -3,7 +3,8 @@
 // whichever way it explores: with or without its reductions, with or without symmetry, and
 // by random runs alone.
 import { describe, expect, test } from "bun:test";
-import { check, replay, type Report } from "../../src/check/index.ts";
+import { check, replay, type Counterexample, type Report } from "../../src/check/index.ts";
+import { isLiveness } from "../../src/spec/index.ts";
 import { caseName, corpus, type Expected } from "./corpus.ts";
 
 const EXHAUSTIVE = { maxStates: 2_000_000, timeLimit: 120_000, walks: 0 };
@@ -13,12 +14,19 @@ function verdicts(report: Report, expected: Record<string, Expected>): Record<st
   return Object.fromEntries(
     Object.keys(expected).map((id) => {
       const p = report.properties.find((x) => x.id === id)!;
-      if (p.holds) return [id, "holds"];
-      const events = p.counterexample!.events;
-      return [id, { events: events.length, faults: events.filter((e) => e.kind === "lose" || e.kind === "restart").length }];
+      if (p.holds) return [id, p.unfinished ? "unfinished" : "holds"];
+      return [id, shape(p.counterexample!)];
     }),
   );
 }
+
+/** A counterexample's length and faults. For liveness, the way to the loop. */
+function shape(ce: Counterexample): Expected {
+  return { events: ce.events.length, faults: ce.events.filter((e) => e.kind === "lose" || e.kind === "restart").length };
+}
+
+/** Where the report says the system gets stuck, in the terms of `Expected`. */
+const stuckOf = (report: Report) => (report.stuck ? shape(report.stuck.counterexample) : undefined);
 
 for (const example of corpus) for (const c of example.cases) {
   const spec = example.spec(c.variant);
@@ -31,6 +39,7 @@ for (const example of corpus) for (const c of example.cases) {
       expect(plain.exhaustive).toBe(true);
       expect(plain.errors.map((e) => e.message)).toEqual([]);
       expect(verdicts(plain, c.expect)).toEqual(c.expect);
+      expect(stuckOf(plain)).toEqual(c.stuck);
     });
 
     test("counterexamples replay to the same events", () => {
@@ -43,6 +52,7 @@ for (const example of corpus) for (const c of example.cases) {
     test("the reductions reach the same verdicts, with counterexamples just as short", () => {
       const reduced = run({ reduce: true, symmetry: false });
       expect(verdicts(reduced, c.expect)).toEqual(c.expect);
+      expect(stuckOf(reduced)).toEqual(c.stuck);
       expect(reduced.coverage).toEqual(plain.coverage);
       // Without a clock, sleep sets skip orders, never states.
       expect(reduced.states).toBe(plain.states);
@@ -51,20 +61,24 @@ for (const example of corpus) for (const c of example.cases) {
     test("symmetry reaches the same verdicts, in no more states, or is caught being wrong", () => {
       const folded = run({ reduce: true, symmetry: true });
       expect(verdicts(folded, c.expect)).toEqual(c.expect);
+      expect(stuckOf(folded)).toEqual(c.stuck);
       expect(folded.coverage).toEqual(plain.coverage);
       expect(folded.states).toBeLessThanOrEqual(plain.states);
-      expect(folded.reductions.refuted).toEqual(c.refuted);
+      // Symmetry is off for liveness, so a wrong claim is caught by the safety properties alone.
+      const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
+      expect(safety.properties.length === spec.properties.length ? folded.reductions.refuted : check(safety, { ...bounds, ...EXHAUSTIVE, reduce: true, symmetry: true }).reductions.refuted).toEqual(c.refuted);
     });
 
-    test("random runs alone find every bug", () => {
-      const broken = Object.entries(c.expect).filter(([, v]) => v !== "holds").map(([id]) => id);
+    // Liveness needs the whole graph, which random runs do not build: they judge safety only.
+    test("random runs alone find every safety bug, and getting stuck", () => {
+      const safety = Object.entries(c.expect).filter(([id]) => !isLiveness(spec.properties.find((p) => p.id === id)!));
       const walked = check(spec, { ...bounds, depth: 0, walks: 3_000, walkDepth: 40, timeLimit: 60_000 });
-      for (const id of broken) {
+      for (const [id, expected] of safety) {
         const p = walked.properties.find((x) => x.id === id)!;
-        expect(p.holds).toBe(false);
-        expect(p.foundBy).toBe("walk");
+        expect(p.holds).toBe(expected === "holds");
+        if (!p.holds) expect(p.foundBy).toBe("walk");
       }
-      for (const [id] of Object.entries(c.expect).filter(([, v]) => v === "holds")) expect(walked.properties.find((x) => x.id === id)!.holds).toBe(true);
+      expect(walked.stuck?.foundBy).toBe(c.stuck ? "walk" : undefined);
     });
   });
 }

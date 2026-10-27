@@ -99,7 +99,7 @@ test("invariants that do not hold are reported on the event that broke them", ()
         [s.messages.Ping]: { description: "Adds one more.", sources: ["c.ts#ping"], run: (state) => void (state.n += 1) },
       },
     });
-    s.defineInvariants({ atMostTwo: { description: "n stays at two or below.", always: (w) => w.the(Counter).state.n <= 2 } });
+    s.defineProperties({ atMostTwo: { description: "n stays at two or below.", always: (w) => w.the(Counter).state.n <= 2 } });
   });
   let world = startWorld(spec).at(-1)!.world;
   world = act(spec, world, "counter", "bump").world;

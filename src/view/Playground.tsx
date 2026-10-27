@@ -444,7 +444,7 @@ interface Play {
 /**
  * Play lets the system run: at now, the next event it would take left alone is run and
  * animated in, then the next. With nothing to run it stays on and waits, so whatever a
- * person does next plays out by itself. It pauses on a spec error or a broken invariant.
+ * person does next plays out by itself. It pauses on a spec error or a broken property.
  * There is no clock (RFD0004): play is a pace, events per animation, never time passing.
  */
 function usePlay(spec: Spec, session: Session, setSession: (s: Session) => void, setCursor: (n: number | null) => void, replay: Replay, active: boolean, [playing, setPlaying]: [boolean, (on: boolean) => void]) {

@@ -86,7 +86,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         ackedIsReplicated: { description: "Every write the client was told succeeded is on the backup.", always: (w) => w.the(Client).state.acked <= w.the(Backup).state.stored },
       });
       spec.defineScenario({

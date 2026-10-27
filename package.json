@@ -19,7 +19,7 @@
     "feynman": "bun bin/feynman.ts",
     "build": "vite build --config src/view/vite.config.ts",
     "test": "bun test --timeout 60000",
-    "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/p.oracle.ts",
+    "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/p.oracle.ts ./test/wild/wild.oracle.ts",
     "typecheck": "tsc --noEmit -p .",
     "prepublishOnly": "bun run build && bun run typecheck && bun run test",
     "site:deploy": "bun run --cwd sites/feynman.leostera.dev deploy"

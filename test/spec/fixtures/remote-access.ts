@@ -157,7 +157,7 @@ export default defineSpec(
       },
     });
 
-    spec.defineInvariants({
+    spec.defineProperties({
       relayNeverStoresSecrets: {
         description: "The relay never stores a secret, only hashes of it.",
         always: (world) =>
@@ -165,9 +165,11 @@ export default defineSpec(
       },
       macWithValidCodeLinks: {
         description: "A Mac given a code that was really issued ends up linked.",
-        after: (world) =>
-          world.all(Mac).some((mac) => mac.state.link.pending !== null && world.all(Person).some((p) => p.state.codes.includes(mac.state.code ?? ""))),
-        eventually: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
+        leadsTo: {
+          whenever: (world) =>
+            world.all(Mac).some((mac) => mac.state.link.pending !== null && world.all(Person).some((p) => p.state.codes.includes(mac.state.code ?? ""))),
+          then: (world) => world.all(Mac).every((mac) => mac.state.link.account !== null),
+        },
       },
       codeRedeemedOnce: {
         description: "A pairing code is never redeemed twice.",

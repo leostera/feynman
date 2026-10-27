@@ -15,7 +15,7 @@
 //
 // Expected, with two nodes: buggy breaks `mutex` in 6 steps without faults (both ask with
 // timestamp 1, each request lands and is answered, both answers land); fixed holds, with a
-// fault too.
+// fault too, but a lost request leaves both nodes waiting for good: stuck in 4 steps.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function ricartAgrawala(variant: "buggy" | "fixed") {
@@ -93,7 +93,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         mutex: {
           description: "At most one node is in the critical section.",
           always: (w) => w.all(Node).filter((n) => n.state.inside).length <= 1,

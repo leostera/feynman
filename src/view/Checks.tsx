@@ -12,7 +12,7 @@ import { Section, Sources, useExplorer } from "./ui";
 
 type Verdict = "broken" | "scenario" | "known" | "fixed" | "untested" | "explored" | "holds";
 
-/** Invariants a scenario breaks, by id, with the first scenario that does. */
+/** Properties a scenario breaks, by id, with the first scenario that does. */
 function brokenByScenarios(spec: Spec): Map<string, string> {
   const out = new Map<string, string>();
   for (const scenario of spec.scenarios) {
@@ -27,7 +27,7 @@ function verdictOf(p: PropertyResult, report: Report, scenarios: Map<string, str
   if (!p.holds) return "broken";
   if (scenarios.has(p.id)) return "scenario";
   if (p.tested === 0) return "untested";
-  return report.exhaustive ? "holds" : "explored";
+  return report.exhaustive && !p.unfinished ? "holds" : "explored";
 }
 
 function headline(verdicts: Verdict[], errors: number, exhaustive: boolean): string {
@@ -94,7 +94,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                         </p>
                       </div>
                       {p.counterexample && (
-                        <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(p.counterexample!, `Counterexample: ${p.id}`)}>
+                        <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(withLoop(p.counterexample!, p.loop), `Counterexample: ${p.id}`)}>
                           Open in playground
                         </Button>
                       )}
@@ -105,17 +105,32 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                       )}
                     </div>
                     {p.counterexample && <Steps events={p.counterexample.events} worlds={p.counterexample.worlds} />}
-                    {p.then?.length ? (
+                    {p.loop?.events.length ? (
                       <>
-                        <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then, left alone, it never gets there:</p>
-                        <Steps events={p.then} worlds={p.then.map(() => p.counterexample!.worlds.at(-1)!)} />
+                        <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then this repeats forever, and it never gets there:</p>
+                        <Steps events={p.loop.events} worlds={p.loop.worlds} />
                       </>
+                    ) : p.loop ? (
+                      <p className="mt-2 pl-7 text-xs text-kumo-subtle">Then nothing fair can happen: it stays there forever, and never gets there.</p>
                     ) : null}
                   </div>
                   );
                 })}
               </div>
             </Section>
+            {report.stuck && (
+              <Section title="Stuck">
+                <div className="rounded-lg px-4 py-3 ring-1 ring-kumo-danger/40">
+                  <div className="flex items-start gap-2">
+                    <p className="flex-1 text-sm text-kumo-danger">Nothing can happen here, and the spec does not call this world final (defineFinalState).</p>
+                    <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(report.stuck!.counterexample, "Stuck")}>
+                      Open in playground
+                    </Button>
+                  </div>
+                  <Steps events={report.stuck.counterexample.events} worlds={report.stuck.counterexample.worlds} />
+                </div>
+              </Section>
+            )}
             {report.errors.length > 0 && (
               <Section title="Spec errors">
                 {report.errors.map((e, i) => (
@@ -158,7 +173,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
             ))}
           </Section>
         )}
-        {spec.invariants.length === 0 && <p className="text-sm text-kumo-subtle">This spec declares no invariants; add some with spec.defineInvariants.</p>}
+        {spec.properties.length === 0 && <p className="text-sm text-kumo-subtle">This spec declares no properties; add some with spec.defineProperties.</p>}
       </div>
     </div>
   );
@@ -180,4 +195,10 @@ function Steps({ events, worlds }: { events: Event[]; worlds: World[] }) {
       ))}
     </ol>
   );
+}
+
+/** A liveness counterexample with one round of its loop, to play through. */
+function withLoop(ce: Counterexample, loop: Counterexample | undefined): Counterexample {
+  if (!loop?.events.length) return ce;
+  return { ...ce, choices: [...ce.choices, ...loop.choices], events: [...ce.events, ...loop.events], worlds: [...ce.worlds, ...loop.worlds] };
 }

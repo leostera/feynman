@@ -166,7 +166,7 @@ export async function prepare(ctx: Context, options: Options, onProgress?: Progr
     const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, functions: {}, report: null };
     specs.push(entry);
     try {
-      const spec = await timed(onProgress, () => loadSpec(join(repository.root, path)), (s) => `loaded ${s.name} ${dim(`(${plural(s.actors.length, "actor")}, ${plural(s.scenarios.length, "scenario")}, ${s.invariants.length} ${s.invariants.length === 1 ? "property" : "properties"})`)}`);
+      const spec = await timed(onProgress, () => loadSpec(join(repository.root, path)), (s) => `loaded ${s.name} ${dim(`(${plural(s.actors.length, "actor")}, ${plural(s.scenarios.length, "scenario")}, ${s.properties.length} ${s.properties.length === 1 ? "property" : "properties"})`)}`);
       const module = await timed(onProgress, () => bundleBrowser(join(repository.root, path)), (m) => `bundled the spec ${dim(kb(m))}`);
       modules.set(`specs/${id}.js`, module);
       entry.module = `specs/${id}.js`;

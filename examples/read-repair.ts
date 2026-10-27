@@ -121,7 +121,11 @@ export function readRepair(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Both writes are sent and the read is answered.",
+        when: (w) => w.the(Coordinator).state.written === 2 && w.the(Coordinator).state.read !== null,
+      });
+      spec.defineProperties({
         neverGoesBack: {
           description: "No replica ever goes back to an older version than one it held.",
           always: (w) => w.all(Replica).every((r) => r.state.version >= r.state.highest),

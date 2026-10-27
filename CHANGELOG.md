@@ -4,6 +4,37 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+### Liveness, as in TLA+
+
+- New liveness properties: `eventually`, `leadsTo: { whenever, then }`, `infinitelyOften`
+  and `eventuallyAlways`. They hold in every fair behaviour, as in TLA+, not on one run of
+  the system left alone. Messages, timers and guards are weakly fair; a step can say
+  `fair: "strong"` or `fair: false`. Actions and faults are never fair.
+- A liveness counterexample is a path and then a loop it repeats forever, shown by check,
+  `--json` (`loop`), `--as-scenario` and the playground. Where a loop could lie past the
+  depth bound, the verdict is unfinished.
+- `everyStep: (before, after, event) => boolean` judges each step.
+- Stuck worlds: where nothing can happen, check reports it and fails, unless the spec calls
+  that world final with `spec.defineFinalState({ description, when })`.
+- Sets and maps in state are compared by what they hold.
+
+### Migrating
+
+- `spec.defineInvariants` is now `spec.defineProperties`.
+- `eventually` with `after` becomes `leadsTo`:
+
+  ```ts
+  // before
+  settles: { description, after: (w) => pending(w), eventually: (w) => !pending(w) },
+  // after
+  settles: { description, leadsTo: { whenever: (w) => pending(w), then: (w) => !pending(w) } },
+  ```
+
+- A spec whose system finishes adds `spec.defineFinalState` for where it ends; otherwise
+  check reports its end as stuck.
+
 ## 0.8.0
 
 ### Reading check's results

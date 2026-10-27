@@ -25,8 +25,8 @@ for (const example of corpus)
         const run = runScenario(spec, { name: p.id, run: compile(spec, scenarioCode(spec, p)) });
         expect(run.error).toBeUndefined();
         const steps = (events: typeof run.events) => events.filter((e) => e.kind !== "spawn").map((e) => `${e.instance} ${e.kind} ${e.key}`);
-        // An `eventually` counterexample ends with the system left alone, which the scenario settles.
-        expect(steps(run.events)).toEqual(steps([...p.counterexample!.events, ...(p.then ?? [])]));
+        // A liveness counterexample is followed by one round of its loop.
+        expect(steps(run.events)).toEqual(steps([...p.counterexample!.events, ...(p.loop?.events ?? [])]));
         if (p.kind === "always") expect(run.events.at(-1)!.violations).toContain(p.id);
       }
     });

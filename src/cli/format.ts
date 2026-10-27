@@ -91,7 +91,7 @@ export interface ReportOptions {
 }
 
 /**
- * The checker's report. Invariants a scenario already breaks show as broken whatever
+ * The checker's report. Properties a scenario already breaks show as broken whatever
  * exploration found. A property that held while exploration stopped early says so, rather
  * than claiming to hold.
  */
@@ -142,15 +142,18 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
     }
     lines.push(dim(`    ${found}, ${needs}${from}${shorter}:`));
     lines.push(indent(formatEvents(spec, ce.events, ce.worlds), 4));
-    if (p.then?.length) {
-      lines.push(dim(`    then, left to run by itself, it never holds:`));
-      const last = ce.worlds.at(-1);
-      lines.push(indent(p.then.map((e) => formatEvent(spec, e, last)).join("\n"), 4));
-    }
+    if (p.loop?.events.length) {
+      lines.push(dim(`    then this repeats forever, and it never holds:`));
+      lines.push(indent(formatEvents(spec, p.loop.events, p.loop.worlds), 4));
+    } else if (p.loop) lines.push(dim(`    then nothing fair can happen: it stays there forever, and never holds`));
   }
   for (const e of report.errors) {
     lines.push(red(`  ✗ spec error: ${e.message}`));
     if (!options.brief) lines.push(indent(formatEvents(spec, e.counterexample.events, e.counterexample.worlds), 4));
+  }
+  if (report.stuck) {
+    lines.push(red(`  ✗ stuck: nothing can happen, and the spec does not call this world final (defineFinalState)`));
+    if (!options.brief) lines.push(indent(formatEvents(spec, report.stuck.counterexample.events, report.stuck.counterexample.worlds), 4));
   }
   if (report.coverage.missed.length) lines.push(yellow(`  never ran: ${report.coverage.missed.join(", ")}`));
   return lines.join("\n");

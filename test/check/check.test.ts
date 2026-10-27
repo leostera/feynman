@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
+import { isLiveness } from "../../src/spec/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
 /**
@@ -23,10 +24,8 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
   const example = links.counterexample!;
   // It takes a lost message…
   expect(example.events.some((e) => e.kind === "lose")).toBe(true);
-  // …after which the system, left alone, never links the Mac. (The shortest such path:
-  // a stale "refused" for an earlier attempt clears the pending link of the later one.)
-  const end = links.then!.at(-1) ?? example.events.at(-1)!;
-  expect(end.key).toBe("message:Refused");
+  // …after which no fair behaviour links the Mac.
+  expect(links.loop).toBeDefined();
   expect(report.errors).toEqual([]);
 });
 
@@ -56,7 +55,7 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
       initialState: () => ({ n: 0 }),
       actions: { up: { label: "Up", description: "Counts up.", run: (s) => void (s.n += 1) } },
     });
-    spec.defineInvariants({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
+    spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
     spec.defineScenario({ name: "Count to four", run: (s) => { const c = s.spawn(Counter, "c"); for (let i = 0; i < 4; i++) s.act(c, "up"); } });
   });
   const bounds = { depth: 2, repeats: 9, walks: 0 };
@@ -81,7 +80,7 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
         fidget: { label: "Fidget", description: "Changes nothing that matters.", run: (s) => void (s.noise = 1 - s.noise) },
       },
     });
-    spec.defineInvariants({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
+    spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
   });
   const report = check(deep, { depth: 2, repeats: 20, walks: 50 });
   const p = report.properties[0];
@@ -127,7 +126,7 @@ test("the reductions skip work, never states: exactly the states of the plain se
         actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
         transitions: { [Pong]: { description: "Counts.", run: (s) => void (s.got += 1) } },
       });
-      spec.defineInvariants({ answered: { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) } });
+      spec.defineProperties({ answered: { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) } });
     },
   );
   const bounds = { depth: 10, faults: 1, repeats: 2, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
@@ -151,8 +150,11 @@ test("the reductions keep the verdicts and the states on a spec with timers and 
 
 test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", () => {
   const bounds = { depth: 7, faults: 0, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = check(remoteAccess, { ...bounds, symmetry: false });
-  const folded = check(remoteAccess, { ...bounds, symmetry: true });
+  // Symmetry is off for liveness: fold the safety properties alone.
+  const safety = { ...remoteAccess, properties: remoteAccess.properties.filter((p) => !isLiveness(p)) };
+  expect(check(remoteAccess, { ...bounds, symmetry: true }).reductions.symmetric).toEqual([]);
+  const plain = check(safety, { ...bounds, symmetry: false });
+  const folded = check(safety, { ...bounds, symmetry: true });
   expect(folded.reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
   expect(folded.states).toBeLessThan(plain.states);
   expect(folded.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
@@ -220,7 +222,7 @@ test("states that hold different sets or maps are different states, and changing
         look: { label: "Look", description: "Looks at what it picked.", when: (state) => state.done, run: (state) => void (state.sawSeven = state.picked.has(7) && state.counts.has(7)) },
       },
     });
-    spec.defineInvariants({ neverSeven: { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven } });
+    spec.defineProperties({ neverSeven: { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven } });
     return { Picker };
   });
   const report = check(spec, { depth: 4, walks: 0 });

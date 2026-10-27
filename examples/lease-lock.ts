@@ -134,7 +134,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         fenced: {
           description: "Storage never takes a write from an older lock holder after a newer one's.",
           always: (w) => w.the(Storage).state.accepted.every((token, i, all) => i === 0 || token >= all[i - 1]),

@@ -107,7 +107,11 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "The sender has had every item acknowledged.",
+        when: (w) => w.the(Sender).state.next === ITEMS.length,
+      });
+      spec.defineProperties({
         inStep: {
           description: "The sender is never past an item the receiver does not have.",
           always: (w) => w.the(Sender).state.next <= w.the(Receiver).state.delivered.length,

@@ -5,7 +5,7 @@ export type {
   InputDef,
   InputType,
   Instance,
-  InvariantDef,
+  PropertyDef,
   MessageDef,
   MessageKey,
   ReplyCtx,
@@ -40,3 +40,4 @@ export { Runner, runScenario, SETTLE_LIMIT } from "./run.ts";
 export type * from "./spec.ts";
 export { diffRuns, type RunDiff, type StepDiff, type StepStatus } from "./diff.ts";
 export { flowsOf, type Flow } from "./flows.ts";
+export { isLiveness, LIVENESS_KINDS } from "./spec.ts";

@@ -34,14 +34,26 @@ export interface TlcResult {
   distinct: number;
   /** The invariant TLC found broken, and the events of its counterexample (states minus the first). */
   violated?: { invariant: string; events: number };
+  /** Whether the temporal properties checked were violated. */
+  temporal?: boolean;
+}
+
+export interface TlcOptions {
+  view?: string;
+  /** Where the module is: examples/oracles by default. */
+  dir?: string;
+  /** Check these temporal properties under this specification (with its fairness), not Init and Next. */
+  temporal?: { specification: string; properties: string[] };
 }
 
 /** Run TLC on an oracle with these constants, checking the given invariants (none: just count states). */
-export function tlc(module: string, constants: Record<string, string | number | boolean>, invariants: string[] = [], options: { view?: string } = {}): TlcResult {
+export function tlc(module: string, constants: Record<string, string | number | boolean>, invariants: string[] = [], options: TlcOptions = {}): TlcResult {
   const dir = mkdtempSync(join(tmpdir(), "feynman-tlc-"));
   try {
-    copyFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", `${module}.tla`), join(dir, `${module}.tla`));
-    const cfg = ["CONSTANTS", ...Object.entries(constants).map(([k, v]) => `  ${k} = ${typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : v}`), "INIT Init", "NEXT Next", ...(options.view ? [`VIEW ${options.view}`] : []), ...(invariants.length ? ["INVARIANTS", ...invariants.map((i) => `  ${i}`)] : [])];
+    copyFileSync(join(options.dir ?? join(import.meta.dir, "..", "..", "examples", "oracles"), `${module}.tla`), join(dir, `${module}.tla`));
+    const constantLines = Object.entries(constants).map(([k, v]) => `  ${k} = ${typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : v}`);
+    const behaviour = options.temporal ? [`SPECIFICATION ${options.temporal.specification}`, ...(options.temporal.properties.length ? ["PROPERTIES", ...options.temporal.properties.map((p) => `  ${p}`)] : [])] : ["INIT Init", "NEXT Next"];
+    const cfg = [...(constantLines.length ? ["CONSTANTS", ...constantLines] : []), ...behaviour, ...(options.view ? [`VIEW ${options.view}`] : []), ...(invariants.length ? ["INVARIANTS", ...invariants.map((i) => `  ${i}`)] : [])];
     writeFileSync(join(dir, `${module}.cfg`), cfg.join("\n") + "\n");
     let out: string;
     try {
@@ -54,10 +66,11 @@ export function tlc(module: string, constants: Record<string, string | number | 
     const broken = /Invariant (\w+) is violated/.exec(out);
     // A violation is an answer; any other error (an invariant that fails to evaluate, a bad
     // model) is not, and must not pass for "no violation".
-    const errors = out.split("\n").filter((line) => line.startsWith("Error:") && !/^Error: (Invariant \w+ is violated|The behavior up to this point is)/.test(line));
+    const errors = out.split("\n").filter((line) => line.startsWith("Error:") && !/^Error: (Invariant \w+ is violated|The behavior up to this point is|Temporal properties were violated|The following behavior constitutes a counter-example)/.test(line));
     if (errors.length || /Parsing or semantic analysis failed/.test(out) || Number.isNaN(distinct)) throw new Error(`TLC failed on ${module}:\n${out}`);
     const states = [...out.matchAll(/^State (\d+):/gm)].map((m) => Number(m[1]));
-    return { distinct, ...(broken ? { violated: { invariant: broken[1], events: Math.max(...states) - 1 } } : {}) };
+    const temporal = options.temporal ? { temporal: /Temporal properties were violated/.test(out) } : {};
+    return { distinct, ...temporal, ...(broken ? { violated: { invariant: broken[1], events: Math.max(...states) - 1 } } : {}) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

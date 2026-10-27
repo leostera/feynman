@@ -86,7 +86,7 @@ export function outbox(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         announcedOnceQuiet: {
           description: "Once nothing is in flight or queued, every stored order has been announced.",
           always: (w) => !w.quiet || w.the(Shop).state.outbox > 0 || w.the(Mailer).state.announced === w.the(Shop).state.orders,

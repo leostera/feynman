@@ -8,8 +8,11 @@
 // Expected, with two participants:
 // - buggy breaks `atomic` in 7 steps (begin, prepare one, it votes yes, the coordinator
 //   commits, the commit arrives, prepare the other, it votes no) with no fault;
-// - fixed keeps `atomic`; `decides` holds without faults and breaks with one, in 6 steps
-//   (begin, two prepares, two votes, one vote lost).
+// - fixed keeps `atomic`; `decides` holds without faults and breaks with one, in 7 steps
+//   (begin, two prepares, two votes, one vote lost, the other counted), after which nothing
+//   can happen: the coordinator waits forever. The checker reports that as stuck, too, as
+//   early as it can: in 5 steps (begin, prepare one, it votes, the vote is counted, the
+//   other prepare lost).
 import { defineSpec, message } from "@leostera/feynman";
 
 export function twoPhaseCommit(variant: "buggy" | "fixed") {
@@ -107,7 +110,11 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Every participant knows the outcome.",
+        when: (w) => w.all(Participant).every((p) => p.state.outcome !== null),
+      });
+      spec.defineProperties({
         atomic: {
           description: "No participant commits while another aborts.",
           always: (w) => {
@@ -121,8 +128,10 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         },
         decides: {
           description: "Once everyone has voted, the coordinator decides.",
-          after: (w) => w.all(Participant).every((p) => p.state.vote !== null),
-          eventually: (w) => w.the(Coordinator).state.decided !== null,
+          leadsTo: {
+            whenever: (w) => w.all(Participant).every((p) => p.state.vote !== null),
+            then: (w) => w.the(Coordinator).state.decided !== null,
+          },
         },
       });
       const start = (s: Parameters<Parameters<typeof spec.defineScenario>[0]["run"]>[0]) => {

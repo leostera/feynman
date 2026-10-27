@@ -5,7 +5,7 @@ import type {
   ActorInfo,
   GroupInfo,
   InputInfo,
-  InvariantInfo,
+  PropertyInfo,
   LimitInfo,
   MessageInfo,
   ScenarioInfo,
@@ -174,7 +174,7 @@ export interface Instance<S, A> {
   readonly __actions?: A;
 }
 
-/** The world as invariants and examples see it. */
+/** The world as properties and examples see it. */
 export interface World {
   /** Nothing is in flight: no message on its way and no timer set. "Once quiet, …" is how to say "in the end". */
   readonly quiet: boolean;
@@ -237,6 +237,11 @@ export interface MessageTransition<M extends Registry, S, P, Sends extends Messa
   say?: (state: Readonly<S>, msg: P) => string;
   /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
   routine?: boolean;
+  /**
+   * Fairness for delivering this message (RFD0006): weak by default, so a message in flight
+   * arrives unless a fault loses it. "strong", or false for a delivery that may never happen.
+   */
+  fair?: "weak" | "strong" | false;
 }
 
 export interface InternalTransition<M extends Registry, S, Sends extends MessageKey<M> = never, Starts extends string = never>
@@ -251,6 +256,12 @@ export interface InternalTransition<M extends Registry, S, Sends extends Message
   run(state: S, ctx: Ctx<M, Sends, Starts>): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>) => string;
+  /**
+   * Fairness (RFD0006): a guard or timer that stays possible from some point on eventually
+   * happens ("weak", the default); "strong": one possible again and again eventually happens;
+   * false: it may never happen.
+   */
+  fair?: "weak" | "strong" | false;
   /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
   routine?: boolean;
 }
@@ -371,7 +382,7 @@ interface ActorDef<M extends Registry, S, A, T> {
   transitions?: TransitionsFor<M, NoInfer<S>, T>;
 }
 
-// Invariants and scenarios ----------------------------------------------------------------------------
+// Properties and scenarios ----------------------------------------------------------------------------
 
 export interface TraceEvent {
   readonly index: number;
@@ -390,15 +401,24 @@ export interface Trace {
   some(predicate: (event: TraceEvent) => boolean): boolean;
 }
 
-export type InvariantDef = (
+/**
+ * A property: of every state (`always`), every step (`everyStep`), every path so far (`never`),
+ * or of every fair infinite behaviour (`eventually`, `leadsTo`, `infinitelyOften`,
+ * `eventuallyAlways`). See RFD0006 for what each means, and fairness.
+ */
+export type PropertyDef = (
   | { description: string; always: (world: World) => boolean }
-  | {
-      description: string;
-      /** Once `after` holds (always, by default), the system left alone gets here. */
-      eventually: (world: World) => boolean;
-      after?: (world: World) => boolean;
-    }
+  /** Of every step: the world before it, the world after, and the event. */
+  | { description: string; everyStep: (before: World, after: World, event: TraceEvent) => boolean }
   | { description: string; never: (trace: Trace) => boolean }
+  /** From the start, this happens at least once. */
+  | { description: string; eventually: (world: World) => boolean }
+  /** Every time `whenever` holds, `then` holds then or later. */
+  | { description: string; leadsTo: { whenever: (world: World) => boolean; then: (world: World) => boolean } }
+  /** This keeps happening, forever. */
+  | { description: string; infinitelyOften: (world: World) => boolean }
+  /** From some point on, this always holds. */
+  | { description: string; eventuallyAlways: (world: World) => boolean }
 ) & {
   /**
    * A known bug: the property states what should hold, the system does not do it yet, and
@@ -462,7 +482,12 @@ export interface SpecBuilder<M extends Registry> {
    * `accepts` names a token kind that can be dropped on the node to fill this input.
    */
   defineInput<const T extends InputType>(type: T, options?: { examples?: ((world: World) => ValueOf<T>[]) | readonly ValueOf<T>[]; accepts?: string }): InputDef<T>;
-  defineInvariants(defs: Record<string, InvariantDef>): void;
+  defineProperties(defs: Record<string, PropertyDef>): void;
+  /**
+   * The worlds where the system may stop: finished, not stuck. Any other world where nothing
+   * can happen (no action possible, no guard holding, nothing pending) is reported as stuck.
+   */
+  defineFinalState(def: { description: string; when: (world: World) => boolean }): void;
   defineGroup(def: GroupDef): Group;
   defineScenario(def: { name: string; description?: string; run(script: Script): void }): void;
 }
@@ -494,7 +519,7 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
     zones: [],
     limits: [],
     actors: [],
-    invariants: [],
+    properties: [],
     scenarios: [],
     groups: [],
   };
@@ -518,8 +543,12 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
     defineInput(type, options) {
       return { type, examples: options?.examples, accepts: options?.accepts } as never;
     },
-    defineInvariants(defs) {
-      for (const [id, def] of Object.entries(defs)) spec.invariants.push(invariantInfo(id, def));
+    defineProperties(defs) {
+      for (const [id, def] of Object.entries(defs)) spec.properties.push(propertyInfo(id, def));
+    },
+    defineFinalState(def) {
+      if (spec.finalState) throw new Error("defineFinalState is called once; say every final world in one predicate");
+      spec.finalState = { description: def.description, when: def.when as never };
     },
     defineGroup(def) {
       const group = groupInfo(spec, def);
@@ -553,6 +582,7 @@ interface RawStep {
   starts?: string[];
   when?: (state: unknown) => boolean;
   after?: string;
+  fair?: "weak" | "strong" | false;
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
   routine?: boolean;
@@ -610,6 +640,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       starts: step.starts ?? [],
       when: step.when,
       after: step.after,
+      ...(step.fair === undefined ? {} : { fair: step.fair }),
       say: step.say,
       routine: step.routine ?? false,
       run: step.run as TransitionInfo["run"],
@@ -644,9 +675,13 @@ function inputKind(type: InputType): "string" | "number" | "boolean" | "choice" 
   return "choice";
 }
 
-function invariantInfo(id: string, def: InvariantDef): InvariantInfo {
-  const known = def.known === undefined ? {} : { known: def.known };
-  if ("always" in def) return { id, description: def.description, kind: "always", always: def.always, ...known };
-  if ("eventually" in def) return { id, description: def.description, kind: "eventually", eventually: def.eventually, after: def.after, ...known };
-  return { id, description: def.description, kind: "never", never: def.never, ...known };
+function propertyInfo(id: string, def: PropertyDef): PropertyInfo {
+  const base = { id, description: def.description, ...(def.known === undefined ? {} : { known: def.known }) };
+  if ("always" in def) return { ...base, kind: "always", always: def.always };
+  if ("everyStep" in def) return { ...base, kind: "everyStep", everyStep: def.everyStep };
+  if ("never" in def) return { ...base, kind: "never", never: def.never };
+  if ("eventually" in def) return { ...base, kind: "eventually", eventually: def.eventually };
+  if ("leadsTo" in def) return { ...base, kind: "leadsTo", whenever: def.leadsTo.whenever, then: def.leadsTo.then };
+  if ("infinitelyOften" in def) return { ...base, kind: "infinitelyOften", infinitelyOften: def.infinitelyOften };
+  return { ...base, kind: "eventuallyAlways", eventuallyAlways: def.eventuallyAlways };
 }

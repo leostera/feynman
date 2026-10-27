@@ -68,7 +68,7 @@ export function lwwRegister(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         convergesOnceQuiet: {
           description: "Once nothing is in flight, every replica holds the same write.",
           always: (w) => !w.quiet || new Set(w.all(Replica).map((r) => `${r.state.ts}|${r.state.writer}`)).size <= 1,

@@ -117,7 +117,7 @@ export function readYourWrites(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         readsOwnWrites: { description: "A read never comes back older than the client's own writes it was told about.", always: (w) => !w.the(Client).state.stale },
       });
       spec.defineScenario({

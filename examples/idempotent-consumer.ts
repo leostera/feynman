@@ -109,7 +109,11 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Every job is published and acknowledged.",
+        when: (w) => w.the(Broker).state.published === JOBS.length && w.the(Broker).state.unacked.size === 0,
+      });
+      spec.defineProperties({
         chargedOnce: {
           description: "No job is ever charged twice.",
           always: (w) => w.all(Consumer).every((c) => Object.values(c.state.charged).every((n) => n <= 1)),

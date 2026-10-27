@@ -7,7 +7,8 @@
 // stays"), so the second doctor is told to stay.
 //
 // Expected, with two doctors: buggy breaks `covered` in 8 steps without faults (both ask,
-// both checks answer two, both are told so, both leave); fixed holds, with a fault too.
+// both checks answer two, both are told so, both leave); fixed holds, with a fault too, but
+// gets stuck if an answer is lost: the doctor waits for it forever (5 steps).
 import { defineSpec, message } from "@leostera/feynman";
 
 export function writeSkew(variant: "buggy" | "fixed") {
@@ -88,7 +89,11 @@ export function writeSkew(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "No doctor is waiting on the roster.",
+        when: (w) => w.all(Doctor).every((d) => d.state.phase !== "asking"),
+      });
+      spec.defineProperties({
         covered: {
           description: "Someone is always on call.",
           always: (w) => w.the(Roster).state.onCall >= 1,

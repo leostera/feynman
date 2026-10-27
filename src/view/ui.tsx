@@ -262,7 +262,7 @@ export function EventDetail({ event, world, compare, folded }: { event: Event; w
       {event.error && <p className="rounded-md bg-kumo-danger/10 px-2 py-1.5 text-xs text-kumo-danger">Spec error: {event.error}</p>}
       {event.violations.map((v) => (
         <p key={v} className="rounded-md bg-kumo-danger/10 px-2 py-1.5 text-xs text-kumo-danger">
-          Breaks “{spec.invariants.find((i) => i.id === v)?.description ?? v}”
+          Breaks “{spec.properties.find((p) => p.id === v)?.description ?? v}”
         </p>
       ))}
       {event.notes.length > 0 && (

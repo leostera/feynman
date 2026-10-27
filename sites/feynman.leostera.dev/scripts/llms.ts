@@ -7,13 +7,13 @@ export function llmsTxt(): string {
 
 > Feynman is a TypeScript library and CLI (\`@leostera/feynman\` on npm). Its specs are
 > executable TypeScript models of system behavior: actors and their state,
-> messages, actions, timers, limits, and invariants. Steps can link to the code they model.
+> messages, actions, timers, limits, and properties (safety and liveness). Steps can link to the code they model.
 > From one spec, Feynman derives an interactive simulator, a bounded model checker, scenario
 > flows, and comparisons of those flows between commits.
 
 Install with \`bun add -d @leostera/feynman\` (Bun 1.3 or later). Specs import
 \`@leostera/feynman\`; optional playground files import \`@leostera/feynman/play\`. The CLI:
-\`feynman check\` (type-check, run scenarios, explore, judge every invariant), \`feynman run\`
+\`feynman check\` (type-check, run scenarios, explore, judge every property), \`feynman run\`
 (scenario traces as text), \`feynman dev\` (the simulator), \`feynman build\` (one
 self-contained HTML file), \`feynman diff --base main\`.
 

@@ -44,7 +44,7 @@ export default defineSpec("Echo", { messages: { Say: message<{ text: string }>({
     },
     transitions: { [Heard]: { description: "Hears it back.", sources: ["src/client.ts:1-3"], run: (s, msg) => void s.got.push(msg.text) } },
   });
-  spec.defineInvariants({
+  spec.defineProperties({
     serverHearsEverything: { description: "Everything said is heard by the server.", always: (w) => w.the(Server).state.heard.every((t) => typeof t === "string") },
   });
   spec.defineScenario({
@@ -96,7 +96,7 @@ test("list, run, check, lock: a spec in specs/ next to package.json", async () =
   const { root, commit } = repo();
   writeFileSync(join(root, "specs/echo.ts"), SPEC(false));
   commit("echo");
-  expect((await capture(["list"], root)).out).toContain("specs/echo.ts  Echo  2 actors, 2 messages, 1 invariants, 1 scenarios");
+  expect((await capture(["list"], root)).out).toContain("specs/echo.ts  Echo  2 actors, 2 messages, 1 properties, 1 scenarios");
   const run = await capture(["run", "echo"], root);
   expect(run.status).toBe(0);
   expect(run.out).toContain("Ann (Client)  say");
@@ -145,8 +145,8 @@ test("check type-checks specs: a send that is not declared is an error before an
 /** The Echo spec with a property the empty example breaks, marked known or not. */
 const NEVER_EMPTY = (known?: string) =>
   SPEC(false).replace(
-    "spec.defineInvariants({",
-    `spec.defineInvariants({
+    "spec.defineProperties({",
+    `spec.defineProperties({
     nothingEmpty: { description: "The server never hears nothing.", always: (w) => !w.the(Server).state.heard.includes("")${known ? `, known: ${JSON.stringify(known)}` : ""} },`,
   );
 

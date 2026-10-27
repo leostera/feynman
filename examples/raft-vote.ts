@@ -75,7 +75,11 @@ export function raftVote(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Every node has voted in the term.",
+        when: (w) => w.all(Node).every((n) => n.state.votedFor !== null),
+      });
+      spec.defineProperties({
         oneLeader: {
           description: "At most one node leads the term.",
           always: (w) => w.all(Node).filter((n) => n.state.leader).length <= 1,

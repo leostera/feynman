@@ -3,9 +3,9 @@
 // The search proves things up to its depth; random runs go much deeper and find bugs the
 // search cannot reach, but prove nothing. Each run is seeded, so runs are reproducible, and
 // a broken property's run is shrunk to the fewest steps that still break it.
-import { actorNamed, choices as enabled, holdsIn, traceView, type Event, type Spec, type World } from "../spec/index.ts";
-import { pendingText, type Symmetry } from "./keys.ts";
-import { judge, safely, settles, type Verdicts } from "./judge.ts";
+import { actorNamed, choices as enabled, traceView, type Event, type Spec, type World } from "../spec/index.ts";
+import { pendingText } from "./keys.ts";
+import { judge, safely, stepBreaks, stuck, type Verdicts } from "./judge.ts";
 import { apply, branches, QUIET, type Choice, type Counterexample } from "./steps.ts";
 import type { Bounds } from "./explore.ts";
 
@@ -13,7 +13,6 @@ export interface WalkFinding {
   id: string;
   root: number;
   choices: Choice[];
-  then?: Event[];
 }
 
 export interface WalkResult {
@@ -22,15 +21,16 @@ export interface WalkResult {
   deepest: number;
   findings: WalkFinding[];
   errors: { message: string; root: number; choices: Choice[] }[];
+  /** The first run that got stuck, if any. */
+  stuck?: { root: number; choices: Choice[] };
 }
 
 /** How often a run picks each kind of step, when it can: mostly the system, some people, rare faults. */
 const WEIGHTS = { system: 0.6, people: 0.32, faults: 0.08 };
 
-/** Where runs start: a world, and the symmetry `eventually` is judged up to (judge.ts). */
+/** Where runs start. */
 export interface WalkRoot {
   world: World;
-  judging: Symmetry;
 }
 
 export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, until: number): WalkResult {
@@ -54,10 +54,11 @@ export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, unti
       events.push(step.event);
       out.steps++;
       out.deepest = Math.max(out.deepest, path.length);
-      const { findings, error } = judge(spec, step.world, step.event, () => events, v, roots[root].judging);
-      for (const f of findings) {
-        v.broken.add(f.id);
-        out.findings.push({ id: f.id, root, choices: [...path], then: f.then });
+      const { findings, error } = judge(spec, step.event, () => events, v);
+      if (!step.event.error) findings.push(...stepBreaks(spec, world, step.world, step.event, v.broken).filter((id) => !findings.includes(id)));
+      for (const id of findings) {
+        v.broken.add(id);
+        out.findings.push({ id, root, choices: [...path] });
       }
       if (error) {
         v.errors.add(error);
@@ -66,6 +67,7 @@ export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, unti
       if (step.event.error) break;
       world = step.world;
     }
+    if (!out.stuck && stuck(spec, world)) out.stuck = { root, choices: [...path] };
     out.runs++;
   }
   return out;
@@ -123,7 +125,7 @@ function replayLoosely(spec: Spec, initial: World, original: Counterexample, kee
 }
 
 /** The same choice in another world: the pending event that carries the same thing, if any. */
-function rebind(spec: Spec, was: World, world: World, choice: Choice): Choice | null {
+export function rebind(spec: Spec, was: World, world: World, choice: Choice): Choice | null {
   if (choice.kind === "fire" || choice.kind === "lose") {
     const pending = was.pending.find((p) => p.id === choice.pending);
     const same = pending && world.pending.find((p) => pendingText(p) === pendingText(pending));
@@ -137,22 +139,18 @@ function rebind(spec: Spec, was: World, world: World, choice: Choice): Choice | 
   return now.actions.some((a) => a.instance === choice.instance && a.key === choice.key) ? choice : null;
 }
 
-/** Whether a replayed path still breaks the property, judged at its end. */
-function stillBreaks(spec: Spec, id: string, path: Counterexample, judging: Symmetry): { then?: Event[] } | null {
-  const invariant = spec.invariants.find((i) => i.id === id)!;
-  const end = path.worlds.at(-1) ?? path.initial;
-  if (invariant.kind === "always") return path.events.some((e) => e.violations.includes(id)) ? {} : null;
-  if (invariant.kind === "never") return safely(() => invariant.never(traceView(path.events))) ? {} : null;
-  if (invariant.after && !holdsIn(spec, end, invariant.after)) return null;
-  if (holdsIn(spec, end, invariant.eventually)) return null;
-  const then = settles(spec, end, invariant.eventually, new Map(), judging);
-  return then ? { then } : null;
+/** Whether a replayed path still breaks the property. */
+function stillBreaks(spec: Spec, id: string, path: Counterexample): boolean {
+  const property = spec.properties.find((p) => p.id === id)!;
+  if (property.kind === "always") return path.events.some((e) => e.violations.includes(id));
+  if (property.kind === "never") return !!safely(() => property.never(traceView(path.events)));
+  if (property.kind === "everyStep") return path.events.some((e, i) => !e.error && stepBreaks(spec, path.worlds[i - 1] ?? path.initial, path.worlds[i], e, new Set()).includes(id));
+  return false;
 }
 
 /** Drop steps one at a time while the property still breaks; at most `budget` replays. */
-export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, judging: Symmetry, budget = 400): { path: Counterexample; then?: Event[] } {
+export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, budget = 400): Counterexample {
   let best = replayed;
-  let then = found.then;
   let tries = 0;
   let changed = true;
   while (changed && tries < budget) {
@@ -162,12 +160,10 @@ export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed:
       const keep = best.choices.map((_, n) => n !== i);
       const candidate = replayLoosely(spec, initial, best, keep);
       if (candidate.choices.length >= best.choices.length) continue;
-      const result = stillBreaks(spec, found.id, candidate, judging);
-      if (!result) continue;
+      if (!stillBreaks(spec, found.id, candidate)) continue;
       best = candidate;
-      then = result.then ?? then;
       changed = true;
     }
   }
-  return { path: best, then };
+  return best;
 }

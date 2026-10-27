@@ -71,7 +71,7 @@ export function gCounter(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         countsEveryIncrementOnceQuiet: {
           description: "Once nothing is in flight, every replica counts every increment.",
           always: (w) => {

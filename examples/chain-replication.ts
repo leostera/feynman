@@ -100,7 +100,7 @@ export function chainReplication(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         monotonicReads: { description: "A read never comes back older than one the client already read.", always: (w) => !w.the(Client).state.regressed },
       });
       spec.defineScenario({

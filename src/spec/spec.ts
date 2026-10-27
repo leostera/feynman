@@ -10,7 +10,9 @@ export interface Spec {
   zones: ZoneInfo[];
   limits: LimitInfo[];
   actors: ActorInfo[];
-  invariants: InvariantInfo[];
+  properties: PropertyInfo[];
+  /** The worlds where the system may stop; any other world where nothing can happen is stuck. */
+  finalState?: { description: string; when: (world: WorldView) => boolean };
   scenarios: ScenarioInfo[];
   /** Actors shown as one thing, at a higher level of abstraction. */
   groups: GroupInfo[];
@@ -65,6 +67,12 @@ export interface StepInfo {
   sends: string[];
   starts: string[];
   when?: (state: unknown) => boolean;
+  /**
+   * Fairness (RFD0006): whether this transition, once it stays (weak) or keeps coming back
+   * (strong) possible, must eventually happen. Deliveries, timers and guards are weak unless
+   * they say otherwise; actions are never fair.
+   */
+  fair?: "weak" | "strong" | false;
   /** For a timer, when the code fires it, in words; it does not change when it can fire. */
   after?: string;
 }
@@ -106,20 +114,28 @@ export interface ActorInfo {
   transitions: Record<string, TransitionInfo>;
 }
 
-export type InvariantInfo = (
-  | { id: string; description: string; kind: "always"; always: (world: WorldView) => boolean }
-  | {
-      id: string;
-      description: string;
-      kind: "eventually";
-      eventually: (world: WorldView) => boolean;
-      after?: (world: WorldView) => boolean;
-    }
-  | { id: string; description: string; kind: "never"; never: (trace: Trace) => boolean }
+/** A property, as the engine and checker read it (see `PropertyDef` in dsl.ts). */
+export type PropertyInfo = (
+  | { kind: "always"; always: (world: WorldView) => boolean }
+  | { kind: "everyStep"; everyStep: (before: WorldView, after: WorldView, event: TraceEvent) => boolean }
+  | { kind: "never"; never: (trace: Trace) => boolean }
+  | { kind: "eventually"; eventually: (world: WorldView) => boolean }
+  | { kind: "leadsTo"; whenever: (world: WorldView) => boolean; then: (world: WorldView) => boolean }
+  | { kind: "infinitelyOften"; infinitelyOften: (world: WorldView) => boolean }
+  | { kind: "eventuallyAlways"; eventuallyAlways: (world: WorldView) => boolean }
 ) & {
-  /** A known bug: why the property is expected to break (see `InvariantDef.known`). */
+  id: string;
+  description: string;
+  /** A known bug: why the property is expected to break (see `PropertyDef.known`). */
   known?: string;
 };
+
+/** The liveness kinds: judged on fair infinite behaviours, after exploring (RFD0006). */
+export const LIVENESS_KINDS = ["eventually", "leadsTo", "infinitelyOften", "eventuallyAlways"] as const;
+
+export function isLiveness(p: PropertyInfo): p is Extract<PropertyInfo, { kind: (typeof LIVENESS_KINDS)[number] }> {
+  return (LIVENESS_KINDS as readonly string[]).includes(p.kind);
+}
 
 export interface ScenarioInfo {
   name: string;
