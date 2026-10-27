@@ -4,6 +4,7 @@
 // (p.oracle.ts).
 import type { Bounds } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
+import { alternatingBit } from "../../examples/alternating-bit.ts";
 import { cache } from "../../examples/cache.ts";
 import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
@@ -136,6 +137,16 @@ export const corpus: Example[] = [
     spec: () => lightSwitch(),
     cases: [{ variant: "buggy", bounds: { depth: 6, faults: 0 }, expect: { onOnce: { events: 3, faults: 0 } } }],
     tla: { module: "Switch", invariants: ["onOnce"], depth: 6, configs: [{ variant: "buggy", faults: 0, repeats: 2 }] },
+  },
+  {
+    name: "alternating bit",
+    spec: alternatingBit,
+    cases: [
+      { variant: "buggy", bounds: { depth: 9, faults: 1 }, expect: { inStep: "holds", inOrder: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { inStep: "holds", inOrder: "holds" } },
+    ],
+    tla: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
+    p: { project: "AlternatingBit", property: "inOrder", assertion: "the receiver kept an item out of order", depth: 9 },
   },
 ];
 
