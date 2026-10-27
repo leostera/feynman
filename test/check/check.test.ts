@@ -261,3 +261,31 @@ test("a step that fails is reported, and a step is reached, even when its state 
     expect(report.coverage.missed).toEqual([]);
   }
 });
+
+test("a step that stores what is not plain data, or changes another's set, fails and says why", async () => {
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  const spec = defineSpec("plain", { messages: {} }, (spec) => {
+    const zone = spec.defineZone({ name: "Z" });
+    const Keeper = spec.defineActor({
+      name: "Keeper",
+      singleton: true,
+      zone,
+      initialState: () => ({ seen: new Set<string>(), handler: null as unknown }),
+      actions: {
+        store: { label: "Store", description: "Stores a function.", run: (state) => void (state.handler = () => 1) },
+        reach: {
+          label: "Reach",
+          description: "Adds to another's set.",
+          run: (_state, _inputs, ctx) => void ctx.the(Other).state.seen.add("x"),
+        },
+      },
+    });
+    const Other = spec.defineActor({ name: "Other", singleton: true, zone, initialState: () => ({ seen: new Set<string>() }) });
+    return { Keeper, Other };
+  });
+  const report = check(spec, { depth: 2, walks: 0 });
+  const messages = report.errors.map((e) => e.message).sort();
+  expect(messages).toHaveLength(2);
+  expect(messages[0]).toContain("Keeper.reach: changes the state of another instance");
+  expect(messages[1]).toContain("Keeper.store: holds state.handler: a function, which is not plain data");
+});

@@ -17,7 +17,7 @@ type Pending = World["pending"][number];
 const texts = new WeakMap<object, string>();
 
 export function textOf(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (value === null || typeof value !== "object") return sortedJson(value);
   let text = texts.get(value);
   if (text === undefined) texts.set(value, (text = sortedJson(value)));
   return text;
