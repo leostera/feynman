@@ -21,8 +21,24 @@
     "commit": null,
     "specs": [
       {
+        "path": "examples/alternating-bit.ts",
+        "title": "Alternating bit (buggy)"
+      },
+      {
+        "path": "examples/barrier.ts",
+        "title": "Barrier (buggy)"
+      },
+      {
         "path": "examples/cache.ts",
         "title": "Cache (buggy)"
+      },
+      {
+        "path": "examples/chang-roberts.ts",
+        "title": "Chang-Roberts (buggy)"
+      },
+      {
+        "path": "examples/dining-philosophers.ts",
+        "title": "Dining philosophers (buggy)"
       },
       {
         "path": "examples/job-queue.ts",
@@ -37,16 +53,36 @@
         "title": "Lease lock (buggy)"
       },
       {
+        "path": "examples/outbox.ts",
+        "title": "Outbox (buggy)"
+      },
+      {
         "path": "examples/payments.ts",
         "title": "Payments (buggy)"
+      },
+      {
+        "path": "examples/raft-vote.ts",
+        "title": "Raft vote (buggy)"
+      },
+      {
+        "path": "examples/ricart-agrawala.ts",
+        "title": "Ricart-Agrawala (buggy)"
       },
       {
         "path": "examples/switch.ts",
         "title": "Switch"
       },
       {
+        "path": "examples/token-ring.ts",
+        "title": "Token ring (buggy)"
+      },
+      {
         "path": "examples/two-phase-commit.ts",
         "title": "Two-phase commit (buggy)"
+      },
+      {
+        "path": "examples/write-skew.ts",
+        "title": "Write skew (buggy)"
       }
     ]
   }
