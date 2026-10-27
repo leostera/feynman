@@ -1,0 +1,24 @@
+{
+  "name": "@feynman/share",
+  "private": true,
+  "type": "module",
+  "description": "feynman.leostera.dev/s/<host>/<repo>: the explorer of any public repository, built in a sandbox and kept in R2 by commit.",
+  "scripts": {
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy",
+    "types": "cf workers types",
+    "typecheck": "cf workers types && tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@cloudflare/sandbox": "1.0.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "beta",
+    "@types/bun": "^1.4.4",
+    "cf": "^1.0.0-beta.21",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

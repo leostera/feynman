@@ -14,7 +14,7 @@
   },
   "files": ["bin", "src", "!src/view", "src/view/data.ts", "dist/view", "examples", "!examples/oracles", "skills", "README.md"],
   "pi": { "skills": ["./skills"] },
-  "workspaces": ["sites/*"],
+  "workspaces": ["sites/*", "packages/*"],
   "scripts": {
     "feynman": "bun bin/feynman.ts",
     "build": "vite build --config src/view/vite.config.ts",
