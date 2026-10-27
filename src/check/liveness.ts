@@ -18,7 +18,7 @@
 //
 // A predicate that throws in a world (it looks at an instance not there yet) is false there:
 // a goal not yet reachable is not reached.
-import { holdsIn, type Fairness, type PropertyInfo, type Spec, type World, type WorldView } from "../spec/index.ts";
+import { holdsIn, type Fairness, type LivenessProperty, type Spec, type World, type WorldView } from "../spec/index.ts";
 import type { Choice } from "./steps.ts";
 
 /** A step on the graph: where it goes, the choice that takes it, and its fairness identity, if fair. */
@@ -62,8 +62,6 @@ export interface Lasso {
 
 export type LivenessVerdict = { holds: true; unfinished: boolean; tested?: number } | { holds: false; lasso: Lasso; tested?: number };
 
-type Liveness = Extract<PropertyInfo, { kind: "eventually" | "leadsTo" | "infinitelyOften" | "eventuallyAlways" }>;
-
 /**
  * What to look for, for one property: behaviours that start at a node in `starts`, stay among
  * the `allowed` nodes, and settle in a fair part that `accepts` calls bad (passing `mustVisit`
@@ -78,7 +76,7 @@ interface LivenessSearch {
   tested?: number;
 }
 
-export function judgeLiveness(spec: Spec, graph: Graph, property: Liveness): LivenessVerdict {
+export function judgeLiveness(spec: Spec, graph: Graph, property: LivenessProperty): LivenessVerdict {
   const search = searchFor(property, graph, (predicate) => memo(spec, graph, predicate));
   const { members, way, cost, open } = region(graph, search.starts, search.allowed);
   const judged = (i: number) => members.has(i) && graph.expanded[i];
@@ -98,7 +96,7 @@ export function judgeLiveness(spec: Spec, graph: Graph, property: Liveness): Liv
 }
 
 /** Each kind of liveness property as a search for a bad fair part. */
-function searchFor(property: Liveness, graph: Graph, holds: (predicate: (w: WorldView) => boolean) => (node: number) => boolean): LivenessSearch {
+function searchFor(property: LivenessProperty, graph: Graph, holds: (predicate: (w: WorldView) => boolean) => (node: number) => boolean): LivenessSearch {
   const live = range(graph.worlds.length).filter((i) => !graph.shadow[i]);
   const always = () => true;
   switch (property.kind) {
