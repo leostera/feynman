@@ -262,6 +262,13 @@ export function compressPage(page: string): { gzip: Buffer; brotli: Buffer } {
   };
 }
 
+/** Where `build --out` writes: the file named, or index.html in a directory (one that exists, or a path ending in /). */
+export function outputFile(cwd: string, out: string): string {
+  const path = resolve(cwd, out);
+  const directory = /[\\/]$/.test(out) || (existsSync(path) && statSync(path).isDirectory());
+  return directory ? join(path, "index.html") : path;
+}
+
 export async function buildCommand(ctx: Context, options: { out?: string; base?: string; open?: boolean }): Promise<number> {
   const started = performance.now();
   const { repository } = ctx;
@@ -269,7 +276,7 @@ export async function buildCommand(ctx: Context, options: { out?: string; base?:
   ensureView();
   console.log(dim(`building ${plural(ctx.found.length, "spec")}…`));
   const prepared = await prepare(ctx, { base: options.base, check: true, calls: true }, (message, detail) => console.log(detail ? `    ${message}` : `  ${message}`));
-  const out = resolve(ctx.cwd, options.out ?? join(repository.root, ".feynman", "index.html"));
+  const out = outputFile(ctx.cwd, options.out ?? join(repository.root, ".feynman", "index.html"));
   mkdirSync(dirname(out), { recursive: true });
   const page = singlePage(prepared);
   writeFileSync(out, page);

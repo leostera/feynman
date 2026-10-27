@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
-import { compressPage, singlePage } from "../../src/cli/serve.ts";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { compressPage, outputFile, singlePage } from "../../src/cli/serve.ts";
 
 test("the built page carries the view, the bundle and every module in one file", () => {
   const code = 'export default { note: "</script><!-- not the end" };';
@@ -19,4 +22,11 @@ test("compressed build variants decompress to the standalone HTML", () => {
   expect(gunzipSync(compressed.gzip).toString()).toBe(page);
   expect(brotliDecompressSync(compressed.brotli).toString()).toBe(page);
   expect(compressed.brotli.length).toBeLessThan(page.length);
+});
+
+test("build --out takes a file, or a directory to put index.html in", () => {
+  const dir = mkdtempSync(join(tmpdir(), "feynman-out-"));
+  expect(outputFile(dir, "page.html")).toBe(join(dir, "page.html"));
+  expect(outputFile(dir, ".")).toBe(join(dir, "index.html"));
+  expect(outputFile(dir, "site/")).toBe(join(dir, "site", "index.html"));
 });
