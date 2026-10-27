@@ -24,11 +24,12 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Prepare, Vote, Decide } = spec.messages;
-      const zone = spec.defineZone({ name: "Database", description: "every participant commits, or none does" });
+      const zone = spec.defineZone({ name: "Database", description: "every participant commits, or none does", place: { arrange: "row" } });
 
       const Participant = spec.defineActor({
         name: "Participant",
         zone,
+        place: { order: 1 },
         symmetric: true,
         // Votes are written to a log before they are sent, so restarts change nothing.
         durable: ["prepared", "vote", "outcome"],
@@ -66,6 +67,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
       const Coordinator = spec.defineActor({
         name: "Coordinator",
         zone,
+        place: { order: 0 },
         singleton: true,
         initialState: () => ({ begun: false, votes: {} as Record<string, boolean>, decided: null as boolean | null }),
         look: {

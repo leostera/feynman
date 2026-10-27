@@ -25,13 +25,15 @@ export function writeSkew(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Check, Count, Leave, LeaveIfCovered, Left, Stay } = spec.messages;
-      const zone = spec.defineZone({ name: "Hospital" });
+      const doctors = spec.defineZone({ name: "Doctors", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Hospital", description: "someone must always be on call", place: { column: 1 } });
 
       const Roster = spec.defineActor({
         name: "Roster",
         zone,
         singleton: true,
         initialState: () => ({ onCall: 2 }),
+        look: { icon: "sheet", status: (s) => `${s.onCall} on call`, mood: (s) => (s.onCall >= 1 ? "ok" : "bad") },
         transitions: {
           [Check]: { description: "Says how many are on call.", sends: [Count], run: (state, _msg, ctx) => ctx.reply(Count, { onCall: state.onCall }) },
           [Leave]: { description: "Takes a doctor off call.", run: (state) => void (state.onCall -= 1) },
@@ -49,9 +51,15 @@ export function writeSkew(variant: "buggy" | "fixed") {
 
       const Doctor = spec.defineActor({
         name: "Doctor",
-        zone,
+        zone: doctors,
         symmetric: true,
         initialState: () => ({ phase: "on" as "on" | "asking" | "off" }),
+        look: {
+          icon: "person",
+          names: ["Meredith", "Cristina"],
+          status: (s) => ({ on: "on call", asking: "asking to go off", off: "off call" })[s.phase],
+          mood: (s) => ({ on: "ok", asking: "busy", off: "off" })[s.phase] as "ok" | "busy" | "off",
+        },
         actions: {
           goOff: {
             label: "Go off call",
@@ -67,6 +75,7 @@ export function writeSkew(variant: "buggy" | "fixed") {
         transitions: {
           [Count]: {
             description: "Leaves if the other doctor is on call, by the count it was given.",
+            say: (_s, msg) => (msg.onCall < 2 ? `Told ${msg.onCall} on call: stays` : `Told ${msg.onCall} on call: leaves`),
             sends: [Leave],
             run(state, msg, ctx) {
               if (msg.onCall < 2) return void (state.phase = "on");
@@ -83,6 +92,30 @@ export function writeSkew(variant: "buggy" | "fixed") {
         covered: {
           description: "Someone is always on call.",
           always: (w) => w.the(Roster).state.onCall >= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "One doctor goes off call",
+        description: "Meredith asks, the other is on call, and she goes off.",
+        run(s) {
+          const meredith = s.spawn(Doctor, "Meredith");
+          s.spawn(Doctor, "Cristina");
+          s.act(meredith, "goOff");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Both at once",
+        description:
+          variant === "buggy"
+            ? "Both ask before either leaves; each is told two are on call, and both go: nobody is on call."
+            : "Both ask at once; the roster lets the first go and tells the second to stay.",
+        run(s) {
+          const meredith = s.spawn(Doctor, "Meredith");
+          const cristina = s.spawn(Doctor, "Cristina");
+          s.act(meredith, "goOff");
+          s.act(cristina, "goOff");
+          s.settle();
         },
       });
       return { Roster, Doctor };
