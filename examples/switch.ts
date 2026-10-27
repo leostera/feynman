@@ -15,12 +15,30 @@ export function lightSwitch() {
       zone,
       singleton: true,
       initialState: () => ({ on: false }),
+      look: { icon: "plug", status: (s) => (s.on ? "on" : "off"), mood: (s) => (s.on ? "ok" : "off") },
       transitions: {
         up: { description: "Goes on.", when: (s) => !s.on, run: (s) => void (s.on = true) },
         down: { description: "Goes off.", when: (s) => s.on, run: (s) => void (s.on = false) },
       },
     });
     spec.defineInvariants({ onOnce: { description: "The switch never goes on twice.", never: (t) => t.count((e) => e.is(Switch, "up")) >= 2 } });
+    spec.defineScenario({
+      name: "On and off",
+      description: "The switch goes on, then off: back where it started.",
+      run(s) {
+        s.step(s.the(Switch), "up");
+        s.step(s.the(Switch), "down");
+      },
+    });
+    spec.defineScenario({
+      name: "On again",
+      description: "On, off, and on again: the world is as it was after the first, but the switch has gone on twice.",
+      run(s) {
+        s.step(s.the(Switch), "up");
+        s.step(s.the(Switch), "down");
+        s.step(s.the(Switch), "up");
+      },
+    });
     return { Switch };
   });
 }
