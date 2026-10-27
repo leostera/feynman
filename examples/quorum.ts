@@ -29,13 +29,20 @@ export function quorum(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Write, Ack, Read, Value } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster", place: { arrange: "row" } });
+      const clients = spec.defineZone({ name: "Clients", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Cluster", description: `three replicas; writes need ${W}, reads take ${R}`, place: { column: 1, arrange: "ring", region: true } });
 
       const Client = spec.defineActor({
         name: "Client",
-        zone,
+        zone: clients,
         singleton: true,
         initialState: () => ({ phase: "idle" as "idle" | "writing" | "written" | "reading" | "read", acks: 0, answers: 0, newest: 0 }),
+        look: {
+          icon: "laptop",
+          status: (s) =>
+            ({ idle: "ready", writing: `writing: ${s.acks} of ${W} acks`, written: "write succeeded", reading: `reading: ${s.answers} of ${R} answers`, read: s.newest ? "read version 1" : "read nothing: missed the write" })[s.phase],
+          mood: (s) => (s.phase === "read" ? (s.newest ? "ok" : "bad") : s.phase === "writing" || s.phase === "reading" ? "busy" : "info"),
+        },
         actions: {
           write: {
             label: "Write",
@@ -61,6 +68,7 @@ export function quorum(variant: "buggy" | "fixed") {
         transitions: {
           [Ack]: {
             description: `Counts acknowledgements; the write has succeeded at ${W}.`,
+            say: (s) => (s.phase === "written" ? `${W} acknowledgements: the write has succeeded` : s.phase === "writing" ? `${s.acks} of ${W} acknowledgements` : "A late acknowledgement"),
             run(state) {
               if (state.phase !== "writing") return;
               state.acks += 1;
@@ -69,6 +77,7 @@ export function quorum(variant: "buggy" | "fixed") {
           },
           [Value]: {
             description: `Keeps the newest answer; the read is done at ${R}.`,
+            say: (s) => (s.phase === "read" && s.answers === R ? `Read done: version ${s.newest}${s.newest ? "" : ", from before the write"}` : s.phase === "reading" ? `${s.answers} of ${R} answers` : "A late answer"),
             run(state, msg) {
               if (state.phase !== "reading") return;
               state.answers += 1;
@@ -85,6 +94,7 @@ export function quorum(variant: "buggy" | "fixed") {
         symmetric: true,
         durable: ["version"],
         initialState: () => ({ version: 0 }),
+        look: { icon: "database", names: ["A", "B", "C"], status: (s) => (s.version ? "has version 1" : "empty"), mood: (s) => (s.version ? "ok" : "off") },
         transitions: {
           [Write]: {
             description: "Stores the write and acknowledges it.",
@@ -102,6 +112,35 @@ export function quorum(variant: "buggy" | "fixed") {
         readSeesWrite: {
           description: "A read that starts after a write has succeeded sees it.",
           always: (w) => w.the(Client).state.phase !== "read" || w.the(Client).state.newest >= 1,
+        },
+      });
+      spec.defineScenario({
+        name: "A read misses the write",
+        description: variant === "buggy" ? "The write lands on A and B; the read asks only C, which has not got it." : "The write lands on A and B; the read waits for two answers, so one of them is A's or B's.",
+        run(s) {
+          const client = s.the(Client);
+          const [a, b, c] = ["A", "B", "C"].map((name) => s.spawn(Replica, name));
+          s.act(client, "write");
+          s.deliver(a, "Write");
+          s.deliver(b, "Write");
+          s.deliver(client, "Ack");
+          s.deliver(client, "Ack");
+          s.act(client, "read");
+          s.deliver(c, "Read");
+          s.deliver(client, "Value");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Write everywhere, then read",
+        description: "Every replica gets the write before the read: any quorum sees it.",
+        run(s) {
+          const client = s.the(Client);
+          for (const name of ["A", "B", "C"]) s.spawn(Replica, name);
+          s.act(client, "write");
+          s.settle();
+          s.act(client, "read");
+          s.settle();
         },
       });
       return { Client, Replica };
