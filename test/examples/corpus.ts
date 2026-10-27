@@ -17,6 +17,7 @@ import { lwwRegister } from "../../examples/lww-register.ts";
 import { gCounter } from "../../examples/g-counter.ts";
 import { orSet } from "../../examples/or-set.ts";
 import { idempotentConsumer } from "../../examples/idempotent-consumer.ts";
+import { readRepair } from "../../examples/read-repair.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -427,6 +428,18 @@ export const corpus: Example[] = [
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
       ],
     },
+  },
+  {
+    name: "read repair",
+    spec: readRepair,
+    instances: { Replica: 3 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 12, faults: 0 }, expect: { neverGoesBack: { events: 10, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 30, faults: 0 }, expect: { neverGoesBack: "holds" } },
+      { variant: "fixed", bounds: { depth: 30, faults: 1 }, expect: { neverGoesBack: "holds" } },
+    ],
+    tla: { module: "ReadRepair", invariants: ["neverGoesBack"], configs: BOTH_WAYS },
+    p: { project: "ReadRepair", property: "neverGoesBack", assertion: "a replica went back to an older version", depth: 30 },
   },
 ];
 

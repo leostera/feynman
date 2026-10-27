@@ -38,6 +38,7 @@ bun run feynman dev                # every example in the simulator
 | `g-counter.ts` | A counter merged by its larger total: increments made at the same time are lost | state-based CRDTs, merges that keep what both sides know |
 | `or-set.ts` | A replicated set racing an add against a remove; the textbook OR-Set fix, which assumes causal delivery, still breaks when a remove overtakes its add | operation-based CRDTs, tombstones, what a protocol assumes of delivery |
 | `idempotent-consumer.ts` | A consumer that remembers the jobs it did only in memory: a restart and a redelivery charge twice | at-least-once delivery, idempotency keys, durable state, timers |
+| `read-repair.ts` | Read repair that overwrites without comparing versions: a slow repair takes a replica back to an older value | read repair, versioned writes, ghost state for invariants about the past |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
