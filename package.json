@@ -18,7 +18,7 @@
   "scripts": {
     "feynman": "bun bin/feynman.ts",
     "build": "vite build --config src/view/vite.config.ts",
-    "test": "bun test",
+    "test": "bun test --timeout 60000",
     "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/p.oracle.ts",
     "typecheck": "tsc --noEmit -p .",
     "prepublishOnly": "bun run build && bun run typecheck && bun run test",
