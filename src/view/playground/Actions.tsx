@@ -4,13 +4,12 @@
 // and clicking one chooses it ("Open a Mac", then click the Mac). Anything more opens a
 // small dialog. The bar also opens and closes groups, inspects state, and restarts.
 import { Button, Dialog, Input, Select } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, ArrowLeftIcon, CornersInIcon, CornersOutIcon, EyeIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowCounterClockwiseIcon, ArrowLeftIcon, CornersInIcon, CornersOutIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { worldView, type ActionInfo, type Spec, type World } from "../../spec/index.ts";
-import { messageName } from "../format";
 import type { Op } from "../session";
 import type { SceneNode } from "../scene";
-import { Sources, StateTree, useExplorer } from "../ui";
+import { useExplorer } from "../ui";
 
 /** An action waiting for its inputs; `inputs` are already filled in, such as by a drop. */
 export interface Asking {
@@ -67,7 +66,6 @@ export function ActionBar({
   onRun,
   onAsk,
   onBack,
-  onInspect,
   onToggleGroup,
   onClose,
   nameOf,
@@ -83,7 +81,6 @@ export function ActionBar({
   onRun: (op: Op) => void;
   onAsk: (asking: Asking) => void;
   onBack: () => void;
-  onInspect: (ids: string[]) => void;
   onToggleGroup: () => void;
   onClose: () => void;
 }) {
@@ -130,7 +127,6 @@ export function ActionBar({
           {group.open ? `Close ${group.label}` : "Look inside"}
         </Button>
       )}
-      <Button size="xs" variant="ghost" shape="square" aria-label="Inspect" title="Inspect its state" icon={<EyeIcon size={11} />} onClick={() => onInspect(node.members.map((m) => m.id))} />
       {node.members.length === 1 && (
         <Button size="xs" variant="ghost" shape="square" aria-label={`Restart ${node.label}`} title={`Restart ${node.label}`} icon={<ArrowCounterClockwiseIcon size={11} />} onClick={() => onRun({ op: "restart", instance: node.members[0].id })} />
       )}
@@ -245,50 +241,5 @@ function ChoiceOrOther({ name, options, value, onChange }: { name: string; optio
       </Select>
       {other && <Input aria-label={`${name}, something else`} autoFocus value={value} onChange={(e) => onChange(e.target.value)} />}
     </div>
-  );
-}
-
-export function InspectDialog({ ids, world, onClose }: { ids: string[] | null; world: World; onClose: () => void }) {
-  const { spec } = useExplorer();
-  const instances = (ids ?? []).map((id) => world.instances.find((i) => i.id === id)).filter((i): i is NonNullable<typeof i> => Boolean(i));
-  return (
-    <Dialog.Root open={instances.length > 0} onOpenChange={(open) => !open && onClose()}>
-      <Dialog className="max-h-[80vh] w-[34rem] overflow-y-auto p-5">
-        <div className="flex flex-col gap-5">
-          {instances.map((instance, n) => {
-            const actor = spec.actors.find((a) => a.name === instance.actor)!;
-            return (
-              <div key={instance.id} className="flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    {n === 0 ? <Dialog.Title className="text-sm font-semibold">{instance.label}</Dialog.Title> : <h2 className="text-sm font-semibold">{instance.label}</h2>}
-                    <p className="text-xs text-kumo-subtle">{actor.description ?? `${actor.name}, in ${actor.zone}`}</p>
-                  </div>
-                  {n === 0 && <Dialog.Close render={(props) => <Button {...props} variant="ghost" size="sm" shape="square" aria-label="Close" icon={<XIcon />} />} />}
-                </div>
-                <section>
-                  <h3 className="mb-1 text-[11px] font-medium text-kumo-subtle">State</h3>
-                  <StateTree value={instance.state} />
-                  {actor.durable.length > 0 && <p className="mt-1 text-xs text-kumo-subtle">A restart keeps {actor.durable.join(", ")}.</p>}
-                </section>
-                {Object.values(actor.transitions).length > 0 && (
-                  <section className="flex flex-col gap-1.5">
-                    <h3 className="text-[11px] font-medium text-kumo-subtle">What it does by itself</h3>
-                    {Object.values(actor.transitions).map((t) => (
-                      <div key={t.key} className="flex flex-col gap-1">
-                        <p className="text-xs">
-                          <span className="font-medium">{t.message ? `On ${messageName(spec, t.message)}` : t.key}</span> <span className="text-kumo-subtle">{t.description}</span>
-                        </p>
-                        <Sources sources={t.sources} />
-                      </div>
-                    ))}
-                  </section>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Dialog>
-    </Dialog.Root>
   );
 }

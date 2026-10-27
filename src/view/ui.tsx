@@ -2,10 +2,10 @@
 // state as a tree, and the detail of one event.
 import { Badge, cn } from "@cloudflare/kumo";
 import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, CodeIcon } from "@phosphor-icons/react";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import type { Event, Spec, World } from "../spec/index.ts";
 import type { Playground } from "../play/index.ts";
-import type { Bundle, CallNode, SpecEntry } from "./data";
+import type { Bundle, CallNode, CodeToken, SpecEntry } from "./data";
 import { labelOf, messageName, short, sourceUrl, stepTitle } from "./format";
 
 export interface Loaded {
@@ -38,7 +38,7 @@ export function stepInfo(spec: Spec, actor: string, key: string) {
 
 // Sources ------------------------------------------------------------------------------------------
 
-const STATUS_BADGE = {
+export const STATUS_BADGE = {
   fresh: null,
   new: null,
   stale: <Badge variant="warning">changed since locked</Badge>,
@@ -84,7 +84,7 @@ function SourceRow({ source }: { source: string }) {
       {open && (
         <div className="border-t border-kumo-hairline">
           {entry?.status === "missing" && <p className="px-3 py-2 text-xs text-kumo-danger">{entry.reason}</p>}
-          {entry?.text && <CodeExcerpt text={entry.text} start={entry.start ?? 1} />}
+          {entry?.text && <CodeExcerpt text={entry.text} start={entry.start ?? 1} highlighted={entry.lines} />}
           {calls && (
             <div className="border-t border-kumo-hairline px-2 py-2">
               <p className="mb-1 px-1 text-[11px] font-medium text-kumo-subtle">Calls</p>
@@ -97,15 +97,27 @@ function SourceRow({ source }: { source: string }) {
   );
 }
 
-function CodeExcerpt({ text, start }: { text: string; start: number }) {
+/**
+ * Code with line numbers; coloured when the CLI highlighted it (`highlighted`, one token list
+ * per line). `marked` lines (by their number in the file) stand out: where the code calls on.
+ */
+export function CodeExcerpt({ text, start, highlighted, marked }: { text: string; start: number; highlighted?: CodeToken[][]; marked?: Set<number> }) {
   const lines = text.split("\n");
   const shown = lines.slice(0, 80);
   return (
-    <pre className="max-h-80 overflow-auto bg-kumo-recessed px-0 py-2 font-mono text-[11px] leading-[1.55]">
+    <pre className="feynman-code max-h-80 overflow-auto bg-kumo-recessed px-0 py-2 font-mono text-[11px] leading-[1.55]">
       {shown.map((line, i) => (
-        <div key={i} className="flex">
-          <span className="w-10 shrink-0 select-none pr-3 text-right text-kumo-inactive">{start + i}</span>
-          <span className="whitespace-pre pr-3">{line}</span>
+        <div key={i} className={cn("flex", marked?.has(start + i) && "bg-kumo-brand/10 shadow-[inset_2px_0_0_var(--color-kumo-brand)]")}>
+          <span className={cn("w-10 shrink-0 select-none pr-3 text-right text-kumo-inactive", marked?.has(start + i) && "text-kumo-brand")}>{start + i}</span>
+          <span className="whitespace-pre pr-3">
+            {highlighted?.[i]
+              ? highlighted[i].map((token, j) => (
+                  <span key={j} style={{ "--shiki-light": token.c, "--shiki-dark": token.d } as CSSProperties}>
+                    {token.t}
+                  </span>
+                ))
+              : line}
+          </span>
         </div>
       ))}
       {lines.length > shown.length && <div className="pl-10 text-kumo-subtle">… {lines.length - shown.length} more lines</div>}
@@ -171,6 +183,58 @@ export function StateTree({ value, changed = new Set<string>(), path = "" }: { v
               </div>
             )}
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Details for the selected actor(s) in the playground's Timeline pane. */
+export function EntityDetails({ ids, world }: { ids: string[]; world: World }) {
+  const { spec } = useExplorer();
+  const instances = ids.map((id) => world.instances.find((i) => i.id === id)).filter((i): i is NonNullable<typeof i> => Boolean(i));
+  if (!instances.length) return <p className="px-3 py-4 text-xs text-kumo-subtle">Select an entity in the playground to see its details.</p>;
+  return (
+    <div className="flex flex-col gap-5 p-3">
+      {instances.map((instance) => {
+        const actor = spec.actors.find((a) => a.name === instance.actor)!;
+        return (
+          <section key={instance.id} className="flex flex-col gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">{instance.label}</h3>
+              <p className="text-xs text-kumo-subtle">{actor.description ?? `${actor.name}, in ${actor.zone}`}</p>
+            </div>
+            <section>
+              <h4 className="mb-1 text-[11px] font-medium text-kumo-subtle">State</h4>
+              <StateTree value={instance.state} />
+              {actor.durable.length > 0 && <p className="mt-1 text-xs text-kumo-subtle">A restart keeps {actor.durable.join(", ")}.</p>}
+            </section>
+            {Object.values(actor.actions).length > 0 && (
+              <section className="flex flex-col gap-2">
+                <h4 className="text-[11px] font-medium text-kumo-subtle">Actions</h4>
+                {Object.values(actor.actions).map((action) => (
+                  <div key={action.key} className="flex flex-col gap-1">
+                    <p className="text-xs"><span className="font-medium">{action.label}</span> <span className="text-kumo-subtle">{action.description}</span></p>
+                    <Sources sources={action.sources} />
+                  </div>
+                ))}
+              </section>
+            )}
+            {Object.values(actor.transitions).length > 0 && (
+              <section className="flex flex-col gap-1.5">
+                <h4 className="text-[11px] font-medium text-kumo-subtle">What it does by itself</h4>
+                {Object.values(actor.transitions).map((transition) => (
+                  <div key={transition.key} className="flex flex-col gap-1">
+                    <p className="text-xs">
+                      <span className="font-medium">{transition.message ? `On ${messageName(spec, transition.message)}` : transition.key}</span>{" "}
+                      <span className="text-kumo-subtle">{transition.description}</span>
+                    </p>
+                    <Sources sources={transition.sources} />
+                  </div>
+                ))}
+              </section>
+            )}
+          </section>
         );
       })}
     </div>

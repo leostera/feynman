@@ -10,6 +10,7 @@ const spec = defineSpec("Relay", { messages: { Ping: message<{}>({ name: "ping" 
   const App = spec.defineActor({ name: "App", zone: macs, initialState: () => ({ linked: false }) });
   const Daemon = spec.defineActor({ name: "Daemon", zone: macs, initialState: () => ({ online: false }) });
   spec.defineGroup({ name: "Mac", actors: { app: App, daemon: Daemon } });
+  spec.defineScenario({ name: "Connect", run: () => {} });
   return { Worker, Store, App, Daemon };
 });
 
@@ -19,6 +20,7 @@ test("a playground records groups, renders, tokens and links by name", () => {
     play.group("Relay", [Worker, Store], { icon: "cloud", status: ({ member }) => `${member(Store)?.state.codes ?? 0} codes` });
     play.group("Mac", { size: { w: 120, h: 90 } });
     play.actor(App, { panel: ({ state }) => (state.linked ? "linked" : null) });
+    play.flow("Connect", [App, Worker, Store]);
     play.token("pairing code", ({ token }) => String(token.value));
     play.link("websocket", { style: "dashed", flowing: true });
   });
@@ -31,6 +33,7 @@ test("a playground records groups, renders, tokens and links by name", () => {
   expect(Object.keys(play.group)).toEqual(["Relay", "Mac"]);
   expect(play.group.Mac.size).toEqual({ w: 120, h: 90 });
   expect(Object.keys(play.actor)).toEqual(["App"]);
+  expect(play.flowOrder.Connect).toEqual(["App", "Worker", "Store"]);
   expect(groupsOf(spec, play).map((g) => g.name)).toEqual(["Mac", "Relay"]);
 });
 
@@ -38,4 +41,5 @@ test("naming an actor the spec does not have, or styling a group it does not def
   const stranger = { name: "Stranger", actions: {}, transitions: {} } as unknown as Actor<{}, {}>;
   expect(() => definePlayground(spec, (play) => play.actor(stranger, {}))).toThrow(/not an actor of Relay/);
   expect(() => definePlayground(spec, (play) => play.group("Nope", {}))).toThrow(/does not define/);
+  expect(() => definePlayground(spec, (play) => play.flow("Missing", []))).toThrow(/unknown scenario/);
 });

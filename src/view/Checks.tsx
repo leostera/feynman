@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import type { Counterexample, PropertyResult, Report } from "../check/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { labelOf, ordinal, stepTitle, time } from "./format";
-import { Section, useExplorer } from "./ui";
+import { Section, Sources, useExplorer } from "./ui";
 
 type Verdict = "broken" | "scenario" | "untested" | "explored" | "holds";
 
@@ -162,12 +162,13 @@ function Steps({ events, worlds }: { events: Event[]; worlds: World[] }) {
   return (
     <ol className="mt-2 flex flex-col gap-0.5 pl-7">
       {events.map((e, i) => (
-        <li key={i} className="flex gap-2 text-xs">
+        <li key={i} className="flex flex-wrap items-start gap-x-2 gap-y-1 text-xs">
           <span className="w-12 shrink-0 text-right font-mono text-kumo-subtle">{ordinal(i + 1)}</span>
           <span className={cn("font-medium", (e.error || e.violations.length) && "text-kumo-danger")}>
             {labelOf(worlds[i], e.instance)} · {stepTitle(spec, e)}
           </span>
-          <span className="truncate text-kumo-subtle">{e.description}</span>
+          <span className="min-w-0 flex-1 text-kumo-subtle">{e.description}</span>
+          {e.sources.length > 0 && <div className="w-full pl-14"><Sources sources={e.sources} /></div>}
         </li>
       ))}
     </ol>
