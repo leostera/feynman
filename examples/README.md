@@ -31,6 +31,7 @@ bun run feynman dev                # every example in the simulator
 | `barrier.ts` | A coordinator counting arrivals, not workers: one restarts, arrives again, and the barrier opens early | durable state, restarts, counting by identity |
 | `primary-backup.ts` | The primary acknowledges a write before the backup has it | replies sent before the step that makes them true |
 | `read-your-writes.ts` | Reading from a follower that has not caught up: the client misses its own write | session guarantees, requests held until state catches up |
+| `quorum.ts` | Writing to two replicas of three and reading from one: R + W = N, and a read misses a finished write | quorum intersection, messages to every instance |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was

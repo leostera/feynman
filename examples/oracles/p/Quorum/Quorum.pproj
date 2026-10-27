@@ -1,0 +1,11 @@
+<Project>
+<ProjectName>Quorum</ProjectName>
+<InputFiles>
+  <PFile>../Network.p</PFile>
+  <PFile>../Chaos.p</PFile>
+  <PFile>./PSrc/</PFile>
+  <PFile>./PSpec/</PFile>
+  <PFile>./PTst/</PFile>
+</InputFiles>
+<OutputDir>./PGenerated/</OutputDir>
+</Project>
