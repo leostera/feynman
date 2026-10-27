@@ -22,7 +22,7 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
           const theirs = tlc(o.module, constants, [invariant], view).violated;
           const p = ours.report.properties.find((x) => x.id === invariant);
           if (!p) throw new Error(`${example.name} has no property ${invariant}`);
-          expect({ invariant, broken: !p.holds, events: p.counterexample?.events.length }).toEqual({ invariant, broken: !!theirs, events: theirs?.events });
+          expect({ invariant, broken: !p.holds, events: p.holds ? undefined : p.counterexample.events.length }).toEqual({ invariant, broken: !!theirs, events: theirs?.events });
         }
       }, 300_000);
     }

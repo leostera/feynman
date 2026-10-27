@@ -1,18 +1,16 @@
 // A counterexample as scenario code: paste it into the spec and the bug is a flow anyone can
 // replay, step through in the playground, and keep as a regression once it is fixed.
-import type { Counterexample, PropertyResult } from "../check/index.ts";
+import type { Counterexample, PropertyBroken } from "../check/index.ts";
 import type { Event, Spec, World } from "../spec/index.ts";
 
 /** `defineScenario` source replaying the property's counterexample event by event. */
-export function scenarioCode(spec: Spec, property: PropertyResult): string {
-  const ce = property.counterexample;
-  if (!ce) throw new Error(`${property.id} holds: there is no counterexample to replay`);
+export function scenarioCode(spec: Spec, property: PropertyBroken): string {
+  const { counterexample: ce, loop } = property;
   const names = new Names();
   const body: string[] = [];
   if (ce.from) body.push(`// Starts where the scenario "${ce.from}" ends: copy its steps here first.`);
   else body.push(...setup(spec, ce.initial, names));
   ce.events.forEach((event, i) => body.push(line(event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
-  const loop = property.loop;
   if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
   else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
   body.push(`// ${property.id} is broken here: ${property.description}`);

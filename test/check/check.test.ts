@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { broken } from "../helpers.ts";
 import { check } from "../../src/check/index.ts";
 import { isLiveness } from "../../src/spec/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
@@ -19,9 +20,8 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
   const byId = Object.fromEntries(report.properties.map((p) => [p.id, p]));
   expect(byId.relayNeverStoresSecrets.holds).toBe(true);
   expect(byId.codeRedeemedOnce.holds).toBe(true);
-  const links = byId.macWithValidCodeLinks;
-  expect(links.holds).toBe(false);
-  const example = links.counterexample!;
+  const links = broken(byId.macWithValidCodeLinks);
+  const example = links.counterexample;
   // It takes a lost message…
   expect(example.events.some((e) => e.kind === "lose")).toBe(true);
   // …after which no fair behaviour links the Mac.
@@ -38,7 +38,7 @@ test("without faults, every redemption gets its answer and the property holds", 
 
 test("counterexamples replay: the same choices give the same events", () => {
   const report = withOneFault();
-  const example = report.properties.find((p) => !p.holds)!.counterexample!;
+  const example = report.properties.find((p) => !p.holds)!.counterexample;
   expect(example.events.length).toBe(example.choices.length);
   expect(example.worlds.length).toBe(example.choices.length);
   expect(example.events.every((e) => !e.error)).toBe(true);
@@ -62,9 +62,9 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
   expect(check(deep, bounds).properties[0].holds).toBe(true);
   const run = runScenario(deep, deep.scenarios[0]);
   const seeded = check(deep, bounds, [{ name: "Count to four", world: run.worlds.at(-1)! }]);
-  expect(seeded.properties[0].holds).toBe(false);
-  expect(seeded.properties[0].counterexample?.from).toBe("Count to four");
-  expect(seeded.properties[0].counterexample?.events.length).toBe(1);
+  const fromSeed = broken(seeded.properties[0]);
+  expect(fromSeed.counterexample.from).toBe("Count to four");
+  expect(fromSeed.counterexample.events.length).toBe(1);
 });
 
 test("random runs go deeper than the search, and their counterexample is shrunk", async () => {
@@ -83,11 +83,10 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
     spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
   });
   const report = check(deep, { depth: 2, repeats: 20, walks: 50 });
-  const p = report.properties[0];
-  expect(p.holds).toBe(false);
+  const p = broken(report.properties[0]);
   expect(p.foundBy).toBe("walk");
   // Shrunk to the five steps it takes, without the fidgeting.
-  expect(p.counterexample!.events.map((e) => e.key)).toEqual(["up", "up", "up", "up", "up"]);
+  expect(p.counterexample.events.map((e) => e.key)).toEqual(["up", "up", "up", "up", "up"]);
   expect(report.walks.runs).toBeGreaterThan(0);
 });
 
@@ -226,9 +225,8 @@ test("states that hold different sets or maps are different states, and changing
     return { Picker };
   });
   const report = check(spec, { depth: 4, walks: 0 });
-  const [neverSeven] = report.properties;
-  expect(neverSeven.holds).toBe(false);
-  const pick = neverSeven.counterexample!.events.find((e) => e.key === "pick")!;
+  const neverSeven = broken(report.properties[0]);
+  const pick = neverSeven.counterexample.events.find((e) => e.key === "pick")!;
   expect(pick.changes.map((c) => c.path).sort()).toEqual(["counts", "done", "picked"]);
 });
 

@@ -15,7 +15,7 @@ function verdicts(report: Report, expected: Record<string, Expected>): Record<st
     Object.keys(expected).map((id) => {
       const p = report.properties.find((x) => x.id === id)!;
       if (p.holds) return [id, p.unfinished ? "unfinished" : "holds"];
-      return [id, shape(p.counterexample!)];
+      return [id, shape(p.counterexample)];
     }),
   );
 }
@@ -43,9 +43,9 @@ for (const example of corpus) for (const c of example.cases) {
     });
 
     test("counterexamples replay to the same events", () => {
-      for (const p of plain.properties.filter((x) => !x.holds)) {
-        const again = replay(spec, p.counterexample!.initial, p.counterexample!.choices);
-        expect(again.events.map((e) => `${e.actor}.${e.key}`)).toEqual(p.counterexample!.events.map((e) => `${e.actor}.${e.key}`));
+      for (const p of plain.properties.filter((p) => !p.holds)) {
+        const again = replay(spec, p.counterexample.initial, p.counterexample.choices);
+        expect(again.events.map((e) => `${e.actor}.${e.key}`)).toEqual(p.counterexample.events.map((e) => `${e.actor}.${e.key}`));
       }
     });
 

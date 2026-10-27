@@ -21,12 +21,12 @@ for (const example of corpus)
     test(`${caseName(example, c)}: counterexamples replay as scenarios`, () => {
       const spec = example.spec(c.variant);
       const report = check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 });
-      for (const p of report.properties.filter((x) => !x.holds && !x.counterexample!.from)) {
+      for (const p of report.properties.filter((x) => !x.holds).filter((x) => !x.counterexample.from)) {
         const run = runScenario(spec, { name: p.id, run: compile(spec, scenarioCode(spec, p)) });
         expect(run.error).toBeUndefined();
         const steps = (events: typeof run.events) => events.filter((e) => e.kind !== "spawn").map((e) => `${e.instance} ${e.kind} ${e.key}`);
         // A liveness counterexample is followed by one round of its loop.
-        expect(steps(run.events)).toEqual(steps([...p.counterexample!.events, ...(p.loop?.events ?? [])]));
+        expect(steps(run.events)).toEqual(steps([...p.counterexample.events, ...(p.loop?.events ?? [])]));
         if (p.kind === "always") expect(run.events.at(-1)!.violations).toContain(p.id);
       }
     });

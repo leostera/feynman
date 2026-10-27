@@ -115,13 +115,33 @@ export function leastRenaming(world: World, symmetry: Symmetry): { key: string; 
   let best: { key: string; renaming: Map<string, string> } | undefined;
   for (const renaming of symmetry.renamings) {
     const key = joinParts(
-      instances.map((line) => resorted(line, rename(line, renaming))),
-      pending.map((line) => resorted(line, rename(line, renaming))),
+      instances.map((line) => renamedLine(line, renaming)),
+      pending.map((line) => renamedLine(line, renaming)),
       rest,
     );
     if (best === undefined || key < best.key) best = { key, renaming };
   }
   return best!;
+}
+
+/**
+ * Each renaming's renamed key lines, once each: worlds share most of their lines (states and
+ * payloads are frozen and shared), and renaming one means parsing and sorting its JSON again.
+ * Bounded, so a long search does not keep every line it ever saw.
+ */
+const renamedLines = new WeakMap<Map<string, string>, Map<string, string>>();
+const RENAMED_LINES = 100_000;
+
+function renamedLine(line: string, renaming: Map<string, string>): string {
+  let cache = renamedLines.get(renaming);
+  if (!cache) renamedLines.set(renaming, (cache = new Map()));
+  let out = cache.get(line);
+  if (out === undefined) {
+    out = resorted(line, rename(line, renaming));
+    if (cache.size >= RENAMED_LINES) cache.clear();
+    cache.set(line, out);
+  }
+  return out;
 }
 
 /** A name, or text holding names, as the renaming has it. */
