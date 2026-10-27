@@ -24,6 +24,7 @@ bun run feynman dev                # every example in the simulator
 | `outbox.ts` | An announcement queued in memory, lost when the shop restarts after storing the order | guarded transitions draining durable state, restarts |
 | `raft-vote.ts` | A vote not kept on disk: a node restarts, votes again in the same term, and two nodes lead | durable state, restarts |
 | `write-skew.ts` | Two doctors each check the other is on call, then both leave | check-then-act across messages, an atomic conditional write |
+| `dining-philosophers.ts` | Each philosopher starts with a different fork: each holds one and waits for the other | requests that queue, a deadlock as a safety property |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
