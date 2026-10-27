@@ -4,7 +4,7 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
-## Unreleased
+## 0.8.0
 
 ### Reading check's results
 
@@ -35,6 +35,13 @@ after.
 
 - A `path#symbol` that is not defined names the close symbols the file does define: "did
   you mean src/relay.ts#Relay.redeem?"
+
+### Build
+
+- `feynman build` minifies the explorer and the spec modules, and writes `.gz` and `.br`
+  variants next to the page for static hosts.
+- `--out` takes a directory too (one that exists, or a path ending in `/`), and writes
+  `index.html` in it.
 
 ### Skill
 
