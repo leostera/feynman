@@ -295,13 +295,17 @@ export function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = 
       const faults = node.faults + (choice.kind === "lose" || choice.kind === "restart" ? 1 : 0);
       const remembered = memory(() => [...pathEvents(nodes, index), step.event]);
       const key = keyOf(step.world, acts, faults, node.root, remembered);
-      const existing = seen.get(key);
+      // A step that lands on a known state still ran: count it as reached. One that failed is
+      // judged all the same, the first time its error turns up: a failing step usually changes
+      // nothing, so its state is its parent's, which was judged before the step ran.
+      search.reached.add(`${step.event.actor}.${step.event.key}`);
+      const existing = step.event.error && !search.errors.has(step.event.error) ? undefined : seen.get(key);
       if (existing !== undefined) {
         if (roots[node.root].symmetry.classes.length && !twinsAgree(nodes[existing].world, step.world, node.root)) return (refuted = true), false;
         if (b.reduce) revisit(existing, step.world, sleep, next);
         continue;
       }
-      seen.set(key, nodes.length);
+      if (!seen.has(key)) seen.set(key, nodes.length);
       nodes.push({ parent: index, root: node.root, choice, event: step.event, depth: node.depth + 1, faults, acts, world: step.world, sleep, expanded: false });
       watch.state?.(step.world, { acts, faults, memory: remembered });
       depthReached = Math.max(depthReached, node.depth + 1);
