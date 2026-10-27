@@ -14,6 +14,7 @@ import { outbox } from "../../examples/outbox.ts";
 import { payments } from "../../examples/payments.ts";
 import { ricartAgrawala } from "../../examples/ricart-agrawala.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
+import { tokenRing } from "../../examples/token-ring.ts";
 import { writeSkew } from "../../examples/write-skew.ts";
 import { lightSwitch } from "../../examples/switch.ts";
 import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
@@ -229,6 +230,17 @@ export const corpus: Example[] = [
     ],
     tla: { module: "RicartAgrawala", invariants: ["mutex"], configs: BOTH_WAYS },
     p: { project: "RicartAgrawala", property: "mutex", assertion: "both nodes are in the critical section", depth: 9 },
+  },
+  {
+    name: "token ring",
+    spec: tokenRing,
+    instances: { Node: 3 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { oneToken: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { oneToken: "holds" } },
+    ],
+    tla: { module: "TokenRing", invariants: ["oneToken"], depth: 8, configs: BOTH_WAYS },
+    p: { project: "TokenRing", property: "oneToken", assertion: "two nodes hold the token", depth: 8 },
   },
 ];
 
