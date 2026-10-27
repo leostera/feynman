@@ -5,11 +5,10 @@ export function llmsTxt(): string {
   const sims = readSims().filter(published);
   return `# Feynman
 
-> Feynman specs are small, executable models of how a system behaves, written in TypeScript:
-> actors and their state, the messages between them, the actions people take, timers and
-> limits, and the invariants that must hold, with each step anchored to the code it stands
-> for. From one spec, Feynman derives a simulator, a bounded model checker, the flows of
-> every scenario and their diffs between commits.
+> Feynman specs are executable TypeScript models of system behavior: actors and their state,
+> messages, actions, timers, limits, and invariants. Steps can link to the code they model.
+> From one spec, Feynman derives an interactive simulator, a bounded model checker, scenario
+> flows, and comparisons of those flows between commits.
 
 Install with \`bun add -d @leostera/feynman\` (Bun 1.3 or later). Specs import
 \`@leostera/feynman\`; optional playground files import \`@leostera/feynman/play\`. The CLI:
@@ -17,8 +16,9 @@ Install with \`bun add -d @leostera/feynman\` (Bun 1.3 or later). Specs import
 (scenario traces as text), \`feynman dev\` (the simulator), \`feynman build\` (one
 self-contained HTML file), \`feynman diff --base main\`.
 
-Checker verdicts: ✗ broken (with the trace), ✓ holds in every state within the bounds, ~ held
-in the states explored before a limit (not a proof), ? never tested.
+Checker verdicts: ✗ a trace violates the rule; ✓ the rule holds in every state explored within
+configured bounds; ~ no violation was found before a search limit stopped exploration (not a
+proof); ? the explored states never reached a case where the rule could be judged.
 
 ## Docs
 
