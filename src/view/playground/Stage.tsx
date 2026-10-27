@@ -85,10 +85,19 @@ export function useLayout(spec: Spec, world: World, scene: Scene, view: View, si
 }
 
 /** The layout already fills the canvas; scale down only when it could not fit. */
-export function fitOf(graph: Layout | null, view: View): Fit {
-  if (!graph || !view.w) return { scale: 1, x: 0, y: 0 };
-  const scale = Math.min(1, view.w / graph.width, view.h / graph.height);
-  return { scale, x: (view.w - graph.width * scale) / 2, y: (view.h - graph.height * scale) / 2 };
+/** The part of the canvas that floating controls leave free: where the diagram is fitted. */
+export interface Free {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The diagram scaled down (never up) to fit the free area, and centred in it. */
+export function fitOf(graph: Layout | null, free: Free): Fit {
+  if (!graph || free.w <= 0 || free.h <= 0) return { scale: 1, x: 0, y: 0 };
+  const scale = Math.min(1, free.w / graph.width, free.h / graph.height);
+  return { scale, x: free.x + (free.w - graph.width * scale) / 2, y: free.y + (free.h - graph.height * scale) / 2 };
 }
 
 export interface StageProps {

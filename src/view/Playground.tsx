@@ -12,7 +12,7 @@ import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, typ
 import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
 import { labelOf, messageName, ordinal } from "./format";
 import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
-import { bubbleText, fitOf, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Flight, type Picking } from "./playground/Stage";
+import { bubbleText, fitOf, type Free, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Flight, type Picking } from "./playground/Stage";
 import { nodeLook, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, scenarioDump, type Op, type Session } from "./session";
 import { Timeline, type TimelineTab } from "./Timeline";
@@ -24,6 +24,22 @@ import { DEFAULT_ZOOM, FIT_SCALE_UNITS, POSITION_UNITS_PER_PIXEL, ZOOM_FACTOR_UN
 export interface Choice {
   items: { value: string; label: string }[];
   onPick: (value: string) => void;
+}
+
+/** Room the floating controls take, in pixels: the top bar, the playback bar, the side pane and its margins. */
+const TOP_BAR = 60;
+const PLAY_BAR = 64;
+const PANE_REM = 22;
+const PANE_MARGIN = 24;
+/** Below this much width left beside the pane, the pane is treated as covering the canvas anyway. */
+const MIN_FREE_WIDTH = 320;
+
+/** The canvas left uncovered by the floating controls; the Code tab's pane is half the window wide. */
+function freeArea(view: { w: number; h: number }, wide: boolean): Free {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const pane = Math.max(PANE_REM * rem, wide ? innerWidth / 2 : 0) + PANE_MARGIN;
+  const right = view.w - pane >= MIN_FREE_WIDTH ? pane : 0;
+  return { x: 0, y: TOP_BAR, w: view.w - right, h: Math.max(0, view.h - TOP_BAR - PLAY_BAR) };
 }
 
 function sameCamera(a: CameraState, b: CameraState): boolean {
@@ -103,7 +119,11 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
   const scene = sceneOf(spec, world, groups, toggled);
   const baseScene = sceneOf(spec, base, groups, toggled);
   const graph = useLayout(spec, world, scene, view, sizesOf(playground, scene));
-  const fit = fitOf(graph, view);
+  const free = freeArea(view, paneTab === "code");
+  const fit = fitOf(graph, free);
+  // Zooming and the camera's offset are about the middle of the free area, not of the canvas.
+  const cx = free.x + free.w / 2;
+  const cy = free.y + free.h / 2;
   const focusIndex = viewing ?? last;
   // Auto-fit untouched views; once navigated, keep the original scale across scene changes.
   const baseScale = camera.manual ? camera.fitScale === null ? fit.scale : camera.fitScale / FIT_SCALE_UNITS : fit.scale;
@@ -111,15 +131,15 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
   const cameraZoom = (baseScale * zoom) / fit.scale;
   const stageFit = {
     scale: baseScale * zoom,
-    x: view.w / 2 + camera.x / POSITION_UNITS_PER_PIXEL + (fit.x - view.w / 2) * cameraZoom,
-    y: view.h / 2 + camera.y / POSITION_UNITS_PER_PIXEL + (fit.y - view.h / 2) * cameraZoom,
+    x: cx + camera.x / POSITION_UNITS_PER_PIXEL + (fit.x - cx) * cameraZoom,
+    y: cy + camera.y / POSITION_UNITS_PER_PIXEL + (fit.y - cy) * cameraZoom,
   };
-  const zoomBy = (factor: number, x = view.w / 2, y = view.h / 2) => {
+  const zoomBy = (factor: number, x = cx, y = cy) => {
     const next = scaleZoom(camera.zoom, factor);
     const ratio = next / camera.zoom;
     const cameraX = camera.x / POSITION_UNITS_PER_PIXEL;
     const cameraY = camera.y / POSITION_UNITS_PER_PIXEL;
-    setCamera({ zoom: next, fitScale: camera.fitScale ?? Math.round(fit.scale * FIT_SCALE_UNITS), manual: true, x: Math.round((x - view.w / 2 - (x - view.w / 2 - cameraX) * ratio) * POSITION_UNITS_PER_PIXEL), y: Math.round((y - view.h / 2 - (y - view.h / 2 - cameraY) * ratio) * POSITION_UNITS_PER_PIXEL) });
+    setCamera({ zoom: next, fitScale: camera.fitScale ?? Math.round(fit.scale * FIT_SCALE_UNITS), manual: true, x: Math.round((x - cx - (x - cx - cameraX) * ratio) * POSITION_UNITS_PER_PIXEL), y: Math.round((y - cy - (y - cy - cameraY) * ratio) * POSITION_UNITS_PER_PIXEL) });
   };
   const onPanStart = (e: ReactPointerEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;

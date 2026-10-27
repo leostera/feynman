@@ -3,7 +3,9 @@ import {
   ArrowRightIcon,
   CheckIcon,
   CircleHalfIcon,
+  CodeIcon,
   CopyIcon,
+  LinkIcon,
   PlayIcon,
   RobotIcon,
   ShieldCheckIcon,
@@ -33,6 +35,24 @@ const USE_CASES: { icon: Icon; title: string; text: string }[] = [
     icon: ShieldCheckIcon,
     title: "Checking a system as it changes",
     text: "When a change reshapes the architecture or behavior, update the model, compare scenario flows, and check the rules again: what must never happen, and what must eventually happen. Feynman searches within configured bounds and shows a counterexample when a rule fails.",
+  },
+];
+
+const PLAYGROUND_FEATURES: { icon: Icon; title: string; text: string }[] = [
+  {
+    icon: PlayIcon,
+    title: "Step through it",
+    text: "Add people and machines, act as they would, and watch each message travel. Play, step, rewind to any event, or deliver and drop messages by hand to try another ordering.",
+  },
+  {
+    icon: CodeIcon,
+    title: "See the code behind each step",
+    text: "The Code view walks the timeline event by event: what came in, what went out, and the code the step names. Open any function it reaches in your code to read it in place, highlighted.",
+  },
+  {
+    icon: LinkIcon,
+    title: "Share what you found",
+    text: "The URL carries the scenario, the timeline, and the view, so a link opens the same session. Copy the timeline to hand it to your agent and turn it into a scenario.",
   },
 ];
 
@@ -120,12 +140,16 @@ export function App() {
               <p className="mt-5 text-sm text-kumo-subtle">
                 The skill is included with the package for Pi. You can also give the linked skill file to another coding agent.
               </p>
+              <p className="mt-3 text-sm text-kumo-subtle">
+                Run <code className="rounded bg-kumo-recessed px-1 py-0.5 font-mono text-[12px]">bunx feynman dev</code> to open the playground on your
+                own specs. It reloads as the spec changes, and checks and code links fill in as they finish.
+              </p>
             </div>
             <CodeBlock snippet={prompt} label="A prompt to start with" />
           </div>
         </Section>
 
-        <Section id="playground" title="Explore the playground" lead="Open a working model. Add actors, move through events, rewind, or try a different sequence.">
+        <Section id="playground" title="Explore the playground" lead="Open a working model. Move through its events, read the code behind each one, and share exactly what you found.">
           {FEATURED_SIM && (
             <figure className="mb-8">
               <a href={simHref(FEATURED_SIM)} className="block overflow-hidden rounded-xl ring-1 ring-kumo-line shadow-lg transition hover:ring-kumo-brand">
@@ -140,6 +164,15 @@ export function App() {
               </figcaption>
             </figure>
           )}
+          <div className="mb-10 grid gap-4 md:grid-cols-3">
+            {PLAYGROUND_FEATURES.map(({ icon: Icon, title, text }) => (
+              <div key={title}>
+                <Icon size={20} className="text-kumo-subtle" />
+                <h3 className="mt-2 text-sm font-semibold">{title}</h3>
+                <p className="mt-1 text-sm text-kumo-subtle">{text}</p>
+              </div>
+            ))}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {SIMS.filter(published).map((sim) => (
               <a key={sim.slug} href={simHref(sim)} className="group block">
