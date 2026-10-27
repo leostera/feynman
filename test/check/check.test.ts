@@ -2,8 +2,19 @@ import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
+/**
+ * These tests read the search's shortest counterexample, so nothing may depend on how fast the
+ * machine is: no random runs (they have a time share, and may report the bug first), and a
+ * time limit the search never meets, even on a machine busy building (as before publishing).
+ */
+const UNTIMED = { walks: 0, timeLimit: 600_000 };
+
+/** One fault, explored once and shared: the slowest check here. */
+let oneFault: ReturnType<typeof check> | undefined;
+const withOneFault = () => (oneFault ??= check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000, ...UNTIMED }));
+
 test("with one fault, a Mac given a valid code can end up never linked, and the checker shows how", () => {
-  const report = check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000 });
+  const report = withOneFault();
   const byId = Object.fromEntries(report.properties.map((p) => [p.id, p]));
   expect(byId.relayNeverStoresSecrets.holds).toBe(true);
   expect(byId.codeRedeemedOnce.holds).toBe(true);
@@ -20,14 +31,14 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
 });
 
 test("without faults, every redemption gets its answer and the property holds", { timeout: 30_000 }, () => {
-  const report = check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000 });
+  const report = check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000, ...UNTIMED });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
   expect(report.coverage.reached).toContain("Axo relay.message:Redeem");
 });
 
 test("counterexamples replay: the same choices give the same events", () => {
-  const report = check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000 });
+  const report = withOneFault();
   const example = report.properties.find((p) => !p.holds)!.counterexample!;
   expect(example.events.length).toBe(example.choices.length);
   expect(example.worlds.length).toBe(example.choices.length);
