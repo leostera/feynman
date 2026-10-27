@@ -149,9 +149,10 @@ test("the reductions keep the verdicts and the states on a spec with timers and 
 
 test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", async () => {
   const bounds = { depth: 7, faults: 0, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  // Symmetry is off for liveness: fold the safety properties alone.
+  // Symmetry is off for liveness. This spec has `never` properties too, so its safety and its
+  // liveness are judged in searches of their own, and the safety search folds.
   const safety = { ...remoteAccess, properties: remoteAccess.properties.filter((p) => !isLiveness(p)) };
-  expect((await check(remoteAccess, { ...bounds, symmetry: true })).reductions.symmetric).toEqual([]);
+  expect((await check(remoteAccess, { ...bounds, symmetry: true })).reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
   const plain = await check(safety, { ...bounds, symmetry: false });
   const folded = await check(safety, { ...bounds, symmetry: true });
   expect(folded.reductions.symmetric).toEqual([["Mac A", "Mac B"]]);

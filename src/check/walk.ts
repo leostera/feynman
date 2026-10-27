@@ -5,7 +5,7 @@
 // a broken property's run is shrunk to the fewest steps that still break it.
 import { actorNamed, choices as enabled, traceView, type Event, type Spec, type World } from "../spec/index.ts";
 import { pendingText } from "./keys.ts";
-import { judge, safely, stepBreaks, stuck, type Verdicts } from "./judge.ts";
+import { judge, safely, startBreaks, stepBreaks, stuck, type Verdicts } from "./judge.ts";
 import { apply, branches, QUIET, type Choice, type Counterexample } from "./steps.ts";
 import type { Bounds } from "./explore.ts";
 
@@ -35,6 +35,14 @@ export interface WalkRoot {
 
 export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, until: number): WalkResult {
   const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
+  if (b.walks > 0) {
+    for (const [root, { world }] of roots.entries()) {
+      for (const id of startBreaks(spec, world).filter((id) => !v.broken.has(id))) {
+        v.broken.add(id);
+        out.findings.push({ id, root, choices: [] });
+      }
+    }
+  }
   for (let run = 0; run < b.walks && Date.now() < until; run++) {
     const root = run % roots.length;
     const random = seeded(run + 1);
@@ -142,7 +150,8 @@ export function rebind(spec: Spec, was: World, world: World, choice: Choice): Ch
 /** Whether a replayed path still breaks the property. */
 function stillBreaks(spec: Spec, id: string, path: Counterexample): boolean {
   const property = spec.properties.find((p) => p.id === id)!;
-  if (property.kind === "always") return path.events.some((e) => e.violations.includes(id));
+  // A failed step breaks no property (see judge).
+  if (property.kind === "always") return path.events.some((e) => !e.error && e.violations.includes(id));
   if (property.kind === "never") return !!safely(() => property.never(traceView(path.events)));
   if (property.kind === "everyStep") return path.events.some((e, i) => !e.error && stepBreaks(spec, path.worlds[i - 1] ?? path.initial, path.worlds[i], e, new Set()).includes(id));
   return false;
