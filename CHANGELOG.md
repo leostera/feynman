@@ -2,6 +2,24 @@
 
 What changed in each release of `@leostera/feynman`, newest first.
 
+## 0.7.0
+
+### Examples
+
+Six coordination systems, each buggy and fixed, with verdicts worked out by hand and
+independent TLA+ and P models that agree with the checker:
+
+- `write-skew.ts`: two on-call doctors each check that the other stays, then both leave.
+- `dining-philosophers.ts`: each philosopher starts with a different fork; deadlock.
+- `ricart-agrawala.ts`: equal timestamps let both nodes into the critical section. Writing
+  the fix, the checker found two more ways in once nodes restart: a clock that goes back,
+  and an answer to an old request counted for a new one.
+- `token-ring.ts`: a resent token crossing a slow first copy gives two holders.
+- `chang-roberts.ts`: leading on beating a smaller id, rather than on one's own id coming
+  back round, elects two leaders.
+- `barrier.ts`: a coordinator counting arrivals, not workers, opens early when one restarts
+  and arrives again.
+
 ## 0.6.0
 
 ### Fixed

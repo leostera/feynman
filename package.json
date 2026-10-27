@@ -1,6 +1,6 @@
 {
   "name": "@leostera/feynman",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Executable specs of how a system behaves: a simulator, a model checker, flows and their diffs, derived from one TypeScript file.",
   "type": "module",
   "homepage": "https://feynman.leostera.dev",
