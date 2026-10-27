@@ -606,7 +606,7 @@ read worse. To update one:
 feynman list                   the specs found
 feynman run [spec] [--scenario NAME]
 feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
-              [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
+              [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000] [--workers N]
               [--only P,Q] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
@@ -619,6 +619,8 @@ feynman open
 `--depth` and finds the shortest counterexample. Random runs (`--walks N`, up to
 `--walk-depth` steps, a quarter of the time) go far deeper and find bugs the search cannot
 reach. Their counterexamples are shrunk but may not be the shortest, and they prove nothing.
+A big search is shared among threads (`--workers N`, one fewer than the cores by default),
+with the same result as on one.
 Read the verdicts as:
 
 - `✓` holds in every state within the bounds;

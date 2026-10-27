@@ -2,7 +2,7 @@
 // outcome is gathered first (SpecCheck), then shown as text, briefly, as JSON, or as the
 // scenario replaying one counterexample.
 import { join } from "node:path";
-import { check, faultsIn, withFewestFaults, type Bounds, type PropertyBroken, type Report } from "../check/index.ts";
+import { check, DEFAULT_BOUNDS, faultsIn, Pool, withFewestFaults, type Bounds, type PropertyBroken, type Report, type SpecSource } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
@@ -76,18 +76,24 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   }
 
   const results: SpecCheck[] = [];
-  for (const { path, spec } of selected) {
-    const focused = focus(spec, options.only);
-    if (!focused) continue;
-    const result = checkSpec(ctx, path, focused, options.bounds);
-    results.push(result);
-    if (fails(result, options.only.length > 0)) status = 1;
-    if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
-    if (options.output === "scenario") {
-      const property = result.report.properties[0];
-      if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
-      else out(scenarioCode(spec, property));
+  // One pool of worker threads for every spec, and every check at fewer faults.
+  const pool = new Pool(options.bounds.workers ?? ctx.config.check?.workers ?? DEFAULT_BOUNDS.workers);
+  try {
+    for (const { path, spec, source } of selected) {
+      const focused = focus(spec, options.only);
+      if (!focused) continue;
+      const result = await checkSpec(ctx, path, focused, options.bounds, { source: options.only.length ? { ...source, properties: options.only } : source, pool });
+      results.push(result);
+      if (fails(result, options.only.length > 0)) status = 1;
+      if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
+      if (options.output === "scenario") {
+        const property = result.report.properties[0];
+        if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
+        else out(scenarioCode(spec, property));
+      }
     }
+  } finally {
+    pool.close();
   }
   if (options.output === "json") console.log(JSON.stringify({ ok: status === 0, typeErrors, specs: results.map(toJson) }, null, 2));
   return status;
@@ -112,7 +118,7 @@ function counterexampleJson(p: PropertyBroken) {
   };
 }
 
-function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>): SpecCheck {
+async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>, threads: { source: SpecSource; pool: Pool }): Promise<SpecCheck> {
   const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
   const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
   const runs = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
@@ -126,7 +132,7 @@ function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bound
     return { name: scenario.name, broken: violated.join(", "), known: violated.every((id) => known.has(id)) };
   });
   const seeds = scenarioSeeds(spec, runs);
-  const report = withFewestFaults(spec, check(spec, merged, seeds), seeds);
+  const report = await withFewestFaults(spec, await check(spec, merged, seeds, threads), seeds, threads);
   return {
     path,
     spec,

@@ -7,6 +7,7 @@
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { SpecSource } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
 import { CONFIG_FILE, type Config } from "./config.ts";
 import { CONFIG_NAMES, exactly, PLAY_NAMES, SPEC_NAMES } from "./names.ts";
@@ -69,10 +70,15 @@ function describeLog(log: { message: string; position?: { file: string; line: nu
 
 /** Import a TypeScript module through a fresh bundle, so edits are always seen. */
 export async function importFresh(path: string): Promise<unknown> {
+  return (await importBundled(path)).module;
+}
+
+/** A fresh bundle of a module, imported; and where the bundle is, for worker threads to import too. */
+async function importBundled(path: string): Promise<{ module: unknown; bundled: string }> {
   scratch ??= mkdtempSync(join(tmpdir(), "feynman-load-"));
-  const out = join(scratch, `${++counter}.mjs`);
-  writeFileSync(out, await bundle(path));
-  return import(out);
+  const bundled = join(scratch, `${++counter}.mjs`);
+  writeFileSync(bundled, await bundle(path));
+  return { module: await import(bundled), bundled };
 }
 
 export class SpecLoadError extends Error {}
@@ -90,11 +96,20 @@ export async function loadPlayground(path: string): Promise<unknown> {
   return value;
 }
 
+/** A spec, and where worker threads can load it from (the checker shares big searches with them). */
+export interface LoadedSpec {
+  spec: Spec;
+  source: SpecSource;
+}
+
 /** The spec a file exports by default. */
-export async function loadSpec(path: string): Promise<Spec> {
+export async function loadSpec(path: string): Promise<LoadedSpec> {
   let module: { default?: unknown };
+  let bundled: string;
   try {
-    module = (await importFresh(path)) as { default?: unknown };
+    const loaded = await importBundled(path);
+    module = loaded.module as { default?: unknown };
+    bundled = loaded.bundled;
   } catch (error) {
     throw new SpecLoadError(`${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -102,7 +117,7 @@ export async function loadSpec(path: string): Promise<Spec> {
   if (!spec || typeof spec !== "object" || !Array.isArray((spec as Spec).actors)) {
     throw new SpecLoadError(`${path} does not export a spec by default: export default defineSpec(…)`);
   }
-  return spec;
+  return { spec, source: { module: bundled } };
 }
 
 /** The repository's feynman.config.ts, or nothing configured. */

@@ -24,6 +24,16 @@ after.
   share of a symmetric search.
 - Checking is about 3× faster on symmetric specs: renamed state keys are cached.
 
+### A search shared among threads
+
+- Big searches run on worker threads besides the main thread (RFD0007): 1.9–2.9× faster from
+  20,000 states up, with the same result, down to the counterexamples, however many threads
+  there are. `--workers N` (or `check: { workers }`) sets how many, one fewer than the cores
+  by default, up to 7; 0 keeps the search on one thread. Small searches stay on one thread.
+- States are remembered by 64-bit fingerprints, as TLC does: two states share one with odds
+  of about one in 36 million at a million states.
+- The state count is of distinct states only.
+
 ### Migrating
 
 - `spec.defineInvariants` is now `spec.defineProperties`.

@@ -43,12 +43,12 @@ describe.skipIf(!HAS_P)("P oracles", () => {
     const o = example.p;
     if (!o) continue;
     describe(o.project, () => {
-      test("compiles", () => {
+      test("compiles", async () => {
         execFileSync("p", ["compile"], { cwd: join(import.meta.dir, "..", "..", "examples", "oracles", "p", o.project), env: ENV, encoding: "utf8" });
       }, 300_000);
       for (const c of o.cases ?? P_CASES) {
-        test(`${c.variant}, ${c.faults} fault(s): P and the checker agree`, () => {
-          const ours = check(example.spec(c.variant), { depth: o.depth, faults: c.faults, instances: example.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
+        test(`${c.variant}, ${c.faults} fault(s): P and the checker agree`, async () => {
+          const ours = await check(example.spec(c.variant), { depth: o.depth, faults: c.faults, instances: example.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
           const p = ours.properties.find((x) => x.id === o.property);
           if (!p) throw new Error(`${example.name} has no property ${o.property}`);
           const theirs = pCheck(o.project, c.testCase, SCHEDULES[p.holds ? "holds" : "broken"]);

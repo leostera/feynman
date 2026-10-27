@@ -9,10 +9,10 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
     const o = example.tla;
     if (!o) continue;
     for (const c of o.configs) {
-      test(`${example.name}, ${c.variant}, ${c.faults} fault(s)`, () => {
+      test(`${example.name}, ${c.variant}, ${c.faults} fault(s)`, async () => {
         const constants = { Buggy: c.variant === "buggy", Faults: c.faults, Repeats: c.repeats, ...(o.depth ? { Depth: o.depth } : {}) };
         const view = o.depth ? { view: "view" } : {};
-        const ours = feynman(example.spec(c.variant), { faults: c.faults, repeats: c.repeats, instances: example.instances ?? {}, ...(o.depth ? { depth: o.depth } : {}) });
+        const ours = await feynman(example.spec(c.variant), { faults: c.faults, repeats: c.repeats, instances: example.instances ?? {}, ...(o.depth ? { depth: o.depth } : {}) });
         expect(ours.report.errors.map((e) => e.message)).toEqual([]);
         if (!o.depth) expect(ours.report.exhaustive).toBe(true);
         // The same reachable states.

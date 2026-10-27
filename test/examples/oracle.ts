@@ -89,9 +89,9 @@ function projection(world: World, budget: { acts: Record<string, number>; faults
 }
 
 /** The checker's exhaustive search, plain, and the distinct states it reached as TLA+ sees them. */
-export function feynman(spec: Spec, bounds: Partial<Bounds>): { report: Report; distinct: number } {
+export async function feynman(spec: Spec, bounds: Partial<Bounds>): Promise<{ report: Report; distinct: number }> {
   const seen = new Set<string>();
-  const report = check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, reduce: false, symmetry: false, ...bounds }, [], { state: (w, b) => seen.add(projection(w, b)) });
+  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, reduce: false, symmetry: false, ...bounds }, [], { watch: { state: (w, b) => seen.add(projection(w, b)) } });
   return { report, distinct: seen.size };
 }
 
