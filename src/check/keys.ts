@@ -5,6 +5,9 @@
 //   alone fires the oldest (judge.ts), so how old each is decides what it does from here.
 // - Instances of one actor that are interchangeable (symmetry) are renamed to a canonical
 //   order, so "Alice did it, then Bob" and "Bob did it, then Alice" are one state.
+// - Object keys are sorted: a map that gained its entries in another order is the same map.
+//   This assumes no handler's behaviour depends on key order, which is safe for messages
+//   (in flight they are a bag) and true of any spec that uses an object as a map.
 import { actorNamed, type Spec, type World } from "../spec/index.ts";
 
 type Pending = World["pending"][number];
@@ -15,8 +18,28 @@ const texts = new WeakMap<object, string>();
 export function textOf(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   let text = texts.get(value);
-  if (text === undefined) texts.set(value, (text = JSON.stringify(value)));
+  if (text === undefined) texts.set(value, (text = sortedJson(value)));
   return text;
+}
+
+/** JSON with every object's keys in order. */
+function sortedJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v)) ?? "null";
+}
+
+/** A key line after renaming: names that were object keys may now be out of order, so sort them again. */
+function resorted(line: string, renamedLine: string): string {
+  if (line === renamedLine) return line;
+  // Instance lines are `id=json`; message lines `d|to|from|message|json`; timer lines hold no JSON.
+  const at = renamedLine.startsWith("d|") ? nthIndex(renamedLine, "|", 4) : renamedLine.startsWith("timers ") || renamedLine.startsWith("t|") ? -1 : renamedLine.indexOf("=");
+  if (at < 0) return renamedLine;
+  return renamedLine.slice(0, at + 1) + sortedJson(JSON.parse(renamedLine.slice(at + 1)));
+}
+
+function nthIndex(text: string, char: string, n: number): number {
+  let at = -1;
+  for (let i = 0; i < n; i++) if ((at = text.indexOf(char, at + 1)) < 0) return -1;
+  return at;
 }
 
 /** What a pending event carries: entries are shared between worlds, so worked out once each. */
@@ -74,8 +97,8 @@ export function symmetryOf(spec: Spec, world: World): Symmetry {
   for (const [name, instances] of byActor) {
     const actor = actorNamed(spec, name);
     if (!actor.symmetric || actor.singleton || instances.length < 2 || instances.length > MAX_CLASS) continue;
-    const initial = instances.map((i) => JSON.stringify(actor.initialState({ id: i.id, label: i.label })));
-    const swapsCleanly = instances.every((a, n) => instances.every((b, m) => rename(initial[n], new Map([[a.id, b.id], [a.label, b.label], [b.id, a.id], [b.label, a.label]])) === initial[m]));
+    const initial = instances.map((i) => sortedJson(actor.initialState({ id: i.id, label: i.label })));
+    const swapsCleanly = instances.every((a, n) => instances.every((b, m) => sortedJson(JSON.parse(rename(initial[n], new Map([[a.id, b.id], [a.label, b.label], [b.id, a.id], [b.label, a.label]])))) === initial[m]));
     if (swapsCleanly) classes.push({ ids: instances.map((i) => i.id), labels: instances.map((i) => i.label) });
   }
   return { classes, renamings: renamings(classes) };
@@ -96,8 +119,8 @@ export function leastRenaming(world: World, symmetry: Symmetry): { key: string; 
   let best: { key: string; renaming: Map<string, string> } | undefined;
   for (const renaming of symmetry.renamings) {
     const key = joinParts(
-      instances.map((line) => rename(line, renaming)),
-      pending.map((line) => rename(line, renaming)),
+      instances.map((line) => resorted(line, rename(line, renaming))),
+      pending.map((line) => resorted(line, rename(line, renaming))),
       rest,
     );
     if (best === undefined || key < best.key) best = { key, renaming };

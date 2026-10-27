@@ -182,3 +182,14 @@ test("inputs an action never reads are not tried twice", async () => {
   // loud is read, note is not: of the four combinations, the two that differ only in the note are one.
   expect(report.reductions.inputs).toBe(2);
 });
+
+test("a map that gained its entries in another order is the same state, renamed too", async () => {
+  const { gCounter } = await import("../../examples/g-counter.ts");
+  const bounds = { depth: 10, faults: 0, walks: 0, instances: { Replica: 2 } };
+  const plain = check(gCounter("fixed"), { ...bounds, symmetry: false });
+  const folded = check(gCounter("fixed"), bounds);
+  // Replica A's counts can be {A, B} or {B, A} depending on what came first; they are one state.
+  expect(plain.states).toBe(104);
+  expect(folded.reductions.refuted).toBeUndefined();
+  expect(folded.states).toBeLessThan(plain.states);
+});
