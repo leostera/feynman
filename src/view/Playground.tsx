@@ -6,7 +6,7 @@
 // the event log: hover to peek, click to travel back, step through it with ← and →; acting
 // in the past continues from there.
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
-import { ArrowLeftIcon, ArrowRightIcon, CheckIcon, CopyIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, ArrowRightIcon, ArrowsDownUpIcon, ArrowsLeftRightIcon, CheckIcon, CopyIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
 import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
@@ -18,7 +18,8 @@ import { apply, current, nextHint, nextLabel, rollback, scenarioDump, type Op, t
 import { Timeline, type TimelineTab } from "./Timeline";
 import { EntityDetails, useExplorer } from "./ui";
 import { useSettings } from "./preferences";
-import { DEFAULT_ZOOM, FIT_SCALE_UNITS, POSITION_UNITS_PER_PIXEL, ZOOM_FACTOR_UNITS, ZOOM_UNITS_PER_PERCENT, scaleZoom, zoomScale, type CameraState } from "./url";
+import type { Layout, Layouts, Orientation } from "./layout";
+import { DEFAULT_ZOOM, FIT_SCALE_UNITS, type LayoutChoice, POSITION_UNITS_PER_PIXEL, ZOOM_FACTOR_UNITS, ZOOM_UNITS_PER_PERCENT, scaleZoom, zoomScale, type CameraState } from "./url";
 
 /** A choice in the top-left pill: where a session starts from, or which spec. */
 export interface Choice {
@@ -26,20 +27,21 @@ export interface Choice {
   onPick: (value: string) => void;
 }
 
-/** Room the floating controls take, in pixels: the top bar, the playback bar, the side pane and its margins. */
-const TOP_BAR = 60;
-const PLAY_BAR = 64;
+/**
+ * Room the side pane takes, in pixels, with its margins. The top bar and the playback bar need no
+ * room here: the layout keeps space above and below for them (RESERVE in layout.ts).
+ */
 const PANE_REM = 22;
 const PANE_MARGIN = 24;
 /** Below this much width left beside the pane, the pane is treated as covering the canvas anyway. */
 const MIN_FREE_WIDTH = 320;
 
-/** The canvas left uncovered by the floating controls; the Code tab's pane is half the window wide. */
+/** The canvas left uncovered by the side pane, which the Code tab widens to half the window. */
 function freeArea(view: { w: number; h: number }, wide: boolean): Free {
   const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const pane = Math.max(PANE_REM * rem, wide ? innerWidth / 2 : 0) + PANE_MARGIN;
   const right = view.w - pane >= MIN_FREE_WIDTH ? pane : 0;
-  return { x: 0, y: TOP_BAR, w: view.w - right, h: Math.max(0, view.h - TOP_BAR - PLAY_BAR) };
+  return { x: 0, y: 0, w: view.w - right, h: view.h };
 }
 
 function sameCamera(a: CameraState, b: CameraState): boolean {
@@ -61,7 +63,7 @@ function worldAt(session: Session, index: number): World {
   return index < 0 ? session.initial : session.steps[index].world;
 }
 
-export function Playground({ session, setSession, scenarios, specs, initialSpeed, initialCamera, onViewStateChange }: { session: Session; setSession: (s: Session) => void; scenarios: Choice; specs: (Choice & { value: string }) | null; initialSpeed: number; initialCamera: CameraState; onViewStateChange: (state: { speed: number; camera: CameraState }) => void }) {
+export function Playground({ session, setSession, scenarios, specs, initialSpeed, initialCamera, initialLayout, onViewStateChange }: { session: Session; setSession: (s: Session) => void; scenarios: Choice; specs: (Choice & { value: string }) | null; initialSpeed: number; initialCamera: CameraState; initialLayout: LayoutChoice; onViewStateChange: (state: { speed: number; camera: CameraState; layout: LayoutChoice }) => void }) {
   const { spec, playground } = useExplorer();
   const groups = groupsOf(spec, playground);
   /** Groups opened (or, for those that start open, closed) by node id. */
@@ -94,7 +96,8 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
   const [playing, setPlaying] = useState(settings.autoPlay);
   const [speed, setSpeed] = useState(initialSpeed);
   const [camera, setCamera] = useState<CameraState>(initialCamera);
-  const incomingViewKey = `${initialSpeed}:${JSON.stringify(initialCamera)}`;
+  const [layoutChoice, setLayoutChoice] = useState<LayoutChoice>(initialLayout);
+  const incomingViewKey = `${initialSpeed}:${JSON.stringify(initialCamera)}:${initialLayout}`;
   const appliedViewKey = useRef(incomingViewKey);
   const onViewStateChangeRef = useRef(onViewStateChange);
   onViewStateChangeRef.current = onViewStateChange;
@@ -103,8 +106,9 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
     appliedViewKey.current = incomingViewKey;
     setSpeed((current) => current === initialSpeed ? current : initialSpeed);
     setCamera((current) => sameCamera(current, initialCamera) ? current : initialCamera);
-  }, [incomingViewKey, initialCamera, initialSpeed]);
-  useEffect(() => onViewStateChangeRef.current({ speed, camera }), [speed, camera]);
+    setLayoutChoice(initialLayout);
+  }, [incomingViewKey, initialCamera, initialSpeed, initialLayout]);
+  useEffect(() => onViewStateChangeRef.current({ speed, camera, layout: layoutChoice }), [speed, camera, layoutChoice]);
   const panStart = useRef<{ x: number; y: number; cameraX: number; cameraY: number } | null>(null);
   const wheelHandler = useRef<(event: WheelEvent) => void>(() => {});
   const play: Play = { playing, speed, setPlaying, setSpeed };
@@ -118,9 +122,18 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
   const { ref, view } = useView();
   const scene = sceneOf(spec, world, groups, toggled);
   const baseScene = sceneOf(spec, base, groups, toggled);
-  const graph = useLayout(spec, world, scene, view, sizesOf(playground, scene));
+  // Laid out into the room the pane leaves, so a diagram that fits there is drawn at full size.
   const free = freeArea(view, paneTab === "code");
+  const layouts = useLayout(spec, world, scene, { w: free.w, h: free.h }, sizesOf(playground, scene));
+  const graph = layouts && pickLayout(layouts, layoutChoice, free);
   const fit = fitOf(graph, free);
+  // A pan or zoom was made on the other orientation; on this one it points nowhere useful.
+  const drawnOrientation = useRef<Orientation | null>(null);
+  useEffect(() => {
+    if (!graph) return;
+    if (drawnOrientation.current && drawnOrientation.current !== graph.orientation) setCamera({ zoom: DEFAULT_ZOOM, x: 0, y: 0, fitScale: null, manual: false });
+    drawnOrientation.current = graph.orientation;
+  }, [graph?.orientation]);
   // Zooming and the camera's offset are about the middle of the free area, not of the canvas.
   const cx = free.x + free.w / 2;
   const cy = free.y + free.h / 2;
@@ -148,8 +161,13 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPanMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!panStart.current) return;
-    setCamera((c) => ({ ...c, manual: true, fitScale: c.fitScale ?? Math.round(fit.scale * FIT_SCALE_UNITS), x: Math.round((panStart.current!.cameraX + e.clientX - panStart.current!.x) * POSITION_UNITS_PER_PIXEL), y: Math.round((panStart.current!.cameraY + e.clientY - panStart.current!.y) * POSITION_UNITS_PER_PIXEL) }));
+    const start = panStart.current;
+    if (!start) return;
+    // Read the drag now: React runs the updater later, when the pointer may be up and panStart gone.
+    const x = Math.round((start.cameraX + e.clientX - start.x) * POSITION_UNITS_PER_PIXEL);
+    const y = Math.round((start.cameraY + e.clientY - start.y) * POSITION_UNITS_PER_PIXEL);
+    const fitScale = Math.round(fit.scale * FIT_SCALE_UNITS);
+    setCamera((c) => ({ ...c, manual: true, fitScale: c.fitScale ?? fitScale, x, y }));
   };
   const onPanEnd = () => { panStart.current = null; };
   wheelHandler.current = (event) => {
@@ -329,7 +347,14 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
           <Legend />
         </div>
         <div data-overlay className="pointer-events-auto absolute bottom-3 left-3 z-30">
-          <ZoomControls zoom={camera.zoom} onZoomFactor={(factor) => zoomBy(factor)} onReset={() => setCamera({ zoom: DEFAULT_ZOOM, x: 0, y: 0, fitScale: null, manual: false })} />
+          <ZoomControls
+            zoom={camera.zoom}
+            layout={layoutChoice}
+            shown={graph?.orientation ?? "horizontal"}
+            onLayout={(next) => (setLayoutChoice(next), setCamera({ zoom: DEFAULT_ZOOM, x: 0, y: 0, fitScale: null, manual: false }))}
+            onZoomFactor={(factor) => zoomBy(factor)}
+            onReset={() => setCamera({ zoom: DEFAULT_ZOOM, x: 0, y: 0, fitScale: null, manual: false })}
+          />
         </div>
         {packet && canAct && <PacketMenu pending={packet} world={base} onClose={() => setPacket(null)} onRun={run} />}
         {dropChoice && <DropChoice choice={dropChoice} world={base} onRun={run} onAsk={(drop) => (setDropChoice(null), setAsking({ instance: dropChoice.target, action: drop.action.key, inputs: drop.inputs }))} />}
@@ -358,7 +383,8 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
         }}
       />
       </div>
-      <div data-overlay className="pointer-events-none absolute bottom-3 left-1/2 z-40 -translate-x-1/2">
+      {/* Centred under the diagram, in the room the pane leaves. */}
+      <div data-overlay className="pointer-events-none absolute bottom-3 z-40 -translate-x-1/2" style={{ left: free.x + free.w / 2 }}>
         <Transport
           play={play}
           shown={focusIndex + 1}
@@ -716,9 +742,28 @@ function Transport({ play, shown, canBack, canStep, canEnd, onFirst, onBack, onS
   );
 }
 
-function ZoomControls({ zoom, onZoomFactor, onReset }: { zoom: number; onZoomFactor: (factor: number) => void; onReset: () => void }) {
+/** Auto, then always across, then always down: what the layout button does next. */
+const NEXT_LAYOUT: Record<LayoutChoice, LayoutChoice> = { auto: "horizontal", horizontal: "vertical", vertical: "auto" };
+
+/**
+ * The orientation to draw: the one asked for, or on auto whichever fits the free room larger.
+ * Across wins ties, and keeps winning unless down is clearly bigger, so the diagram does not
+ * flip back and forth as the room changes a little.
+ */
+function pickLayout(layouts: Layouts, choice: LayoutChoice, free: Free): Layout {
+  if (choice !== "auto") return layouts[choice];
+  const across = fitOf(layouts.horizontal, free).scale;
+  const down = fitOf(layouts.vertical, free).scale;
+  return down > across * 1.15 ? layouts.vertical : layouts.horizontal;
+}
+
+function ZoomControls({ zoom, layout, shown, onLayout, onZoomFactor, onReset }: { zoom: number; layout: LayoutChoice; shown: Orientation; onLayout: (next: LayoutChoice) => void; onZoomFactor: (factor: number) => void; onReset: () => void }) {
+  const label = layout === "auto" ? `Layout: auto (${shown === "vertical" ? "top to bottom" : "left to right"})` : layout === "vertical" ? "Layout: top to bottom" : "Layout: left to right";
+  const Icon = shown === "vertical" ? ArrowsDownUpIcon : ArrowsLeftRightIcon;
   return (
     <div className="flex items-center gap-0.5 rounded-full bg-kumo-elevated p-1 shadow ring-1 ring-kumo-line">
+      <Button size="xs" variant={layout === "auto" ? "ghost" : "secondary"} shape="square" aria-label={`${label}. Click to change.`} title={`${label}. Click to change.`} icon={<Icon size={12} />} onClick={() => onLayout(NEXT_LAYOUT[layout])} />
+      <span className="mx-0.5 h-4 w-px bg-kumo-line" />
       <Button size="xs" variant="ghost" shape="square" aria-label="Zoom out" title="Zoom out" onClick={() => onZoomFactor(800)}>−</Button>
       <span className="min-w-9 text-center font-mono text-[10px] tabular-nums">{Math.round(zoom / ZOOM_UNITS_PER_PERCENT)}%</span>
       <Button size="xs" variant="ghost" shape="square" aria-label="Zoom in" title="Zoom in" onClick={() => onZoomFactor(1250)}>+</Button>

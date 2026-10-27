@@ -1,8 +1,9 @@
 // Loading spec files from any repository: `@leostera/feynman` and its subpaths resolve to
 // this installation, so a repository needs nothing installed to have specs. Each file is
-// bundled to a temporary module and imported from there, which also sees every edit.
-// Playground files (`<name>.play.tsx`) are bundled the same way; for the browser, React,
-// Kumo and the kit are left to the page, which hands its own copies over on a global.
+// bundled by Bun, the runtime that runs it, to a temporary module and imported from there,
+// which also sees every edit. Playground files (`<name>.play.tsx`) load the same way. For the
+// browser, Vite builds them (bundle-browser.ts) with the same import names, and leaves React,
+// Kumo and the kit to the page, which hands its own copies over on a global (`sharedShim`).
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,7 +16,7 @@ const PLAY_DIR = dirname(PLAY);
 const LIBRARIES = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "@cloudflare/kumo"] as const;
 
 /** Import name → the file in this installation it stands for. */
-const ALIASES: Record<string, string> = {
+export const ALIASES: Record<string, string> = {
   ...Object.fromEntries(SPEC_NAMES.map((n) => [n, Bun.resolveSync("../spec/index.ts", import.meta.dir)])),
   ...Object.fromEntries(CONFIG_NAMES.map((n) => [n, Bun.resolveSync("./index.ts", import.meta.dir)])),
   ...Object.fromEntries(PLAY_NAMES.map((n) => [n, PLAY])),
@@ -23,10 +24,10 @@ const ALIASES: Record<string, string> = {
 };
 
 /** What the page shares with playground modules: the libraries, and the kit as `play`. */
-const SHARED = exactly([...LIBRARIES, ...PLAY_NAMES]);
+export const SHARED = exactly([...LIBRARIES, ...PLAY_NAMES]);
 
 /** A module that reads an import from the page's global, with every export the real one has. */
-async function sharedShim(name: string): Promise<string> {
+export async function sharedShim(name: string): Promise<string> {
   const real = name === "react/jsx-dev-runtime" ? "react/jsx-runtime" : name;
   const key = (PLAY_NAMES as readonly string[]).includes(real) ? "play" : real;
   const keys = Object.keys(await import(ALIASES[real])).filter((k) => k !== "default" && /^[A-Za-z_$][\w$]*$/.test(k));
@@ -39,22 +40,18 @@ async function sharedShim(name: string): Promise<string> {
 let scratch: string | null = null;
 let counter = 0;
 
-export async function bundle(path: string, target: "bun" | "browser"): Promise<string> {
-  const shared = target === "browser";
+/** A file and what it imports as one module for Bun to run here, in the CLI. */
+async function bundle(path: string): Promise<string> {
   const result = await Bun.build({
     throw: false,
     entrypoints: [path],
-    target,
+    target: "bun",
     format: "esm",
     jsx: { runtime: "automatic", importSource: "react", development: false },
     plugins: [
       {
         name: "feynman-aliases",
         setup(build) {
-          if (shared) {
-            build.onResolve({ filter: SHARED }, (args) => ({ path: args.path, namespace: "feynman-shared" }));
-            build.onLoad({ filter: /.*/, namespace: "feynman-shared" }, async (args) => ({ contents: await sharedShim(args.path), loader: "js" }));
-          }
           build.onResolve({ filter: exactly(Object.keys(ALIASES)) }, (args) => ({ path: ALIASES[args.path] }));
         },
       },
@@ -74,7 +71,7 @@ function describeLog(log: { message: string; position?: { file: string; line: nu
 export async function importFresh(path: string): Promise<unknown> {
   scratch ??= mkdtempSync(join(tmpdir(), "feynman-load-"));
   const out = join(scratch, `${++counter}.mjs`);
-  writeFileSync(out, await bundle(path, "bun"));
+  writeFileSync(out, await bundle(path));
   return import(out);
 }
 

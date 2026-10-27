@@ -59,9 +59,17 @@ test("legacy floating camera fields are normalized to integer units", () => {
   expect(JSON.parse(writePlaygroundUrlState(new URLSearchParams(), state).get("camera")!)).toEqual({ v: 2, zoom: 98658, x: -5623, y: -1798, fitScale: 1000000, manual: true });
 });
 
+test("the layout choice round-trips, and auto stays out of the URL", () => {
+  const vertical = parsePlaygroundUrlState(new URLSearchParams({ layout: "vertical" }));
+  expect(vertical.layout).toBe("vertical");
+  expect(writePlaygroundUrlState(new URLSearchParams(), vertical).get("layout")).toBe("vertical");
+  const auto = writePlaygroundUrlState(new URLSearchParams({ layout: "horizontal" }), { ...vertical, layout: "auto" });
+  expect(auto.has("layout")).toBe(false);
+});
+
 test("invalid URL state falls back to safe defaults", () => {
-  const state = parsePlaygroundUrlState(new URLSearchParams({ speed: "999", camera: "{bad", state: "[null]" }));
-  expect(state).toEqual({ speed: 1, camera: { zoom: parseZoomLevel(100000)!, x: 0, y: 0, fitScale: null, manual: false }, ops: null });
+  const state = parsePlaygroundUrlState(new URLSearchParams({ speed: "999", camera: "{bad", state: "[null]", layout: "diagonal" }));
+  expect(state).toEqual({ speed: 1, camera: { zoom: parseZoomLevel(100000)!, x: 0, y: 0, fitScale: null, manual: false }, layout: "auto", ops: null });
   const fractionalZoom = parsePlaygroundUrlState(new URLSearchParams({ camera: JSON.stringify({ zoom: 1.5, x: 0, y: 0, fitScale: null, manual: false }) }));
   expect(fractionalZoom.camera.zoom).toBe(parseZoomLevel(150000)!);
 });

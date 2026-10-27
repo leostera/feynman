@@ -16,7 +16,8 @@ import { playgroundFor } from "./discover.ts";
 import type { EnrichMessage, EnrichRequest } from "./enrich-worker.ts";
 import { functionCode } from "./functions.ts";
 import { highlightLines } from "./highlight.ts";
-import { bundle as bundleModule, loadSpec } from "./load.ts";
+import { bundleBrowser } from "./bundle-browser.ts";
+import { loadSpec } from "./load.ts";
 
 /** This installation: the package root, and the view as built. */
 const ROOT = join(import.meta.dir, "..", "..");
@@ -36,6 +37,41 @@ interface Options {
 }
 
 /**
+ * What `prepare` says as it goes: a line per spec, and with `detail` a line per phase of it,
+ * timed, which `feynman build` prints and `feynman dev` keeps quiet.
+ */
+export type Progress = (message: string, detail?: boolean) => void;
+
+/** Runs one phase, then reports how it went and how long it took. */
+async function timed<T>(log: Progress | undefined, run: () => T | Promise<T>, done: (result: T) => string): Promise<T> {
+  const started = performance.now();
+  const result = await run();
+  log?.(`${done(result)} ${dim(ms(performance.now() - started))}`, true);
+  return result;
+}
+
+function ms(duration: number): string {
+  return duration < 1000 ? `${Math.round(duration)}ms` : `${(duration / 1000).toFixed(1)}s`;
+}
+
+function kb(text: string): string {
+  const bytes = Buffer.byteLength(text);
+  return bytes < 1e6 ? `${(bytes / 1e3).toFixed(1)} KB` : `${(bytes / 1e6).toFixed(1)} MB`;
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** One line on a check: how many properties held, and how far exploration got. */
+function checkSummary(report: ReturnType<typeof check>): string {
+  const failed = report.properties.filter((p) => !p.holds);
+  const reach = report.exhaustive ? "exhaustive" : `stopped by ${report.stoppedBy ?? "bounds"}`;
+  const verdict = failed.length ? red(`${failed.length}/${report.properties.length} properties fail: ${failed.map((p) => p.id).join(", ")}`) : green(`${report.properties.length} properties hold`);
+  return `checked: ${verdict} ${dim(`(${report.states} states, depth ${report.depthReached}, ${reach})`)}`;
+}
+
+/**
  * Build the view if its sources are newer than its last build. Only in a checkout of
  * Feynman: an installed copy (under node_modules) ships the view built.
  */
@@ -49,14 +85,11 @@ export function ensureView() {
   // The view bundles the spec engine and the playground kit too: a change to any means a rebuild.
   const sources = Math.max(...["view", "spec", "play"].map((dir) => newest(join(ROOT, "src", dir))));
   if (existsSync(dist) && statSync(dist).mtimeMs >= sources) return;
-  console.log(dim("building the explorer…"));
+  console.log(dim(existsSync(dist) ? "the explorer's sources changed; rebuilding it…" : "building the explorer…"));
+  const started = performance.now();
   const out = spawnSync("bun", ["run", "build"], { cwd: ROOT, encoding: "utf8" });
   if (out.status !== 0) throw new Error(`could not build the explorer:\n${out.stderr || out.stdout}`);
-}
-
-/** Bundle a spec file for the browser; `@leostera/feynman` resolves to this installation. */
-function bundleSpec(path: string): Promise<string> {
-  return bundleModule(path, "browser");
+  console.log(dim(`  built the explorer ${ms(performance.now() - started)}`));
 }
 
 function specId(path: string, taken: Set<string>): string {
@@ -66,15 +99,23 @@ function specId(path: string, taken: Set<string>): string {
   return id;
 }
 
-export async function prepare(ctx: Context, options: Options, onProgress?: (message: string) => void): Promise<Prepared> {
+export async function prepare(ctx: Context, options: Options, onProgress?: Progress): Promise<Prepared> {
   const { repository } = ctx;
   const modules = new Map<string, string>();
   const taken = new Set<string>();
   const baseCommit = options.base ? git(repository.root, "rev-parse", "--verify", `${options.base}^{commit}`) : null;
   const bases = new Map<string, string>();
   if (options.base) {
+    onProgress?.(`compiling specs at ${options.base} ${dim(`(${baseCommit?.slice(0, 8)})`)}`);
     await withWorktree(repository.root, options.base, async (dir) => {
-      for (const path of ctx.found) if (existsSync(join(dir, path))) bases.set(path, await bundleSpec(join(dir, path)).catch(() => ""));
+      for (const path of ctx.found) {
+        if (!existsSync(join(dir, path))) {
+          onProgress?.(`${path} ${dim("not there; new on this branch")}`, true);
+          continue;
+        }
+        const module = await timed(onProgress, () => bundleBrowser(join(dir, path)).catch(() => ""), (m) => m ? `${path} ${dim(kb(m))}` : yellow(`${path} did not compile there; no diff for it`));
+        bases.set(path, module);
+      }
     });
   }
   const specs: SpecEntry[] = [];
@@ -84,26 +125,41 @@ export async function prepare(ctx: Context, options: Options, onProgress?: (mess
     const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, functions: {}, report: null };
     specs.push(entry);
     try {
-      const spec = await loadSpec(join(repository.root, path));
-      modules.set(`specs/${id}.js`, await bundleSpec(join(repository.root, path)));
+      const spec = await timed(onProgress, () => loadSpec(join(repository.root, path)), (s) => `loaded ${s.name} ${dim(`(${plural(s.actors.length, "actor")}, ${plural(s.scenarios.length, "scenario")}, ${s.invariants.length} ${s.invariants.length === 1 ? "property" : "properties"})`)}`);
+      const module = await timed(onProgress, () => bundleBrowser(join(repository.root, path)), (m) => `bundled the spec ${dim(kb(m))}`);
+      modules.set(`specs/${id}.js`, module);
       entry.module = `specs/${id}.js`;
       const play = playgroundFor(repository.root, path);
       if (play) {
-        modules.set(`specs/${id}.play.js`, await bundleModule(join(repository.root, play), "browser"));
+        const playModule = await timed(onProgress, () => bundleBrowser(join(repository.root, play)), (m) => `bundled its playground ${relative(repository.root, join(repository.root, play))} ${dim(kb(m))}`);
+        modules.set(`specs/${id}.play.js`, playModule);
         entry.playModule = `specs/${id}.play.js`;
       }
       if (bases.get(path)) {
         modules.set(`specs/${id}.base.js`, bases.get(path)!);
         entry.baseModule = `specs/${id}.base.js`;
       }
-      entry.sources = await sourceEntries(ctx, spec);
-      if (options.calls) {
-        entry.calls = callTrees(repository.root, specSources(spec)).trees as Record<string, CallNode>;
-        entry.functions = await functionCode(repository.root, repository.fileUrl, entry.calls);
+      const linked = specSources(spec).length > 0;
+      entry.sources = await timed(linked ? onProgress : undefined, () => sourceEntries(ctx, spec), (sources) => {
+        const all = Object.values(sources);
+        const missing = Object.entries(sources).filter(([, s]) => s.status === "missing");
+        const text = `read ${plural(all.length, "source")}`;
+        return missing.length ? `${text} ${yellow(`(${missing.length} missing: ${missing.map(([s]) => s).join(", ")})`)}` : text;
+      });
+      if (!linked) onProgress?.(dim("no sources linked: no code to show"), true);
+      if (options.calls && linked) {
+        const { trees, problems } = await timed(onProgress, () => callTrees(repository.root, specSources(spec)), ({ trees, problems }) => {
+          const text = `traced calls from ${plural(Object.keys(trees).length, "source")}`;
+          return Object.keys(problems).length ? `${text} ${yellow(`(${plural(Object.keys(problems).length, "problem")})`)}` : text;
+        });
+        for (const [source, problem] of Object.entries(problems)) onProgress?.(yellow(`  ${source}: ${problem}`), true);
+        entry.calls = trees as Record<string, CallNode>;
+        entry.functions = await timed(onProgress, () => functionCode(repository.root, repository.fileUrl, entry.calls), (f) => `collected ${plural(Object.keys(f).length, "function")} they reach`);
       }
-      if (options.check) entry.report = check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
+      if (options.check) entry.report = await timed(onProgress, () => check(spec, { ...ctx.config.check }, scenarioSeeds(spec)), checkSummary);
     } catch (error) {
       entry.error = error instanceof Error ? error.message : String(error);
+      onProgress?.(red(`failed: ${entry.error.split("\n")[0]}`), true);
     }
   }
   const bundle: Bundle = {
@@ -155,14 +211,23 @@ export function singlePage(prepared: Prepared): string {
 }
 
 export async function buildCommand(ctx: Context, options: { out?: string; base?: string; open?: boolean }): Promise<number> {
+  const started = performance.now();
+  const { repository } = ctx;
+  console.log(`${green("feynman build")} ${repository.branch ?? "detached"} ${dim(`${repository.commit?.slice(0, 8) ?? "no commit"}${repository.dirty ? ", with uncommitted changes" : ""}`)}`);
   ensureView();
-  const prepared = await prepare(ctx, { base: options.base, check: true, calls: true });
-  const out = resolve(ctx.cwd, options.out ?? join(ctx.repository.root, ".feynman", "index.html"));
+  console.log(dim(`building ${plural(ctx.found.length, "spec")}…`));
+  const prepared = await prepare(ctx, { base: options.base, check: true, calls: true }, (message, detail) => console.log(detail ? `    ${message}` : `  ${message}`));
+  const out = resolve(ctx.cwd, options.out ?? join(repository.root, ".feynman", "index.html"));
   mkdirSync(dirname(out), { recursive: true });
   const page = singlePage(prepared);
   writeFileSync(out, page);
-  for (const s of prepared.bundle.specs) if (s.error) console.log(red(`${s.path}: ${s.error}`));
-  console.log(`wrote ${relative(ctx.cwd, out)} ${dim(`(${prepared.bundle.specs.length} spec(s), ${(page.length / 1e6).toFixed(1)} MB)`)}`);
+  const failed = prepared.bundle.specs.filter((s) => s.error);
+  for (const s of failed) console.log(red(`${s.path}: ${s.error}`));
+  const modules = [...prepared.modules.values()].reduce((sum, m) => sum + m, "");
+  const ok = prepared.bundle.specs.length - failed.length;
+  const shown = relative(ctx.cwd, out).startsWith("..") ? out : relative(ctx.cwd, out);
+  console.log(`wrote ${shown} ${dim(`(${kb(page)}: ${kb(modules)} of spec modules) in ${ms(performance.now() - started)}`)}`);
+  console.log(failed.length ? red(`${ok}/${prepared.bundle.specs.length} specs built; ${failed.length} failed`) : green(`${plural(ok, "spec")} built`));
   if (options.open) spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [out]);
   // The page shows a spec that failed to load as an error; a build that ships one has failed.
   return prepared.bundle.specs.some((s) => s.error) ? 1 : 0;
@@ -174,7 +239,7 @@ export async function devCommand(ctx: Context, options: { port: number; base?: s
 
 async function serve(ctx: Context, options: { port: number; base?: string; open: boolean; watch: boolean }): Promise<number> {
   console.log(dim(`compiling ${ctx.found.length} spec(s)…`));
-  let prepared = await prepare(ctx, { base: options.base, check: false, calls: false }, (message) => console.log(dim(`  ${message}`)));
+  let prepared = await prepare(ctx, { base: options.base, check: false, calls: false }, (message, detail) => detail || console.log(dim(`  ${message}`)));
   prepared.bundle.dev = options.watch;
   const clients = new Set<import("node:http").ServerResponse>();
   const reload = () => clients.forEach((client) => client.write("event: reload\ndata: {}\n\n"));
@@ -281,7 +346,7 @@ async function serve(ctx: Context, options: { port: number; base?: string; open:
         timer = setTimeout(async () => {
           try {
             console.log(dim("compiling changed specs…"));
-            const next = await prepare(ctx, { base: options.base, check: false, calls: false }, (message) => console.log(dim(`  ${message}`)));
+            const next = await prepare(ctx, { base: options.base, check: false, calls: false }, (message, detail) => detail || console.log(dim(`  ${message}`)));
             // Keep what the last checks and call trees found until the next ones are ready.
             for (const s of next.bundle.specs) {
               const was = prepared.bundle.specs.find((p) => p.path === s.path);

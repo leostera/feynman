@@ -48,7 +48,11 @@ export interface View {
 /** Room for the tip and docks over the canvas, and the margin at the sides. */
 export const RESERVE = { top: 64, bottom: 68, side: 40, caption: 28 };
 
+/** Which way zones run: across the canvas as columns, or down it as bands. */
+export type Orientation = "horizontal" | "vertical";
+
 export interface Layout {
+  orientation: Orientation;
   width: number;
   height: number;
   zones: ZoneBox[];
@@ -119,9 +123,13 @@ export function layoutKey(spec: Spec, world: World, scene: Scene, view: View, si
   return `${spec.name}:${boxes.join(",")}:${Math.round(view.w / 16)}x${Math.round(view.h / 16)}`;
 }
 
-export async function layout(spec: Spec, world: World, scene: Scene, view: View, sizes: Sizes): Promise<Layout> {
+/** The scene laid out both ways from one ordering, so the view can pick whichever fits. */
+export type Layouts = Record<Orientation, Layout>;
+
+export async function layout(spec: Spec, world: World, scene: Scene, view: View, sizes: Sizes): Promise<Layouts> {
   const boxes = new Map(scene.nodes.map((n) => [n.id, nodeBox(spec, world, n, sizes)]));
-  return arrange(spec, scene, boxes, await order(spec, scene, boxes), view);
+  const ordered = await order(spec, scene, boxes);
+  return { horizontal: arrange(spec, scene, boxes, ordered, view), vertical: arrangeDown(spec, scene, boxes, ordered, view) };
 }
 
 type Boxes = Map<string, ReturnType<typeof nodeBox>>;
@@ -239,10 +247,98 @@ function ring(boxes: Box[]): { places: { x: number; y: number }[]; w: number; h:
  * zone's nodes lined up by its `place` hints. Nodes on a zone's edge straddle its border.
  * Members of an open group sit together, outlined.
  */
-function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: { zones: ZoneBox[]; nodes: Map<string, Box> }, view: View): Layout {
+function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: Ordered, view: View): Layout {
+  const nodeOf = new Map(scene.nodes.map((n) => [n.id, n]));
+  const columns = zoneBlocks(spec, scene, ordered).map((z) => {
+    const sized = block(z.arrange, z.inner.map(([, b]) => b), GAP);
+    return { ...z, width: sized.w + (z.region ? 64 : 0), height: sized.h };
+  });
+  const used = columns.reduce((sum, c) => sum + c.width, 0);
+  const minGap = columns.some((c) => c.edges.length) ? 120 : 72;
+  const gap = columns.length > 1 ? Math.min(260, Math.max(minGap, (view.w - RESERVE.side * 2 - used) / (columns.length - 1))) : 0;
+  const width = Math.max(view.w, used + gap * (columns.length - 1) + RESERVE.side * 2);
+  const top = RESERVE.top + RESERVE.caption;
+  const tallest = Math.max(...columns.map((c) => c.height + (c.region ? 64 : 0)));
+  const height = Math.max(view.h, top + tallest + RESERVE.bottom);
+  const defaultRoom = height - top - RESERVE.bottom;
+  const out: Layout = { orientation: "horizontal", width, height, zones: [], nodes: new Map(), groups: [] };
+  const put = placer(out, boxes);
+  let x = (width - used - gap * (columns.length - 1)) / 2;
+  for (const column of columns) {
+    const stretch = column.place.align !== undefined;
+    const room = stretch ? Math.max(defaultRoom, column.height) : column.height;
+    // Keep default zone contents snug; explicit align opts into the available vertical space.
+    const laid = block(column.arrange, column.inner.map(([, b]) => b), GAP);
+    const align = column.place.align ?? "start";
+    const free = Math.max(0, room - laid.h);
+    const zoneY = top - (column.region ? 12 : 0);
+    const y0 = top + (column.region ? 32 : 0) + (align === "start" ? 0 : align === "end" ? free : free / 2);
+    const x0 = x + (column.width - laid.w) / 2;
+    column.inner.forEach(([id, box], i) => put(id, { x: x0 + laid.places[i].x, y: y0 + laid.places[i].y, w: box.w, h: box.h }));
+    const zone: ZoneBox = column.region ? { name: column.zone.name, region: true, x, y: zoneY, w: column.width, h: room + 64 } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room };
+    // On the edge: straddling the border, spread around the middle of the zone's height.
+    for (const side of ["left", "right"] as const) {
+      const list = column.edges.filter(([id]) => nodeOf.get(id)!.edge === side);
+      const stack = block("stack", list.map(([, b]) => b), GAP);
+      list.forEach(([id, box], i) => put(id, { x: (side === "left" ? zone.x : zone.x + zone.w) - box.w / 2, y: zone.y + (zone.h - stack.h) / 2 + stack.places[i].y, w: box.w, h: box.h }));
+    }
+    out.zones.push(zone);
+    x += column.width + gap;
+  }
+  outlineGroups(out, scene);
+  return out;
+}
+
+/** The transpose of a zone's arrangement, for zones laid out as bands: a stack becomes a row. */
+const ACROSS: Record<"stack" | "row" | "grid" | "ring", "stack" | "row" | "grid" | "ring"> = { stack: "row", row: "stack", grid: "grid", ring: "ring" };
+
+/**
+ * The same zones down the canvas, for room that is taller than wide: a band per zone, top to
+ * bottom in the order the columns would run left to right, each zone's nodes across it. Nodes on
+ * a zone's left or right edge straddle its top or bottom border instead.
+ */
+function arrangeDown(spec: Spec, scene: Scene, boxes: Boxes, ordered: Ordered, view: View): Layout {
+  const nodeOf = new Map(scene.nodes.map((n) => [n.id, n]));
+  const bands = zoneBlocks(spec, scene, ordered).map((z) => {
+    const laid = block(ACROSS[z.arrange], z.inner.map(([, b]) => b), GAP);
+    const pad = z.region ? 64 : 0;
+    return { ...z, laid, width: laid.w + pad, height: laid.h + pad };
+  });
+  const used = bands.reduce((sum, b) => sum + b.height, 0);
+  const minGap = bands.some((b) => b.edges.length) ? 120 : 72;
+  const top = RESERVE.top + RESERVE.caption;
+  const gap = bands.length > 1 ? Math.min(200, Math.max(minGap, (view.h - top - RESERVE.bottom - used) / (bands.length - 1))) : 0;
+  const widest = Math.max(0, ...bands.map((b) => b.width));
+  const width = Math.max(view.w, widest + RESERVE.side * 2);
+  const height = Math.max(view.h, top + used + gap * (bands.length - 1) + RESERVE.bottom);
+  const out: Layout = { orientation: "vertical", width, height, zones: [], nodes: new Map(), groups: [] };
+  const put = placer(out, boxes);
+  let y = top;
+  for (const band of bands) {
+    const x = (width - band.width) / 2;
+    const zone: ZoneBox = { name: band.zone.name, region: band.region, x, y: band.region ? y - 12 : y, w: band.width, h: band.height };
+    const x0 = x + (band.region ? 32 : 0);
+    const y0 = y + (band.region ? 20 : 0);
+    band.inner.forEach(([id, box], i) => put(id, { x: x0 + band.laid.places[i].x, y: y0 + band.laid.places[i].y, w: box.w, h: box.h }));
+    for (const side of ["left", "right"] as const) {
+      const list = band.edges.filter(([id]) => nodeOf.get(id)!.edge === side);
+      const row = block("row", list.map(([, b]) => b), GAP);
+      list.forEach(([id, box], i) => put(id, { x: zone.x + (zone.w - row.w) / 2 + row.places[i].x, y: (side === "left" ? zone.y : zone.y + zone.h) - box.h / 2, w: box.w, h: box.h }));
+    }
+    out.zones.push(zone);
+    y += band.height + gap;
+  }
+  outlineGroups(out, scene);
+  return out;
+}
+
+type Ordered = { zones: ZoneBox[]; nodes: Map<string, Box> };
+
+/** Each zone in drawing order, with its nodes sorted and split into those inside it and those on its edge. */
+function zoneBlocks(spec: Spec, scene: Scene, ordered: Ordered) {
   const nodeOf = new Map(scene.nodes.map((n) => [n.id, n]));
   const openOf = new Map(scene.open.flatMap((g) => g.nodes.map((id) => [id, g.id] as const)));
-  const columns = columnOrder(spec, ordered.zones).map((zone) => {
+  return columnOrder(spec, ordered.zones).map((zone) => {
     const place = spec.zones.find((z) => z.name === zone.name)?.place ?? {};
     const all = [...ordered.nodes]
       .filter(([id]) => nodeOf.get(id)?.zone === zone.name)
@@ -256,47 +352,20 @@ function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: { zones: ZoneB
     const edges = all.filter(([id]) => nodeOf.get(id)!.edge);
     const region = place.region ?? all.some(([id]) => nodeOf.get(id)!.singleton);
     const arrange = place.arrange ?? "stack";
-    const sized = block(arrange, inner.map(([, b]) => b), GAP);
-    return { zone, place, inner, edges, region, arrange, width: sized.w + (region ? 64 : 0), height: sized.h };
+    return { zone, place, inner, edges, region, arrange };
   });
-  const used = columns.reduce((sum, c) => sum + c.width, 0);
-  const minGap = columns.some((c) => c.edges.length) ? 120 : 72;
-  const gap = columns.length > 1 ? Math.min(260, Math.max(minGap, (view.w - RESERVE.side * 2 - used) / (columns.length - 1))) : 0;
-  const width = Math.max(view.w, used + gap * (columns.length - 1) + RESERVE.side * 2);
-  const top = RESERVE.top + RESERVE.caption;
-  const tallest = Math.max(...columns.map((c) => c.height + (c.region ? 64 : 0)));
-  const height = Math.max(view.h, top + tallest + RESERVE.bottom);
-  const defaultRoom = height - top - RESERVE.bottom;
-  const out: Layout = { width, height, zones: [], nodes: new Map(), groups: [] };
-  const put = (id: string, at: Box) => {
+}
+
+/** Puts a node in a layout at a box, with its shape kind and anchor. */
+function placer(out: Layout, boxes: Boxes) {
+  return (id: string, at: Box) => {
     const b = boxes.get(id)!;
     out.nodes.set(id, { ...at, kind: b.kind, anchor: b.anchor });
   };
-  let x = (width - used - gap * (columns.length - 1)) / 2;
-  for (const column of columns) {
-    const stretch = column.place.align !== undefined;
-    const room = stretch ? Math.max(defaultRoom, column.height) : column.height;
-    const inner = room;
-    // Keep default zone contents snug; explicit align opts into the available vertical space.
-    const vgap = GAP;
-    const laid = block(column.arrange, column.inner.map(([, b]) => b), vgap);
-    const align = column.place.align ?? "start";
-    const free = Math.max(0, inner - laid.h);
-    const zoneY = top - (column.region ? 12 : 0);
-    const y0 = top + (column.region ? 32 : 0) + (align === "start" ? 0 : align === "end" ? free : free / 2);
-    const x0 = x + (column.width - laid.w) / 2;
-    column.inner.forEach(([id, box], i) => put(id, { x: x0 + laid.places[i].x, y: y0 + laid.places[i].y, w: box.w, h: box.h }));
-    const regionHeight = room + 64;
-    const zone: ZoneBox = column.region ? { name: column.zone.name, region: true, x, y: zoneY, w: column.width, h: regionHeight } : { name: column.zone.name, region: false, x, y: top, w: column.width, h: room };
-    // On the edge: straddling the border, spread around the middle of the zone's height.
-    for (const side of ["left", "right"] as const) {
-      const list = column.edges.filter(([id]) => nodeOf.get(id)!.edge === side);
-      const stack = block("stack", list.map(([, b]) => b), GAP);
-      list.forEach(([id, box], i) => put(id, { x: (side === "left" ? zone.x : zone.x + zone.w) - box.w / 2, y: zone.y + (zone.h - stack.h) / 2 + stack.places[i].y, w: box.w, h: box.h }));
-    }
-    out.zones.push(zone);
-    x += column.width + gap;
-  }
+}
+
+/** Members of an open group sit together, outlined. */
+function outlineGroups(out: Layout, scene: Scene) {
   for (const group of scene.open) {
     const members = group.nodes.map((id) => out.nodes.get(id)).filter((b): b is NonNullable<typeof b> => Boolean(b));
     if (!members.length) continue;
@@ -306,7 +375,6 @@ function arrange(spec: Spec, scene: Scene, boxes: Boxes, ordered: { zones: ZoneB
     const y1 = Math.max(...members.map((b) => b.y + b.h)) + 8;
     out.groups.push({ id: group.id, label: group.label, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } });
   }
-  return out;
 }
 
 /** A point `t` (0..1) along a polyline, from its first point. */

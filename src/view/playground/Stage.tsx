@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as Reac
 import { declaresLinks, labelled, worldView, type Actor, type Event, type InstanceState, type Pending, type Spec, type Token, type World } from "../../spec/index.ts";
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "../../play/index.ts";
 import { labelOf, messageName, short } from "../format";
-import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Sizes, type View, type ZoneBox } from "../layout";
+import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Layouts, type Sizes, type View, type ZoneBox } from "../layout";
 import { nodeLook, sceneLinks, shownAs, type NodeLook, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
 
@@ -67,9 +67,10 @@ export function sizesOf(playground: Playground | null, scene: Scene): Sizes {
   return sizes;
 }
 
-export function useLayout(spec: Spec, world: World, scene: Scene, view: View, sizes: Sizes): Layout | null {
+/** The scene laid out both ways (`Layouts`), recomputed when its nodes, their sizes or the canvas change. */
+export function useLayout(spec: Spec, world: World, scene: Scene, view: View, sizes: Sizes): Layouts | null {
   const key = layoutKey(spec, world, scene, view, sizes);
-  const [state, setState] = useState<{ key: string; layout: Layout } | null>(null);
+  const [state, setState] = useState<{ key: string; layout: Layouts } | null>(null);
   const latest = useRef({ world, scene, view, sizes });
   latest.current = { world, scene, view, sizes };
   useEffect(() => {
@@ -149,7 +150,7 @@ export function Stage(props: StageProps) {
       <div ref={ref} className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`, width: graph.width, height: graph.height }}>
         <svg width={graph.width} height={graph.height} className="absolute inset-0 overflow-visible" aria-hidden>
           {graph.zones.map((z, i) => (
-            <Zone key={z.name} zone={z} side={i === 0 ? "first" : i === graph.zones.length - 1 ? "last" : "middle"} width={graph.width} description={spec.zones.find((x) => x.name === z.name)?.description} />
+            <Zone key={z.name} zone={z} side={graph.orientation === "vertical" ? "middle" : i === 0 ? "first" : i === graph.zones.length - 1 ? "last" : "middle"} width={graph.width} description={spec.zones.find((x) => x.name === z.name)?.description} />
           ))}
           {graph.groups.map((g) => (
             <g key={g.id}>
