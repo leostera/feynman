@@ -8,7 +8,7 @@
 // instance's state fails loudly instead of corrupting the past.
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
 import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
-import { sortedJson } from "./json.ts";
+import { sortedJson, unstorable } from "./json.ts";
 
 export interface Step {
   world: World;
@@ -169,6 +169,8 @@ export function spawn(spec: Spec, world: World, actorName: string, label: string
   const actor = actorNamed(spec, actorName);
   const id = uniqueId(world, actor.singleton ? slug(actor.name) : slug(`${actor.name}-${label}`));
   const state = actor.initialState({ id, label });
+  const odd = unstorable(state, "initial state");
+  if (odd) throw new SpecError(`${actor.name}: ${notPlain(odd)}`);
   const next = { ...world, instances: [...world.instances, { id, actor: actor.name, label, state: freeze(clone(state)) }] };
   return finish(spec, world, next, {
     kind: "spawn",
@@ -325,6 +327,8 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     // A step that fails has no effects: its sends, timers, and changes are discarded.
     return finish(spec, before, before, { ...base, changes: [], error: `${run.actor.name}.${run.step.key}: ${message}` }, how);
   }
+  const odd = unstorable(state, "state");
+  if (odd) return finish(spec, before, before, { ...base, changes: [], error: `${run.actor.name}.${run.step.key}: ${notPlain(odd)}` }, how);
   const explain = how.explain !== false;
   const changes = explain ? diff(self.id, self.state, state) : [];
   self.state = freeze(state);
@@ -362,6 +366,8 @@ function makeCtx(
     if (!target) throw new SpecError(`sends ${message} to an instance that does not exist`);
     const id = ++world.seq;
     // Copied once, so the sender's state and the message never share anything, then shared.
+    const odd = unstorable(payload, "payload");
+    if (odd) throw new SpecError(notPlain(odd));
     const body = freeze(clone(payload));
     world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text });
     effects.sent.push({ id, to: target.id, message, payload: body, text });
@@ -543,10 +549,27 @@ export function clone<T>(value: T): T {
 /** Deep-freeze a value the engine is done changing; it may then be shared between worlds. */
 export function freeze<T>(value: T): T {
   if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  if (value instanceof Set || value instanceof Map) {
+    // Object.freeze leaves a set's members and a map's entries changeable; these do not.
+    for (const method of ["add", "set", "delete", "clear"] as const) {
+      if (method in value) Object.defineProperty(value, method, { value: frozenCollection });
+    }
+    Object.freeze(value);
+    for (const child of value instanceof Set ? value : [...value.keys(), ...value.values()]) freeze(child);
+    return value;
+  }
   Object.freeze(value);
   if (Array.isArray(value)) for (const child of value) freeze(child);
   else for (const key in value) freeze((value as Record<string, unknown>)[key]);
   return value;
+}
+
+function frozenCollection(): never {
+  throw new TypeError("Cannot change a frozen set or map: it is read-only");
+}
+
+function notPlain(where: string): string {
+  return `holds ${where}, which is not plain data: states and payloads hold strings, numbers, booleans, null, arrays, plain objects, sets, maps and dates, so that the checker can tell them apart`;
 }
 
 /** Whether an error is a write to a frozen object: a step reaching into someone else's state. */
