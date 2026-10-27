@@ -15,6 +15,9 @@ import { useState, type ReactNode } from "react";
 import sims from "../sims.json";
 import type { Sim } from "../scripts/sims.ts";
 import { published, refLabel } from "../scripts/published.ts";
+import install from "../snippets/install.sh?highlight";
+import payments from "../snippets/payments.ts?highlight";
+import paymentsCheck from "../snippets/payments-check.txt?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
 
 const SIMS = sims as Sim[];
@@ -74,6 +77,9 @@ export function App() {
           <LinkButton href="#use-cases" variant="ghost" size="sm">
             Use cases
           </LinkButton>
+          <LinkButton href="#typescript" variant="ghost" size="sm">
+            How it works
+          </LinkButton>
           <LinkButton href="#playground" variant="ghost" size="sm">
             Playground
           </LinkButton>
@@ -89,12 +95,14 @@ export function App() {
 
       <main className="mx-auto max-w-5xl px-6">
         <section className="pt-16 pb-12 sm:pt-24">
+          <p className="mb-4 font-mono text-sm text-kumo-subtle">A TypeScript library + CLI</p>
           <h1 className="max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl">
             Model a system before you build it. Understand it once it runs. Check it as it changes.
           </h1>
           <p className="mt-6 max-w-2xl text-lg text-kumo-subtle">
-            Feynman turns a behavior model into an interactive playground and a bounded model checker. Work with your coding agent to describe how
-            the system should behave, understand how it does behave, and check important rules as the code evolves.
+            Feynman is a TypeScript library and CLI. Write how a system behaves as a TypeScript spec: its actors, the messages between them,
+            and the rules that must hold. The <code className="font-mono text-base">feynman</code> CLI turns it into an interactive playground and
+            a model checker that finds the shortest way to break each rule. Write specs yourself, or with your coding agent.
           </p>
           <div className="mt-10 flex flex-wrap gap-3">
             <LinkButton href="#agents" variant="primary" icon={RobotIcon}>
@@ -105,6 +113,20 @@ export function App() {
                 Explore the playground
               </LinkButton>
             )}
+          </div>
+          <p className="mt-6 text-sm text-kumo-subtle">
+            <code className="rounded bg-kumo-recessed px-1.5 py-0.5 font-mono text-[13px] text-kumo-default">bun add -d @leostera/feynman</code>
+            <span className="ml-2">on npm, for Bun 1.3 or later</span>
+          </p>
+          <div className="mt-12 grid items-start gap-4 lg:grid-cols-[1.25fr_1fr]">
+            <CodeBlock snippet={payments} label="specs/payments.ts" />
+            <div className="space-y-3">
+              <CodeBlock snippet={paymentsCheck} label="bunx feynman check" />
+              <p className="text-sm text-kumo-subtle">
+                A client that retries without an idempotency key. The checker tries every order of events and finds the shortest one that breaks the
+                rule: a retry that lands after the first debit charges twice.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -119,6 +141,31 @@ export function App() {
                 <p className="mt-2 text-sm text-kumo-subtle">{text}</p>
               </LayerCard>
             ))}
+          </div>
+        </Section>
+
+        <Section id="typescript" title="Specs are TypeScript" lead="A spec is an ordinary TypeScript file that imports @leostera/feynman. Your editor type-checks it, your code can import it, and the feynman CLI runs it.">
+          <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr]">
+            <div className="space-y-5 text-sm text-kumo-subtle">
+              <div>
+                <h3 className="text-sm font-semibold text-kumo-default">The library</h3>
+                <p className="mt-1">
+                  <code className="font-mono text-[12px]">defineSpec</code>, <code className="font-mono text-[12px]">defineActor</code> and{" "}
+                  <code className="font-mono text-[12px]">message</code> describe the system. State, message payloads and action inputs are typed,
+                  so a typo or a wrong field is a compile error, not a surprise in the simulator. Each step can name the code it stands for.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-kumo-default">The CLI</h3>
+                <p className="mt-1">
+                  <code className="font-mono text-[12px]">feynman check</code> runs the scenarios and the model checker,{" "}
+                  <code className="font-mono text-[12px]">feynman dev</code> opens the playground on your specs,{" "}
+                  <code className="font-mono text-[12px]">feynman build</code> writes it as one HTML file, and{" "}
+                  <code className="font-mono text-[12px]">feynman diff</code> shows what a change does to each flow.
+                </p>
+              </div>
+            </div>
+            <CodeBlock snippet={install} label="Install and run" />
           </div>
         </Section>
 

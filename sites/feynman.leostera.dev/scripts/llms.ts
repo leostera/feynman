@@ -5,7 +5,8 @@ export function llmsTxt(): string {
   const sims = readSims().filter(published);
   return `# Feynman
 
-> Feynman specs are executable TypeScript models of system behavior: actors and their state,
+> Feynman is a TypeScript library and CLI (\`@leostera/feynman\` on npm). Its specs are
+> executable TypeScript models of system behavior: actors and their state,
 > messages, actions, timers, limits, and invariants. Steps can link to the code they model.
 > From one spec, Feynman derives an interactive simulator, a bounded model checker, scenario
 > flows, and comparisons of those flows between commits.
