@@ -1,0 +1,95 @@
+// Write skew: two doctors on call, each allowed to go off if the other stays.
+//
+// The rule is that someone is always on call. A doctor who wants to go off asks the roster
+// how many are on call and, if it is two, tells the roster they are leaving. Each check is
+// right when it is made; two checks made before either leave are both right, and both
+// doctors leave. The fix: the roster checks and removes in one step ("leave if someone else
+// stays"), so the second doctor is told to stay.
+//
+// Expected, with two doctors: buggy breaks `covered` in 8 steps without faults (both ask,
+// both checks answer two, both are told so, both leave); fixed holds, with a fault too.
+import { defineSpec, message } from "@leostera/feynman";
+
+export function writeSkew(variant: "buggy" | "fixed") {
+  return defineSpec(
+    `Write skew (${variant})`,
+    {
+      messages: {
+        Check: message<{}>({ name: "check" }),
+        Count: message<{ onCall: number }>({ name: "count", tone: "reply" }),
+        Leave: message<{}>({ name: "leave" }),
+        LeaveIfCovered: message<{}>({ name: "leave if covered" }),
+        Left: message<{}>({ name: "left", tone: "reply" }),
+        Stay: message<{}>({ name: "stay", tone: "refused" }),
+      },
+    },
+    (spec) => {
+      const { Check, Count, Leave, LeaveIfCovered, Left, Stay } = spec.messages;
+      const zone = spec.defineZone({ name: "Hospital" });
+
+      const Roster = spec.defineActor({
+        name: "Roster",
+        zone,
+        singleton: true,
+        initialState: () => ({ onCall: 2 }),
+        transitions: {
+          [Check]: { description: "Says how many are on call.", sends: [Count], run: (state, _msg, ctx) => ctx.reply(Count, { onCall: state.onCall }) },
+          [Leave]: { description: "Takes a doctor off call.", run: (state) => void (state.onCall -= 1) },
+          [LeaveIfCovered]: {
+            description: "Takes a doctor off call only if another stays, in one step.",
+            sends: [Left, Stay],
+            run(state, _msg, ctx) {
+              if (state.onCall < 2) return ctx.reply(Stay, {});
+              state.onCall -= 1;
+              ctx.reply(Left, {});
+            },
+          },
+        },
+      });
+
+      const Doctor = spec.defineActor({
+        name: "Doctor",
+        zone,
+        symmetric: true,
+        initialState: () => ({ phase: "on" as "on" | "asking" | "off" }),
+        actions: {
+          goOff: {
+            label: "Go off call",
+            description: "Asks to go off call.",
+            when: (state) => state.phase === "on",
+            sends: [Check, LeaveIfCovered],
+            run(state, _inputs, ctx) {
+              state.phase = "asking";
+              ctx.send(ctx.the(Roster), variant === "buggy" ? Check : LeaveIfCovered, {});
+            },
+          },
+        },
+        transitions: {
+          [Count]: {
+            description: "Leaves if the other doctor is on call, by the count it was given.",
+            sends: [Leave],
+            run(state, msg, ctx) {
+              if (msg.onCall < 2) return void (state.phase = "on");
+              state.phase = "off";
+              ctx.send(ctx.the(Roster), Leave, {});
+            },
+          },
+          [Left]: { description: "Off call.", run: (state) => void (state.phase = "off") },
+          [Stay]: { description: "Stays on call.", run: (state) => void (state.phase = "on") },
+        },
+      });
+
+      spec.defineInvariants({
+        covered: {
+          description: "Someone is always on call.",
+          always: (w) => w.the(Roster).state.onCall >= 1,
+        },
+      });
+      return { Roster, Doctor };
+    },
+  );
+}
+
+/** `feynman check write-skew` checks the buggy variant, so you see the checker find the bug. */
+export default writeSkew("buggy");
+export const fixed = writeSkew("fixed");

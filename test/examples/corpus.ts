@@ -12,6 +12,7 @@ import { leaseLock } from "../../examples/lease-lock.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { payments } from "../../examples/payments.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
+import { writeSkew } from "../../examples/write-skew.ts";
 import { lightSwitch } from "../../examples/switch.ts";
 import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
 
@@ -194,6 +195,17 @@ export const corpus: Example[] = [
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
       ],
     },
+  },
+  {
+    name: "write skew",
+    spec: writeSkew,
+    instances: { Doctor: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { covered: { events: 8, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { covered: "holds" } },
+    ],
+    tla: { module: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
+    p: { project: "WriteSkew", property: "covered", assertion: "nobody is on call", depth: 9 },
   },
 ];
 
