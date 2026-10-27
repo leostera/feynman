@@ -9,10 +9,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { check } from "../../src/check/index.ts";
-import type { Spec } from "../../src/spec/index.ts";
-import { jobQueue } from "../../examples/job-queue.ts";
-import { payments } from "../../examples/payments.ts";
-import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
+import { corpus, P_CASES } from "./corpus.ts";
 
 const DOTNET = process.env.DOTNET_ROOT ?? join(homedir(), ".dotnet");
 const ENV = { ...process.env, DOTNET_ROOT: DOTNET, DOTNET_CLI_TELEMETRY_OPTOUT: "1", PATH: `${DOTNET}:${join(DOTNET, "tools")}:${process.env.HOME}/.dotnet/tools:${process.env.PATH}` };
@@ -40,39 +37,19 @@ function pCheck(project: string, testCase: string, schedules: number): string | 
   return /<ErrorLog> (.*)/.exec(log)?.[1] ?? "a bug P did not describe";
 }
 
-interface POracle {
-  project: string;
-  spec: (variant: "buggy" | "fixed") => Spec;
-  property: string;
-  /** The message of the property's assertion in the P model. */
-  assertion: string;
-  instances?: Record<string, number>;
-  depth: number;
-}
-
-const oracles: POracle[] = [
-  { project: "TwoPhaseCommit", spec: twoPhaseCommit, property: "atomic", assertion: "one participant committed while another aborted", instances: { Participant: 2 }, depth: 9 },
-  { project: "Payments", spec: payments, property: "debitedOnce", assertion: "the bank debited more often than the client paid", instances: { Client: 1 }, depth: 8 },
-  { project: "JobQueue", spec: jobQueue, property: "doneOnce", assertion: "a job had its side effect twice", depth: 8 },
-];
-
-const cases = [
-  { testCase: "tcBuggy", variant: "buggy" as const, faults: 0 },
-  { testCase: "tcFixed", variant: "fixed" as const, faults: 0 },
-  { testCase: "tcFixedOneFault", variant: "fixed" as const, faults: 1 },
-];
-
 describe.skipIf(!HAS_P)("P oracles", () => {
-  for (const o of oracles) {
+  for (const example of corpus) {
+    const o = example.p;
+    if (!o) continue;
     describe(o.project, () => {
       test("compiles", () => {
         execFileSync("p", ["compile"], { cwd: join(import.meta.dir, "..", "..", "examples", "oracles", "p", o.project), env: ENV, encoding: "utf8" });
       }, 300_000);
-      for (const c of cases) {
+      for (const c of o.cases ?? P_CASES) {
         test(`${c.variant}, ${c.faults} fault(s): P and the checker agree`, () => {
           const theirs = pCheck(o.project, c.testCase, SCHEDULES[c.variant]);
           if (theirs) expect(theirs).toContain(o.assertion);
-          const ours = check(o.spec(c.variant), { depth: o.depth, faults: c.faults, instances: o.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
+          const ours = check(example.spec(c.variant), { depth: o.depth, faults: c.faults, instances: example.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
           const p = ours.properties.find((x) => x.id === o.property)!;
           expect({ broken: !p.holds }).toEqual({ broken: theirs !== null });
         }, 300_000);

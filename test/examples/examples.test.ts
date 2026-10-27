@@ -3,47 +3,10 @@
 // whichever way it explores: with or without its reductions, with or without symmetry, and
 // by random runs alone.
 import { describe, expect, test } from "bun:test";
-import { check, replay, type Bounds, type Report } from "../../src/check/index.ts";
-import type { Spec } from "../../src/spec/index.ts";
-import { cache } from "../../examples/cache.ts";
-import { leaseLock } from "../../examples/lease-lock.ts";
-import { payments } from "../../examples/payments.ts";
-import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
-import { leaderElection } from "../../examples/leader-election.ts";
-import { jobQueue } from "../../examples/job-queue.ts";
-import { lightSwitch } from "../../examples/switch.ts";
-
-/** A property's expected verdict: holds, or broken by a shortest path of this many events, with this many faults. */
-type Expected = "holds" | { events: number; faults: number };
-
-interface Case {
-  name: string;
-  spec: Spec;
-  bounds: Partial<Bounds>;
-  expect: Record<string, Expected>;
-  /** Actors declared symmetric that are not, which the checker must catch. */
-  refuted?: string[];
-}
+import { check, replay, type Report } from "../../src/check/index.ts";
+import { caseName, corpus, type Expected } from "./corpus.ts";
 
 const EXHAUSTIVE = { maxStates: 2_000_000, timeLimit: 120_000, walks: 0 };
-
-const cases: Case[] = [
-  { name: "payments, buggy", spec: payments("buggy"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: { events: 4, faults: 0 }, paymentsSettle: "holds" } },
-  { name: "payments, fixed", spec: payments("fixed"), bounds: { depth: 8, faults: 1, instances: { Client: 1 } }, expect: { debitedOnce: "holds", paymentsSettle: "holds" } },
-  { name: "two-phase commit, buggy", spec: twoPhaseCommit("buggy"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: { events: 7, faults: 0 } } },
-  { name: "two-phase commit, fixed", spec: twoPhaseCommit("fixed"), bounds: { depth: 9, faults: 0, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: "holds" } },
-  { name: "two-phase commit, fixed, one fault", spec: twoPhaseCommit("fixed"), bounds: { depth: 8, faults: 1, instances: { Participant: 2 } }, expect: { atomic: "holds", decides: { events: 6, faults: 1 } } },
-  { name: "lease lock, buggy", spec: leaseLock("buggy"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: { events: 10, faults: 0 } } },
-  { name: "lease lock, fixed", spec: leaseLock("fixed"), bounds: { depth: 11, faults: 0, instances: { Client: 2 } }, expect: { fenced: "holds" } },
-  { name: "cache, buggy", spec: cache("buggy"), bounds: { depth: 8, faults: 0 }, expect: { converges: { events: 7, faults: 0 } } },
-  { name: "cache, fixed", spec: cache("fixed"), bounds: { depth: 8, faults: 0 }, expect: { converges: "holds" }  },
-  { name: "leader election, buggy", spec: leaderElection("buggy"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: { events: 3, faults: 0 } } },
-  { name: "leader election, fixed", spec: leaderElection("fixed"), bounds: { depth: 12, faults: 0, instances: { Node: 3 } }, expect: { agree: "holds" }, refuted: ["Node"] },
-  { name: "job queue, buggy", spec: jobQueue("buggy"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "holds" } },
-  { name: "job queue, fixed", spec: jobQueue("fixed"), bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "holds" } },
-  { name: "switch", spec: lightSwitch(), bounds: { depth: 6, faults: 0 }, expect: { onOnce: { events: 3, faults: 0 } } },
-  { name: "cache, fixed, one fault", spec: cache("fixed"), bounds: { depth: 7, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
-];
 
 /** What a report says about each expected property, in the terms of `Expected`. */
 function verdicts(report: Report, expected: Record<string, Expected>): Record<string, Expected> {
@@ -57,9 +20,11 @@ function verdicts(report: Report, expected: Record<string, Expected>): Record<st
   );
 }
 
-for (const c of cases) {
-  describe(c.name, () => {
-    const run = (extra: Partial<Bounds> = {}) => check(c.spec, { ...c.bounds, ...EXHAUSTIVE, ...extra });
+for (const example of corpus) for (const c of example.cases) {
+  const spec = example.spec(c.variant);
+  const bounds = { ...c.bounds, instances: example.instances ?? {} };
+  describe(caseName(example, c), () => {
+    const run = (extra: Partial<typeof bounds> = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra });
     const plain = run({ reduce: false, symmetry: false });
 
     test("the search finds what was worked out by hand, and nothing else", () => {
@@ -70,7 +35,7 @@ for (const c of cases) {
 
     test("counterexamples replay to the same events", () => {
       for (const p of plain.properties.filter((x) => !x.holds)) {
-        const again = replay(c.spec, p.counterexample!.initial, p.counterexample!.choices);
+        const again = replay(spec, p.counterexample!.initial, p.counterexample!.choices);
         expect(again.events.map((e) => `${e.actor}.${e.key}`)).toEqual(p.counterexample!.events.map((e) => `${e.actor}.${e.key}`));
       }
     });
@@ -93,7 +58,7 @@ for (const c of cases) {
 
     test("random runs alone find every bug", () => {
       const broken = Object.entries(c.expect).filter(([, v]) => v !== "holds").map(([id]) => id);
-      const walked = check(c.spec, { ...c.bounds, depth: 0, walks: 3_000, walkDepth: 40, timeLimit: 60_000 });
+      const walked = check(spec, { ...bounds, depth: 0, walks: 3_000, walkDepth: 40, timeLimit: 60_000 });
       for (const id of broken) {
         const p = walked.properties.find((x) => x.id === id)!;
         expect(p.holds).toBe(false);
