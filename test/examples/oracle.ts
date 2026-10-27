@@ -51,7 +51,10 @@ export function tlc(module: string, constants: Record<string, string | number | 
     }
     const distinct = Number(/([\d,]+) distinct states? found/.exec(out)?.[1].replace(/,/g, "") ?? NaN);
     const broken = /Invariant (\w+) is violated/.exec(out);
-    if (/TLC threw an unexpected exception|Parsing or semantic analysis failed/.test(out) || Number.isNaN(distinct)) throw new Error(`TLC failed on ${module}:\n${out}`);
+    // A violation is an answer; any other error (an invariant that fails to evaluate, a bad
+    // model) is not, and must not pass for "no violation".
+    const errors = out.split("\n").filter((line) => line.startsWith("Error:") && !/^Error: (Invariant \w+ is violated|The behavior up to this point is)/.test(line));
+    if (errors.length || /Parsing or semantic analysis failed/.test(out) || Number.isNaN(distinct)) throw new Error(`TLC failed on ${module}:\n${out}`);
     const states = [...out.matchAll(/^State (\d+):/gm)].map((m) => Number(m[1]));
     return { distinct, ...(broken ? { violated: { invariant: broken[1], events: Math.max(...states) - 1 } } : {}) };
   } finally {

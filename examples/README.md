@@ -20,6 +20,7 @@ bun run feynman dev                # every example in the simulator
 | `cache.ts` | A stale fill overtaking an invalidation | `eventually`, a lost message versions cannot fix |
 | `leader-election.ts` | Adopting the last leader heard instead of the highest | a false symmetry claim the checker must refute |
 | `job-queue.ts` | Redelivery doing a job's side effect twice | `never` over the trace, guarded transitions |
+| `alternating-bit.ts` | The alternating bit protocol over a network that reorders: a stale copy passes for the next item | retransmission timers, a protocol correct only on FIFO links |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
