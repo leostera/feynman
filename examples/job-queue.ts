@@ -25,13 +25,15 @@ export function jobQueue(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Job, Ack, Effect } = spec.messages;
-      const zone = spec.defineZone({ name: "Queue" });
+      const zone = spec.defineZone({ name: "Queue", description: "at-least-once delivery", place: { arrange: "row" } });
 
       const World = spec.defineActor({
         name: "Outside world",
         zone,
         singleton: true,
         initialState: () => ({ effects: 0 }),
+        place: { order: 2 },
+        look: { icon: "mail", status: (s) => `${s.effects} email(s) sent`, mood: (s) => (s.effects ? "info" : "off") },
         transitions: { [Effect]: { description: "Something happens out there: an email, a charge.", run: (state) => void (state.effects += 1) } },
       });
 
@@ -40,10 +42,18 @@ export function jobQueue(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ inbox: [] as { id: string; from: string }[], done: [] as string[] }),
+        place: { order: 1 },
+        look: {
+          icon: "cpu",
+          status: (s) => (s.inbox.length ? `${s.inbox.length} job(s) to do` : `${s.done.length} done`),
+          mood: (s) => (s.inbox.length ? "busy" : "ok"),
+          rows: (s) => [...s.inbox.map((j) => ({ group: "inbox", label: j.id, mood: "busy" as const })), ...s.done.map((id) => ({ group: "done", label: id, mood: "ok" as const }))],
+        },
         transitions: {
           [Job]: { description: "Queues the job.", run: (state, msg, ctx) => void state.inbox.push({ id: msg.id, from: ctx.from!.id }) },
           work: {
             description: "Works on the next job in the inbox, and acknowledges it.",
+            say: (s) => `Works on ${s.done.at(-1)}, and acknowledges it`,
             when: (state) => state.inbox.length > 0,
             sends: [Effect, Ack],
             run(state, ctx) {
@@ -63,6 +73,8 @@ export function jobQueue(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ pending: null as string | null, enqueued: 0 }),
+        place: { order: 0 },
+        look: { icon: "queue", status: (s) => (s.pending ? `${s.pending} out, not acknowledged` : `${s.enqueued} job(s) enqueued`), mood: (s) => (s.pending ? "busy" : "ok") },
         actions: {
           enqueue: {
             label: "Enqueue",
@@ -110,6 +122,30 @@ export function jobQueue(variant: "buggy" | "fixed") {
           description: "A job handed out is eventually acknowledged.",
           after: (w) => w.the(Broker).state.pending !== null,
           eventually: (w) => w.the(Broker).state.pending === null,
+        },
+      });
+      spec.defineScenario({
+        name: "A job",
+        description: "The broker hands a job to the worker, which does it and acknowledges it.",
+        run(s) {
+          s.act(s.the(Broker), "enqueue");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Redelivered while working",
+        description:
+          variant === "buggy"
+            ? "The visibility timeout fires before the acknowledgement arrives: the job comes back, and the worker sends the email twice."
+            : "The visibility timeout fires before the acknowledgement arrives: the job comes back, and the worker, having done it, only acknowledges it.",
+        run(s) {
+          const worker = s.the(Worker);
+          const broker = s.the(Broker);
+          s.act(broker, "enqueue");
+          s.deliver(worker, "Job");
+          s.step(worker, "work");
+          s.fire(broker, "redeliver");
+          s.settle();
         },
       });
       return { World, Worker, Broker };
