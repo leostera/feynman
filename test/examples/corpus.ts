@@ -16,6 +16,7 @@ import { logReplication } from "../../examples/log-replication.ts";
 import { lwwRegister } from "../../examples/lww-register.ts";
 import { gCounter } from "../../examples/g-counter.ts";
 import { orSet } from "../../examples/or-set.ts";
+import { idempotentConsumer } from "../../examples/idempotent-consumer.ts";
 import { outbox } from "../../examples/outbox.ts";
 import { primaryBackup } from "../../examples/primary-backup.ts";
 import { chainReplication } from "../../examples/chain-replication.ts";
@@ -401,6 +402,28 @@ export const corpus: Example[] = [
       cases: [
         { testCase: "tcBuggy", variant: "buggy", faults: 0 },
         { testCase: "tcFixed", variant: "fixed", faults: 0 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
+  },
+  {
+    name: "idempotent consumer",
+    spec: idempotentConsumer,
+    instances: { Consumer: 1 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 10, faults: 0 }, expect: { chargedOnce: "holds" } },
+      { variant: "buggy", bounds: { depth: 7, faults: 1 }, expect: { chargedOnce: { events: 5, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 10, faults: 1 }, expect: { chargedOnce: "holds" } },
+    ],
+    tla: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 10, configs: BOTH_WAYS },
+    p: {
+      project: "IdempotentConsumer",
+      property: "chargedOnce",
+      assertion: "a job was charged twice",
+      depth: 10,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
       ],
     },
