@@ -4,7 +4,8 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { createServer as createViteServer, type Plugin } from "vite";
+import { createServer as createNetServer } from "node:net";
+import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite";
 import { check } from "../check/index.ts";
 import { scenarioSeeds } from "./shape.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "../code/index.ts";
@@ -97,6 +98,45 @@ function specId(path: string, taken: Set<string>): string {
   for (let n = 2; taken.has(id); n++) id = `${basename(path, ".ts")}-${n}`;
   taken.add(id);
   return id;
+}
+
+/**
+ * Whether nothing listens on this port, on either loopback address. "localhost" is both ::1
+ * and 127.0.0.1, and a server can bind one while another holds the other: both start, and
+ * the browser reaches whichever its resolver picks. So a port is free only if both are.
+ */
+export async function portFree(port: number): Promise<boolean> {
+  for (const host of ["127.0.0.1", "::1"]) {
+    const free = await new Promise<boolean>((done) => {
+      const probe = createNetServer();
+      probe.once("error", (error: NodeJS.ErrnoException) => done(error.code === "EADDRNOTAVAIL"));
+      probe.listen(port, host, () => probe.close(() => done(true)));
+    });
+    if (!free) return false;
+  }
+  return true;
+}
+
+/** How many ports past the asked-for one `feynman dev` tries before giving up. */
+const PORT_TRIES = 50;
+
+/**
+ * A server on the first port from `first` that is free on every loopback address. Another
+ * server can take a port between the check and the listen; then the next one is tried.
+ */
+async function listenOnFreePort(first: number, create: (port: number) => Promise<ViteDevServer>): Promise<ViteDevServer> {
+  for (let port = first; port < first + PORT_TRIES; port++) {
+    if (!(await portFree(port))) continue;
+    const server = await create(port);
+    try {
+      await server.listen();
+      return server;
+    } catch (error) {
+      await server.close();
+      if (!/already in use|EADDRINUSE/.test(String(error))) throw error;
+    }
+  }
+  throw new Error(`no free port from ${first} to ${first + PORT_TRIES - 1}`);
 }
 
 export async function prepare(ctx: Context, options: Options, onProgress?: Progress): Promise<Prepared> {
@@ -287,12 +327,13 @@ async function serve(ctx: Context, options: { port: number; base?: string; open:
   const viewConfig = join(ROOT, "src", "view", "vite.config.ts");
   const fromSource = existsSync(viewConfig);
   if (!fromSource) ensureView();
-  const vite = await createViteServer({
-    ...(fromSource ? { configFile: viewConfig } : { configFile: false, root: DIST, appType: "spa" as const }),
-    plugins: [api],
-    server: { port: options.port, strictPort: false },
-  });
-  await vite.listen();
+  const vite = await listenOnFreePort(options.port, (port) =>
+    createViteServer({
+      ...(fromSource ? { configFile: viewConfig } : { configFile: false, root: DIST, appType: "spa" as const }),
+      plugins: [api],
+      server: { port, strictPort: true },
+    }),
+  );
   const address = vite.httpServer?.address();
   const port = address && typeof address === "object" ? address.port : options.port;
   const url = vite.resolvedUrls?.local[0] ?? `http://localhost:${port}/`;
