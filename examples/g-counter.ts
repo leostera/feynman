@@ -29,15 +29,12 @@ export function gCounter(variant: "buggy" | "fixed") {
       const { Gossip } = spec.messages;
       const zone = spec.defineZone({ name: "Replicas", description: "counting page views, each on its own", place: { arrange: "row" } });
 
-      // Counts in id order, so the same counts make the same state whatever order they came in.
-      const sorted = (counts: Record<string, number>) => Object.fromEntries(Object.entries(counts).sort(([a], [b]) => (a < b ? -1 : 1)));
       const valueOf = (state: { total: number; counts: Record<string, number> }) => (variant === "buggy" ? state.total : Object.values(state.counts).reduce((a, b) => a + b, 0));
 
       const Replica = spec.defineActor({
         name: "Replica",
         zone,
-        // Not `symmetric`: the checker renames ids in state but does not re-sort the keys they
-        // name, so swapping replicas would give counts in another order, and it refutes the claim.
+        symmetric: true,
         durable: ["total", "counts", "increments"],
         // `increments`: how many this replica took itself, to judge the count by.
         initialState: () => ({ total: 0, counts: {} as Record<string, number>, increments: 0 }),
@@ -55,7 +52,7 @@ export function gCounter(variant: "buggy" | "fixed") {
             run(state, _inputs, ctx) {
               state.increments += 1;
               if (variant === "buggy") state.total += 1;
-              else state.counts = sorted({ ...state.counts, [ctx.id]: (state.counts[ctx.id] ?? 0) + 1 });
+              else state.counts = { ...state.counts, [ctx.id]: (state.counts[ctx.id] ?? 0) + 1 };
               for (const other of ctx.all(Replica)) if (other.id !== ctx.id) ctx.send(other, Gossip, { total: state.total, counts: state.counts });
             },
           },
@@ -68,7 +65,7 @@ export function gCounter(variant: "buggy" | "fixed") {
               if (variant === "buggy") return void (state.total = Math.max(state.total, msg.total));
               const merged = { ...state.counts };
               for (const [id, n] of Object.entries(msg.counts)) merged[id] = Math.max(merged[id] ?? 0, n);
-              state.counts = sorted(merged);
+              state.counts = merged;
             },
           },
         },
