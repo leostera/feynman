@@ -20,13 +20,19 @@ export function leaderElection(variant: "buggy" | "fixed") {
     { messages: { Elect: message<{ id: string }>({ name: "elect" }) } },
     (spec) => {
       const { Elect } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster", place: { arrange: "ring" } });
+      const zone = spec.defineZone({ name: "Cluster", description: "the highest id should lead", place: { arrange: "ring" } });
       const Node = spec.defineActor({
         name: "Node",
         zone,
         // Wrong for the fixed variant: the highest id wins, so nodes are not interchangeable.
         symmetric: true,
         initialState: (ctx) => ({ leader: ctx.id, announced: false }),
+        look: {
+          icon: "server",
+          names: ["A", "B", "C"],
+          status: (s) => `follows ${s.leader}`,
+          mood: (s) => (s.announced ? "info" : "off"),
+        },
         actions: {
           announce: {
             label: "Announce",
@@ -42,6 +48,7 @@ export function leaderElection(variant: "buggy" | "fixed") {
         transitions: {
           [Elect]: {
             description: "Adopts the announced node, if it should.",
+            say: (s, msg) => (s.leader === msg.id ? `Now follows ${msg.id}` : `Keeps following ${s.leader}, not ${msg.id}`),
             run(state, msg) {
               if (variant === "buggy" || msg.id > state.leader) state.leader = msg.id;
             },
@@ -57,6 +64,27 @@ export function leaderElection(variant: "buggy" | "fixed") {
           description: "Once every node has announced, they all end up agreeing on one leader.",
           after: (w) => w.all(Node).every((n) => n.state.announced),
           eventually: (w) => new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
+        },
+      });
+      spec.defineScenario({
+        name: "Everyone announces",
+        description: variant === "buggy" ? "Each node follows the last it hears: A and B end up on C, but C on B." : "Each node keeps the highest id it hears: all three end up on C.",
+        run(s) {
+          const nodes = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          for (const n of nodes) s.act(n, "announce");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "The highest is heard first",
+        description: variant === "buggy" ? "Every node hears C first, then a lower id, and follows that one instead." : "Every node hears C first and keeps it.",
+        run(s) {
+          const [a, b, c] = ["A", "B", "C"].map((name) => s.spawn(Node, name));
+          for (const n of [a, b, c]) s.act(n, "announce");
+          s.deliver(a, "Elect", { id: c.id });
+          s.deliver(b, "Elect", { id: c.id });
+          s.deliver(c, "Elect", { id: b.id });
+          s.settle();
         },
       });
       return { Node };
