@@ -1,6 +1,47 @@
 # Changelog
 
-What changed in each release of `@leostera/feynman`, newest first.
+What changed in each release of `@leostera/feynman`, newest first. A release that changes
+how specs are written has a **Migrating** section: what to change in a spec, before and
+after.
+
+## Unreleased
+
+### Reading check's results
+
+- `feynman check --brief` prints one line per property, and for each counterexample its
+  length and the faults it needs, without the trace.
+- `--only P,Q` checks and shows only those properties.
+- `--json` prints the whole result as JSON: verdicts, counterexamples with their events,
+  scenario failures, sources.
+- `--only P --as-scenario` prints P's counterexample as `spec.defineScenario` code that
+  replays it step by step.
+
+### Telling likely bugs from unlikely ones
+
+- Each counterexample uses the fewest faults (lost messages, restarts) that break the
+  property within the bounds. Check searches again with fewer faults to find it, and says
+  when a shorter path needs more: "needs no faults" means it happens in normal operation.
+- A property can be marked `known: "why, or the issue"`: a bug found and not fixed yet.
+  Check reports it, and scenarios that break it, without failing; once it holds, check
+  fails until the mark is removed.
+
+### Scenarios
+
+- `s.deliver(who, message, payload?)` delivers a message in flight now, ahead of the rest;
+  `s.drop(who, message, payload?)` loses one; `s.step(who, transition)` runs a guarded
+  transition. With them a scenario can take any path the checker can.
+
+### Sources
+
+- A `path#symbol` that is not defined names the close symbols the file does define: "did
+  you mean src/relay.ts#Relay.redeem?"
+
+### Skill
+
+- When a counterexample appears: sort it into spec mistake, intended behaviour or finding,
+  judge how likely a finding is from the faults it needs and production evidence, and keep
+  one that stays as `known`.
+- Write more specs rather than bigger ones.
 
 ## 0.7.0
 

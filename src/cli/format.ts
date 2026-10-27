@@ -1,7 +1,8 @@
 // Text output: what agents and people read in a terminal.
-import type { Report } from "../check/index.ts";
+import { faultsIn, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
 import type { Event, RunDiff, Spec, World } from "../spec/index.ts";
+import { verdictOf, type Verdict } from "./verdict.ts";
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (code: number) => (text: string) => (color ? `\x1b[${code}m${text}\x1b[0m` : text);
@@ -65,11 +66,6 @@ export function formatSources(statuses: SourceStatus[]): string[] {
   return lines;
 }
 
-/**
- * The checker's report. `brokenBy` names invariants a scenario already breaks, which show as
- * broken whatever exploration found. A property that held while exploration stopped early
- * says so, rather than claiming to hold.
- */
 /** What else the search did: random runs, and the work its reductions saved. */
 function searchNotes(report: Report): string[] {
   const notes: string[] = [];
@@ -83,36 +79,68 @@ function searchNotes(report: Report): string[] {
   return out;
 }
 
-export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, string> = new Map()): string {
+export interface ReportOptions {
+  /** Properties a scenario breaks: broken whatever exploration found. */
+  brokenBy?: Map<string, string>;
+  /** Verdicts and counterexample sizes, without the traces. */
+  brief?: boolean;
+  /** How each property is read; by default from the report alone. */
+  verdict?: (p: PropertyResult) => Verdict;
+  /** The command that checked this spec, to say how to see one counterexample. */
+  command?: string;
+}
+
+/**
+ * The checker's report. Invariants a scenario already breaks show as broken whatever
+ * exploration found. A property that held while exploration stopped early says so, rather
+ * than claiming to hold.
+ */
+export function formatReport(spec: Spec, report: Report, options: ReportOptions = {}): string {
+  const brokenBy = options.brokenBy ?? new Map<string, string>();
+  const verdict = options.verdict ?? ((p: PropertyResult) => verdictOf(p, { report, brokenBy }));
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...(report.seeds ? [`and from the end of ${report.seeds} scenario(s)`] : []), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
-    ...searchNotes(report),
+    ...(options.brief ? [] : searchNotes(report)),
   ];
   for (const p of report.properties) {
     const scenario = brokenBy.get(p.id);
-    if (p.holds && scenario) {
-      lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}` + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
+    const v = verdict(p);
+    if (v === "fixed") {
+      lines.push(red(`  ✓ ${p.id}`) + `  ${p.description}` + red(`  marked known ("${p.known}"), but holds now: remove known`));
       continue;
     }
-    if (p.holds && p.tested === 0) {
+    if (v === "untested") {
       lines.push(yellow(`  ? ${p.id}`) + dim(`  ${p.description}  never tested: exploration never reached a world where it applies`));
       continue;
     }
-    if (p.holds && !report.exhaustive) {
+    if (v === "unfinished") {
       lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  held in the states explored, not all of them`));
       continue;
     }
-    if (p.holds) {
+    if (v === "holds") {
       lines.push(green(`  ✓ ${p.id}`) + dim(`  ${p.description}`));
       continue;
     }
-    lines.push(red(`  ✗ ${p.id}`) + `  ${p.description}`);
+    const mark = v === "known" ? yellow(`  ✗ ${p.id}`) + `  ${p.description}` + yellow(`  known bug: ${p.known}`) : red(`  ✗ ${p.id}`) + `  ${p.description}`;
+    if (p.holds && scenario) {
+      lines.push(mark + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
+      continue;
+    }
+    lines.push(mark);
     const ce = p.counterexample!;
+    const faults = faultsIn(ce.events);
     const found = p.foundBy === "walk" ? `found by a random run past the search's depth, shrunk to ${ce.events.length} event(s)` : `shortest counterexample, ${ce.events.length} event(s)`;
-    lines.push(dim(`    ${found}${ce.from ? `, from the end of scenario "${ce.from}"` : ""}:`));
+    const needs = faults ? `needs ${faults} fault(s)` : "needs no faults";
+    const shorter = p.shorter ? `; a shorter one, ${p.shorter.events} event(s), needs ${p.shorter.faults} fault(s)` : "";
+    const from = ce.from ? `, from the end of scenario "${ce.from}"` : "";
+    if (options.brief) {
+      lines.push(dim(`    ${found}, ${needs}${from}${shorter}${options.command ? `; see it with ${options.command} --only ${p.id}` : ""}`));
+      continue;
+    }
+    lines.push(dim(`    ${found}, ${needs}${from}${shorter}:`));
     lines.push(indent(formatEvents(spec, ce.events, ce.worlds), 4));
     if (p.then?.length) {
       lines.push(dim(`    then, left to run by itself, it never holds:`));
@@ -122,7 +150,7 @@ export function formatReport(spec: Spec, report: Report, brokenBy: Map<string, s
   }
   for (const e of report.errors) {
     lines.push(red(`  ✗ spec error: ${e.message}`));
-    lines.push(indent(formatEvents(spec, e.counterexample.events, e.counterexample.worlds), 4));
+    if (!options.brief) lines.push(indent(formatEvents(spec, e.counterexample.events, e.counterexample.worlds), 4));
   }
   if (report.coverage.missed.length) lines.push(yellow(`  never ran: ${report.coverage.missed.join(", ")}`));
   return lines.join("\n");

@@ -1,15 +1,12 @@
 // The commands: each takes the repository context and parsed flags, prints, and returns
 // an exit status.
 import { join } from "node:path";
-import { check, type Bounds } from "../check/index.ts";
 import { checkSources, git, repositoryAt, withWorktree, writeLock, type Repository } from "../code/index.ts";
 import { diffRuns, runScenario, type RunDiff, type Spec } from "../spec/index.ts";
 import type { Config } from "./config.ts";
-import { discoverSpecs, playgroundFor, selectSpecs } from "./discover.ts";
-import { bold, dim, formatDiff, formatEvents, formatReport, formatSources, red, yellow } from "./format.ts";
-import { loadPlayground, loadSpec, readConfig } from "./load.ts";
-import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt } from "./shape.ts";
-import { typecheck } from "./types.ts";
+import { discoverSpecs, selectSpecs } from "./discover.ts";
+import { bold, dim, formatDiff, formatEvents, formatSources, red } from "./format.ts";
+import { loadSpec, readConfig } from "./load.ts";
 
 export interface Context {
   cwd: string;
@@ -55,52 +52,6 @@ export async function list(ctx: Context): Promise<number> {
       console.error(`${path}  ${red((error as Error).message)}`);
       status = 1;
     }
-  }
-  return status;
-}
-
-export async function checkCommand(ctx: Context, named: string[], bounds: Partial<Bounds>): Promise<number> {
-  let status = 0;
-  const selected = await loadSelected(ctx, named);
-  const plays = selected.map((s) => playgroundFor(ctx.repository.root, s.path)).filter((p): p is string => p !== null);
-  const typeErrors = typecheck(ctx.repository.root, [...selected.map((s) => s.path), ...plays]);
-  for (const e of typeErrors) console.log(red(`${e.file}:${e.line}:${e.column} ${e.message}`));
-  if (typeErrors.length) status = 1;
-  for (const play of plays) {
-    try {
-      await loadPlayground(join(ctx.repository.root, play));
-    } catch (error) {
-      status = 1;
-      console.log(red((error as Error).message));
-    }
-  }
-  for (const { path, spec } of selected) {
-    const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
-    console.log(dim(path));
-    const scenarios = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
-    const brokenBy = new Map<string, string>();
-    for (const { scenario, run } of scenarios) {
-      const broken = run.error ?? run.events.find((e) => e.error)?.error ?? run.events.find((e) => e.violations.length)?.violations.join(", ");
-      if (broken) {
-        status = 1;
-        console.log(red(`  ✗ scenario "${scenario.name}": ${broken}`));
-        for (const invariant of spec.invariants) if (new RegExp(`\\b${invariant.id}\\b`).test(broken) && !brokenBy.has(invariant.id)) brokenBy.set(invariant.id, scenario.name);
-      }
-    }
-    const report = check(spec, merged, scenarioSeeds(spec, scenarios));
-    console.log(formatReport(spec, report, brokenBy));
-    if (!report.exhaustive) console.log(dim(`  "~" is not a proof: raise the limits or lower the bounds until exploration finishes.`));
-    if (report.properties.some((p) => p.holds && p.tested === 0)) console.log(dim(`  "?" was never tested: add a scenario that gets there, so exploration starts from its end.`));
-    const statuses = checkSources(ctx.repository.root, specSources(spec));
-    for (const line of formatSources(statuses)) console.log(line);
-    for (const w of shapeWarnings(spec)) console.log(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));
-    const designed = unbuilt(spec);
-    if (designed.length) {
-      const all = designed.length === totalSteps(spec);
-      const which = designed.length <= 6 ? `: ${designed.map((d) => `${d.actor} ${d.step}`).join(", ")}` : "";
-      console.log(dim(all ? `  no step points at code yet; this spec is a design. Add sources as the code appears.` : `  ${designed.length} step(s) have no code yet${which}`));
-    }
-    if (report.properties.some((p) => !p.holds) || report.errors.length || statuses.some((s) => s.status === "missing")) status = 1;
   }
   return status;
 }

@@ -1,7 +1,8 @@
 // feynman <command> [specs…] [flags]
 import { parseArgs } from "node:util";
 import type { Bounds } from "../check/index.ts";
-import { checkCommand, context, diffCommand, list, lockCommand, runCommand } from "./commands.ts";
+import { checkCommand, type CheckOptions } from "./check.ts";
+import { context, diffCommand, list, lockCommand, runCommand } from "./commands.ts";
 import { buildCommand, devCommand } from "./serve.ts";
 import { red } from "./format.ts";
 
@@ -21,6 +22,10 @@ Commands:
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
+      --only P,Q                 check and show only these properties
+      --brief                    verdicts and counterexample sizes, without traces
+      --json                     the whole result as JSON, for scripts and agents
+      --as-scenario              with --only P: P's counterexample as defineScenario code
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
   dev [--port N]           Serve the explorer on the first free port from N (default: 4321).
@@ -52,6 +57,10 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       base: { type: "string" },
       port: { type: "string" },
       out: { type: "string" },
+      only: { type: "string" },
+      brief: { type: "boolean" },
+      json: { type: "boolean" },
+      "as-scenario": { type: "boolean" },
     },
   });
   const ctx = await context(cwd);
@@ -61,7 +70,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     case "run":
       return runCommand(ctx, positionals, values.scenario);
     case "check":
-      return checkCommand(ctx, positionals, bounds(values));
+      return checkCommand(ctx, positionals, { bounds: bounds(values), only: ids(values.only), output: output(values) });
     case "lock":
       return lockCommand(ctx);
     case "diff":
@@ -77,6 +86,16 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       console.error(USAGE);
       return 2;
   }
+}
+
+function ids(raw: string | undefined): string[] {
+  return (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function output(values: { brief?: boolean; json?: boolean; "as-scenario"?: boolean }): CheckOptions["output"] {
+  const chosen = (["brief", "json", "as-scenario"] as const).filter((flag) => values[flag]);
+  if (chosen.length > 1) throw new Error(`--${chosen.join(" and --")} are different outputs: choose one`);
+  return ({ brief: "brief", json: "json", "as-scenario": "scenario" } as const)[chosen[0]] ?? "text";
 }
 
 function bounds(values: Record<string, string | boolean | undefined>): Partial<Bounds> {

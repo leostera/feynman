@@ -106,7 +106,7 @@ export interface ActorInfo {
   transitions: Record<string, TransitionInfo>;
 }
 
-export type InvariantInfo =
+export type InvariantInfo = (
   | { id: string; description: string; kind: "always"; always: (world: WorldView) => boolean }
   | {
       id: string;
@@ -115,7 +115,11 @@ export type InvariantInfo =
       eventually: (world: WorldView) => boolean;
       after?: (world: WorldView) => boolean;
     }
-  | { id: string; description: string; kind: "never"; never: (trace: Trace) => boolean };
+  | { id: string; description: string; kind: "never"; never: (trace: Trace) => boolean }
+) & {
+  /** A known bug: why the property is expected to break (see `InvariantDef.known`). */
+  known?: string;
+};
 
 export interface ScenarioInfo {
   name: string;

@@ -10,7 +10,7 @@ import { runScenario, type Event, type Spec, type World } from "../spec/index.ts
 import { labelOf, ordinal, stepTitle, time } from "./format";
 import { Section, Sources, useExplorer } from "./ui";
 
-type Verdict = "broken" | "scenario" | "untested" | "explored" | "holds";
+type Verdict = "broken" | "scenario" | "known" | "fixed" | "untested" | "explored" | "holds";
 
 /** Invariants a scenario breaks, by id, with the first scenario that does. */
 function brokenByScenarios(spec: Spec): Map<string, string> {
@@ -23,6 +23,7 @@ function brokenByScenarios(spec: Spec): Map<string, string> {
 }
 
 function verdictOf(p: PropertyResult, report: Report, scenarios: Map<string, string>): Verdict {
+  if (p.known !== undefined) return !p.holds || scenarios.has(p.id) ? "known" : "fixed";
   if (!p.holds) return "broken";
   if (scenarios.has(p.id)) return "scenario";
   if (p.tested === 0) return "untested";
@@ -30,7 +31,7 @@ function verdictOf(p: PropertyResult, report: Report, scenarios: Map<string, str
 }
 
 function headline(verdicts: Verdict[], errors: number, exhaustive: boolean): string {
-  const problems = verdicts.filter((v) => v === "broken" || v === "scenario").length + errors;
+  const problems = verdicts.filter((v) => v === "broken" || v === "scenario" || v === "fixed").length + errors;
   if (problems) return `${problems} problem(s)`;
   return exhaustive ? "Every property holds" : "Nothing broke in the states explored";
 }
@@ -65,12 +66,15 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
               <div className="flex flex-col gap-2">
                 {report.properties.map((p) => {
                   const verdict = verdictOf(p, report, scenarios);
-                  const bad = verdict === "broken" || verdict === "scenario";
+                  const bad = verdict === "broken" || verdict === "scenario" || verdict === "fixed";
+                  const faults = p.counterexample?.events.filter((e) => e.kind === "lose" || e.kind === "restart").length ?? 0;
                   return (
                   <div key={p.id} className={cn("rounded-lg px-4 py-3 ring-1", bad ? "ring-kumo-danger/40" : "ring-kumo-hairline")}>
                     <div className="flex items-start gap-2">
                       {bad ? (
                         <XCircleIcon size={18} className="mt-px text-kumo-danger" />
+                      ) : verdict === "known" ? (
+                        <XCircleIcon size={18} className="mt-px text-kumo-warning" />
                       ) : verdict === "holds" ? (
                         <CheckCircleIcon size={18} className="mt-px text-kumo-success" />
                       ) : (
@@ -82,6 +86,9 @@ export function Checks({ onOpen, onScenario }: { onOpen: (ce: Counterexample, or
                           {p.kind} · {p.id}
                           {verdict === "scenario" && <span className="font-sans text-kumo-danger"> · broken by the scenario “{scenarios.get(p.id)}”; exploration did not reach it</span>}
                           {verdict === "explored" && <span className="font-sans"> · held in the states explored</span>}
+                          {verdict === "known" && <span className="font-sans text-kumo-warning"> · known bug: {p.known}</span>}
+                          {verdict === "fixed" && <span className="font-sans text-kumo-danger"> · marked known (“{p.known}”), but holds now: remove known</span>}
+                          {p.counterexample && <span className="font-sans"> · {faults ? `needs ${faults} fault(s)` : "needs no faults"}</span>}
                           {p.foundBy === "walk" && <span className="font-sans"> · found by a random run, shrunk to {p.counterexample!.events.length} steps; maybe not the shortest</span>}
                           {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
                         </p>

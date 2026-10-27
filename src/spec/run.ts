@@ -76,6 +76,32 @@ export class Runner {
     return this.apply(restart(this.spec, this.current, instance));
   }
 
+  /** A message in flight to `instance`: the oldest named `message`, or the oldest carrying `payload`. */
+  inFlight(instance: string, message: string, payload?: unknown): number {
+    const key = message.startsWith("message:") ? message : `message:${message}`;
+    const wanted = payload === undefined ? undefined : JSON.stringify(payload);
+    const match = this.current.pending
+      .filter((p) => p.kind === "deliver" && p.to === instance && p.message === key)
+      .sort((a, b) => a.id - b.id)
+      .find((p) => wanted === undefined || (p.kind === "deliver" && JSON.stringify(p.payload) === wanted));
+    if (!match) throw new SpecError(`No ${key.slice("message:".length)}${wanted ? ` carrying ${wanted}` : ""} is in flight to ${instance}`);
+    return match.id;
+  }
+
+  deliver(instance: string, message: string, payload?: unknown): Event {
+    return this.apply(fire(this.spec, this.current, this.inFlight(instance, message, payload)));
+  }
+
+  drop(instance: string, message: string, payload?: unknown): Event {
+    return this.apply(lose(this.spec, this.current, this.inFlight(instance, message, payload)));
+  }
+
+  guard(instance: string, transition: string): Event {
+    if (!choices(this.spec, this.current).guards.some((g) => g.instance === instance && g.key === transition))
+      throw new SpecError(`${instance}'s ${transition} guard does not hold now`);
+    return this.apply(guard(this.spec, this.current, instance, transition));
+  }
+
   run(): Run {
     return { spec: this.spec.name, seed: this.seed, initial: this.initial, events: [...this.events], worlds: [...this.worlds] };
   }
@@ -127,6 +153,17 @@ function scriptFor(runner: Runner): Script {
     lose: (key) => runner.loseNext(key),
     restart(who) {
       runner.restart(who.id);
+    },
+    deliver(who, message, payload) {
+      const event = runner.deliver(who.id, message, payload);
+      if (event.error) throw new SpecError(event.error);
+    },
+    drop(who, message, payload) {
+      runner.drop(who.id, message, payload);
+    },
+    step(who, transition) {
+      const event = runner.guard(who.id, transition);
+      if (event.error) throw new SpecError(event.error);
     },
     get world() {
       return worldView(runner.spec, runner.world);
