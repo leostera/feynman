@@ -16,8 +16,9 @@ feynman.config.ts). Name them by path or by file name; by default all of them.
 Commands:
   list                     The specs in this repository.
   run [spec] [--scenario]  Run scenarios and print their traces.
-  check [spec]             Explore every interleaving within bounds; check invariants,
-                           scenarios, and that every source still resolves.
+  check [spec]             Explore every interleaving within bounds; check properties
+                           (safety and liveness), that nothing gets stuck, scenarios,
+                           and that every source still resolves.
       --depth N --faults N --repeats N --max-states N --time-limit SECONDS
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)

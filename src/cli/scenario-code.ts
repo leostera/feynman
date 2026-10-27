@@ -1,7 +1,7 @@
 // A counterexample as scenario code: paste it into the spec and the bug is a flow anyone can
 // replay, step through in the playground, and keep as a regression once it is fixed.
-import { QUIET, type Counterexample, type PropertyResult } from "../check/index.ts";
-import { fire, guard, type Event, type Spec, type World } from "../spec/index.ts";
+import type { Counterexample, PropertyResult } from "../check/index.ts";
+import type { Event, Spec, World } from "../spec/index.ts";
 
 /** `defineScenario` source replaying the property's counterexample event by event. */
 export function scenarioCode(spec: Spec, property: PropertyResult): string {
@@ -12,7 +12,9 @@ export function scenarioCode(spec: Spec, property: PropertyResult): string {
   if (ce.from) body.push(`// Starts where the scenario "${ce.from}" ends: copy its steps here first.`);
   else body.push(...setup(spec, ce.initial, names));
   ce.events.forEach((event, i) => body.push(line(event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
-  if (property.then?.length) body.push(`// Left alone from here, it never gets there:`, ...leftAlone(spec, property.then, ce.worlds.at(-1) ?? ce.initial, names));
+  const loop = property.loop;
+  if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
+  else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
   body.push(`// ${property.id} is broken here: ${property.description}`);
   return [
     `spec.defineScenario({`,
@@ -23,31 +25,6 @@ export function scenarioCode(spec: Spec, property: PropertyResult): string {
     `  },`,
     `});`,
   ].join("\n");
-}
-
-/**
- * The system left alone, step by step. The checker takes messages in an order of its own
- * (by what they carry, so a verdict depends on the state alone), not settle()'s send order,
- * so each step is spelled out.
- */
-function leftAlone(spec: Spec, events: Event[], from: World, names: Names): string[] {
-  const lines: string[] = [];
-  let world = from;
-  for (const event of events) {
-    if (event.kind === "guard") {
-      lines.push(line(event, world, { kind: "guard", instance: event.instance, key: event.key }, names));
-      world = guard(spec, world, event.instance, event.key, QUIET).world;
-      continue;
-    }
-    const payload = JSON.stringify(event.payload);
-    const pending = world.pending.find((p) =>
-      p.to === event.instance && (p.kind === "timer" ? event.kind === "timer" && p.timer === event.key : event.kind === "deliver" && p.message === event.key && JSON.stringify(p.payload) === payload),
-    );
-    if (!pending) break;
-    lines.push(line(event, world, { kind: "fire", pending: pending.id }, names));
-    world = fire(spec, world, pending.id, QUIET).world;
-  }
-  return lines;
 }
 
 /** Every instance the checker started with: singletons by `the`, the rest spawned as it labelled them. */

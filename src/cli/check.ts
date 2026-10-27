@@ -42,10 +42,11 @@ export interface SpecCheck {
   steps: number;
 }
 
-/** Whether a spec's check fails: a broken property, a stale `known`, a spec error, a broken scenario or a missing source. */
+/** Whether a spec's check fails: a broken property, a stale `known`, a spec error, a stuck world, a broken scenario or a missing source. */
 export function fails(result: SpecCheck, focused: boolean): boolean {
   const verdicts = result.report.properties.map((p) => verdictOf(p, result));
   if (verdicts.some((v) => v === "broken" || v === "fixed") || result.report.errors.length) return true;
+  if (result.report.stuck && !focused) return true;
   if (focused) return false;
   return result.scenarios.some((s) => s.broken && !s.known) || result.sources.some((s) => s.status === "missing");
 }
@@ -55,7 +56,7 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   let status = 0;
   const selected = await loadSelected(ctx, named);
   if (options.only.length) {
-    const known = new Set(selected.flatMap(({ spec }) => spec.invariants.map((i) => i.id)));
+    const known = new Set(selected.flatMap(({ spec }) => spec.properties.map((p) => p.id)));
     const unknown = options.only.filter((id) => !known.has(id));
     if (unknown.length) throw new Error(`No property named ${unknown.join(", ")}; properties: ${[...known].join(", ") || "none"}`);
   }
@@ -95,13 +96,13 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
 /** The spec with only the named properties, or null if it has none of them. */
 function focus(spec: Spec, only: string[]): Spec | null {
   if (!only.length) return spec;
-  const invariants = spec.invariants.filter((i) => only.includes(i.id));
-  return invariants.length ? { ...spec, invariants } : null;
+  const properties = spec.properties.filter((p) => only.includes(p.id));
+  return properties.length ? { ...spec, properties } : null;
 }
 
 function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>): SpecCheck {
   const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
-  const known = new Set(spec.invariants.filter((i) => i.known !== undefined).map((i) => i.id));
+  const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
   const runs = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
   const brokenBy = new Map<string, string>();
   const scenarios = runs.map(({ scenario, run }): ScenarioOutcome => {
@@ -176,12 +177,13 @@ function toJson(result: SpecCheck) {
               faults: faultsIn(p.counterexample.events),
               ...(p.shorter ? { shorter: p.shorter } : {}),
               events: p.counterexample.events.map((e, i) => eventJson(e, p.counterexample!.worlds[i])),
-              ...(p.then?.length ? { then: p.then.map((e) => eventJson(e, p.counterexample!.worlds.at(-1))) } : {}),
+              ...(p.loop ? { loop: p.loop.events.map((e, i) => eventJson(e, p.loop!.worlds[i])) } : {}),
             },
           }
         : {}),
     })),
     errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(ev, e.counterexample.worlds[i])) })),
+    ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(ev, report.stuck!.counterexample.worlds[i])) } } : {}),
     neverRan: report.coverage.missed,
     sources: result.sources.map((s) => ({ source: s.source, status: s.status, ...(s.status === "missing" ? { reason: s.reason } : {}) })),
     warnings: result.shape,

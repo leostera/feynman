@@ -6,7 +6,8 @@
 // request ids and answers a repeat without debiting again.
 //
 // Expected: buggy breaks `debitedOnce` in 4 steps (pay, retry, debit, debit) with no fault;
-// fixed holds, and every payment settles even when one message is lost.
+// fixed holds. `paymentsSettle` is unfinished: each retry adds a copy in flight, so the
+// worlds never run out, and a loop that never confirms could lie past any depth.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function payments(variant: "buggy" | "fixed") {
@@ -101,15 +102,14 @@ export function payments(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         debitedOnce: {
           description: "The bank debits once per payment, however often it is asked.",
           always: (w) => w.the(Bank).state.debits <= w.all(Client).reduce((n, c) => n + c.state.paid, 0),
         },
         paymentsSettle: {
           description: "A payment in flight is eventually confirmed.",
-          after: (w) => w.all(Client).some((c) => c.state.pending !== null),
-          eventually: (w) => w.all(Client).every((c) => c.state.pending === null),
+          leadsTo: { whenever: (w) => w.all(Client).some((c) => c.state.pending !== null), then: (w) => w.all(Client).every((c) => c.state.pending === null) },
         },
       });
       spec.defineScenario({

@@ -9,8 +9,9 @@
 // This covers `never` properties over the trace, and guarded transitions.
 //
 // Expected: buggy breaks `doneOnce` in 6 steps without faults (enqueue, the timeout fires
-// before the first delivery lands, both deliveries land, both are worked); fixed holds, and
-// every job is finished even when one message is lost.
+// before the first delivery lands, both deliveries land, both are worked); fixed holds.
+// `jobsFinish` is unfinished: every redelivery adds a copy in flight, so the worlds never
+// run out, and a loop that never acknowledges could lie past any depth.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function jobQueue(variant: "buggy" | "fixed") {
@@ -113,15 +114,14 @@ export function jobQueue(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         doneOnce: {
           description: "No job has its side effect twice.",
           never: (trace) => trace.count((e) => e.is(Worker, "work") && e.sent(Effect)) > trace.count((e) => e.is(Broker, "enqueue")),
         },
         jobsFinish: {
           description: "A job handed out is eventually acknowledged.",
-          after: (w) => w.the(Broker).state.pending !== null,
-          eventually: (w) => w.the(Broker).state.pending === null,
+          leadsTo: { whenever: (w) => w.the(Broker).state.pending !== null, then: (w) => w.the(Broker).state.pending === null },
         },
       });
       spec.defineScenario({

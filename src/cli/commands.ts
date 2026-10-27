@@ -46,7 +46,7 @@ export async function list(ctx: Context): Promise<number> {
   for (const path of ctx.found) {
     try {
       const spec = await loadSpec(join(ctx.repository.root, path));
-      const counts = `${spec.actors.length} actors, ${Object.keys(spec.messages).length} messages, ${spec.invariants.length} invariants, ${spec.scenarios.length} scenarios`;
+      const counts = `${spec.actors.length} actors, ${Object.keys(spec.messages).length} messages, ${spec.properties.length} properties, ${spec.scenarios.length} scenarios`;
       console.log(`${path}  ${bold(spec.name)}  ${dim(counts)}`);
     } catch (error) {
       console.error(`${path}  ${red((error as Error).message)}`);

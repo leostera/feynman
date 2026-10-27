@@ -10,7 +10,8 @@
 // This covers ordering by index over a network that reorders, and catching up by asking.
 //
 // Expected: buggy breaks `followerIsPrefix` in 3 steps without faults (the leader appends x,
-// then y, and y arrives first); fixed holds, with a fault too.
+// then y, and y arrives first); fixed holds, with a fault too, but a lost entry is never sent
+// again: stuck in 4 steps, the follower short of the leader.
 import { defineSpec, message } from "@leostera/feynman";
 
 const ENTRIES = ["x", "y"];
@@ -91,7 +92,11 @@ export function logReplication(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Both logs hold every entry.",
+        when: (w) => w.the(Leader).state.log.length === ENTRIES.length && w.the(Follower).state.log.length === ENTRIES.length,
+      });
+      spec.defineProperties({
         followerIsPrefix: {
           description: "The follower's log is always the start of the leader's.",
           always: (w) => w.the(Follower).state.log.every((entry, i) => entry === w.the(Leader).state.log[i]),

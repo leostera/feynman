@@ -9,7 +9,7 @@
 //
 // Expected, with three nodes: buggy breaks `oneLeader` in 3 steps without faults (A starts;
 // B beats A's id, leads, and starts its own election; C beats B's id and leads); fixed holds,
-// with a fault too.
+// with a fault too, but a lost election message leaves the ring without a leader: stuck in 4.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function changRoberts(variant: "buggy" | "fixed") {
@@ -68,7 +68,11 @@ export function changRoberts(variant: "buggy" | "fixed") {
         return ring[(ring.findIndex((n) => n.id === ctx.id) + 1) % ring.length] as never;
       };
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "The election is over: a node leads.",
+        when: (w) => w.all(Node).some((n) => n.state.leader),
+      });
+      spec.defineProperties({
         oneLeader: {
           description: "At most one node leads.",
           always: (w) => w.all(Node).filter((n) => n.state.leader).length <= 1,

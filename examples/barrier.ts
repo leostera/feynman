@@ -7,7 +7,8 @@
 //
 // Expected, with two workers: buggy breaks `waitsForAll` in 5 steps with one fault (A
 // arrives and is counted, A restarts and arrives again, and is counted again: the barrier
-// opens); fixed holds, with a fault too.
+// opens); fixed holds, with a fault too. Both get stuck in 4 steps when an arrival is lost:
+// nothing resends it, so the barrier never opens.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function barrier(variant: "buggy" | "fixed") {
@@ -79,7 +80,11 @@ export function barrier(variant: "buggy" | "fixed") {
         transitions: { [Go]: { description: "Goes on past the barrier.", run: (state) => void (state.through = true) } },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Every worker is through the barrier.",
+        when: (w) => w.all(Worker).every((n) => n.state.through),
+      });
+      spec.defineProperties({
         waitsForAll: {
           description: "The barrier opens only once every worker has reached it.",
           always: (w) => !w.the(Coordinator).state.open || w.all(Worker).every((x) => x.state.reached),

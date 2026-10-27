@@ -92,7 +92,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         oneToken: {
           description: "At most one node holds the token.",
           always: (w) => w.all(Node).filter((n) => n.state.holds).length <= 1,

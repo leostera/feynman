@@ -7,8 +7,8 @@
 // This spec orders instances by id, so its instances are not interchangeable: swapping two
 // nodes changes who wins. Symmetry must not apply to it.
 //
-// Expected, with three nodes: buggy breaks `agree` in 3 steps: every node announces; left
-// alone, the announcements arrive in an order that leaves the nodes on different leaders.
+// Expected, with three nodes: buggy breaks `agree` in 9 steps: every node announces, and the
+// announcements arrive in an order that leaves the nodes on different leaders, for good.
 // Fixed holds. Declaring the nodes symmetric is wrong for the fixed one, which orders ids,
 // and the checker must notice and say so; the buggy one never compares ids, so for it the
 // claim is true.
@@ -55,15 +55,21 @@ export function leaderElection(variant: "buggy" | "fixed") {
           },
         },
       });
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "Every node has announced itself, and every announcement has arrived.",
+        when: (w) => w.all(Node).every((n) => n.state.announced),
+      });
+      spec.defineProperties({
         agreeOnceQuiet: {
           description: "Once every node has announced and nothing is in flight, they agree on one leader.",
           always: (w) => !(w.quiet && w.all(Node).every((n) => n.state.announced)) || new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
         },
         agree: {
           description: "Once every node has announced, they all end up agreeing on one leader.",
-          after: (w) => w.all(Node).every((n) => n.state.announced),
-          eventually: (w) => new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
+          leadsTo: {
+            whenever: (w) => w.all(Node).every((n) => n.state.announced),
+            then: (w) => new Set(w.all(Node).map((n) => n.state.leader)).size === 1,
+          },
         },
       });
       spec.defineScenario({

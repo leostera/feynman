@@ -475,7 +475,7 @@ export function worldView(spec: Spec, world: World, onRead?: (id: string) => voi
 export function violatedAlways(spec: Spec, world: World): string[] {
   const view = worldView(spec, world);
   const violated: string[] = [];
-  for (const invariant of spec.invariants) {
+  for (const invariant of spec.properties) {
     if (invariant.kind !== "always") continue;
     try {
       if (!invariant.always(view)) violated.push(invariant.id);

@@ -133,7 +133,7 @@ export function lostUpdate(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         moneyAddsUp: {
           description: "The balance and what was paid out add up to what the account opened with.",
           always: (w) => w.the(Account).state.balance + w.the(Account).state.paidOut === OPENING,

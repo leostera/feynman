@@ -14,8 +14,11 @@ file you get:
 - **A simulator.** Add people and machines, press the buttons they would, watch every message
   travel, lose one, and go back to any moment to try something else.
 - **A model checker that says how sure it is.** It tries every order of events within bounds,
-  with lost messages and restarts, then takes long random runs. A broken rule comes with the
-  shortest trace that breaks it; a rule that held says whether every state was explored.
+  with lost messages and restarts, then takes long random runs. Rules are safety ("never two
+  holders") or liveness ("every request is answered"), judged under fairness as in TLA+, and
+  a world where the system is stuck is reported too. A broken rule comes with the shortest
+  trace that breaks it, and for liveness the loop it repeats forever; a rule that held says
+  whether every state was explored.
 - **The flows of every scenario**, step by step, and how they change between commits.
 - **The code behind each step**, with its call tree, and a warning when that code changes
   under the spec.
@@ -92,7 +95,7 @@ export default defineSpec(
       },
     });
 
-    spec.defineInvariants({
+    spec.defineProperties({
       oneHolder: {
         description: "Two clients never hold the same token.",
         always: (w) => {
@@ -106,9 +109,9 @@ export default defineSpec(
 );
 ```
 
-[`examples/`](examples/) has seven well-known systems (two-phase commit, leader election,
-a lease lock, a cache, a job queue, payments, a switch), each with a real bug for the checker
-to find and the fix beside it.
+[`examples/`](examples/) has 27 well-known systems (two-phase commit, Raft's vote, chain
+replication, CRDTs, dining philosophers and more), each with a real bug for the checker to
+find, the fix beside it, and most with TLA+ and P models that check the checker.
 
 ## Let your agent write it
 

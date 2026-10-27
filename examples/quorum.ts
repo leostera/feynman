@@ -108,7 +108,11 @@ export function quorum(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineFinalState({
+        description: "The client has written and read.",
+        when: (w) => w.the(Client).state.phase === "read",
+      });
+      spec.defineProperties({
         readSeesWrite: {
           description: "A read that starts after a write has succeeded sees it.",
           always: (w) => w.the(Client).state.phase !== "read" || w.the(Client).state.newest >= 1,

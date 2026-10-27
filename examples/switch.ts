@@ -21,7 +21,7 @@ export function lightSwitch() {
         down: { description: "Goes off.", when: (s) => s.on, run: (s) => void (s.on = false) },
       },
     });
-    spec.defineInvariants({ onOnce: { description: "The switch never goes on twice.", never: (t) => t.count((e) => e.is(Switch, "up")) >= 2 } });
+    spec.defineProperties({ onOnce: { description: "The switch never goes on twice.", never: (t) => t.count((e) => e.is(Switch, "up")) >= 2 } });
     spec.defineScenario({
       name: "On and off",
       description: "The switch goes on, then off: back where it started.",

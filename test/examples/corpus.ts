@@ -34,14 +34,20 @@ import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
 
 export type Variant = "buggy" | "fixed";
 
-/** A property's expected verdict: holds, or broken by a shortest path of this many events, with this many faults. */
-export type Expected = "holds" | { events: number; faults: number };
+/**
+ * A property's expected verdict: holds; unfinished (liveness whose loop may lie past the depth
+ * bound); or broken by a shortest path of this many events (for liveness, to its loop), with
+ * this many faults.
+ */
+export type Expected = "holds" | "unfinished" | { events: number; faults: number };
 
 /** One run of the checker, and the verdicts worked out by hand. */
 export interface Case {
   variant: Variant;
   bounds: Partial<Bounds>;
   expect: Record<string, Expected>;
+  /** Where the system gets stuck, short of its final state: the shortest way there. None if absent. */
+  stuck?: { events: number; faults: number };
   /** Actors declared symmetric that are not, which the checker must catch. */
   refuted?: string[];
 }
@@ -92,8 +98,8 @@ export const corpus: Example[] = [
     spec: payments,
     instances: { Client: 1 },
     cases: [
-      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { debitedOnce: { events: 4, faults: 0 }, paymentsSettle: "holds" } },
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { debitedOnce: "holds", paymentsSettle: "holds" } },
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { debitedOnce: { events: 4, faults: 0 }, paymentsSettle: "unfinished" } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { debitedOnce: "holds", paymentsSettle: "unfinished" } },
     ],
     tla: { module: "Payments", invariants: ["debitedOnce"], depth: 9, configs: BOTH_WAYS },
     p: { project: "Payments", property: "debitedOnce", assertion: "the bank debited more often than the client paid", depth: 8 },
@@ -106,7 +112,7 @@ export const corpus: Example[] = [
       { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { atomic: { events: 7, faults: 0 } } },
       { variant: "fixed", bounds: { depth: 9, faults: 0 }, expect: { atomic: "holds", decidedOnceQuiet: "holds", decides: "holds" } },
       // Blocking: once everyone has voted and a vote is lost, it never decides (6); quiet needs the other vote delivered too (7).
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 6, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 7, faults: 1 } }, stuck: { events: 5, faults: 1 } },
     ],
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
@@ -127,8 +133,8 @@ export const corpus: Example[] = [
     spec: cache,
     cases: [
       { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { converges: { events: 7, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 8, faults: 0 }, expect: { converges: "holds" } },
-      { variant: "fixed", bounds: { depth: 7, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { converges: "holds" } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
     ],
     tla: { module: "Cache", invariants: ["consistentOnceQuiet"], configs: BOTH_WAYS },
   },
@@ -137,7 +143,7 @@ export const corpus: Example[] = [
     spec: leaderElection,
     instances: { Node: 3 },
     cases: [
-      { variant: "buggy", bounds: { depth: 12, faults: 0 }, expect: { agree: { events: 3, faults: 0 } } },
+      { variant: "buggy", bounds: { depth: 12, faults: 0 }, expect: { agree: { events: 9, faults: 0 } } },
       { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { agree: "holds" }, refuted: ["Node"] },
     ],
     tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], configs: BOTH_WAYS },
@@ -146,8 +152,8 @@ export const corpus: Example[] = [
     name: "job queue",
     spec: jobQueue,
     cases: [
-      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "holds" } },
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "holds" } },
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { doneOnce: { events: 6, faults: 0 }, jobsFinish: "unfinished" } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { doneOnce: "holds", jobsFinish: "unfinished" } },
     ],
     tla: { module: "JobQueue", invariants: ["doneOnce"], depth: 9, configs: BOTH_WAYS },
     p: { project: "JobQueue", property: "doneOnce", assertion: "a job had its side effect twice", depth: 8 },
@@ -219,7 +225,7 @@ export const corpus: Example[] = [
     instances: { Doctor: 2 },
     cases: [
       { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { covered: { events: 8, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { covered: "holds" } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { covered: "holds" }, stuck: { events: 5, faults: 1 } },
     ],
     tla: { module: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
     p: { project: "WriteSkew", property: "covered", assertion: "nobody is on call", depth: 9 },
@@ -228,8 +234,8 @@ export const corpus: Example[] = [
     name: "dining philosophers",
     spec: diningPhilosophers,
     cases: [
-      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { noDeadlock: { events: 6, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { noDeadlock: "holds" } },
+      { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { noDeadlock: { events: 6, faults: 0 } }, stuck: { events: 8, faults: 0 } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { noDeadlock: "holds" }, stuck: { events: 5, faults: 1 } },
     ],
     tla: { module: "DiningPhilosophers", invariants: ["noDeadlock"], configs: BOTH_WAYS },
     p: { project: "DiningPhilosophers", property: "noDeadlock", assertion: "each philosopher holds one fork and waits for the other", depth: 8 },
@@ -240,7 +246,7 @@ export const corpus: Example[] = [
     instances: { Node: 2 },
     cases: [
       { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { mutex: { events: 6, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { mutex: "holds" } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { mutex: "holds" }, stuck: { events: 4, faults: 1 } },
     ],
     tla: { module: "RicartAgrawala", invariants: ["mutex"], configs: BOTH_WAYS },
     p: { project: "RicartAgrawala", property: "mutex", assertion: "both nodes are in the critical section", depth: 9 },
@@ -262,7 +268,7 @@ export const corpus: Example[] = [
     instances: { Node: 3 },
     cases: [
       { variant: "buggy", bounds: { depth: 8, faults: 0 }, expect: { oneLeader: { events: 3, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { oneLeader: "holds" } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { oneLeader: "holds" }, stuck: { events: 4, faults: 1 } },
     ],
     tla: { module: "ChangRoberts", invariants: ["oneLeader"], configs: BOTH_WAYS },
     p: { project: "ChangRoberts", property: "oneLeader", assertion: "two nodes lead", depth: 9 },
@@ -272,8 +278,8 @@ export const corpus: Example[] = [
     spec: barrier,
     instances: { Worker: 2 },
     cases: [
-      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: { events: 5, faults: 1 } } },
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: "holds" } },
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: { events: 5, faults: 1 } }, stuck: { events: 4, faults: 1 } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: "holds" }, stuck: { events: 4, faults: 1 } },
     ],
     tla: { module: "Barrier", invariants: ["waitsForAll"], configs: BOTH_WAYS },
     p: {
@@ -334,7 +340,7 @@ export const corpus: Example[] = [
     spec: logReplication,
     cases: [
       { variant: "buggy", bounds: { depth: 6, faults: 0 }, expect: { followerIsPrefix: { events: 3, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 14, faults: 1 }, expect: { followerIsPrefix: "holds" } },
+      { variant: "fixed", bounds: { depth: 14, faults: 1 }, expect: { followerIsPrefix: "holds" }, stuck: { events: 4, faults: 1 } },
     ],
     tla: { module: "LogReplication", invariants: ["followerIsPrefix"], configs: BOTH_WAYS },
     p: { project: "LogReplication", property: "followerIsPrefix", assertion: "the follower's log is not the start of the leader's", depth: 14 },

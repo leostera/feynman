@@ -5,7 +5,7 @@ import type { PropertyResult, Report } from "../check/index.ts";
 export type Verdict =
   /** Holds in every state within the bounds. */
   | "holds"
-  /** Held in the states explored, but exploration stopped early. */
+  /** Held in the states explored, but exploration stopped early, or (liveness) a loop may lie past the depth bound. */
   | "unfinished"
   /** No explored world got to where it applies. */
   | "untested"
@@ -21,5 +21,5 @@ export function verdictOf(property: PropertyResult, result: { report: Report; br
   if (property.known !== undefined) return broken ? "known" : "fixed";
   if (broken) return "broken";
   if (property.tested === 0) return "untested";
-  return result.report.exhaustive ? "holds" : "unfinished";
+  return result.report.exhaustive && !property.unfinished ? "holds" : "unfinished";
 }

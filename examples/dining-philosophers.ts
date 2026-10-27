@@ -11,7 +11,8 @@
 //
 // Expected: buggy breaks `noDeadlock` in 6 steps without faults (both get hungry, each
 // first fork is granted, each grant lands: both hold one fork and wait for the other); fixed
-// holds, with a lost message too.
+// holds, with a lost message too. Both get stuck: buggy in 8 steps, once each queued request
+// has landed; fixed when a grant is lost, in 5 (nothing resends it).
 import { defineSpec, message } from "@leostera/feynman";
 
 export function diningPhilosophers(variant: "buggy" | "fixed") {
@@ -115,7 +116,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
       const Plato = philosopher("Plato", [ForkOne, ForkTwo], 0);
       const Kant = philosopher("Kant", variant === "buggy" ? [ForkTwo, ForkOne] : [ForkOne, ForkTwo], 2);
 
-      spec.defineInvariants({
+      spec.defineProperties({
         noDeadlock: {
           description: "Never does each philosopher hold one fork while waiting for the other's.",
           always: (w) => !(w.the(Plato).state.phase === "second" && w.the(Kant).state.phase === "second"),

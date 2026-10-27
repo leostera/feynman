@@ -1,6 +1,6 @@
 ---
 name: feynman
-description: Write and check Feynman specs, which are small executable models of how part of a system behaves (actors, messages, timers, invariants, scenarios) tied to the code by sources. The feynman CLI derives a playground, flows, model checking and diffs from them. Use to explain how a feature works, to review how a change affects behaviour, or to design a feature before or while building it.
+description: Write and check Feynman specs, which are small executable models of how part of a system behaves (actors, messages, timers, properties, scenarios) tied to the code by sources. The feynman CLI derives a playground, flows, model checking and diffs from them. Use to explain how a feature works, to review how a change affects behaviour, or to design a feature before or while building it.
 ---
 
 # Feynman specs
@@ -11,7 +11,7 @@ from it:
 
 - a playground to try it in;
 - the flows of every scenario;
-- a bounded model checker for its invariants;
+- a bounded model checker for its properties, safety and liveness;
 - diffs between commits;
 - links from every step to the code.
 
@@ -96,7 +96,7 @@ Before you finish, go through the spec once more. For each actor, message and st
 3. Run `feynman check <behaviour>`. It does three things:
    - type-checks the spec;
    - runs every scenario;
-   - explores every interleaving within bounds, then checks the invariants and that every
+   - explores every interleaving within bounds, then checks the properties and that every
      source resolves.
 
    Fix what it reports. "Stands for N pieces of code in M files" means one step is
@@ -281,11 +281,14 @@ export default defineSpec(
       },
     });
 
-    spec.defineInvariants({
+    spec.defineProperties({
       // always: holds in every state.
       codesAreHashed: { description: "The relay stores only hashes of codes.", always: (w) => Object.keys(w.the(Relay).state.codes).every((k) => k.startsWith("hash:")) },
-      // eventually: once `after` holds, the system left alone gets there.
-      pendingResolves: { description: "A Mac waiting for an answer gets one.", eventually: (w) => w.all(Mac).every((m) => m.state.pending === null) },
+      // everyStep: holds of every step (the worlds before and after it, and the event).
+      codesOnlyShrink: { description: "No step adds a code without the person asking.", everyStep: (before, after, e) => e.is(Person, "pair") || Object.keys(after.the(Relay).state.codes).length <= Object.keys(before.the(Relay).state.codes).length },
+      // leadsTo: whenever the first holds, the second holds then or later, in every fair behaviour.
+      pendingResolves: { description: "A Mac waiting for an answer gets one.", leadsTo: { whenever: (w) => w.all(Mac).some((m) => m.state.pending !== null), then: (w) => w.all(Mac).every((m) => m.state.pending === null) } },
+      // Also: eventually (holds at some point), infinitelyOften, eventuallyAlways (holds from some point on).
       // never: no trace has this shape.
       redeemedOnce: { description: "A code is never redeemed twice.", never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")) },
       // known: a bug found and not fixed yet. Check reports it without failing, and fails once it holds.
@@ -537,20 +540,30 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   (`expired = true`), never a stored time. When an ordering really depends on durations (a
   heartbeat always beats an expiry, on one machine), model it with state and say so; usually
   the counterexample is a real risk.
-- **Left alone.** `s.settle()`, `eventually` and the playground's Play all run the system
+- **Left alone.** `s.settle()` and the playground's Play run the system
   left alone: messages in the order they were sent, and when none is in flight, the timers
   that are set, oldest first, up to 200 events. So a scenario's `settle()` also fires
   timeouts and expiries once the network is quiet: act before settling if something must
   happen before a timer. `s.fire(who, "retry")` fires a timer early, ahead of what is in
   flight.
 - **In the end.** `w.quiet` is true when nothing is in flight. "Once quiet, the nodes agree"
-  is a safety property (`always: (w) => !w.quiet || …`), cheaper and sharper than an
-  `eventually` when what you mean is "after everything has arrived".
+  is a safety property (`always: (w) => !w.quiet || …`), cheaper and sharper than liveness
+  when what you mean is "after everything has arrived".
 - **Never.** A `never` property sees the path through `trace.count` and `trace.some`; prefer
   those to reading `trace.events`, which makes every path its own state.
-- **Eventually.** An `eventually` property is judged on the system left alone from each
-  explored world: no actions, no faults, messages before timers. The search itself tries the
-  other orders.
+- **Liveness.** `eventually`, `leadsTo`, `infinitelyOften` and `eventuallyAlways` hold in
+  every fair behaviour, as in TLA+. Fair: a message in flight is delivered, a timer that stays
+  set fires, a guard that stays true runs (weak fairness; `fair: "strong"` on a step for steps
+  that keep being possible on and off, `fair: false` for none). Actions and faults are never
+  fair: a person may stop, the network may stop failing. A counterexample is a path and then
+  a loop it repeats forever (or a world where nothing fair can happen). Liveness turns off
+  the search's reductions and symmetry, so it costs more states. If a loop could lie past the
+  depth bound (the worlds never run out, as when retries pile up copies), the verdict is
+  unfinished, not holds.
+- **Stuck.** A world where nothing can happen (no action, guard, message or timer, ignoring
+  `--repeats`) is reported as stuck: a deadlock, or a wait nothing will end. A system that
+  is meant to finish says where with `spec.defineFinalState({ description, when: (w) => … })`;
+  stopping there is fine.
 - **Order.** Any message may overtake any other, as on separate connections. Messages on one
   WebSocket or stream cannot; if a counterexample depends on such an overtaking, say so in
   the report rather than "fixing" the system.
@@ -583,7 +596,7 @@ read worse. To update one:
    `return { …every actor }`.
 8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a
    playground file.
-9. Run `feynman check` again: the same invariants must hold, with the same
+9. Run `feynman check` again: the same properties must hold, with the same
    counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands

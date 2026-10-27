@@ -1,19 +1,37 @@
 // Every example comes with scenarios to play and watch: they run cleanly, the fixed variant's
 // break nothing it is not known to break, and the buggy variant has one that shows its bug.
 import { describe, expect, test } from "bun:test";
+import { stepBreaks } from "../../src/check/judge.ts";
 import { holdsIn, runScenario, traceView, type Run, type Spec } from "../../src/spec/index.ts";
 import { corpus } from "./corpus.ts";
 
-/** The properties a scenario's run breaks: `always` on the way, `never` over it, `eventually` where it ends. */
+/**
+ * The properties a scenario's run breaks: `always` and `everyStep` on the way, `never` over
+ * it, and liveness, roughly, where it settles (a settled run stays where it ends).
+ */
 function broken(spec: Spec, run: Run): string[] {
   const end = run.worlds.at(-1) ?? run.initial;
-  return spec.invariants
-    .filter((i) => {
-      if (i.kind === "always") return run.events.some((e) => e.violations.includes(i.id));
-      if (i.kind === "never") return i.never(traceView(run.events));
-      return (!i.after || holdsIn(spec, end, i.after)) && !holdsIn(spec, end, i.eventually);
+  const at = (p: (w: never) => boolean) => holdsIn(spec, end, p as never);
+  return spec.properties
+    .filter((p) => {
+      switch (p.kind) {
+        case "always":
+          return run.events.some((e) => e.violations.includes(p.id));
+        case "everyStep":
+          return run.events.some((e, i) => !e.error && stepBreaks(spec, run.worlds[i - 1] ?? run.initial, run.worlds[i], e, new Set()).includes(p.id));
+        case "never":
+          return p.never(traceView(run.events));
+        case "eventually":
+          return ![run.initial, ...run.worlds].some((w) => holdsIn(spec, w, p.eventually));
+        case "leadsTo":
+          return at(p.whenever) && !at(p.then);
+        case "infinitelyOften":
+          return !at(p.infinitelyOften);
+        case "eventuallyAlways":
+          return !at(p.eventuallyAlways);
+      }
     })
-    .map((i) => i.id);
+    .map((p) => p.id);
 }
 
 for (const example of corpus) {

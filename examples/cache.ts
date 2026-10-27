@@ -9,8 +9,8 @@
 // Expected: buggy breaks `converges` in 7 steps without faults (read, miss, load, write,
 // update, invalidate, stale fill); fixed holds without faults and breaks with one, also in 7
 // (read, miss, load, write, update, the invalidation lost, stale fill). Not 6: just after the
-// invalidation is lost the cache is still empty, which is fine; `eventually` breaks only in a
-// world where the property is false and stays so, which takes the stale fill.
+// invalidation is lost the cache is still empty, which is fine; `converges` breaks only where
+// the cache can stay wrong forever, which takes the stale fill.
 import { defineSpec, message } from "@leostera/feynman";
 
 export function cache(variant: "buggy" | "fixed") {
@@ -109,7 +109,7 @@ export function cache(variant: "buggy" | "fixed") {
         },
       });
 
-      spec.defineInvariants({
+      spec.defineProperties({
         consistentOnceQuiet: {
           description: "Once nothing is in flight, the cache is empty or agrees with the database.",
           always: (w) => {
@@ -118,8 +118,8 @@ export function cache(variant: "buggy" | "fixed") {
           },
         },
         converges: {
-          description: "Left alone, the cache ends up empty or agreeing with the database.",
-          eventually: (w) => {
+          description: "The cache ends up empty or agreeing with the database, and stays so.",
+          eventuallyAlways: (w) => {
             const entry = w.the(Cache).state.entry;
             return entry === null || entry.value === w.the(Database).state.value;
           },

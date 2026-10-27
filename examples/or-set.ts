@@ -101,7 +101,7 @@ export function orSet(variant: "buggy" | "fixed") {
 
       const contains = (s: { has: boolean; tags: Set<string> }) => (variant === "buggy" ? s.has : s.tags.size > 0);
 
-      spec.defineInvariants({
+      spec.defineProperties({
         convergesOnceQuiet: {
           description: "Once nothing is in flight, the replicas agree on whether x is in the set.",
           always: (w) => !w.quiet || new Set(w.all(Replica).map((r) => contains(r.state))).size <= 1,
