@@ -4,6 +4,29 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+### Fixes, found by fuzzing
+
+- A world where a path starts (the initial world, or where a scenario ends) is judged too: an
+  `always` property it breaks is reported with no steps, as TLC does, not one step later or
+  not at all.
+- Liveness verdicts no longer depend on `never` properties. What a `never` property remembers
+  of the path made a loop come back to a different state each time round, so liveness
+  counterexamples through it could not close and the verdict was "unfinished". A spec with
+  both is now checked in two searches; the safety one keeps its reductions.
+- A step that fails (a spec error) breaks no property: the error is the finding. Random runs
+  and the search disagreed on this before.
+- Worker threads could fail to find the spec's bundle (Bun's resolver, when several threads
+  import a new file at once); each bundle gets a directory of its own.
+
+### Faster
+
+- About 1.5× faster on one thread: states are written and copied without
+  `JSON.stringify` replacers or `structuredClone`, and fingerprinted from cached hashes of
+  their parts. or-set with a fault (129k states): 6.8 s at 0.9.0, 4.4 s on one thread now,
+  1.5 s on 8.
+
 ## 0.9.0
 
 ### Liveness, as in TLA+

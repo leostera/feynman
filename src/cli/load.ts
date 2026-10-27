@@ -73,10 +73,14 @@ export async function importFresh(path: string): Promise<unknown> {
   return (await importBundled(path)).module;
 }
 
-/** A fresh bundle of a module, imported; and where the bundle is, for worker threads to import too. */
+/**
+ * A fresh bundle of a module, imported; and where the bundle is, for worker threads to import
+ * too. Each bundle gets a directory of its own: Bun's resolver can miss a file several threads
+ * import at once from a directory that changed since it last looked (seen with Bun 1.3).
+ */
 async function importBundled(path: string): Promise<{ module: unknown; bundled: string }> {
   scratch ??= mkdtempSync(join(tmpdir(), "feynman-load-"));
-  const bundled = join(scratch, `${++counter}.mjs`);
+  const bundled = join(mkdtempSync(join(scratch, `${++counter}-`)), "spec.mjs");
   writeFileSync(bundled, await bundle(path));
   return { module: await import(bundled), bundled };
 }

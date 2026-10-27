@@ -19,6 +19,7 @@
 // cannot be sent).
 import type { Fairness, Spec, World } from "../spec/index.ts";
 import { isLiveness } from "../spec/index.ts";
+import { startBreaks } from "./judge.ts";
 import { statePrint, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { budgetText, FAILED, FAULT, rootMemory, SLEEPY, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
@@ -42,12 +43,10 @@ export interface SearchSetup {
   started: number;
   /** The owner on the main thread. */
   inline: InlineDriver;
-  /** Worker owners, when they can load the spec; started once the frontier is big enough to share. */
+  /** Worker owners, when they can load the spec; started once the frontier reaches `shareFrom` nodes. */
   spawn?: () => Promise<Driver[]>;
+  shareFrom: number;
 }
-
-/** Frontier size at which worker owners are started: below it, starting them costs more than they save. */
-const SPAWN_AT = 256;
 
 /** A node to expand next: a new one, or one expanded before whose woken steps (`only`) are now to be tried. */
 type Item = { gid: number; only?: number[] } | { revisit: number };
@@ -126,13 +125,14 @@ export class Search {
   private newlyBroken: string[] = [];
   private twinChecks = 0;
   private readonly spawn?: () => Promise<Driver[]>;
+  private readonly shareFrom: number;
   /** Worker owners: not asked for yet, starting, ready to join (or failed to start), or joined. */
   private workers: { state: "idle" | "starting" | "joined" } | { state: "ready"; drivers: Driver[] } | { state: "failed"; error: unknown } = { state: "idle" };
   /** The frontier being expanded: items by slot. */
   private frontier: Item[] = [];
 
   constructor(setup: SearchSetup) {
-    ({ spec: this.spec, b: this.b, roots: this.roots, watch: this.watch, started: this.started, spawn: this.spawn } = setup);
+    ({ spec: this.spec, b: this.b, roots: this.roots, watch: this.watch, started: this.started, spawn: this.spawn, shareFrom: this.shareFrom } = setup);
     this.owners = [setup.inline];
     this.keepsEdges = this.spec.properties.some(isLiveness);
     this.predicates = predicatesOf(this.spec.properties.filter(isLiveness));
@@ -219,6 +219,7 @@ export class Search {
       round.keep[0].push(-(r + 1), gid);
       if (this.b.depth > 0) round.next.push({ gid });
       this.watch.state?.(world, { acts: {}, faults: 0, memory });
+      for (const id of startBreaks(this.spec, world).filter((id) => !this.broken.has(id))) this.breaks(id, gid);
     }
     return round;
   }
@@ -344,13 +345,16 @@ export class Search {
       }
     }
     const findings = (note?.findings ?? []).filter((id) => !this.broken.has(id));
-    for (const id of [...findings, ...breaks.filter((id) => !findings.includes(id))]) {
-      this.broken.add(id);
-      this.newlyBroken.push(id);
-      this.failures.set(id, gid);
-    }
+    for (const id of [...findings, ...breaks.filter((id) => !findings.includes(id))]) this.breaks(id, gid);
     if (error) this.errors.set(error, gid);
     return true;
+  }
+
+  /** A property first broken at a node. */
+  private breaks(id: string, gid: number): void {
+    this.broken.add(id);
+    this.newlyBroken.push(id);
+    this.failures.set(id, gid);
   }
 
   /** A successor that landed on a known state: test the symmetry claim on it, and wake what it skipped that this path did not. */
@@ -437,7 +441,7 @@ export class Search {
       this.owners.push(...workers.drivers);
       this.workers = { state: "joined" };
     }
-    if (this.spawn && workers.state === "idle" && round.next.length >= SPAWN_AT) {
+    if (this.spawn && workers.state === "idle" && round.next.length >= this.shareFrom) {
       this.workers = { state: "starting" };
       this.spawn().then(
         (drivers) => (this.workers = { state: "ready", drivers }),

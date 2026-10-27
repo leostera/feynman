@@ -184,6 +184,8 @@ export interface CheckOptions {
   pool?: Pool;
   /** Every distinct state, as the search first meets it; keeps the search on the main thread. */
   watch?: Watch;
+  /** The frontier size at which workers join (256): lower only to test sharing on small specs. */
+  shareFrom?: number;
 }
 
 /**
@@ -192,6 +194,39 @@ export interface CheckOptions {
  * the search where the interesting states are, rather than spending its budget getting there.
  */
 export async function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: Seed[] = [], options: CheckOptions = {}): Promise<Report> {
+  const apart = spec.properties.some(isLiveness) && spec.properties.some((p) => p.kind === "never");
+  return apart ? checkApart(spec, bounds, seeds, options) : checkTogether(spec, bounds, seeds, options);
+}
+
+/**
+ * Liveness and `never` properties, judged in searches of their own. What a `never` property
+ * remembers of the path is part of a state (see memoryOf), which unrolls the system's loops:
+ * a loop that counts a step comes back to a different state each time round, and no liveness
+ * counterexample could close. Liveness is a property of the system's states alone, as in
+ * TLA+, so it is judged on a search without that memory. The safety search, without liveness,
+ * keeps its reductions too.
+ */
+async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], options: CheckOptions): Promise<Report> {
+  const started = Date.now();
+  const part = (keep: (p: PropertyInfo) => boolean): Spec => ({ ...spec, properties: spec.properties.filter(keep) });
+  const sourceFor = (s: Spec) => (options.source ? { ...options.source, properties: s.properties.map((p) => p.id) } : undefined);
+  const safety = part((p) => !isLiveness(p));
+  const live = part(isLiveness);
+  const a = await checkTogether(safety, bounds, seeds, { ...options, source: sourceFor(safety) });
+  const b = await checkTogether(live, { ...bounds, walks: 0 }, seeds, { ...options, source: sourceFor(live), watch: undefined });
+  return {
+    ...a,
+    properties: spec.properties.map((p) => (isLiveness(p) ? b : a).properties.find((q) => q.id === p.id)!),
+    states: a.states + b.states,
+    exhaustive: a.exhaustive && b.exhaustive,
+    stoppedBy: a.stoppedBy ?? b.stoppedBy,
+    depthReached: Math.max(a.depthReached, b.depthReached),
+    durationMs: Date.now() - started,
+    threads: Math.max(a.threads, b.threads),
+  };
+}
+
+async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], options: CheckOptions): Promise<Report> {
   const b = boundsFor(spec, bounds);
   const started = Date.now();
   const roots = rootsOf(spec, b, seeds);
@@ -208,6 +243,9 @@ export async function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: See
   }
 }
 
+/** Frontier size at which worker owners are started: below it, starting them costs more than they save. */
+const SHARE_FROM = 256;
+
 const NO_WALKS: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
 
 /** The breadth-first search, on the main thread, joined by the pool's workers once it is big enough to share. */
@@ -215,7 +253,7 @@ async function explore(spec: Spec, b: Bounds, roots: Root[], started: number, op
   const job = { bounds: b, roots: roots.map((r) => r.world) };
   const inline = new InlineDriver(new Owner(spec, job));
   const spawn = pool && options.source ? () => pool.owners(options.source!, job) : undefined;
-  const search = new Search({ spec, b, roots, watch: options.watch ?? {}, started, inline, spawn });
+  const search = new Search({ spec, b, roots, watch: options.watch ?? {}, started, inline, spawn, shareFrom: options.shareFrom ?? SHARE_FROM });
   await search.run();
   return search;
 }

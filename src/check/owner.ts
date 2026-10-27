@@ -347,7 +347,8 @@ export class Owner {
     // node of its own), so after the first this owner need not report it. A state that breaks
     // an `always` or `never` property is judged only if it is new, which only the coordinator
     // knows: those are reported until it says they broke.
-    const findings = [...event.violations, ...nevers].filter((id) => !this.broken.has(id));
+    // A step that fails is a spec error and breaks no property (see judge).
+    const findings = event.error ? [] : [...event.violations, ...nevers].filter((id) => !this.broken.has(id));
     const breaks = event.error ? [] : stepBreaks(this.spec, node.world, step.world, event, this.broken);
     const error = event.error && !this.errors.has(event.error) ? event.error : undefined;
     if (!findings.length && !breaks.length && !error) return;
