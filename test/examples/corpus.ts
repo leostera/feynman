@@ -5,6 +5,7 @@
 import type { Bounds } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
 import { alternatingBit } from "../../examples/alternating-bit.ts";
+import { barrier } from "../../examples/barrier.ts";
 import { cache } from "../../examples/cache.ts";
 import { changRoberts } from "../../examples/chang-roberts.ts";
 import { diningPhilosophers } from "../../examples/dining-philosophers.ts";
@@ -253,6 +254,27 @@ export const corpus: Example[] = [
     ],
     tla: { module: "ChangRoberts", invariants: ["oneLeader"], configs: BOTH_WAYS },
     p: { project: "ChangRoberts", property: "oneLeader", assertion: "two nodes lead", depth: 9 },
+  },
+  {
+    name: "barrier",
+    spec: barrier,
+    instances: { Worker: 2 },
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: { events: 5, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { waitsForAll: "holds" } },
+    ],
+    tla: { module: "Barrier", invariants: ["waitsForAll"], configs: BOTH_WAYS },
+    p: {
+      project: "Barrier",
+      property: "waitsForAll",
+      assertion: "the barrier opened before every worker reached it",
+      depth: 8,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
   },
 ];
 
