@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { singlePage } from "../../src/cli/serve.ts";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
+import { compressPage, singlePage } from "../../src/cli/serve.ts";
 
 test("the built page carries the view, the bundle and every module in one file", () => {
   const code = 'export default { note: "</script><!-- not the end" };';
@@ -10,4 +11,12 @@ test("the built page carries the view, the bundle and every module in one file",
   expect(page.match(/<\/script>/g)).toHaveLength(2);
   const data = page.match(/<script type="application\/json" id="feynman">([\s\S]*?)<\/script>/)![1];
   expect(JSON.parse(data)).toEqual({ bundle, modules: { "specs/x.js": code } });
+});
+
+test("compressed build variants decompress to the standalone HTML", () => {
+  const page = "<!doctype html><title>Feynman</title>" + "<p>self-contained explorer</p>".repeat(100);
+  const compressed = compressPage(page);
+  expect(gunzipSync(compressed.gzip).toString()).toBe(page);
+  expect(brotliDecompressSync(compressed.brotli).toString()).toBe(page);
+  expect(compressed.brotli.length).toBeLessThan(page.length);
 });

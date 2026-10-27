@@ -1,3 +1,5 @@
 node_modules/
 dist/
 .feynman/index.html
+.feynman/index.html.gz
+.feynman/index.html.br

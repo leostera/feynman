@@ -8,5 +8,12 @@ export default defineConfig({
   root: import.meta.dirname,
   base: "./",
   plugins: [react(), tailwindcss()],
-  build: { outDir: "../../dist/view", emptyOutDir: true, chunkSizeWarningLimit: 10_000 },
+  build: {
+    outDir: "../../dist/view",
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 10_000,
+    minify: true,
+    cssMinify: true,
+    sourcemap: false,
+  },
 });

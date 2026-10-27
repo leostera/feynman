@@ -31,7 +31,7 @@ Feynman runs on [Bun](https://bun.sh) 1.3 or later.
 bun add -d @leostera/feynman
 bunx feynman check    # type-check, run the scenarios, explore, and judge every rule
 bunx feynman dev      # the simulator, reloading as the spec changes
-bunx feynman build    # all of it in one self-contained .feynman/index.html
+bunx feynman build    # minified standalone .feynman/index.html, plus .gz/.br for static hosting
 ```
 
 Specs live in `specs/*.ts` and import `@leostera/feynman`:
