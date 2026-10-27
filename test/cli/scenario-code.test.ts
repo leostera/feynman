@@ -18,9 +18,9 @@ for (const example of corpus)
   for (const c of example.cases) {
     const broken = Object.entries(c.expect).filter(([, e]) => e !== "holds");
     if (!broken.length) continue;
-    test(`${caseName(example, c)}: counterexamples replay as scenarios`, () => {
+    test(`${caseName(example, c)}: counterexamples replay as scenarios`, async () => {
       const spec = example.spec(c.variant);
-      const report = check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 });
+      const report = await check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 });
       for (const p of report.properties.filter((x) => !x.holds).filter((x) => !x.counterexample.from)) {
         const run = runScenario(spec, { name: p.id, run: compile(spec, scenarioCode(spec, p)) });
         expect(run.error).toBeUndefined();

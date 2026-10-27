@@ -9,14 +9,14 @@ import { explore, worldKey } from "./reference.ts";
 
 describe("the checker against a reference explorer", () => {
   for (const example of corpus) for (const c of example.cases) {
-    test(caseName(example, c), () => {
+    test(caseName(example, c), async () => {
       const spec = example.spec(c.variant);
       const bounds = { depth: c.bounds.depth ?? 60, faults: c.bounds.faults ?? 0, repeats: 2, instances: example.instances ?? {} };
       const theirs = explore(spec, bounds);
 
       const worlds = new Set([worldKey(initialWorld(spec, bounds), {}, 0)]);
-      const ours = check(spec, { ...bounds, walks: 0, reduce: false, symmetry: false, maxStates: 2_000_000, timeLimit: 120_000 }, [], {
-        state: (world, b) => worlds.add(worldKey(world, b.acts, b.faults)),
+      const ours = await check(spec, { ...bounds, walks: 0, reduce: false, symmetry: false, maxStates: 2_000_000, timeLimit: 120_000 }, [], {
+        watch: { state: (world, b) => worlds.add(worldKey(world, b.acts, b.faults)) },
       });
 
       expect(ours.exhaustive).toBe(true);

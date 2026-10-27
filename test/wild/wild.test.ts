@@ -8,9 +8,9 @@ import { wild } from "./wild.ts";
 
 describe("specs from the wild", () => {
   for (const w of wild) {
-    test(w.name, () => {
+    test(w.name, async () => {
       const spec = w.spec();
-      const report = check(spec, { depth: 60, faults: 0, walks: 0, maxStates: 1_000_000, timeLimit: 120_000 });
+      const report = await check(spec, { depth: 60, faults: 0, walks: 0, maxStates: 1_000_000, timeLimit: 120_000 });
       expect(report.exhaustive).toBe(true);
       expect(report.states).toBe(w.states);
       expect(report.stuck).toBeUndefined();

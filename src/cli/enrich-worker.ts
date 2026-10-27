@@ -8,6 +8,7 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import { check, type Report } from "../check/index.ts";
+import type { Spec } from "../spec/index.ts";
 import { callTrees, git, type CallNode } from "../code/index.ts";
 import type { FunctionCode } from "../view/data.ts";
 import { context, specSources } from "./commands.ts";
@@ -57,10 +58,10 @@ self.onmessage = async (event: MessageEvent<EnrichRequest>) => {
   try {
     const ctx = await context(event.data.cwd);
     const root = ctx.repository.root;
-    const specs: { path: string; spec: Awaited<ReturnType<typeof loadSpec>> }[] = [];
+    const specs: { path: string; spec: Spec }[] = [];
     for (const path of ctx.found) {
       try {
-        specs.push({ path, spec: await loadSpec(join(root, path)) });
+        specs.push({ path, spec: (await loadSpec(join(root, path))).spec });
       } catch {
         // The server's own pass shows a spec that does not load; there is nothing to check.
       }
@@ -69,7 +70,8 @@ self.onmessage = async (event: MessageEvent<EnrichRequest>) => {
     const reports: Record<string, Report> = {};
     for (const [i, { path, spec }] of specs.entries()) {
       say({ kind: "progress", message: `checking [${i + 1}/${specs.length}] ${path}` });
-      reports[path] = check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
+      // On this thread only: it is a worker already, and the server's checks are small.
+      reports[path] = await check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
     }
     say({ kind: "reports", reports });
 

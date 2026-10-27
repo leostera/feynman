@@ -109,19 +109,41 @@ export function symmetricKey(world: World, symmetry: Symmetry): string {
 }
 
 /** The renaming that gives a world its least key, and that key; no renaming without symmetry. */
-export function leastRenaming(world: World, symmetry: Symmetry): { key: string; renaming: Map<string, string> } {
-  if (!symmetry.classes.length) return { key: canonical(world), renaming: new Map() };
+export function leastRenaming(world: World, symmetry: Symmetry): { key: string; renaming: Map<string, string>; plain: string } {
+  if (!symmetry.classes.length) {
+    const key = canonical(world);
+    return { key, renaming: new Map(), plain: key };
+  }
   const { instances, pending, rest } = keyParts(world);
   let best: { key: string; renaming: Map<string, string> } | undefined;
+  let plain = "";
   for (const renaming of symmetry.renamings) {
     const key = joinParts(
       instances.map((line) => renamedLine(line, renaming)),
       pending.map((line) => renamedLine(line, renaming)),
       rest,
     );
+    if (isIdentity(renaming)) plain = key;
     if (best === undefined || key < best.key) best = { key, renaming };
   }
-  return best!;
+  return { ...best!, plain };
+}
+
+/**
+ * A world's key up to symmetry, and its key as it is (`canonical`): renamed twins share the
+ * first and not the second. One pass gives both: leaving names as they are is a renaming too.
+ */
+export function symmetricKeys(world: World, symmetry: Symmetry): { key: string; plain: string } {
+  const { key, plain } = leastRenaming(world, symmetry);
+  return { key, plain };
+}
+
+const identities = new WeakMap<Map<string, string>, boolean>();
+
+function isIdentity(renaming: Map<string, string>): boolean {
+  let out = identities.get(renaming);
+  if (out === undefined) identities.set(renaming, (out = [...renaming].every(([from, to]) => from === to)));
+  return out;
 }
 
 /**
@@ -190,3 +212,20 @@ function escape(text: string): string {
 }
 
 export const NO_SYMMETRY: Symmetry = { classes: [], renamings: [] };
+
+// Fingerprints ---------------------------------------------------------------------------------------
+
+/**
+ * A state's 64-bit fingerprint, as two 32-bit halves: what the search remembers of each state
+ * (as TLC does), and all that crosses between threads. Two states share one with odds of
+ * about n²/2⁶⁵ for n states: one in 36 million at a million states.
+ */
+export function fingerprint(text: string): [number, number] {
+  const h = Bun.hash.wyhash(text, 0x9e3779b97f4a7c15n);
+  return [Number(h >> 32n), Number(h & 0xffffffffn)];
+}
+
+/** A 52-bit hash of a short name (a step's name in a sleep set, a fair step's identity), exact as a number. */
+export function nameHash(text: string): number {
+  return Number(Bun.hash.wyhash(text, 0x2545f4914f6cdd1dn) & 0xfffffffffffffn);
+}

@@ -102,7 +102,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...(report.seeds ? [`and from the end of ${report.seeds} scenario(s)`] : []), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
-    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
+    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
     ...(options.brief ? [] : searchNotes(report)),
   ];
   for (const p of report.properties) {

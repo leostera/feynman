@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { createServer as createNetServer } from "node:net";
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite";
-import { check } from "../check/index.ts";
+import { check, type Report as CheckReport } from "../check/index.ts";
 import { scenarioSeeds } from "./shape.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "../code/index.ts";
 import type { Spec } from "../spec/index.ts";
@@ -66,7 +66,7 @@ function plural(n: number, word: string): string {
 }
 
 /** One line on a check: how many properties held, and how far exploration got. */
-function checkSummary(report: ReturnType<typeof check>): string {
+function checkSummary(report: CheckReport): string {
   const failed = report.properties.filter((p) => !p.holds);
   const reach = report.exhaustive ? "exhaustive" : `stopped by ${report.stoppedBy ?? "bounds"}`;
   const verdict = failed.length ? red(`${failed.length}/${report.properties.length} properties fail: ${failed.map((p) => p.id).join(", ")}`) : green(`${report.properties.length} properties hold`);
@@ -166,7 +166,7 @@ export async function prepare(ctx: Context, options: Options, onProgress?: Progr
     const entry: SpecEntry = { id, path, module: null, playModule: null, baseModule: null, error: null, sources: {}, calls: {}, functions: {}, report: null };
     specs.push(entry);
     try {
-      const spec = await timed(onProgress, () => loadSpec(join(repository.root, path)), (s) => `loaded ${s.name} ${dim(`(${plural(s.actors.length, "actor")}, ${plural(s.scenarios.length, "scenario")}, ${s.properties.length} ${s.properties.length === 1 ? "property" : "properties"})`)}`);
+      const { spec, source } = await timed(onProgress, () => loadSpec(join(repository.root, path)), ({ spec: s }) => `loaded ${s.name} ${dim(`(${plural(s.actors.length, "actor")}, ${plural(s.scenarios.length, "scenario")}, ${s.properties.length} ${s.properties.length === 1 ? "property" : "properties"})`)}`);
       const module = await timed(onProgress, () => bundleBrowser(join(repository.root, path)), (m) => `bundled the spec ${dim(kb(m))}`);
       modules.set(`specs/${id}.js`, module);
       entry.module = `specs/${id}.js`;
@@ -197,7 +197,7 @@ export async function prepare(ctx: Context, options: Options, onProgress?: Progr
         entry.calls = trees as Record<string, CallNode>;
         entry.functions = await timed(onProgress, () => functionCode(repository.root, repository.fileUrl, entry.calls), (f) => `collected ${plural(Object.keys(f).length, "function")} they reach`);
       }
-      if (options.check) entry.report = await timed(onProgress, () => check(spec, { ...ctx.config.check }, scenarioSeeds(spec)), checkSummary);
+      if (options.check) entry.report = await timed(onProgress, () => check(spec, { ...ctx.config.check }, scenarioSeeds(spec), { source }), checkSummary);
     } catch (error) {
       entry.error = error instanceof Error ? error.message : String(error);
       onProgress?.(red(`failed: ${entry.error.split("\n")[0]}`), true);

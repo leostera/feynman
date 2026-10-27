@@ -18,19 +18,43 @@
 //
 // A predicate that throws in a world (it looks at an instance not there yet) is false there:
 // a goal not yet reachable is not reached.
-import { holdsIn, type Fairness, type LivenessProperty, type Spec, type World, type WorldView } from "../spec/index.ts";
-import type { Choice } from "./steps.ts";
+import type { Fairness, LivenessProperty, WorldView } from "../spec/index.ts";
 
-/** A step on the graph: where it goes, the choice that takes it, and its fairness identity, if fair. */
-export interface Edge {
-  to: number;
-  choice: Choice;
-  fair?: string;
+/** A fair step's identity, the same wherever it is possible (a hash of its name). */
+export type FairId = number;
+
+/** A predicate a liveness property is made of. */
+export type Predicate = (w: WorldView) => boolean;
+
+/** The predicates of liveness properties, in a fixed order: owners evaluate them in every world they keep. */
+export function predicatesOf(properties: LivenessProperty[]): Predicate[] {
+  return properties.flatMap((p) => {
+    switch (p.kind) {
+      case "eventually":
+        return [p.eventually];
+      case "leadsTo":
+        return [p.whenever, p.then];
+      case "infinitelyOften":
+        return [p.infinitelyOften];
+      case "eventuallyAlways":
+        return [p.eventuallyAlways];
+    }
+  });
 }
 
-/** What the search hands over: for each node, its world, whether its successors are known, its edges, and the fair steps possible there. */
+/** A step on the graph: where it goes, which of its world's options takes it, whether it is a fault, and its fairness identity, if fair. */
+export interface Edge {
+  to: number;
+  option: number;
+  fault: boolean;
+  fair?: FairId;
+}
+
+/** What the search hands over: for each node, whether its successors are known, its edges, the fair steps possible there, and which predicates hold in it. */
 export interface Graph {
-  worlds: World[];
+  size: number;
+  /** Whether a predicate holds in each node. A predicate that throws in a world is false there. */
+  holds: (predicate: Predicate) => (node: number) => boolean;
   roots: number[];
   /** Root 0's node: where behaviours begin, for `eventually`. */
   initial: number;
@@ -39,17 +63,18 @@ export interface Graph {
   shadow: boolean[];
   edges: Edge[][];
   /** Fair steps possible in each node, by identity. */
-  enabled: Map<string, Fairness>[];
+  enabled: Map<FairId, Fairness>[];
   /** A path from a root to each node, as the search found it. */
   parent: number[];
-  /** The choice from the parent, per node. */
-  choiceFrom: (Choice | null)[];
+  /** Which of the parent's options leads to each node, and whether it is a fault. */
+  optionFrom: number[];
+  faultFrom: boolean[];
 }
 
-/** A step of a lasso: the node it is taken in, and the choice. */
+/** A step of a lasso: the node it is taken in, and which of its options. */
 export interface LassoStep {
   from: number;
-  choice: Choice;
+  option: number;
 }
 
 export interface Lasso {
@@ -76,8 +101,8 @@ interface LivenessSearch {
   tested?: number;
 }
 
-export function judgeLiveness(spec: Spec, graph: Graph, property: LivenessProperty): LivenessVerdict {
-  const search = searchFor(property, graph, (predicate) => memo(spec, graph, predicate));
+export function judgeLiveness(graph: Graph, property: LivenessProperty): LivenessVerdict {
+  const search = searchFor(property, graph);
   const { members, way, cost, open } = region(graph, search.starts, search.allowed);
   const judged = (i: number) => members.has(i) && graph.expanded[i];
   // Of the bad fair parts, the one cheapest to reach, entered at its cheapest world.
@@ -96,8 +121,9 @@ export function judgeLiveness(spec: Spec, graph: Graph, property: LivenessProper
 }
 
 /** Each kind of liveness property as a search for a bad fair part. */
-function searchFor(property: LivenessProperty, graph: Graph, holds: (predicate: (w: WorldView) => boolean) => (node: number) => boolean): LivenessSearch {
-  const live = range(graph.worlds.length).filter((i) => !graph.shadow[i]);
+function searchFor(property: LivenessProperty, graph: Graph): LivenessSearch {
+  const holds = graph.holds;
+  const live = range(graph.size).filter((i) => !graph.shadow[i]);
   const always = () => true;
   switch (property.kind) {
     case "eventually": {
@@ -125,16 +151,6 @@ function searchFor(property: LivenessProperty, graph: Graph, holds: (predicate: 
   }
 }
 
-/** A predicate on worlds, evaluated once per node. */
-function memo(spec: Spec, graph: Graph, predicate: (w: WorldView) => boolean): (node: number) => boolean {
-  const cache = new Map<number, boolean>();
-  return (i) => {
-    let value = cache.get(i);
-    if (value === undefined) cache.set(i, (value = holdsIn(spec, graph.worlds[i], predicate)));
-    return value;
-  };
-}
-
 function range(n: number): number[] {
   return Array.from({ length: n }, (_, i) => i);
 }
@@ -143,7 +159,7 @@ function range(n: number): number[] {
 
 /** Fault steps cost more than any number of others: counterexamples need the fewest faults first, then the fewest steps. */
 const FAULT = 1_000_000;
-const costOf = (choice: Choice | null) => (choice?.kind === "lose" || choice?.kind === "restart" ? FAULT : 1);
+const costOf = (fault: boolean) => (fault ? FAULT : 1);
 
 /** An edge taken from a node. */
 interface Hop {
@@ -178,7 +194,7 @@ function region(graph: Graph, starts: number[], allowed: (i: number) => boolean)
     }
     for (const edge of graph.edges[i]) {
       if (graph.shadow[edge.to] || !allowed(edge.to) || members.has(edge.to)) continue;
-      const next = c + costOf(edge.choice);
+      const next = c + costOf(edge.fault);
       if (next >= (cost.get(edge.to) ?? Infinity)) continue;
       cost.set(edge.to, next);
       way.set(edge.to, { from: i, edge });
@@ -190,8 +206,8 @@ function region(graph: Graph, starts: number[], allowed: (i: number) => boolean)
 
 /** What the search's path to each node costs. Parents come before their children. */
 function searchPathCosts(graph: Graph): Float64Array {
-  const out = new Float64Array(graph.worlds.length);
-  for (let i = 0; i < out.length; i++) out[i] = graph.parent[i] < 0 ? 0 : out[graph.parent[i]] + costOf(graph.choiceFrom[i]);
+  const out = new Float64Array(graph.size);
+  for (let i = 0; i < out.length; i++) out[i] = graph.parent[i] < 0 ? 0 : out[graph.parent[i]] + costOf(graph.faultFrom[i]);
   return out;
 }
 
@@ -284,8 +300,8 @@ function components(graph: Graph, nodes: number[], inside: (i: number) => boolea
 }
 
 /** The fair steps taken on edges inside a set of nodes. */
-function takenWithin(graph: Graph, members: Set<number>): Set<string> {
-  const taken = new Set<string>();
+function takenWithin(graph: Graph, members: Set<number>): Set<FairId> {
+  const taken = new Set<FairId>();
   for (const i of members) for (const e of graph.edges[i]) if (e.fair && members.has(e.to)) taken.add(e.fair);
   return taken;
 }
@@ -299,7 +315,7 @@ function fairParts(graph: Graph, component: number[]): number[][] {
   for (const [id, kind] of graph.enabled[first]) {
     if (kind === "weak" && !taken.has(id) && rest.every((i) => graph.enabled[i].has(id))) return [];
   }
-  const owedStrong = new Set<string>();
+  const owedStrong = new Set<FairId>();
   for (const i of component) for (const [id, kind] of graph.enabled[i]) if (kind === "strong" && !taken.has(id)) owedStrong.add(id);
   if (!owedStrong.size) return [component];
   const keep = component.filter((i) => ![...owedStrong].some((id) => graph.enabled[i].has(id)));
@@ -319,11 +335,11 @@ function wayIn(graph: Graph, entry: number, way: Map<number, Hop>): Omit<Lasso, 
   }
   const searchPath: number[] = [];
   for (let i = start; i >= 0; i = graph.parent[i]) searchPath.unshift(i);
-  const prefix: LassoStep[] = searchPath.slice(1).map((node, k) => ({ from: searchPath[k], choice: graph.choiceFrom[node]! }));
+  const prefix: LassoStep[] = searchPath.slice(1).map((node, k) => ({ from: searchPath[k], option: graph.optionFrom[node] }));
   return { root: searchPath[0], prefix: [...prefix, ...hops.map(stepOf)] };
 }
 
-const stepOf = (hop: Hop): LassoStep => ({ from: hop.from, choice: hop.edge.choice });
+const stepOf = (hop: Hop): LassoStep => ({ from: hop.from, option: hop.edge.option });
 
 /** A point the loop must go through: a world to pass, or an edge to take. */
 type Waypoint = { node: number } | Hop;
@@ -366,7 +382,7 @@ function through(graph: Graph, members: Set<number>, entry: number, waypoints: W
 }
 
 /** A fair step the loop owes, if any. */
-function owedBy(graph: Graph, entry: number, loop: Hop[]): { id: string; kind: Fairness } | undefined {
+function owedBy(graph: Graph, entry: number, loop: Hop[]): { id: FairId; kind: Fairness } | undefined {
   const visited = [...new Set([entry, ...loop.map((h) => h.from)])];
   const taken = new Set(loop.flatMap((h) => (h.edge.fair ? [h.edge.fair] : [])));
   for (const i of visited) {
@@ -379,7 +395,7 @@ function owedBy(graph: Graph, entry: number, loop: Hop[]): { id: string; kind: F
 }
 
 /** How to pay an owed step inside the part: take it, or (for a weak one) pass a world where it is not possible. */
-function payment(graph: Graph, members: Set<number>, owed: { id: string; kind: Fairness }): Waypoint {
+function payment(graph: Graph, members: Set<number>, owed: { id: FairId; kind: Fairness }): Waypoint {
   for (const from of members) {
     const edge = graph.edges[from].find((e) => e.fair === owed.id && members.has(e.to));
     if (edge) return { from, edge };

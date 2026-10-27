@@ -38,15 +38,15 @@ function door(final: boolean) {
   });
 }
 
-test("actions are not fair: nobody has to open the door, so it may stay shut forever", () => {
-  const report = check(door(true), BOUNDS);
+test("actions are not fair: nobody has to open the door, so it may stay shut forever", async () => {
+  const report = await check(door(true), BOUNDS);
   expect(verdict(report, "opens")).toEqual({ events: [], loop: [] });
   expect(reference(door(true), "opens")).toBe("broken");
 });
 
-test("a world where nothing can happen is stuck, unless the spec calls it final", () => {
-  expect(check(door(true), BOUNDS).stuck).toBeUndefined();
-  const stuck = check(door(false), BOUNDS).stuck!;
+test("a world where nothing can happen is stuck, unless the spec calls it final", async () => {
+  expect((await check(door(true), BOUNDS)).stuck).toBeUndefined();
+  const stuck = (await check(door(false), BOUNDS)).stuck!;
   expect(stuck.counterexample.events.map((e) => e.key)).toEqual(["open"]);
 });
 
@@ -76,10 +76,10 @@ function ping(fair: false | undefined) {
   });
 }
 
-test("a message in flight is delivered, unless its step says it need not be", () => {
-  expect(verdict(check(ping(undefined), BOUNDS), "arrives")).toBe("holds");
-  expect(check(ping(undefined), BOUNDS).properties[0].tested).toBe(1);
-  expect(verdict(check(ping(false), BOUNDS), "arrives")).toEqual({ events: ["send"], loop: [] });
+test("a message in flight is delivered, unless its step says it need not be", async () => {
+  expect(verdict((await check(ping(undefined), BOUNDS)), "arrives")).toBe("holds");
+  expect((await check(ping(undefined), BOUNDS)).properties[0].tested).toBe(1);
+  expect(verdict((await check(ping(false), BOUNDS)), "arrives")).toEqual({ events: ["send"], loop: [] });
   expect(reference(ping(undefined), "arrives")).toBe("holds");
   expect(reference(ping(false), "arrives")).toBe("broken");
 });
@@ -108,15 +108,15 @@ function light(win: "weak" | "strong" | null) {
   });
 }
 
-test("weak fairness lets a step possible only on and off wait forever; strong fairness does not", () => {
-  expect(verdict(check(light("weak"), BOUNDS), "wins")).toEqual({ events: [], loop: ["flip", "flip"] });
-  expect(verdict(check(light("strong"), BOUNDS), "wins")).toBe("holds");
+test("weak fairness lets a step possible only on and off wait forever; strong fairness does not", async () => {
+  expect(verdict((await check(light("weak"), BOUNDS)), "wins")).toEqual({ events: [], loop: ["flip", "flip"] });
+  expect(verdict((await check(light("strong"), BOUNDS)), "wins")).toBe("holds");
   expect(reference(light("weak"), "wins")).toBe("broken");
   expect(reference(light("strong"), "wins")).toBe("holds");
 });
 
-test("infinitelyOften and eventuallyAlways: a light that flips forever is on again and again, and never settles", () => {
-  const report = check(light(null), BOUNDS);
+test("infinitelyOften and eventuallyAlways: a light that flips forever is on again and again, and never settles", async () => {
+  const report = await check(light(null), BOUNDS);
   expect(verdict(report, "onAgain")).toBe("holds");
   expect(verdict(report, "settles")).toEqual({ events: [], loop: ["flip", "flip"] });
   expect(reference(light(null), "onAgain")).toBe("holds");
@@ -143,12 +143,12 @@ function counter() {
   });
 }
 
-test("everyStep judges each step, with the worlds on both sides", () => {
-  const report = check(counter(), BOUNDS);
+test("everyStep judges each step, with the worlds on both sides", async () => {
+  const report = await check(counter(), BOUNDS);
   expect(brokenIn(report, "neverDown").counterexample.events.map((e) => e.key)).toEqual(["tick", "reset"]);
 });
 
-test("a loop that may lie past the depth bound leaves the verdict unfinished", () => {
-  expect(verdict(check(counter(), BOUNDS), "negative")).toBe("unfinished");
+test("a loop that may lie past the depth bound leaves the verdict unfinished", async () => {
+  expect(verdict((await check(counter(), BOUNDS)), "negative")).toBe("unfinished");
   expect(reference(counter(), "negative")).toBe("unfinished");
 });

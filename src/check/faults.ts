@@ -2,7 +2,7 @@
 // a message or restart an instance when a longer path breaks the property with none. For
 // judging how likely a bug is, the fewest faults matter more than the fewest events.
 import type { Event, Spec } from "../spec/index.ts";
-import { check, type PropertyBroken, type PropertyResult, type Report, type Seed } from "./explore.ts";
+import { check, type CheckOptions, type PropertyBroken, type PropertyResult, type Report, type Seed } from "./explore.ts";
 
 /** Faults on a path: lost deliveries and restarts. */
 export function faultsIn(events: readonly Event[]): number {
@@ -14,7 +14,7 @@ export function faultsIn(events: readonly Event[]): number {
  * faults, found by checking again with smaller fault budgets, from none up. The property
  * keeps the length of the shortest path in `shorter`, when that one used more faults.
  */
-export function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = []): Report {
+export async function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = [], options: CheckOptions = {}): Promise<Report> {
   const faultsOf = (p: PropertyResult) => (p.holds ? 0 : faultsIn(p.counterexample.events));
   const top = Math.max(0, ...report.properties.map(faultsOf));
   const settled = new Set<string>();
@@ -22,7 +22,7 @@ export function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = [])
   for (let faults = 0; faults < top; faults++) {
     const open = new Set(properties.filter((p) => faultsOf(p) > faults && !settled.has(p.id)).map((p) => p.id));
     if (!open.size) break;
-    const again = check(spec, { ...report.bounds, faults }, seeds);
+    const again = await check(spec, { ...report.bounds, faults }, seeds, options);
     properties = properties.map((p) => {
       const found = open.has(p.id) ? again.properties.find((q): q is PropertyBroken => q.id === p.id && !q.holds) : undefined;
       if (!found || p.holds) return p;

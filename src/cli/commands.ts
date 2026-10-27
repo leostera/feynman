@@ -6,7 +6,7 @@ import { diffRuns, runScenario, type RunDiff, type Spec } from "../spec/index.ts
 import type { Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
 import { bold, dim, formatDiff, formatEvents, formatSources, red } from "./format.ts";
-import { loadSpec, readConfig } from "./load.ts";
+import { loadSpec, readConfig, type LoadedSpec } from "./load.ts";
 
 export interface Context {
   cwd: string;
@@ -29,11 +29,11 @@ export function specSources(spec: Spec): string[] {
   return [...new Set([...steps.flatMap((s) => s.sources), ...spec.limits.flatMap((l) => l.sources)])].sort();
 }
 
-export async function loadSelected(ctx: Context, named: string[]): Promise<{ path: string; spec: Spec }[]> {
+export async function loadSelected(ctx: Context, named: string[]): Promise<({ path: string } & LoadedSpec)[]> {
   const paths = selectSpecs(ctx.repository.root, ctx.cwd, ctx.found, named);
   if (!paths.length) throw new Error("No specs found. Write one in specs/<name>.ts next to a package.json, or list them in feynman.config.ts.");
   const out = [];
-  for (const path of paths) out.push({ path, spec: await loadSpec(join(ctx.repository.root, path)) });
+  for (const path of paths) out.push({ path, ...(await loadSpec(join(ctx.repository.root, path))) });
   return out;
 }
 
@@ -45,7 +45,7 @@ export async function list(ctx: Context): Promise<number> {
   let status = 0;
   for (const path of ctx.found) {
     try {
-      const spec = await loadSpec(join(ctx.repository.root, path));
+      const { spec } = await loadSpec(join(ctx.repository.root, path));
       const counts = `${spec.actors.length} actors, ${Object.keys(spec.messages).length} messages, ${spec.properties.length} properties, ${spec.scenarios.length} scenarios`;
       console.log(`${path}  ${bold(spec.name)}  ${dim(counts)}`);
     } catch (error) {
@@ -100,7 +100,7 @@ export async function diffSpec(ctx: Context, path: string, spec: Spec, ref: stri
   return withWorktree(ctx.repository.root, ref, async (dir) => {
     let base: Spec | null = null;
     try {
-      base = await loadSpec(join(dir, path));
+      base = (await loadSpec(join(dir, path))).spec;
     } catch {
       base = null;
     }

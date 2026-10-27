@@ -15,8 +15,8 @@ const UNTIMED = { walks: 0, timeLimit: 600_000 };
 let oneFault: ReturnType<typeof check> | undefined;
 const withOneFault = () => (oneFault ??= check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000, ...UNTIMED }));
 
-test("with one fault, a Mac given a valid code can end up never linked, and the checker shows how", () => {
-  const report = withOneFault();
+test("with one fault, a Mac given a valid code can end up never linked, and the checker shows how", async () => {
+  const report = await withOneFault();
   const byId = Object.fromEntries(report.properties.map((p) => [p.id, p]));
   expect(byId.relayNeverStoresSecrets.holds).toBe(true);
   expect(byId.codeRedeemedOnce.holds).toBe(true);
@@ -29,15 +29,15 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
   expect(report.errors).toEqual([]);
 });
 
-test("without faults, every redemption gets its answer and the property holds", { timeout: 30_000 }, () => {
-  const report = check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000, ...UNTIMED });
+test("without faults, every redemption gets its answer and the property holds", { timeout: 30_000 }, async () => {
+  const report = await check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000, ...UNTIMED });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
   expect(report.coverage.reached).toContain("Axo relay.message:Redeem");
 });
 
-test("counterexamples replay: the same choices give the same events", () => {
-  const report = withOneFault();
+test("counterexamples replay: the same choices give the same events", async () => {
+  const report = await withOneFault();
   const example = report.properties.find((p) => !p.holds)!.counterexample;
   expect(example.events.length).toBe(example.choices.length);
   expect(example.worlds.length).toBe(example.choices.length);
@@ -59,9 +59,9 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
     spec.defineScenario({ name: "Count to four", run: (s) => { const c = s.spawn(Counter, "c"); for (let i = 0; i < 4; i++) s.act(c, "up"); } });
   });
   const bounds = { depth: 2, repeats: 9, walks: 0 };
-  expect(check(deep, bounds).properties[0].holds).toBe(true);
+  expect((await check(deep, bounds)).properties[0].holds).toBe(true);
   const run = runScenario(deep, deep.scenarios[0]);
-  const seeded = check(deep, bounds, [{ name: "Count to four", world: run.worlds.at(-1)! }]);
+  const seeded = await check(deep, bounds, [{ name: "Count to four", world: run.worlds.at(-1)! }]);
   const fromSeed = broken(seeded.properties[0]);
   expect(fromSeed.counterexample.from).toBe("Count to four");
   expect(fromSeed.counterexample.events.length).toBe(1);
@@ -82,7 +82,7 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
     });
     spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
   });
-  const report = check(deep, { depth: 2, repeats: 20, walks: 50 });
+  const report = await check(deep, { depth: 2, repeats: 20, walks: 50 });
   const p = broken(report.properties[0]);
   expect(p.foundBy).toBe("walk");
   // Shrunk to the five steps it takes, without the fidgeting.
@@ -129,8 +129,8 @@ test("the reductions skip work, never states: exactly the states of the plain se
     },
   );
   const bounds = { depth: 10, faults: 1, repeats: 2, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = check(pings, { ...bounds, reduce: false });
-  const reduced = check(pings, { ...bounds, reduce: true });
+  const plain = await check(pings, { ...bounds, reduce: false });
+  const reduced = await check(pings, { ...bounds, reduce: true });
   expect(plain.errors).toEqual([]);
   expect(plain.exhaustive && reduced.exhaustive).toBe(true);
   expect(reduced.states).toBe(plain.states);
@@ -138,22 +138,22 @@ test("the reductions skip work, never states: exactly the states of the plain se
   expect(reduced.reductions.orders).toBeGreaterThan(0);
 });
 
-test("the reductions keep the verdicts and the states on a spec with timers and retries", () => {
+test("the reductions keep the verdicts and the states on a spec with timers and retries", async () => {
   const bounds = { depth: 8, faults: 1, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = check(remoteAccess, { ...bounds, reduce: false });
-  const reduced = check(remoteAccess, { ...bounds, reduce: true });
+  const plain = await check(remoteAccess, { ...bounds, reduce: false });
+  const reduced = await check(remoteAccess, { ...bounds, reduce: true });
   expect(reduced.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
   expect(reduced.coverage).toEqual(plain.coverage);
   expect(reduced.states).toBe(plain.states);
 }, 30_000);
 
-test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", () => {
+test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", async () => {
   const bounds = { depth: 7, faults: 0, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   // Symmetry is off for liveness: fold the safety properties alone.
   const safety = { ...remoteAccess, properties: remoteAccess.properties.filter((p) => !isLiveness(p)) };
-  expect(check(remoteAccess, { ...bounds, symmetry: true }).reductions.symmetric).toEqual([]);
-  const plain = check(safety, { ...bounds, symmetry: false });
-  const folded = check(safety, { ...bounds, symmetry: true });
+  expect((await check(remoteAccess, { ...bounds, symmetry: true })).reductions.symmetric).toEqual([]);
+  const plain = await check(safety, { ...bounds, symmetry: false });
+  const folded = await check(safety, { ...bounds, symmetry: true });
   expect(folded.reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
   expect(folded.states).toBeLessThan(plain.states);
   expect(folded.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
@@ -179,7 +179,7 @@ test("inputs an action never reads are not tried twice", async () => {
     });
     void Box;
   });
-  const report = check(typed, { depth: 1, walks: 0 });
+  const report = await check(typed, { depth: 1, walks: 0 });
   // loud is read, note is not: of the four combinations, the two that differ only in the note are one.
   expect(report.reductions.inputs).toBe(2);
 });
@@ -187,8 +187,8 @@ test("inputs an action never reads are not tried twice", async () => {
 test("a map that gained its entries in another order is the same state, renamed too", async () => {
   const { gCounter } = await import("../../examples/g-counter.ts");
   const bounds = { depth: 10, faults: 0, walks: 0, instances: { Replica: 2 } };
-  const plain = check(gCounter("fixed"), { ...bounds, symmetry: false });
-  const folded = check(gCounter("fixed"), bounds);
+  const plain = await check(gCounter("fixed"), { ...bounds, symmetry: false });
+  const folded = await check(gCounter("fixed"), bounds);
   // Replica A's counts can be {A, B} or {B, A} depending on what came first; they are one state.
   expect(plain.states).toBe(104);
   expect(folded.reductions.refuted).toBeUndefined();
@@ -224,7 +224,7 @@ test("states that hold different sets or maps are different states, and changing
     spec.defineProperties({ neverSeven: { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven } });
     return { Picker };
   });
-  const report = check(spec, { depth: 4, walks: 0 });
+  const report = await check(spec, { depth: 4, walks: 0 });
   const neverSeven = broken(report.properties[0]);
   const pick = neverSeven.counterexample.events.find((e) => e.key === "pick")!;
   expect(pick.changes.map((c) => c.path).sort()).toEqual(["counts", "done", "picked"]);
@@ -256,7 +256,7 @@ test("a step that fails is reported, and a step is reached, even when its state 
     return { Counter };
   });
   for (const reduce of [false, true]) {
-    const report = check(spec, { depth: 4, walks: 0, reduce });
+    const report = await check(spec, { depth: 4, walks: 0, reduce });
     expect(report.errors.map((e) => e.message)).toEqual(["Counter.poke: boom"]);
     expect(report.coverage.missed).toEqual([]);
   }
@@ -283,7 +283,7 @@ test("a step that stores what is not plain data, or changes another's set, fails
     const Other = spec.defineActor({ name: "Other", singleton: true, zone, initialState: () => ({ seen: new Set<string>() }) });
     return { Keeper, Other };
   });
-  const report = check(spec, { depth: 2, walks: 0 });
+  const report = await check(spec, { depth: 2, walks: 0 });
   const messages = report.errors.map((e) => e.message).sort();
   expect(messages).toHaveLength(2);
   expect(messages[0]).toContain("Keeper.reach: changes the state of another instance");
@@ -296,9 +296,9 @@ test("symmetry claims are tested on as many merged states as symmetryChecks says
   const spec = leaderElection("fixed");
   const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
   const bounds = { depth: 12, faults: 0, walks: 0, instances: { Node: 3 } };
-  expect(check(safety, bounds).reductions.refuted).toEqual(["Node"]);
-  expect(check(safety, { ...bounds, symmetryChecks: 10 }).reductions.refuted).toEqual(["Node"]);
-  const trusted = check(safety, { ...bounds, symmetryChecks: 0 });
+  expect((await check(safety, bounds)).reductions.refuted).toEqual(["Node"]);
+  expect((await check(safety, { ...bounds, symmetryChecks: 10 })).reductions.refuted).toEqual(["Node"]);
+  const trusted = await check(safety, { ...bounds, symmetryChecks: 0 });
   expect(trusted.reductions.refuted).toBeUndefined();
   expect(trusted.reductions.symmetric).toEqual([["Node A", "Node B", "Node C"]]);
 });
