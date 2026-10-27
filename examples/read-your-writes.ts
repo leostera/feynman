@@ -30,14 +30,20 @@ export function readYourWrites(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Write, Written, Replicate, Read, Value } = spec.messages;
-      const zone = spec.defineZone({ name: "Cluster" });
+      const clients = spec.defineZone({ name: "Clients", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Cluster", description: "writes at the leader, reads at the follower", place: { column: 1, arrange: "row", region: true } });
 
       const Client = spec.defineActor({
         name: "Client",
-        zone,
+        zone: clients,
         singleton: true,
         // `wrote`: the last write the client was told succeeded. `stale`: a read came back older.
         initialState: () => ({ wrote: 0, stale: false }),
+        look: {
+          icon: "laptop",
+          status: (s) => (s.stale ? "read an old value" : s.wrote ? `wrote version ${s.wrote}` : "nothing written"),
+          mood: (s) => (s.stale ? "bad" : "ok"),
+        },
         actions: {
           write: { label: "Write", description: "Writes, through the leader.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Leader), Write, {}) },
           read: {
@@ -56,11 +62,14 @@ export function readYourWrites(variant: "buggy" | "fixed") {
       const Leader = spec.defineActor({
         name: "Leader",
         zone,
+        place: { order: 0 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
+        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Write]: {
             description: "Numbers the write, answers with its number, and replicates it.",
+            say: (s) => `Stored version ${s.version}, told the client, and sent it to the follower`,
             sends: [Written, Replicate],
             run(state, _msg, ctx) {
               state.version += 1;
@@ -74,9 +83,15 @@ export function readYourWrites(variant: "buggy" | "fixed") {
       const Follower = spec.defineActor({
         name: "Follower",
         zone,
+        place: { order: 1 },
         // What it has replicated is on disk; the reads it holds (sorted) are not.
         durable: ["version"],
         initialState: () => ({ version: 0, holding: [] as number[] }),
+        look: {
+          icon: "database",
+          status: (s) => `at version ${s.version}${s.holding.length ? `, holding ${s.holding.length} read(s)` : ""}`,
+          mood: (s) => (s.holding.length ? "busy" : "info"),
+        },
         transitions: {
           [Replicate]: {
             description: "Catches up, and answers the reads it was holding that it now can.",
@@ -89,6 +104,7 @@ export function readYourWrites(variant: "buggy" | "fixed") {
           },
           [Read]: {
             description: variant === "buggy" ? "Answers with what it has." : "Answers if it has the write the read must see, else holds the read.",
+            say: (s, msg) => (s.version >= msg.atLeast ? `Answered version ${s.version}` : variant === "buggy" ? `Answered version ${s.version}, older than the client's own ${msg.atLeast}` : `Holds the read until it has version ${msg.atLeast}`),
             sends: [Value],
             run(state, msg, ctx) {
               if (variant === "fixed" && state.version < msg.atLeast) {
@@ -103,6 +119,34 @@ export function readYourWrites(variant: "buggy" | "fixed") {
 
       spec.defineInvariants({
         readsOwnWrites: { description: "A read never comes back older than the client's own writes it was told about.", always: (w) => !w.the(Client).state.stale },
+      });
+      spec.defineScenario({
+        name: "Write, then read",
+        description: variant === "buggy" ? "The client reads before the follower has its write, and sees the old value." : "The client reads before the follower has its write; the follower holds the read until it catches up.",
+        run(s) {
+          const client = s.the(Client);
+          const leader = s.spawn(Leader, "Leader");
+          const follower = s.spawn(Follower, "Follower");
+          s.act(client, "write");
+          s.deliver(leader, "Write");
+          s.deliver(client, "Written");
+          s.act(client, "read");
+          s.deliver(follower, "Read");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "Reading after replication",
+        description: "The follower has caught up before the read arrives: the client sees its write either way.",
+        run(s) {
+          const client = s.the(Client);
+          s.spawn(Leader, "Leader");
+          s.spawn(Follower, "Follower");
+          s.act(client, "write");
+          s.settle();
+          s.act(client, "read");
+          s.settle();
+        },
       });
       return { Client, Leader, Follower };
     },

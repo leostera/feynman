@@ -27,14 +27,20 @@ export function chainReplication(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Write, Update, Read, Value } = spec.messages;
-      const zone = spec.defineZone({ name: "Chain", place: { arrange: "row" } });
+      const clients = spec.defineZone({ name: "Clients", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Chain", description: "writes in at the head, out at the tail", place: { column: 1, arrange: "row", region: true } });
 
       const Client = spec.defineActor({
         name: "Client",
-        zone,
+        zone: clients,
         singleton: true,
         // `seen`: the newest version read so far. `regressed`: a read came back older.
         initialState: () => ({ reading: false, seen: 0, regressed: false }),
+        look: {
+          icon: "laptop",
+          status: (s) => (s.regressed ? "saw a value go back in time" : s.reading ? "reading" : s.seen ? `last read version ${s.seen}` : "nothing read"),
+          mood: (s) => (s.regressed ? "bad" : s.reading ? "busy" : "ok"),
+        },
         actions: {
           write: { label: "Write", description: "Writes, at the head.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Head), Write, {}) },
           read: {
@@ -64,8 +70,10 @@ export function chainReplication(variant: "buggy" | "fixed") {
       const Head = spec.defineActor({
         name: "Head",
         zone,
+        place: { order: 0 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
+        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "info" },
         transitions: {
           [Write]: {
             description: "Stores the write and passes it down the chain.",
@@ -82,8 +90,10 @@ export function chainReplication(variant: "buggy" | "fixed") {
       const Tail = spec.defineActor({
         name: "Tail",
         zone,
+        place: { order: 1 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
+        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Update]: { description: "Stores the write.", run: (state, msg) => void (state.version = Math.max(state.version, msg.version)) },
           [Read]: { description: "Answers with what it has.", sends: [Value], run: (state, _msg, ctx) => ctx.reply(Value, { version: state.version }) },
@@ -92,6 +102,36 @@ export function chainReplication(variant: "buggy" | "fixed") {
 
       spec.defineInvariants({
         monotonicReads: { description: "A read never comes back older than one the client already read.", always: (w) => !w.the(Client).state.regressed },
+      });
+      spec.defineScenario({
+        name: "Reading from both ends",
+        description: variant === "buggy" ? "A read at the head sees the new write; the next, at the tail, does not." : "Both reads go to the tail: the first sees the old value, the second the new one.",
+        run(s) {
+          const client = s.the(Client);
+          const head = s.spawn(Head, "Head");
+          const tail = s.spawn(Tail, "Tail");
+          s.act(client, "write");
+          s.deliver(head, "Write");
+          s.act(client, "read", { from: variant === "buggy" ? "head" : "tail" } as never);
+          s.deliver(variant === "buggy" ? head : tail, "Read");
+          s.deliver(client, "Value");
+          s.act(client, "read", { from: "tail" });
+          s.deliver(tail, "Read");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A write down the chain",
+        description: "The write reaches the tail before the read: the client sees it.",
+        run(s) {
+          const client = s.the(Client);
+          s.spawn(Head, "Head");
+          s.spawn(Tail, "Tail");
+          s.act(client, "write");
+          s.settle();
+          s.act(client, "read", { from: "tail" });
+          s.settle();
+        },
       });
       return { Client, Head, Tail };
     },
