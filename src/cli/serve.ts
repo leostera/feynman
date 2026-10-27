@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { createServer as createNetServer } from "node:net";
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite";
 import { check } from "../check/index.ts";
@@ -55,8 +56,8 @@ function ms(duration: number): string {
   return duration < 1000 ? `${Math.round(duration)}ms` : `${(duration / 1000).toFixed(1)}s`;
 }
 
-function kb(text: string): string {
-  const bytes = Buffer.byteLength(text);
+function kb(value: string | Uint8Array): string {
+  const bytes = typeof value === "string" ? Buffer.byteLength(value) : value.byteLength;
   return bytes < 1e6 ? `${(bytes / 1e3).toFixed(1)} KB` : `${(bytes / 1e6).toFixed(1)} MB`;
 }
 
@@ -250,6 +251,17 @@ export function singlePage(prepared: Prepared): string {
   return out;
 }
 
+/** Static-host variants of the same standalone page; they are not needed to open the HTML directly. */
+export function compressPage(page: string): { gzip: Buffer; brotli: Buffer } {
+  const input = Buffer.from(page);
+  return {
+    gzip: gzipSync(input, { level: 9 }),
+    brotli: brotliCompressSync(input, {
+      params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 11 },
+    }),
+  };
+}
+
 export async function buildCommand(ctx: Context, options: { out?: string; base?: string; open?: boolean }): Promise<number> {
   const started = performance.now();
   const { repository } = ctx;
@@ -261,12 +273,17 @@ export async function buildCommand(ctx: Context, options: { out?: string; base?:
   mkdirSync(dirname(out), { recursive: true });
   const page = singlePage(prepared);
   writeFileSync(out, page);
+  // Keep the standalone HTML for file:// and simple hosting, and emit precompressed siblings
+  // for static hosts that serve .br/.gz with the corresponding Content-Encoding header.
+  const compressed = compressPage(page);
+  writeFileSync(`${out}.gz`, compressed.gzip);
+  writeFileSync(`${out}.br`, compressed.brotli);
   const failed = prepared.bundle.specs.filter((s) => s.error);
   for (const s of failed) console.log(red(`${s.path}: ${s.error}`));
   const modules = [...prepared.modules.values()].reduce((sum, m) => sum + m, "");
   const ok = prepared.bundle.specs.length - failed.length;
   const shown = relative(ctx.cwd, out).startsWith("..") ? out : relative(ctx.cwd, out);
-  console.log(`wrote ${shown} ${dim(`(${kb(page)}: ${kb(modules)} of spec modules) in ${ms(performance.now() - started)}`)}`);
+  console.log(`wrote ${shown} ${dim(`(${kb(page)}; ${kb(compressed.gzip)} gzip, ${kb(compressed.brotli)} brotli; ${kb(modules)} of spec modules) in ${ms(performance.now() - started)}`)}`);
   console.log(failed.length ? red(`${ok}/${prepared.bundle.specs.length} specs built; ${failed.length} failed`) : green(`${plural(ok, "spec")} built`));
   if (options.open) spawnSync(process.platform === "darwin" ? "open" : "xdg-open", [out]);
   // The page shows a spec that failed to load as an error; a build that ships one has failed.

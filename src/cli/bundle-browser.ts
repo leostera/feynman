@@ -37,7 +37,8 @@ export async function bundleBrowser(path: string): Promise<string> {
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       build: {
         write: false,
-        minify: false,
+        // Specs are embedded as JavaScript source in the final HTML, so minify them here too.
+        minify: true,
         sourcemap: false,
         reportCompressedSize: false,
         copyPublicDir: false,
