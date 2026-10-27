@@ -27,13 +27,16 @@ export function cache(variant: "buggy" | "fixed") {
     },
     (spec) => {
       const { Get, Load, Loaded, Update, Invalidate } = spec.messages;
-      const zone = spec.defineZone({ name: "Service" });
+      const apps = spec.defineZone({ name: "App servers", place: { column: 0, region: false } });
+      const zone = spec.defineZone({ name: "Service", description: "a read-through cache in front of the database", place: { column: 1, arrange: "row", region: true } });
 
       const Database = spec.defineActor({
         name: "Database",
         zone,
         singleton: true,
         initialState: () => ({ value: "a", version: 0 }),
+        place: { order: 1 },
+        look: { icon: "database", status: (s) => `"${s.value}", version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Load]: { description: "Answers with the current value.", sends: [Loaded], run: (state, _msg, ctx) => ctx.reply(Loaded, { value: state.value, version: state.version }) },
           [Update]: {
@@ -53,6 +56,12 @@ export function cache(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ entry: null as { value: string; version: number } | null, invalidated: 0, loading: false }),
+        place: { order: 0 },
+        look: {
+          icon: "storage",
+          status: (s) => (s.entry ? `holds "${s.entry.value}" (version ${s.entry.version})` : s.loading ? "loading" : "empty"),
+          mood: (s) => (s.entry ? "info" : s.loading ? "busy" : "off"),
+        },
         transitions: {
           [Get]: {
             description: "Serves the entry, or loads it on a miss.",
@@ -65,6 +74,7 @@ export function cache(variant: "buggy" | "fixed") {
           },
           [Loaded]: {
             description: "Fills the entry; with versions, only if no newer write has invalidated it.",
+            say: (s, msg) => (s.entry?.version === msg.version && s.entry.value === msg.value ? `Fills "${msg.value}" (version ${msg.version})` : `Drops "${msg.value}": version ${msg.version} was invalidated`),
             run(state, msg) {
               state.loading = false;
               if (variant === "fixed" && msg.version < state.invalidated) return;
@@ -83,9 +93,10 @@ export function cache(variant: "buggy" | "fixed") {
 
       const App = spec.defineActor({
         name: "App",
-        zone,
+        zone: apps,
         singleton: true,
         initialState: () => ({}),
+        look: { icon: "server", status: () => "serving" },
         actions: {
           read: { label: "Read", description: "Reads through the cache.", sends: [Get], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Cache), Get, {}) },
           write: {
@@ -112,6 +123,36 @@ export function cache(variant: "buggy" | "fixed") {
             const entry = w.the(Cache).state.entry;
             return entry === null || entry.value === w.the(Database).state.value;
           },
+        },
+      });
+      spec.defineScenario({
+        name: "Read, write, read",
+        description: "The app reads (a miss, filled), writes, and reads again (a miss after the invalidation).",
+        run(s) {
+          const app = s.the(App);
+          s.act(app, "read");
+          s.settle();
+          s.act(app, "write", { value: "b" });
+          s.settle();
+          s.act(app, "read");
+          s.settle();
+        },
+      });
+      spec.defineScenario({
+        name: "A stale fill overtakes the invalidation",
+        description:
+          variant === "buggy"
+            ? "A miss loads “a”; meanwhile “b” is written and the invalidation arrives first; then “a” fills the cache, stale for good."
+            : "A miss loads “a”; meanwhile “b” is written and the invalidation arrives first; the fill carries version 0, older than the invalidation, and is dropped.",
+        run(s) {
+          const app = s.the(App);
+          s.act(app, "read");
+          s.deliver(s.the(Cache), "Get");
+          s.deliver(s.the(Database), "Load");
+          s.act(app, "write", { value: "b" });
+          s.deliver(s.the(Database), "Update");
+          s.deliver(s.the(Cache), "Invalidate");
+          s.settle();
         },
       });
       return { Database, Cache, App };
