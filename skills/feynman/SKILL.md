@@ -496,6 +496,10 @@ export default definePlayground(spec, (play) => {
 - **Use one message per meaning.** If a refusal means different things in different
   places, declare different messages. Don't add a field to tell them apart.
 - Write `durable` as a list of state fields, like `durable: ["codes"]`.
+- **States and payloads hold plain data**: strings, numbers, booleans, null, undefined,
+  arrays, plain objects, `Set`s, `Map`s and dates. A function or class instance fails the
+  step. Use a `Set` for a set (it is compared by its members, in any order) rather than an
+  array you keep sorted: under symmetry, renamed ids would put the array out of order.
 
 ### Sources
 
