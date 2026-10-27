@@ -9,6 +9,7 @@ import { cache } from "../../examples/cache.ts";
 import { jobQueue } from "../../examples/job-queue.ts";
 import { leaderElection } from "../../examples/leader-election.ts";
 import { leaseLock } from "../../examples/lease-lock.ts";
+import { outbox } from "../../examples/outbox.ts";
 import { payments } from "../../examples/payments.ts";
 import { raftVote } from "../../examples/raft-vote.ts";
 import { lightSwitch } from "../../examples/switch.ts";
@@ -167,6 +168,29 @@ export const corpus: Example[] = [
       cases: [
         { testCase: "tcBuggy", variant: "buggy", faults: 0 },
         { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
+  },
+  {
+    name: "outbox",
+    spec: outbox,
+    cases: [
+      { variant: "buggy", bounds: { depth: 8, faults: 1 }, expect: { announcedOnceQuiet: { events: 3, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 8, faults: 0 }, expect: { announcedOnceQuiet: "holds" } },
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { announcedOnceQuiet: { events: 4, faults: 1 } } },
+    ],
+    tla: { module: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
+    p: {
+      project: "Outbox",
+      property: "announcedOnceQuiet",
+      // The system always comes to rest: an announcement still owed at the end is the bug.
+      assertion: "Announced detected liveness bug in hot state 'Owed'",
+      depth: 8,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixed", variant: "fixed", faults: 0 },
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
       ],
     },
