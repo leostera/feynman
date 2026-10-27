@@ -97,8 +97,9 @@ export const corpus: Example[] = [
     instances: { Participant: 2 },
     cases: [
       { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { atomic: { events: 7, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 9, faults: 0 }, expect: { atomic: "holds", decides: "holds" } },
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decides: { events: 6, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 0 }, expect: { atomic: "holds", decidedOnceQuiet: "holds", decides: "holds" } },
+      // Blocking: once everyone has voted and a vote is lost, it never decides (6); quiet needs the other vote delivered too (7).
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 6, faults: 1 } } },
     ],
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
