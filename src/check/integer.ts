@@ -21,10 +21,10 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, fire, guard, holdsIn, isLiveness, lose, observation, restart, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, fire, guard, holdsIn, isLiveness, lose, observation, restart, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
-import { startBreaks, stepBreaks, stuck } from "./judge.ts";
+import { startBreaks, stuck } from "./judge.ts";
 import { renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { fairness, fairStepsIn, memoryOf, rootMemory, type Resolved } from "./owner.ts";
@@ -127,6 +127,8 @@ interface ChoiceName {
 interface Entry {
   gid: number;
   layout: Layout;
+  /** Its world as properties see it (`IntegerSearch.tupleOf`). */
+  tuple: number;
   vector: Int32Array;
   h1: number;
   h2: number;
@@ -188,7 +190,7 @@ export class IntegerSearch {
   private traceSteps = new Interner<TraceStep>();
   private memories = new Interner<string>();
   private nevers: PropertyInfo[];
-  private everySteps: string[];
+  private everySteps: { id: string; everyStep: Extract<PropertyInfo, { kind: "everyStep" }>["everyStep"] }[];
   private reachedSteps: boolean[] = [];
   /** Key lines (keys.ts), named by integers: what symmetric fingerprints are made of. */
   private lines = new Map<string, number>();
@@ -202,7 +204,19 @@ export class IntegerSearch {
   /** For liveness: edges out of each expanded node, the fair steps possible there, and which predicates hold. */
   private readonly keepsEdges: boolean;
   private readonly predicates: Predicate[];
-  private readonly truths: number[][];
+  /**
+   * Properties see a world's instances and whether anything is pending, nothing else: its
+   * tuple, interned. Their answers are kept by tuple, and by pairs of tuples for step
+   * properties: most states differ from others only in what is in flight.
+   */
+  private tuples = new Map<string, number>();
+  /** By tuple: the `always` properties that fail there, and which liveness predicates hold. */
+  private alwaysFailing: string[][] = [];
+  private truthsByTuple: Uint8Array[] = [];
+  /** Each node's tuple, for liveness; -1 for shadow nodes. */
+  private tupleOfNode: number[] = [];
+  /** By (tuple before, tuple after, trace step): each step property's answer, HOLDS or BREAKS, if known. */
+  private stepAnswers = new Map<string, Uint8Array>();
   private expanded: boolean[] = [];
   private shadow: boolean[] = [];
   private option: number[] = [];
@@ -222,8 +236,7 @@ export class IntegerSearch {
     this.nevers = spec.properties.filter((p) => p.kind === "never");
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
-    this.truths = this.predicates.map(() => []);
-    this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [p.id] : []));
+    this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [{ id: p.id, everyStep: p.everyStep }] : []));
     this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
   }
 
@@ -288,8 +301,9 @@ export class IntegerSearch {
       this.watch.state?.(world, this.budgetOf(vector, L));
       for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid, L);
-      if (this.keepsEdges) this.judgeTruths(world, gid);
-      this.queue({ gid, layout: L, vector, h1, h2 }, 0, frontier, open);
+      const tuple = this.tupleOf(vector, L);
+      if (this.keepsEdges) this.judgeTruths(tuple, () => world, gid);
+      this.queue({ gid, layout: L, tuple, vector, h1, h2 }, 0, frontier, open);
     }
     return frontier;
   }
@@ -364,9 +378,11 @@ export class IntegerSearch {
     if (existing !== undefined) edgeTo(existing);
     // A step property is judged on every step, so one broken on the way to a known state counts too.
     let breaks = NO_IDS;
-    if (this.everySteps.some((id) => !this.broken.has(id))) {
-      child ??= this.applied(parent.vector, step);
-      breaks = stepBreaks(this.spec, world, this.materialize(child, L).world, this.eventAt(effect.event, depth), this.broken);
+    let tuple: number | undefined;
+    if (this.everySteps.some((p) => !this.broken.has(p.id))) {
+      const after = (child ??= this.applied(parent.vector, step));
+      tuple = this.tupleOf(after, L);
+      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => world, () => this.materialize(after, L).world);
     }
     if (existing !== undefined) {
       if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
@@ -385,11 +401,13 @@ export class IntegerSearch {
     if (folded) this.keepForTwins(gid, child, L, folded.plain);
     this.states++;
     if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
-    if (this.always.length) this.judge(child, gid, L);
+    const state = child;
+    tuple ??= this.tupleOf(state, L);
+    if (this.always.length) this.judge(tuple, state, gid, L);
     for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
-    this.judgeStuck(child, gid, L);
-    if (this.keepsEdges) this.judgeTruths(this.materialize(child, L).world, gid);
-    this.queue({ gid, layout: L, vector: child, h1, h2 }, depth + 1, next, open);
+    this.judgeStuck(state, gid, L);
+    if (this.keepsEdges) this.judgeTruths(tuple, () => this.materialize(state, L).world, gid);
+    this.queue({ gid, layout: L, tuple, vector: state, h1, h2 }, depth + 1, next, open);
     for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
     return true;
   }
@@ -426,9 +444,53 @@ export class IntegerSearch {
     this.expanded[entry.gid] = true;
   }
 
-  /** Which liveness predicates hold in a new state's world. */
-  private judgeTruths(world: World, gid: number): void {
-    this.predicates.forEach((p, i) => (this.truths[i][gid] = holdsIn(this.spec, world, p) ? 1 : 0));
+  /** A world as properties see it: its layout, instance states, and whether anything is pending. */
+  private tupleOf(vector: Int32Array, L: Layout): number {
+    let key = `${L.index}|${vector.length > L.messages + 1 ? 1 : 0}`;
+    for (let slot = 0; slot < L.instances.length; slot++) key += `,${vector[slot]}`;
+    let id = this.tuples.get(key);
+    if (id === undefined) this.tuples.set(key, (id = this.tuples.size));
+    return id;
+  }
+
+  /** Which liveness predicates hold in a new state: worked out once per tuple. */
+  private judgeTruths(tuple: number, world: () => World, gid: number): void {
+    this.tupleOfNode[gid] = tuple;
+    if (this.truthsByTuple[tuple]) return;
+    const w = world();
+    this.truthsByTuple[tuple] = Uint8Array.from(this.predicates, (p) => (holdsIn(this.spec, w, p) ? 1 : 0));
+  }
+
+  /**
+   * The step properties a step breaks, of those not yet broken: from what is known of the same
+   * step between the same tuples, else judged (judge.ts stepBreaks). A predicate that cannot be
+   * evaluated holds. One that reads the event's place in the path is not kept: the place is
+   * not in the key.
+   */
+  private stepBreaks(before: number, after: number, event: number, index: number, beforeWorld: () => World, afterWorld: () => World): string[] {
+    const key = `${before},${after},${event}`;
+    let known = this.stepAnswers.get(key);
+    if (!known) this.stepAnswers.set(key, (known = new Uint8Array(this.everySteps.length)));
+    let views: { before: ReturnType<typeof worldView>; after: ReturnType<typeof worldView> } | undefined;
+    const out: string[] = [];
+    this.everySteps.forEach((p, i) => {
+      if (this.broken.has(p.id)) return;
+      if (known[i] === UNKNOWN) {
+        views ??= { before: worldView(this.spec, beforeWorld()), after: worldView(this.spec, afterWorld()) };
+        let readsIndex = false;
+        const view = traceView([this.eventAt(event, index)]).events[0];
+        const watched = Object.defineProperty({ ...view }, "index", {
+          get: () => {
+            readsIndex = true;
+            return index;
+          },
+        });
+        const answer = holdsSafely(() => p.everyStep(views!.before, views!.after, watched)) ? HOLDS : BREAKS;
+        if (answer === BREAKS) out.push(p.id);
+        if (!readsIndex) known[i] = answer;
+      } else if (known[i] === BREAKS) out.push(p.id);
+    });
+    return out;
   }
 
   /** The search as a graph, for liveness (liveness.ts). */
@@ -438,8 +500,11 @@ export class IntegerSearch {
     return {
       size,
       holds: (predicate) => {
-        const truths = this.truths[index.get(predicate)!];
-        return (i) => truths[i] === 1;
+        const at = index.get(predicate)!;
+        return (i) => {
+          const tuple = this.tupleOfNode[i];
+          return tuple !== undefined && tuple >= 0 && this.truthsByTuple[tuple][at] === 1;
+        };
       },
       roots: this.parent.flatMap((p, i) => (p < 0 ? [i] : [])),
       initial: 0,
@@ -671,10 +736,14 @@ export class IntegerSearch {
     this.failures.set(id, gid);
   }
 
-  /** The `always` properties a new world breaks. They see its instances, and whether anything is pending (`quiet`). */
-  private judge(vector: Int32Array, gid: number, L: Layout): void {
-    const world = this.instancesOf(vector, L);
-    for (const p of this.always) if (!this.broken.has(p.id) && !p.holds(world)) this.breaks(p.id, gid);
+  /** The `always` properties a new state breaks: which fail is worked out once per tuple. */
+  private judge(tuple: number, vector: Int32Array, gid: number, L: Layout): void {
+    let failing = this.alwaysFailing[tuple];
+    if (!failing) {
+      const world = this.instancesOf(vector, L);
+      this.alwaysFailing[tuple] = failing = this.always.flatMap((p) => (p.holds(world) ? [] : [p.id]));
+    }
+    for (const id of failing) if (!this.broken.has(id)) this.breaks(id, gid);
   }
 
   /** Whether nothing can happen in a new world: only possible with nothing pending. Fewest faults, then first found. */
@@ -872,6 +941,10 @@ export class IntegerSearch {
 }
 
 const NONE = new Int32Array(0);
+/** A step property's answer, as kept: not known yet, holds, breaks. */
+const UNKNOWN = 0;
+const HOLDS = 1;
+const BREAKS = 2;
 
 function lessThan(a: [number, number], b: [number, number]): boolean {
   return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
