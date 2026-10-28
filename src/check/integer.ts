@@ -1,5 +1,5 @@
-// The integer core: the breadth-first search on worlds as integers (research note
-// personal/feynman/checker-performance; prototype in proto/integer).
+// The integer core: the checker's breadth-first search, on worlds as integers (research note
+// personal/feynman/checker-performance; RFD0008).
 //
 // The classic search (search.ts, owner.ts) copies, freezes, writes out and hashes whole worlds
 // of JS objects on every step, though nearly every handler call repeats a local step it has
@@ -19,8 +19,8 @@
 // than the key says: they run through the engine every time (the engine's Observation says
 // which). It explores exactly what the classic search does without its reductions: states,
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
-// symmetry. `check` uses it
-// whenever it can (see `fitsIntegerCore`), and the oracles hold it to the classic search.
+// symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
+// reference explorer, and the TLA+ and P oracles to TLC and P.
 import { act, actorNamed, fire, guard, holdsIn, isLiveness, lose, observation, restart, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
@@ -94,7 +94,7 @@ interface Layout {
 /** What a local step does, as integers. */
 interface Effect {
   error?: string;
-  /** The step's `actor.key`, for coverage, as an index into `IntegerSearch.steps`. */
+  /** The step's `actor.key`, for coverage, interned (`IntegerSearch.stepKeys`). */
   reached: number;
   state: number;
   /** Message ids it removes (the one delivered or lost first, if so); timer ids it removes. */
@@ -132,6 +132,18 @@ interface Entry {
   h2: number;
 }
 
+/** A frontier entry being expanded: its world as the engine has it, and what its steps share. */
+interface Expanding {
+  parent: Entry;
+  depth: number;
+  world: World;
+  /** Each pending entry's intern id, by its id in `world`. */
+  ids: number[];
+  symmetry: Symmetry;
+  /** For `never` properties: the trace steps on the way to the parent. */
+  trail: TraceStep[] | undefined;
+}
+
 /** A step, as what it changes in the vector. */
 interface Step {
   layout: Layout;
@@ -158,7 +170,8 @@ export class IntegerSearch {
   readonly ownerCount = 1;
   readonly root: number[] = [];
   private parent: number[] = [];
-  private choice: number[] = [];
+  /** How each node was reached from its parent: a `ChoiceName` id, found again in any world. */
+  private named: number[] = [];
   private faults: number[] = [];
   private depth: number[] = [];
   /** Each node's last event, as a `TraceStep` id: a path's events go up its parents, as classic trails do. */
@@ -237,29 +250,9 @@ export class IntegerSearch {
   }
 
   run(): void {
-    const seen = this.seen;
-    let frontier: Entry[] = [];
     // For liveness: the nodes at the depth bound, whose edges are added at the end if they can be.
     const open: Entry[] = [];
-    const startMemory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
-    for (const [r, { world }] of this.roots.entries()) {
-      const L = this.layoutOf(world);
-      const vector = this.vectorOf(world, startMemory, L);
-      const symmetry = this.roots[r].symmetry;
-      const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
-      const [h1, h2] = folded ? folded.print : printOf(vector, L);
-      if (seen.get(h1, h2) !== undefined) continue;
-      const gid = this.node(-1, r, -1, -1, 0, -1);
-      if (folded) this.keepForTwins(gid, vector, L, folded.plain);
-      seen.set(h1, h2, gid);
-      this.states++;
-      this.watch.state?.(world, this.budgetOf(vector, L));
-      for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
-      this.judgeStuck(vector, gid, L);
-      if (this.keepsEdges) this.judgeTruths(world, gid);
-      if (this.b.depth > 0) frontier.push({ gid, layout: L, vector, h1, h2 });
-      else if (this.keepsEdges) open.push({ gid, layout: L, vector, h1, h2 });
-    }
+    let frontier = this.start(open);
     const deadline = this.started + this.b.timeLimit;
     for (let depth = 0; frontier.length && depth < this.b.depth; depth++) {
       const next: Entry[] = [];
@@ -268,86 +261,7 @@ export class IntegerSearch {
           this.stoppedBy = "timeLimit";
           return;
         }
-        const parent = frontier[f];
-        const { vector, layout: L } = parent;
-        const { world, ids, timersOf } = this.materialize(vector, L);
-        const trail = this.nevers.length ? this.trailOf(parent.gid) : undefined;
-        const symmetry = this.roots[this.root[parent.gid]].symmetry;
-        const symmetric = symmetry.classes.length > 0;
-        const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
-        if (this.keepsEdges) {
-          // Expanded once it is begun, as in the classic search, even if the search stops partway.
-          this.expanded[parent.gid] = true;
-          this.edges[parent.gid] = [];
-          this.enabled[parent.gid] = fairStepsIn(this.spec, world, options);
-        }
-        for (let option = 0; option < options.length; option++) {
-          const choice = options[option];
-          const step = this.step(vector, L, world, ids, timersOf, choice);
-          if (!step) continue;
-          const { effect } = step;
-          this.reachedSteps[effect.reached] = true;
-          const faults = this.faults[parent.gid] + (step.fault ? 1 : 0);
-          if (effect.error) {
-            // A step that fails is a spec error, and goes nowhere; the first time an error is
-            // met, a node of its own (a shadow, not a state) ends its counterexample.
-            if (!this.errors.has(effect.error)) this.errors.set(effect.error, this.shadowNode(parent.gid, option, this.nameOf(choice, ids), faults, effect.event));
-            else if (symmetric) {
-              // Its world is the one before, with the budget spent: it may land on a renamed
-              // twin, as in the classic search, whose claim is tested all the same.
-              const unchanged = this.applied(vector, { ...step, effect: { ...effect, state: vector[step.slot], removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE }, at: -1 });
-              const folded = this.symmetricPrint(unchanged, L, symmetry);
-              const existing = seen.get(folded.print[0], folded.print[1]);
-              if (existing !== undefined && !this.sameAsTwin(existing, unchanged, L, folded.plain, symmetry)) return void (this.refuted = true);
-            }
-            continue;
-          }
-          const nevers = trail ? this.remember(trail, effect.event, step) : NO_IDS;
-          let child: Int32Array | undefined;
-          let folded: { print: [number, number]; plain: [number, number] } | undefined;
-          if (symmetric) {
-            child = this.applied(vector, step);
-            folded = this.symmetricPrint(child, L, symmetry);
-          }
-          const [h1, h2] = folded ? folded.print : childPrint(parent, step);
-          const existing = seen.get(h1, h2);
-          const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, world, choice)?.id));
-          if (existing !== undefined) edgeTo(existing);
-          // A step property is judged on every step, so one broken on the way to a known state
-          // gets a node of its own too (see Search.land).
-          let breaks = NO_IDS;
-          if (this.everySteps.some((id) => !this.broken.has(id))) {
-            child ??= this.applied(vector, step);
-            breaks = stepBreaks(this.spec, world, this.materialize(child, L).world, this.eventAt(effect.event, depth), this.broken);
-          }
-          if (existing !== undefined && !breaks.length) {
-            if (folded && !this.sameAsTwin(existing, child!, L, folded.plain, symmetry)) return void (this.refuted = true);
-            continue;
-          }
-          if (existing === undefined && this.states >= this.b.maxStates) {
-            this.stoppedBy = "maxStates";
-            return;
-          }
-          if (existing !== undefined) {
-            const gid = this.shadowNode(parent.gid, option, this.nameOf(choice, ids), faults, effect.event);
-            for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
-            continue;
-          }
-          const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameOf(choice, ids), faults, effect.event);
-          edgeTo(gid);
-          child ??= this.applied(vector, step);
-          seen.set(h1, h2, gid);
-          if (folded) this.keepForTwins(gid, child, L, folded.plain);
-          this.states++;
-          if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
-          if (this.always.length) this.judge(child, gid, L);
-          for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
-          this.judgeStuck(child, gid, L);
-          if (this.keepsEdges) this.judgeTruths(this.materialize(child, L).world, gid);
-          if (depth + 1 < this.b.depth) next.push({ gid, layout: L, vector: child, h1, h2 });
-          else if (this.keepsEdges) open.push({ gid, layout: L, vector: child, h1, h2 });
-          for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
-        }
+        if (!this.expand(frontier[f], depth, next, open)) return;
       }
       frontier = next;
     }
@@ -355,6 +269,139 @@ export class IntegerSearch {
     // one lands on a known state, nothing lies past it, and its edges are added: in a space the
     // bound does not cut, liveness is then judged in full, as TLC would.
     if (this.keepsEdges) for (const entry of open) this.close(entry);
+  }
+
+  /** One node per distinct root: judged, and the frontier to start from. */
+  private start(open: Entry[]): Entry[] {
+    const frontier: Entry[] = [];
+    const memory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
+    for (const [r, { world, symmetry }] of this.roots.entries()) {
+      const L = this.layoutOf(world);
+      const vector = this.vectorOf(world, memory, L);
+      const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
+      const [h1, h2] = folded ? folded.print : printOf(vector, L);
+      if (this.seen.get(h1, h2) !== undefined) continue;
+      const gid = this.node(-1, r, -1, -1, 0, -1);
+      if (folded) this.keepForTwins(gid, vector, L, folded.plain);
+      this.seen.set(h1, h2, gid);
+      this.states++;
+      this.watch.state?.(world, this.budgetOf(vector, L));
+      for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
+      this.judgeStuck(vector, gid, L);
+      if (this.keepsEdges) this.judgeTruths(world, gid);
+      this.queue({ gid, layout: L, vector, h1, h2 }, 0, frontier, open);
+    }
+    return frontier;
+  }
+
+  /** A new state at a depth: expanded in the next round, or (for liveness) closed at the end. */
+  private queue(entry: Entry, depth: number, next: Entry[], open: Entry[]): void {
+    if (depth < this.b.depth) next.push(entry);
+    else if (this.keepsEdges) open.push(entry);
+  }
+
+  /** Every step from a frontier entry, in the classic order. False when the search must stop. */
+  private expand(parent: Entry, depth: number, next: Entry[], open: Entry[]): boolean {
+    const { vector, layout: L } = parent;
+    const { world, ids, timersOf } = this.materialize(vector, L);
+    const from: Expanding = { parent, depth, world, ids, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.trailOf(parent.gid) : undefined };
+    const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
+    if (this.keepsEdges) {
+      // Expanded once it is begun, as in the classic search, even if the search stops partway.
+      this.expanded[parent.gid] = true;
+      this.edges[parent.gid] = [];
+      this.enabled[parent.gid] = fairStepsIn(this.spec, world, options);
+    }
+    for (let option = 0; option < options.length; option++) {
+      const step = this.step(vector, L, world, ids, timersOf, options[option]);
+      if (!step) continue;
+      this.reachedSteps[step.effect.reached] = true;
+      const goesOn = step.effect.error ? this.failed(from, option, options[option], step) : this.land(from, option, options[option], step, next, open);
+      if (!goesOn) return false;
+    }
+    return true;
+  }
+
+  /**
+   * A step that fails: a spec error, which goes nowhere. The first time an error is met, a node
+   * of its own (a shadow, not a state) ends its counterexample. False if it refutes symmetry.
+   */
+  private failed(from: Expanding, option: number, choice: Choice, step: Step): boolean {
+    const { parent, symmetry } = from;
+    const error = step.effect.error!;
+    if (!this.errors.has(error)) {
+      this.errors.set(error, this.shadowNode(parent.gid, option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), step.effect.event));
+      return true;
+    }
+    if (!symmetry.classes.length) return true;
+    // Its world is the one before, with the budget spent: as in the classic search, it may land
+    // on a renamed twin, whose claim is tested all the same.
+    const unchanged = this.applied(parent.vector, { ...step, at: -1, effect: { ...step.effect, state: parent.vector[step.slot], removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE } });
+    const folded = this.symmetricPrint(unchanged, parent.layout, symmetry);
+    const existing = this.seen.get(folded.print[0], folded.print[1]);
+    return existing === undefined || this.sameAsTwin(existing, unchanged, parent.layout, folded.plain, symmetry) || this.refutes();
+  }
+
+  /**
+   * Where a step lands (see Search.land). On a known state, it adds an edge, and its world is
+   * tested against a renamed twin's; if it breaks a step property, a shadow node ends that
+   * counterexample. On a new state, a node, judged and queued. False when the search must stop.
+   */
+  private land(from: Expanding, option: number, choice: Choice, step: Step, next: Entry[], open: Entry[]): boolean {
+    const { parent, world, symmetry, depth } = from;
+    const L = parent.layout;
+    const { effect } = step;
+    const nevers = from.trail ? this.remember(from.trail, effect.event, step) : NO_IDS;
+    let child: Int32Array | undefined;
+    let folded: ReturnType<IntegerSearch["symmetricPrint"]> | undefined;
+    if (symmetry.classes.length) {
+      child = this.applied(parent.vector, step);
+      folded = this.symmetricPrint(child, L, symmetry);
+    }
+    const [h1, h2] = folded ? folded.print : childPrint(parent, step);
+    const existing = this.seen.get(h1, h2);
+    const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, world, choice)?.id));
+    if (existing !== undefined) edgeTo(existing);
+    // A step property is judged on every step, so one broken on the way to a known state counts too.
+    let breaks = NO_IDS;
+    if (this.everySteps.some((id) => !this.broken.has(id))) {
+      child ??= this.applied(parent.vector, step);
+      breaks = stepBreaks(this.spec, world, this.materialize(child, L).world, this.eventAt(effect.event, depth), this.broken);
+    }
+    if (existing !== undefined) {
+      if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
+      const gid = this.shadowNode(parent.gid, option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), effect.event);
+      for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
+      return true;
+    }
+    if (this.states >= this.b.maxStates) {
+      this.stoppedBy = "maxStates";
+      return false;
+    }
+    const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), effect.event);
+    edgeTo(gid);
+    child ??= this.applied(parent.vector, step);
+    this.seen.set(h1, h2, gid);
+    if (folded) this.keepForTwins(gid, child, L, folded.plain);
+    this.states++;
+    if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
+    if (this.always.length) this.judge(child, gid, L);
+    for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
+    this.judgeStuck(child, gid, L);
+    if (this.keepsEdges) this.judgeTruths(this.materialize(child, L).world, gid);
+    this.queue({ gid, layout: L, vector: child, h1, h2 }, depth + 1, next, open);
+    for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
+    return true;
+  }
+
+  /** A symmetry claim turned out false: the search stops, to be run again without it. */
+  private refutes(): false {
+    this.refuted = true;
+    return false;
+  }
+
+  private faultsAfter(parent: Entry, step: Step): number {
+    return this.faults[parent.gid] + (step.fault ? 1 : 0);
   }
 
   /** A node at the depth bound: its edges, if every step from it lands on a known state; else it stays open. */
@@ -556,7 +603,7 @@ export class IntegerSearch {
 
   private pathTo(gid: number): Choice[] {
     const names: ChoiceName[] = [];
-    for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) names.push(this.names.values[this.choice[at]]);
+    for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) names.push(this.names.values[this.named[at]]);
     names.reverse();
     let world = this.roots[this.root[gid]].world;
     const out: Choice[] = [];
@@ -598,13 +645,13 @@ export class IntegerSearch {
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
-  private node(parent: number, root: number, option: number, choice: number, faults: number, event: number): number {
+  private node(parent: number, root: number, option: number, named: number, faults: number, event: number): number {
     const gid = this.parent.push(parent) - 1;
     this.option.push(option);
     this.shadow.push(false);
     this.eventOf.push(event);
     this.root.push(root);
-    this.choice.push(choice);
+    this.named.push(named);
     this.faults.push(faults);
     const depth = parent < 0 ? 0 : this.depth[parent] + 1;
     this.depth.push(depth);
@@ -613,8 +660,8 @@ export class IntegerSearch {
   }
 
   /** A node that stands only for a counterexample's last step (an error, a step property broken on the way to a known state): not a state. */
-  private shadowNode(parent: number, option: number, choice: number, faults: number, event: number): number {
-    const gid = this.node(parent, this.root[parent], option, choice, faults, event);
+  private shadowNode(parent: number, option: number, named: number, faults: number, event: number): number {
+    const gid = this.node(parent, this.root[parent], option, named, faults, event);
     this.shadow[gid] = true;
     return gid;
   }
