@@ -4,8 +4,12 @@
     "title": "axo: remote access",
     "summary": "Follow remote access from a one-time pairing code to a browser terminal, through Cloudflare Access and Durable Objects. Try adding a Mac, dropping messages, or revoking access.",
     "repository": "https://github.com/leostera/axo",
-    "commit": "3f5d3c28f7106c8cdbf021fb89126a7848d806b6",
+    "commit": "d34ff7ca3da718d1e792e1fba29de45d23b4e612",
     "specs": [
+      {
+        "path": "specs/client-dataflow.ts",
+        "title": "Where client data comes from"
+      },
       {
         "path": "specs/remote-access.ts",
         "title": "Remote access"
@@ -33,12 +37,24 @@
         "title": "Cache (buggy)"
       },
       {
+        "path": "examples/chain-replication.ts",
+        "title": "Chain replication (buggy)"
+      },
+      {
         "path": "examples/chang-roberts.ts",
         "title": "Chang-Roberts (buggy)"
       },
       {
         "path": "examples/dining-philosophers.ts",
         "title": "Dining philosophers (buggy)"
+      },
+      {
+        "path": "examples/g-counter.ts",
+        "title": "G-Counter (buggy)"
+      },
+      {
+        "path": "examples/idempotent-consumer.ts",
+        "title": "Idempotent consumer (buggy)"
       },
       {
         "path": "examples/job-queue.ts",
@@ -53,6 +69,22 @@
         "title": "Lease lock (buggy)"
       },
       {
+        "path": "examples/log-replication.ts",
+        "title": "Log replication (buggy)"
+      },
+      {
+        "path": "examples/lost-update.ts",
+        "title": "Lost update (buggy)"
+      },
+      {
+        "path": "examples/lww-register.ts",
+        "title": "LWW register (buggy)"
+      },
+      {
+        "path": "examples/or-set.ts",
+        "title": "OR-Set (buggy)"
+      },
+      {
         "path": "examples/outbox.ts",
         "title": "Outbox (buggy)"
       },
@@ -61,8 +93,24 @@
         "title": "Payments (buggy)"
       },
       {
+        "path": "examples/primary-backup.ts",
+        "title": "Primary–backup (buggy)"
+      },
+      {
+        "path": "examples/quorum.ts",
+        "title": "Quorum (buggy): W = 2, R = 1, N = 3"
+      },
+      {
         "path": "examples/raft-vote.ts",
         "title": "Raft vote (buggy)"
+      },
+      {
+        "path": "examples/read-repair.ts",
+        "title": "Read repair (buggy)"
+      },
+      {
+        "path": "examples/read-your-writes.ts",
+        "title": "Read your writes (buggy)"
       },
       {
         "path": "examples/ricart-agrawala.ts",
