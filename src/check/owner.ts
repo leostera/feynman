@@ -576,7 +576,7 @@ function stepName(world: World, choice: Choice): string {
  * is. Deliveries, timers and guards are weakly fair unless their transition says otherwise;
  * actions and faults are never fair.
  */
-function fairness(spec: Spec, world: World, choice: Choice): { id: FairId; kind: Fairness } | undefined {
+export function fairness(spec: Spec, world: World, choice: Choice): { id: FairId; kind: Fairness } | undefined {
   if (choice.kind === "act" || choice.kind === "lose" || choice.kind === "restart") return undefined;
   let name: string;
   let key: string;
@@ -598,6 +598,6 @@ function fairness(spec: Spec, world: World, choice: Choice): { id: FairId; kind:
 }
 
 /** The fair steps possible in a world, among its options, by identity. */
-function fairStepsIn(spec: Spec, world: World, options: Choice[]): Map<FairId, Fairness> {
+export function fairStepsIn(spec: Spec, world: World, options: Choice[]): Map<FairId, Fairness> {
   return new Map(options.flatMap((c) => fairness(spec, world, c) ?? []).map((f) => [f.id, f.kind]));
 }
