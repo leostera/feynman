@@ -382,7 +382,7 @@ export class IntegerSearch {
     if (this.everySteps.some((p) => !this.broken.has(p.id))) {
       const after = (child ??= this.applied(parent.vector, step));
       tuple = this.tupleOf(after, L);
-      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => world, () => this.materialize(after, L).world);
+      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => world, () => this.instancesOf(after, L));
     }
     if (existing !== undefined) {
       if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
@@ -406,7 +406,7 @@ export class IntegerSearch {
     if (this.always.length) this.judge(tuple, state, gid, L);
     for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
     this.judgeStuck(state, gid, L);
-    if (this.keepsEdges) this.judgeTruths(tuple, () => this.materialize(state, L).world, gid);
+    if (this.keepsEdges) this.judgeTruths(tuple, () => this.instancesOf(state, L), gid);
     this.queue({ gid, layout: L, tuple, vector: state, h1, h2 }, depth + 1, next, open);
     for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
     return true;
@@ -746,15 +746,21 @@ export class IntegerSearch {
     for (const id of failing) if (!this.broken.has(id)) this.breaks(id, gid);
   }
 
-  /** Whether nothing can happen in a new world: only possible with nothing pending. Fewest faults, then first found. */
+  /**
+   * Whether nothing can happen in a new world: only possible with nothing pending, so its
+   * instances are all there is to it. Fewest faults, then first found.
+   */
   private judgeStuck(vector: Int32Array, gid: number, L: Layout): void {
-    if (vector[L.messages] !== 0 || vector.length > L.messages + 1) return;
+    if (vector.length > L.messages + 1) return;
     const best = this.stuckAt;
     if (best !== undefined && this.faults[best] <= this.faults[gid]) return;
-    if (stuck(this.spec, this.materialize(vector, L).world)) this.stuckAt = gid;
+    if (stuck(this.spec, this.instancesOf(vector, L))) this.stuckAt = gid;
   }
 
-  /** A world with just the instances, and as many pending entries as there are, for properties. */
+  /**
+   * A world with just the instances, and as many (empty) pending entries as there are: all a
+   * property sees of a world (worldView: the instances, and whether anything is pending).
+   */
   private instancesOf(vector: Int32Array, L: Layout): World {
     const n = L.instances.length;
     const instances = new Array<Instance>(n);
