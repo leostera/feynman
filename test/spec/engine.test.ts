@@ -117,3 +117,67 @@ test("a restart keeps durable state and forgets the rest, and its timers", () =>
   expect(restarted.changes.map((c) => c.path)).toEqual(["link.pending", "code", "keychain"]);
   expect(runner.world.pending.filter((p) => p.kind === "timer")).toEqual([]);
 });
+
+// A counter that ticks itself up to 3, sending a note to a log each time.
+function ticker(run: (state: { n: number }) => unknown = (state) => void (state.n += 1)) {
+  return defineSpec("Ticker", { messages: { Tick: message<{ n: number }>({ name: "tick" }) } }, (s) => {
+    const zone = s.defineZone({ name: "z" });
+    const Log = s.defineActor({
+      name: "Log",
+      zone,
+      singleton: true,
+      initialState: () => ({ seen: [] as number[] }),
+      transitions: { [s.messages.Tick]: { description: "Writes it down.", run: (state, msg) => void state.seen.push(msg.n) } },
+    });
+    const Counter = s.defineActor({
+      name: "Counter",
+      zone,
+      singleton: true,
+      initialState: () => ({ n: 0 }),
+      transitions: {
+        tick: {
+          description: "Counts one.",
+          sends: [s.messages.Tick],
+          when: (state) => state.n < 3,
+          run: (state, ctx) => {
+            const returned = run(state);
+            ctx.send(ctx.the(Log), s.messages.Tick, { n: state.n });
+            return returned as void;
+          },
+        },
+      },
+    });
+    s.defineScenario({ name: "Until two are logged", run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 2 }) });
+    s.defineScenario({ name: "Until ten are logged", run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 10 }) });
+    s.defineScenario({ name: "Until it has started", run: (sc) => sc.settle({ until: (w) => w.the(Counter).state.n >= 0 }) });
+  });
+}
+
+test("settle({ until }) stops as soon as the world gets there, and fails if it never does", () => {
+  const spec = ticker();
+  const [two, ten, start] = spec.scenarios.map((scenario) => runScenario(spec, scenario));
+  expect(two.error).toBeUndefined();
+  expect(two.worlds.at(-1)!.instances.find((i) => i.actor === "Log")!.state).toEqual({ seen: [1, 2] });
+  // Stopped at once: the third tick may have happened, but its note is still in flight.
+  expect(two.worlds.at(-1)!.pending.length).toBeLessThanOrEqual(1);
+  expect(ten.error).toBe("settle: nothing is left to happen, and `until` never held");
+  expect(start.events).toEqual([]);
+});
+
+test("a step that returns a new state is an error: state changes in place", () => {
+  const assigned = ticker((state) => (state.n += 1));
+  expect(runScenario(assigned, assigned.scenarios[0]).error).toBeUndefined();
+  const returned = ticker((state) => ({ n: state.n + 1 }));
+  const run = runScenario(returned, returned.scenarios[0]);
+  expect(run.error).toContain("Counter.tick: its run returned an object, which is ignored: a step changes its state in place");
+  const async = ticker(async (state) => void (state.n += 1));
+  expect(runScenario(async, async.scenarios[0]).error).toContain("Counter.tick: its run is async");
+});
+
+test("an actor without a zone says so", () => {
+  expect(() =>
+    defineSpec("Nowhere", { messages: {} }, (s) => {
+      s.defineActor({ name: "A", singleton: true, initialState: () => ({}) } as never);
+    }),
+  ).toThrow("A: say where it runs, with zone: a zone from spec.defineZone");
+});

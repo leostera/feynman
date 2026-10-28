@@ -5,6 +5,7 @@ import { checkCommand, type CheckOptions } from "./check.ts";
 import { context, diffCommand, list, lockCommand, runCommand } from "./commands.ts";
 import { buildCommand, devCommand } from "./serve.ts";
 import { red } from "./format.ts";
+import manifest from "../../package.json" with { type: "json" };
 
 export const USAGE = `feynman: executable specs of how a system behaves.
 
@@ -14,6 +15,7 @@ Specs are TypeScript files in specs/ next to any package.json (or listed in
 feynman.config.ts). Name them by path or by file name; by default all of them.
 
 Commands:
+  version                  The version of feynman (also --version, -v).
   list                     The specs in this repository.
   run [spec] [--scenario]  Run scenarios and print their traces.
   check [spec]             Explore every interleaving within bounds; check properties
@@ -42,6 +44,10 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
   const [command, ...rest] = argv;
   if (!command || command === "help" || command === "--help" || command === "-h") {
     console.log(USAGE);
+    return 0;
+  }
+  if (command === "version" || command === "--version" || command === "-v") {
+    console.log(manifest.version);
     return 0;
   }
   const { values, positionals } = parseArgs({

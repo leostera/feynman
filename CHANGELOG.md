@@ -6,6 +6,22 @@ after.
 
 ## Unreleased
 
+### Writing specs
+
+- `s.settle({ until: (w) => … })` runs a scenario left alone until the world gets there, to
+  step in at that moment (a restart, a drop) without delivering each message by hand. It is
+  an error if the system settles first.
+- An unfinished liveness verdict says why and what to change: "held to depth 14, but paths
+  that had not got there yet were cut off at that depth", then "raise --depth
+  (check.depth in feynman.config.ts)". When the search stopped at a limit, it names that limit.
+- A step whose `run` returns a new state object, or is `async`, is a spec error: state
+  changes in place, and the returned state used to be dropped silently.
+- An actor without a `zone` says so, instead of failing on `raw.zone.name`.
+- `feynman version` (and `--version`, `-v`).
+- The skill: how scenarios change state (only through events) and how to share setup
+  between them; zones for the system's parts and concerns, and when to use a ring or a grid;
+  the shipped source as the API reference.
+
 ### Fixes, found by fuzzing
 
 - A world where a path starts (the initial world, or where a scenario ends) is judged too: an

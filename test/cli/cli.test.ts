@@ -196,3 +196,28 @@ test("check: a property marked known is reported but does not fail, until it hol
   expect(fixed.out).toContain('marked known ("ECHO-1"), but holds now: remove known');
   expect(fixed.status).toBe(1);
 }, 60_000);
+
+test("version, --version and -v print the version", async () => {
+  const { version } = await import("../../package.json");
+  for (const flag of ["version", "--version", "-v"]) expect(await capture([flag], tmpdir())).toEqual({ status: 0, out: version });
+});
+
+test("check: a liveness property cut off at the depth bound says to raise --depth", async () => {
+  const { root } = repo();
+  writeFileSync(
+    join(root, "specs/count.ts"),
+    `import { defineSpec } from "@leostera/feynman";
+export default defineSpec("Count", { messages: {} }, (spec) => {
+  const zone = spec.defineZone({ name: "Here" });
+  const Counter = spec.defineActor({ name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
+    transitions: { tick: { description: "Counts one.", sources: ["src/server.ts#say"], when: (s) => s.n < 30, run: (s) => void s.n++ } } });
+  spec.defineProperties({ reaches: { description: "It gets to 30.", eventually: (w) => w.the(Counter).state.n >= 30 } });
+  spec.defineFinalState({ description: "Done.", when: (w) => w.the(Counter).state.n >= 30 });
+});
+`,
+  );
+  const { out } = await capture(["check", "count", "--depth", "10", "--walks", "0"], root);
+  expect(out).toContain("~ reaches  It gets to 30.  held to depth 10, but paths that had not got there yet were cut off at that depth");
+  expect(out).toContain(`"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is 10 now)`);
+  expect((await capture(["check", "count", "--depth", "40", "--walks", "0"], root)).out).toContain("✓ reaches");
+});

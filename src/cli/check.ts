@@ -7,7 +7,7 @@ import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
 import { playgroundFor } from "./discover.ts";
-import { dim, formatReport, formatSources, red, yellow } from "./format.ts";
+import { dim, formatReport, formatSources, red, unfinishedHint, yellow } from "./format.ts";
 import { loadPlayground } from "./load.ts";
 import { scenarioCode } from "./scenario-code.ts";
 import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt, type ShapeWarning } from "./shape.ts";
@@ -153,7 +153,7 @@ function formatCheck(result: SpecCheck, how: { brief: boolean; focused: boolean 
     for (const s of result.scenarios.filter((s) => s.broken)) lines.push(s.known ? yellow(`  ✗ scenario "${s.name}": ${s.broken} (known bug)`) : red(`  ✗ scenario "${s.name}": ${s.broken}`));
   lines.push(formatReport(spec, report, { brokenBy: result.brokenBy, brief: how.brief, verdict: (p) => verdictOf(p, result), command: `feynman check ${result.path}` }));
   const verdicts = report.properties.map((p) => verdictOf(p, result));
-  if (verdicts.includes("unfinished")) lines.push(dim(`  "~" is not a proof: raise the limits or lower the bounds until exploration finishes.`));
+  if (verdicts.includes("unfinished")) lines.push(dim(`  ${unfinishedHint(report)}`));
   if (verdicts.includes("untested")) lines.push(dim(`  "?" was never tested: add a scenario that gets there, so exploration starts from its end.`));
   if (how.focused) return lines.join("\n");
   lines.push(...formatSources(result.sources));

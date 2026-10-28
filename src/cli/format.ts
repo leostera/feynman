@@ -117,7 +117,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
       continue;
     }
     if (v === "unfinished") {
-      lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  held in the states explored, not all of them`));
+      lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  ${unfinishedWhy(report)}`));
       continue;
     }
     if (v === "holds") {
@@ -142,6 +142,19 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   }
   if (report.coverage.missed.length) lines.push(yellow(`  never ran: ${report.coverage.missed.join(", ")}`));
   return lines.join("\n");
+}
+
+/** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
+function unfinishedWhy(report: Report): string {
+  if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${report.stoppedBy === "maxStates" ? "state" : "time"} limit, not all of them`;
+  return `held to depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may break further on`;
+}
+
+/** What to do about the unfinished verdicts in a report, for the line under them. */
+export function unfinishedHint(report: Report): string {
+  if (report.stoppedBy === "maxStates") return `"~" is not a proof: raise --max-states (check.maxStates in feynman.config.ts), or lower --depth, until exploration finishes.`;
+  if (report.stoppedBy === "timeLimit") return `"~" is not a proof: raise --time-limit (check.timeLimit in feynman.config.ts), or lower --depth, until exploration finishes.`;
+  return `"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is ${report.bounds.depth} now) until no path is cut off before it gets there or loops.`;
 }
 
 /** How a broken property breaks: the counterexample, how it was found, and for liveness the loop. */

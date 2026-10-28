@@ -295,7 +295,15 @@ interface Running {
   delivery?: { message: string; payload: unknown; from: string };
   from?: InstanceState;
   notes?: string[];
-  call: (state: unknown, ctx: unknown) => void;
+  call: (state: unknown, ctx: unknown) => unknown;
+}
+
+/** Whether `value` is `within`, or held somewhere inside it. */
+function contains(within: unknown, value: object): boolean {
+  if (within === value) return true;
+  if (typeof within !== "object" || within === null) return false;
+  const parts = within instanceof Map ? [...within.keys(), ...within.values()] : within instanceof Set ? [...within] : Object.values(within);
+  return parts.some((part) => contains(part, value));
 }
 
 function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Step {
@@ -317,7 +325,12 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     ...run.delivery,
   };
   try {
-    run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe));
+    const returned = run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe));
+    if (returned instanceof Promise) throw new SpecError("its run is async: a step happens at once, so it cannot await; tell others with a message and handle their reply in another step");
+    // `(s) => s.n++` and `(s) => (s.list = [...])` return what they assign, harmlessly; an object
+    // the state does not hold looks like a new state, which would be lost.
+    if (typeof returned === "object" && returned !== null && !contains(state, returned))
+      throw new SpecError("its run returned an object, which is ignored: a step changes its state in place (state.n += 1), it does not return a new one");
   } catch (error) {
     const message = readOnly(error)
       ? `changes the state of another instance (${error instanceof Error ? error.message : String(error)}); a step may change only its own state, and tell others with a message`
