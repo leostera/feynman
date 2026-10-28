@@ -1,7 +1,7 @@
 // What a Worker that mounts share declares in its cloudflare.config.ts:
 //
 //   worker: {
-//     env: { ...shareBindings("<this worker's name>") },
+//     env: { ...shareBindings() },
 //     exports: { ...shareExports },
 //   },
 //   containers: [shareContainer],
@@ -29,10 +29,10 @@ export const shareExports = {
   ShareBuilder: exports.durableObject({ storage: "sqlite", container: shareContainer }),
 };
 
-/** The bindings in ShareEnv. `worker` is the name of the Worker that exports ShareBuilder. */
-export function shareBindings(worker: string) {
-  return {
-    SHARE_PAGES: bindings.r2({ name: "feynman-share" }),
-    SHARE_BUILDER: bindings.durableObject({ worker, exportName: "ShareBuilder" }),
-  };
+/**
+ * The bindings in ShareEnv. ShareBuilder has none: share reaches it through ctx.exports, as cf
+ * refuses a container on a Durable Object the Worker binds to by its own name.
+ */
+export function shareBindings() {
+  return { SHARE_PAGES: bindings.r2({ name: "feynman-share" }) };
 }

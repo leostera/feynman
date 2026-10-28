@@ -39,11 +39,11 @@ The package has no Worker of its own. The Worker that mounts it does three thing
   ```ts
   import { shareBindings, shareContainer, shareExports } from "@feynman/share/config";
 
-  worker: { env: { ...shareBindings(name) }, exports: { ...shareExports } },
+  worker: { env: { ...shareBindings() }, exports: { ...shareExports } },
   containers: [shareContainer],
   ```
 
-  These are the `SHARE_PAGES` R2 bucket (`feynman-share`), the `SHARE_BUILDER` namespace, and the container that `ShareBuilder` starts.
+  These are the `SHARE_PAGES` R2 bucket (`feynman-share`), the `ShareBuilder` Durable Object, and the container that `ShareBuilder` starts. share reaches `ShareBuilder` and `ShareOutbound` through `ctx.exports`, not bindings. cf refuses a container on a Durable Object that the Worker binds to by its own name.
 
 - **Runs before its assets on the mount path.** Set `assets.runWorkerFirst: ["/s/*"]`. Without it, the asset handler answers unmatched paths with its 404 page, and the request never reaches the Worker.
 
