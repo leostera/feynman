@@ -4,19 +4,49 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
-## Unreleased
+## 0.11.0
 
 ### Checking
 
-- An integer core for the search (`src/check/integer.ts`), now the checker's engine: worlds
-  are short integer vectors of interned states, local steps run through the engine once and
-  are replayed from a cache, and fingerprints are updated per step. 5-13x faster on one
-  thread than the classic search with its reductions. It does everything the classic search
-  does but split the work among threads: every kind of property (liveness on the graph it
-  keeps), symmetry and its twin checks, scenario seeds, errors, stuck worlds and coverage.
-  `engine: "classic"` (or `FEYNMAN_ENGINE=classic`) runs the classic search, with its
-  reductions and worker threads. Both give the same report, to the counterexample and the
-  loop, on every example and on generated specs; the TLA+ and P oracles hold it to TLC and P.
+- The search runs on an integer core (`src/check/integer.ts`; RFD0008).
+  - **Worlds** are short integer vectors of interned instance states, messages and timers.
+  - **Local steps** (one instance, in one state, taking one step, with one argument) run
+    through the engine once, and are then replayed from a cache.
+  - **Fingerprints** are updated per step. Only fingerprints and parent links are kept, so
+    counterexamples are replayed on real worlds.
+- It is 5–13× faster than the old search on one thread, and 2–6× faster than the old search
+  on 8 threads. It uses a quarter or less of the memory.
+  - On a production spec of 2.8 million states, a check that took 581 s on one thread (147 s
+    on 8) now takes 40 s.
+  - The same spec needs 11 GB at peak, down from 38 GB.
+- It does everything the old search did except split the work among threads:
+  - every kind of property: `always`, `never`, `everyStep`, and liveness on the graph it
+    keeps;
+  - symmetry and its twin checks;
+  - scenario starts, including ones whose setup spawns instances;
+  - errors, stuck worlds, coverage, `maxStates` and `timeLimit`.
+- Its reports are the same as the old search's, down to every counterexample and loop, on
+  every example and on generated specs. The TLA+ and P oracles hold it to TLC and P.
+- A property's answer is worked out once for each set of instance states it can see, and
+  then reused. Most states differ only in what is in flight, so specs with costly properties
+  gain the most.
+- With symmetry on, checks are 3–7.6× faster than before.
+
+### API
+
+- `check(spec, bounds, seeds, { engine })` takes `"integer"` (the default) or `"classic"`,
+  the old search. `FEYNMAN_ENGINE=classic` sets the default, for example to run a suite
+  through the old search.
+- `bounds.reduce` (sleep sets and the inputs reduction) and `--workers` / `bounds.workers`
+  now apply only to the classic search. `report.reductions.orders` and `.inputs` are 0 with
+  the integer core.
+
+### Fixes
+
+- `feynman check` no longer says "skipped 0 step(s)" when only symmetry has something to
+  report.
+- The fuzzer now holds the integer core to the old search, from scenario starts too.
+  Generated specs may now spawn instances in a scenario's setup.
 
 ## 0.10.0
 
