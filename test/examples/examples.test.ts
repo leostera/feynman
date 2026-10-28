@@ -3,7 +3,7 @@
 // whichever way it explores: with or without its reductions, with or without symmetry, and
 // by random runs alone.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { check, replay, type Counterexample, type Report } from "../../src/check/index.ts";
+import { check, replay, type CheckOptions, type Counterexample, type Report } from "../../src/check/index.ts";
 import { isLiveness } from "../../src/spec/index.ts";
 import { caseName, corpus, type Expected } from "./corpus.ts";
 
@@ -32,7 +32,7 @@ for (const example of corpus) for (const c of example.cases) {
   const spec = example.spec(c.variant);
   const bounds = { ...c.bounds, instances: example.instances ?? {} };
   describe(caseName(example, c), () => {
-    const run = (extra: Partial<typeof bounds> = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra });
+    const run = (extra: Partial<typeof bounds> = {}, options: CheckOptions = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra }, [], options);
     let plain: Report;
     beforeAll(async () => {
       plain = await run({ reduce: false, symmetry: false });
@@ -52,8 +52,8 @@ for (const example of corpus) for (const c of example.cases) {
       }
     });
 
-    test("the reductions reach the same verdicts, with counterexamples just as short", async () => {
-      const reduced = await run({ reduce: true, symmetry: false });
+    test("the classic search's reductions reach the same verdicts, with counterexamples just as short", async () => {
+      const reduced = await run({ reduce: true, symmetry: false }, { engine: "classic" });
       expect(verdicts(reduced, c.expect)).toEqual(c.expect);
       expect(stuckOf(reduced)).toEqual(c.stuck);
       expect(reduced.coverage).toEqual(plain.coverage);

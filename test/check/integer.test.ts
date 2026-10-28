@@ -80,3 +80,16 @@ test("a step that lists instances is not replayed from a world with other instan
   const report = await bothAgree(spec, { depth: 8, repeats: 2, instances: { Replica: 2 } }, scenarioSeeds(spec));
   expect(report.seeds.length).toBe(1);
 });
+
+test("cut off by maxStates: both stop at the same state, with the same verdicts so far", async () => {
+  for (const name of ["two-phase commit", "read repair", "leader election", "job queue", "quorum"]) {
+    const example = corpus.find((e) => e.name === name)!;
+    for (const c of example.cases) {
+      const spec = example.spec(c.variant);
+      const bounds = { ...c.bounds, instances: example.instances ?? {} };
+      const full = await check(spec, { ...PLAIN, ...bounds });
+      const cut = await bothAgree(spec, { ...bounds, maxStates: Math.max(1, Math.floor(full.states / 3)) });
+      expect(cut.stoppedBy).toBe("maxStates");
+    }
+  }
+}, 300_000);
