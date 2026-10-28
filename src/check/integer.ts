@@ -18,12 +18,13 @@
 // Steps that read other instances, or hand out fresh ids or random numbers, depend on more
 // than the key says: they run through the engine every time (the engine's Observation says
 // which). It explores exactly what the classic search does without its reductions, for
-// safety: states, `always` properties, errors, stuck worlds and coverage. `check` uses it
+// safety: states, `always`, `never` and step properties, errors, stuck worlds and coverage. `check` uses it
 // whenever it can (see `fitsIntegerCore`), and the oracles hold it to the classic search.
-import { act, actorNamed, fire, guard, lose, observation, restart, worldView, type Observation, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, fire, guard, lose, observation, restart, worldView, type Event, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
-import { startBreaks, stuck } from "./judge.ts";
+import { startBreaks, stepBreaks, stuck } from "./judge.ts";
+import { memoryOf, rootMemory } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
 import type { Root } from "./search.ts";
 import { apply, branches, QUIET, type Choice } from "./steps.ts";
@@ -38,7 +39,7 @@ type PendingTemplate = Omit<Pending, "id">;
  * search's reductions (and is faster than the classic search with them), so it ignores `reduce`.
  */
 export function fitsIntegerCore(spec: Spec, roots: Root[]): boolean {
-  if (spec.properties.some((p) => p.kind !== "always")) return false;
+  if (spec.properties.some((p) => p.kind !== "always" && p.kind !== "never" && p.kind !== "everyStep")) return false;
   if (roots.some((r) => r.symmetry.classes.length)) return false;
   // One layout for every root: the same instances, in the same order.
   const ids = roots[0].world.instances.map((i) => i.id).join("\u0000");
@@ -60,7 +61,8 @@ class Interner<T> {
 /**
  * Where things are in a world's vector:
  * [state id per instance | faults | actions taken per (instance, action) | fresh id | rng |
- *  message count | message ids | timer ids], messages and timers each oldest first.
+ *  memory | message count | message ids | timer ids], messages and timers each oldest first.
+ * The memory is what `never` properties remember of the path (owner.ts memoryOf), interned.
  *
  * Messages are a bag to the fingerprint, but kept in the order they were sent, as the classic
  * search's worlds are: so the choices from a vector come in the same order (pendingInOrder),
@@ -73,6 +75,7 @@ interface Layout {
   faults: number;
   fresh: number;
   rng: number;
+  memory: number;
   messages: number;
 }
 
@@ -88,10 +91,15 @@ interface Effect {
   /** Message and timer ids it adds, in the order sent and set. */
   addsMessages: Int32Array;
   addsTimers: Int32Array;
+  /** What a trace sees of the step's event, interned (see `TraceStep`). */
+  event: number;
   /** For steps that are not cached: the counters after them. */
   fresh?: number;
   rng?: number;
 }
+
+/** What `never` and step properties see of an event (traceView): its place goes in when a path is laid out. */
+type TraceStep = Pick<Event, "actor" | "key" | "error" | "sent">;
 
 /** A choice, as it can be found again in any world: messages and timers by what they are, not by their ids there. */
 interface ChoiceName {
@@ -119,6 +127,8 @@ interface Step {
   effect: Effect;
   actsAt: number;
   fault: boolean;
+  /** What `never` properties remember after it. */
+  memory: number;
 }
 
 /** The search, with what `reportOf` reads of one (see search.ts). */
@@ -135,6 +145,8 @@ export class IntegerSearch {
   private choice: number[] = [];
   private faults: number[] = [];
   private depth: number[] = [];
+  /** Each node's last event, as a `TraceStep` id: a path's events go up its parents, as classic trails do. */
+  private eventOf: number[] = [];
   private readonly broken = new Set<string>();
 
   private instanceStates = new Interner<Instance>();
@@ -144,6 +156,10 @@ export class IntegerSearch {
   private timerLists = new Interner<string>();
   private names = new Interner<ChoiceName>();
   private stepKeys = new Interner<string>();
+  private traceSteps = new Interner<TraceStep>();
+  private memories = new Interner<string>();
+  private nevers: PropertyInfo[];
+  private everySteps: string[];
   private reachedSteps: boolean[] = [];
   private cache = new Map<number, Effect>();
   private layout: Layout;
@@ -162,7 +178,9 @@ export class IntegerSearch {
     const acts = new Map<string, number>();
     for (const instance of first.instances) for (const key of Object.keys(actorNamed(spec, instance.actor).actions)) acts.set(`${instance.id}.${key}`, acts.size);
     const n = first.instances.length;
-    this.layout = { instances: first.instances, acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, messages: n + 3 + acts.size };
+    this.layout = { instances: first.instances, acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
+    this.nevers = spec.properties.filter((p) => p.kind === "never");
+    this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [p.id] : []));
     this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
   }
 
@@ -175,14 +193,15 @@ export class IntegerSearch {
     const L = this.layout;
     const seen = new PrintMap();
     let frontier: Entry[] = [];
+    const startMemory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
     for (const [r, { world }] of this.roots.entries()) {
-      const vector = this.vectorOf(world);
+      const vector = this.vectorOf(world, startMemory);
       const [h1, h2] = printOf(vector, L.messages);
       if (seen.get(h1, h2) !== undefined) continue;
-      const gid = this.node(-1, r, -1, 0);
+      const gid = this.node(-1, r, -1, 0, -1);
       seen.set(h1, h2, gid);
       this.states++;
-      this.watch.state?.(world, { acts: {}, faults: 0, memory: "" });
+      this.watch.state?.(world, this.budgetOf(vector));
       for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid);
       if (this.b.depth > 0) frontier.push({ gid, vector, h1, h2 });
@@ -198,34 +217,71 @@ export class IntegerSearch {
         const parent = frontier[f];
         const { vector } = parent;
         const { world, ids, timersOf } = this.materialize(vector);
+        const trail = this.nevers.length ? this.trailOf(parent.gid) : undefined;
         for (const choice of branches(this.spec, world, vector[L.faults] < this.b.faults)) {
           const step = this.step(vector, world, ids, timersOf, choice);
           if (!step) continue;
-          this.reachedSteps[step.effect.reached] = true;
-          if (step.effect.error) {
-            // A step that fails goes nowhere; the first time an error is met, a node of its own
-            // (a shadow, not a state) ends its counterexample.
-            if (!this.errors.has(step.effect.error)) this.errors.set(step.effect.error, this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), this.faults[parent.gid] + (step.fault ? 1 : 0)));
+          const { effect } = step;
+          this.reachedSteps[effect.reached] = true;
+          const faults = this.faults[parent.gid] + (step.fault ? 1 : 0);
+          if (effect.error) {
+            // A step that fails is a spec error, and goes nowhere; the first time an error is
+            // met, a node of its own (a shadow, not a state) ends its counterexample.
+            if (!this.errors.has(effect.error)) this.errors.set(effect.error, this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), faults, effect.event));
             continue;
           }
+          const nevers = trail ? this.remember(trail, effect.event, step) : NO_IDS;
           const [h1, h2] = childPrint(parent, step, L);
-          if (seen.get(h1, h2) !== undefined) continue;
-          if (this.states >= this.b.maxStates) {
+          const existing = seen.get(h1, h2);
+          // A step property is judged on every step, so one broken on the way to a known state
+          // gets a node of its own too (see Search.land).
+          let child: Int32Array | undefined;
+          let breaks = NO_IDS;
+          if (this.everySteps.some((id) => !this.broken.has(id))) {
+            child = this.applied(vector, step);
+            breaks = stepBreaks(this.spec, world, this.materialize(child).world, this.eventAt(effect.event, depth), this.broken);
+          }
+          if (existing !== undefined && !breaks.length) continue;
+          if (existing === undefined && this.states >= this.b.maxStates) {
             this.stoppedBy = "maxStates";
             return;
           }
-          const child = this.applied(vector, step);
-          const gid = this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), child[L.faults]);
-          seen.set(h1, h2, gid);
-          this.states++;
-          if (this.watch.state) this.watch.state(this.materialize(child).world, this.budgetOf(child));
-          if (this.always.length) this.judge(child, gid);
-          this.judgeStuck(child, gid);
-          if (depth + 1 < this.b.depth) next.push({ gid, vector: child, h1, h2 });
+          const gid = this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), faults, effect.event);
+          if (existing === undefined) {
+            child ??= this.applied(vector, step);
+            seen.set(h1, h2, gid);
+            this.states++;
+            if (this.watch.state) this.watch.state(this.materialize(child).world, this.budgetOf(child));
+            if (this.always.length) this.judge(child, gid);
+            for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
+            this.judgeStuck(child, gid);
+            if (depth + 1 < this.b.depth) next.push({ gid, vector: child, h1, h2 });
+          }
+          for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
         }
       }
       frontier = next;
     }
+  }
+
+  /** The trace steps on the way to a node, from its root. */
+  private trailOf(gid: number): TraceStep[] {
+    const out: TraceStep[] = [];
+    for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) out.push(this.traceSteps.values[this.eventOf[at]]);
+    return out.reverse();
+  }
+
+  /** What `never` properties remember after a step on a trail: into the step, and which of them the path breaks. */
+  private remember(trail: TraceStep[], event: number, step: Step): string[] {
+    const events = [...trail, this.traceSteps.values[event]].map((e, index) => ({ ...e, index }) as Event);
+    const { memory, nevers } = memoryOf(this.nevers, events);
+    step.memory = this.memories.id(memory, () => memory);
+    return nevers;
+  }
+
+  /** A trace step as an event at a place in its path. Only the order of places is promised (TraceEvent.index). */
+  private eventAt(event: number, index: number): Event {
+    return { ...this.traceSteps.values[event], index } as Event;
   }
 
   /** The choices from each node's root to it, found again in real worlds. */
@@ -277,8 +333,9 @@ export class IntegerSearch {
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
-  private node(parent: number, root: number, choice: number, faults: number): number {
+  private node(parent: number, root: number, choice: number, faults: number, event: number): number {
     const gid = this.parent.push(parent) - 1;
+    this.eventOf.push(event);
     this.root.push(root);
     this.choice.push(choice);
     this.faults.push(faults);
@@ -318,7 +375,7 @@ export class IntegerSearch {
   private budgetOf(vector: Int32Array): { acts: Record<string, number>; faults: number; memory: string } {
     const acts: Record<string, number> = {};
     for (const [id, at] of this.layout.acts) if (vector[this.layout.faults + 1 + at]) acts[id] = vector[this.layout.faults + 1 + at];
-    return { acts, faults: vector[this.layout.faults], memory: "" };
+    return { acts, faults: vector[this.layout.faults], memory: this.memories.values[vector[this.layout.memory]] };
   }
 
   /** What a choice does, to apply to the vector; none if it would repeat an action past the bound. */
@@ -337,7 +394,7 @@ export class IntegerSearch {
       slot = this.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
     } else slot = this.slots.get(choice.instance)!;
-    return { slot, at, effect: this.effectOf(vector, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart" };
+    return { slot, at, effect: this.effectOf(vector, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
@@ -352,7 +409,7 @@ export class IntegerSearch {
     if (cached) return cached;
     const observe = observation();
     const step = run(this.spec, world, choice, observe);
-    const effect = this.effectFrom(world, ids, slot, step.world, `${step.event.actor}.${step.event.key}`, step.event.error);
+    const effect = this.effectFrom(world, ids, slot, step.world, step.event);
     if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0 };
     this.cache.set(key, effect);
     return effect;
@@ -364,14 +421,20 @@ export class IntegerSearch {
   }
 
   /** The integers a step changed, from the worlds before and after it. */
-  private effectFrom(before: World, ids: number[], slot: number, after: World, stepKey: string, error: string | undefined): Effect {
+  private effectFrom(before: World, ids: number[], slot: number, after: World, e: Event): Effect {
+    const stepKey = `${e.actor}.${e.key}`;
     const reached = this.stepKeys.id(stepKey, () => stepKey);
-    if (error) return { error, reached, state: 0, removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE };
+    const sent = e.sent.map((s) => ({ message: s.message }));
+    const traced: TraceStep = { actor: e.actor, key: e.key, sent: sent as Event["sent"], ...(e.error ? { error: e.error } : {}) };
+    const event = this.traceSteps.id(`${stepKey}|${e.error ?? ""}|${sent.map((s) => s.message).join(",")}`, () => traced);
+    const error = e.error;
+    if (error) return { error, reached, event, state: 0, removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE };
     const kept = new Set(after.pending.map((p) => p.id));
     const removed = before.pending.filter((p) => !kept.has(p.id));
     const added = after.pending.filter((p) => p.id > before.seq).sort((a, b) => a.id - b.id);
     return {
       reached,
+      event,
       state: this.stateId(after.instances[slot]),
       removesMessages: Int32Array.from(removed.filter((p) => p.kind === "deliver").map((p) => ids[p.id])),
       removesTimers: Int32Array.from(removed.filter((p) => p.kind === "timer").map((p) => ids[p.id])),
@@ -385,7 +448,7 @@ export class IntegerSearch {
    * The message chosen goes from where it is; any other removed message, its first copy
    * (copies are alike, but where they are decides the order of choices). New ones go last.
    */
-  private applied(vector: Int32Array, { slot, at: chosen, effect, actsAt, fault }: Step): Int32Array {
+  private applied(vector: Int32Array, { slot, at: chosen, effect, actsAt, fault, memory }: Step): Int32Array {
     const L = this.layout;
     const M = L.messages;
     const count = vector[M];
@@ -394,6 +457,7 @@ export class IntegerSearch {
     const out = new Int32Array(M + 1 + messages + (vector.length - M - 1 - count) - rt.length + at.length);
     out.set(vector.subarray(0, M));
     out[slot] = effect.state;
+    out[L.memory] = memory;
     if (actsAt >= 0) out[actsAt]++;
     if (fault) out[L.faults]++;
     if (effect.fresh !== undefined) out[L.fresh] = effect.fresh;
@@ -423,7 +487,7 @@ export class IntegerSearch {
   }
 
   /** A root world's vector, with nothing spent. */
-  private vectorOf(world: World): Int32Array {
+  private vectorOf(world: World, memory: number): Int32Array {
     const L = this.layout;
     const inOrder = [...world.pending].sort((a, b) => a.id - b.id);
     const messages = inOrder.filter((p) => p.kind === "deliver").map((p) => this.pendingId(p));
@@ -432,6 +496,7 @@ export class IntegerSearch {
     world.instances.forEach((instance, slot) => (v[slot] = this.stateId(instance)));
     v[L.fresh] = this.freshId(world.fresh);
     v[L.rng] = world.rng | 0;
+    v[L.memory] = memory;
     v[L.messages] = messages.length;
     v.set(messages, L.messages + 1);
     v.set(timers, L.messages + 1 + messages.length);
@@ -483,6 +548,7 @@ export class IntegerSearch {
 }
 
 const NONE = new Int32Array(0);
+const NO_IDS: string[] = [];
 /** The step cache key packs (state, own timers, step and argument) into one number below 2^53. */
 const ARGS = 1 << 20;
 const TIMER_LISTS = 1 << 10;
@@ -553,7 +619,8 @@ export function printOf(v: Int32Array, M: number): [number, number] {
 }
 
 /** A child's fingerprint: the parent's, with the parts the step changes taken out and put back. */
-function childPrint(parent: Entry, { slot, effect: e, actsAt, fault }: Step, L: Layout): [number, number] {
+function childPrint(parent: Entry, step: Step, L: Layout): [number, number] {
+  const { slot, effect: e, actsAt, fault } = step;
   const v = parent.vector;
   let h1 = parent.h1;
   let h2 = parent.h2;
@@ -567,6 +634,7 @@ function childPrint(parent: Entry, { slot, effect: e, actsAt, fault }: Step, L: 
   if (fault) swap(L.faults, v[L.faults] + 1);
   if (e.fresh !== undefined) swap(L.fresh, e.fresh);
   if (e.rng !== undefined) swap(L.rng, e.rng);
+  swap(L.memory, step.memory);
   for (const id of e.removesMessages) (h1 -= lane1(3, id, 0)), (h2 -= lane2(3, id, 0));
   for (const id of e.addsMessages) (h1 += lane1(3, id, 0)), (h2 += lane2(3, id, 0));
   if (e.removesTimers.length || e.addsTimers.length) {

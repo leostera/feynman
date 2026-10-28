@@ -250,7 +250,7 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
   const engine = options.engine ?? engineFrom(process.env.FEYNMAN_ENGINE);
   const fits = engine !== "classic" && fitsIntegerCore(spec, roots);
-  if (engine === "integer" && !fits) throw new Error("the integer core does `always` properties only, from roots with the same instances");
+  if (engine === "integer" && !fits) throw new Error("the integer core does safety properties only, from roots with the same instances");
   if (fits) {
     // The bounds as the integer core searches: with none of the classic search's reductions.
     const plain = { ...b, reduce: false, symmetry: false };
