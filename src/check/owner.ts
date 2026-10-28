@@ -492,7 +492,7 @@ function eventsOf(trail: Trail | undefined): Event[] {
  * the whole path goes in: no two paths are merged. Judging the path this way also says which
  * of them it breaks.
  */
-function memoryOf(nevers: PropertyInfo[], events: Event[]): { memory: string; nevers: string[] } {
+export function memoryOf(nevers: PropertyInfo[], events: Event[]): { memory: string; nevers: string[] } {
   const base = traceView(events);
   const memory: unknown[] = [];
   const broken: string[] = [];

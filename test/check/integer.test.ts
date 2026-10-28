@@ -3,7 +3,7 @@
 // and on generated specs.
 import { expect, test } from "bun:test";
 import { check, type Bounds, type Report } from "../../src/check/index.ts";
-import type { Spec } from "../../src/spec/index.ts";
+import { isLiveness, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 import { build, describe as describeSpec } from "../fuzz/spec.ts";
 
@@ -12,9 +12,9 @@ const PLAIN = { walks: 0, maxStates: 2_000_000, timeLimit: 120_000, reduce: fals
 /** A report without the clock. */
 const comparable = (r: Report) => ({ ...r, durationMs: 0 });
 
-/** A spec with only its `always` properties: what the integer core judges. */
+/** A spec without its liveness properties: what the integer core judges. */
 function safety(spec: Spec): Spec {
-  return { ...spec, properties: spec.properties.filter((p) => p.kind === "always") };
+  return { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
 }
 
 async function bothAgree(spec: Spec, bounds: Partial<Bounds>): Promise<Report> {
@@ -34,16 +34,16 @@ for (const example of corpus) for (const c of example.cases) {
 
 test("generated specs: the same report from both", async () => {
   let compared = 0;
-  for (let seed = 1; seed <= 40; seed++) {
+  for (let seed = 1; seed <= 80; seed++) {
     const desc = describeSpec(seed);
     const spec = safety(build(desc));
     const report = await bothAgree(spec, desc.bounds);
     if (report.exhaustive) compared++;
   }
-  expect(compared).toBeGreaterThan(20);
+  expect(compared).toBeGreaterThan(40);
 }, 300_000);
 
 test("the integer core refuses a job it does not do", async () => {
   const spec = corpus.find((e) => e.name === "two-phase commit")!.spec("fixed");
-  await expect(check(spec, { ...PLAIN, instances: { Participant: 2 } }, [], { engine: "integer" })).rejects.toThrow("the integer core does `always` properties only");
+  await expect(check(spec, { ...PLAIN, instances: { Participant: 2 } }, [], { engine: "integer" })).rejects.toThrow("the integer core does safety properties only");
 });
