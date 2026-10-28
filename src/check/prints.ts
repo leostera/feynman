@@ -10,7 +10,9 @@ export class PrintMap {
 
   /** The node with this fingerprint, if any. */
   get(hi: number, lo: number): number | undefined {
-    [hi, lo] = nonzero(hi, lo);
+    hi >>>= 0;
+    lo >>>= 0;
+    if (hi === 0 && lo === 0) lo = 1;
     const mask = this.hi.length - 1;
     for (let i = slotOf(hi, lo, mask); ; i = (i + 1) & mask) {
       if (this.hi[i] === 0 && this.lo[i] === 0) return undefined;
