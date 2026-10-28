@@ -7,6 +7,7 @@ import { pageKey, putPage } from "./pages.ts";
 import { asCommit, type Commit } from "./refs.ts";
 import type { Repository } from "./repository.ts";
 import type { ShareEnv } from "./env.ts";
+import { type OutboundProps, type ShareExports, shareExports } from "./exports.ts";
 
 export interface BuildJob {
   readonly repository: Repository;
@@ -57,20 +58,6 @@ const BUILD = `set -eu
 cd ${REPO}
 git -c advice.detachedHead=false checkout -q "$1"
 exec timeout ${BUILD_TIMEOUT_S} feynman build --out ${PAGE}`;
-
-/** What ShareBuilder needs from the host Worker's exports: ShareOutbound, as a loopback. */
-interface ShareExports {
-  ShareOutbound(options: { props: OutboundProps }): Fetcher;
-}
-
-/** The host Worker's exports, once its main module is known to export ShareOutbound. */
-function shareExports(ctx: DurableObjectState): ShareExports {
-  const exports = ctx.exports as unknown as Partial<ShareExports> | undefined;
-  if (typeof exports?.ShareOutbound !== "function") {
-    throw new Error("the Worker's main module must export ShareOutbound from @feynman/share");
-  }
-  return exports as ShareExports;
-}
 
 export class ShareBuilder extends DurableObject<ShareEnv> {
   readonly #container: Container;
@@ -160,10 +147,6 @@ export class ShareBuilder extends DurableObject<ShareEnv> {
 
 function failure(status: 404 | 422, message: string, output: { stdout: string; stderr: string }): BuildResult {
   return { ok: false, status, message, log: `${output.stdout}\n${output.stderr}`.trim().slice(-LOG_TAIL) };
-}
-
-interface OutboundProps {
-  readonly host: string;
 }
 
 /** Where the build container's traffic goes: HTTPS to the repository's host, and nowhere else. */
