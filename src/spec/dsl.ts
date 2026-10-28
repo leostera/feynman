@@ -448,9 +448,12 @@ export interface Script {
   act<S, A, K extends ActionsWithInputs<A>>(who: Instance<S, A>, action: K, inputs: ActionInputs<A, K>): void;
   /**
    * Leave the system alone until nothing is pending: every message in flight arrives, in the
-   * order it was sent, and when none is, the timer set first fires.
+   * order it was sent, and when none is, the timer set first fires. With `until`, stop as soon
+   * as it holds (before anything happens, if it holds already), to step in at that moment:
+   * `s.settle({ until: (w) => w.the(Store).state.saved })`, then `s.restart(worker)`. It is an
+   * error if the system settles, or runs SETTLE_LIMIT events, without getting there.
    */
-  settle(): void;
+  settle(options?: { until: (world: World) => boolean }): void;
   /** Fire one of an instance's timers now, ahead of what is in flight. */
   fire(who: Instance<any, any>, timer: string): void;
   /** Lose the next delivery of `key`, as a network would. */
@@ -610,6 +613,7 @@ interface RawActor {
 
 function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
   if (spec.actors.some((actor) => actor.name === raw.name)) throw new Error(`Two actors are named "${raw.name}"`);
+  if (!raw.zone?.name) throw new Error(`${raw.name}: say where it runs, with zone: a zone from spec.defineZone`);
   if (raw.durable !== undefined && !Array.isArray(raw.durable)) throw new Error(`${raw.name}: durable lists state fields, like durable: ["codes"]`);
   const actions: Record<string, ActionInfo> = {};
   for (const [key, step] of Object.entries(raw.actions ?? {})) {

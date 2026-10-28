@@ -311,6 +311,8 @@ export default defineSpec(
         // One step at a time, in any order: s.deliver(relay, "Redeem") delivers a message in
         // flight now, s.drop(relay, "Redeem") loses it, s.fire(studio, "retry") fires a timer,
         // s.step(who, "transition") runs a guarded transition, s.restart(who) restarts.
+        // s.settle({ until: (w) => … }) runs left alone only until the world gets there, to
+        // step in at that moment (a restart, a drop) without delivering each message by hand.
       },
     });
 
@@ -330,6 +332,7 @@ export default defineSpec(
 
   Don't use `Date`, `Math.random`, `async`, I/O or module-level mutable state.
 - **Mutate `state` in place.** The engine records each change as `path: before → after`.
+  A `run` that returns a new state object, or is `async`, is a spec error.
 - **Declare effects.** Every message a step sends must be listed in its `sends`, and every
   timer it starts in its `starts`. The types check most of this. An undeclared send at
   runtime is a spec error, and the step's effects are discarded.
@@ -378,6 +381,10 @@ actor, add:
 - **`owner`** on a row: the instance it belongs to, by id or label. The row's group, and
   the row itself if it has no mood, take that instance's colour; links take their
   source's. Readers can then follow Alice through the system.
+- **Zones for the parts of the system and its concerns**, not only for where code runs.
+  A zone is a set of actors that work together on one concern and talk mostly among
+  themselves: the people and their devices; the request path; the storage behind it; a
+  cluster of replicas. "Local" and "cloud" alone put everything that matters in one box.
 - **Zone `description`**: a few words beside its name, such as "sign in with Access".
 - **Placement hints**, when the computed map does not tell the story; there are no
   coordinates.
@@ -386,7 +393,9 @@ actor, add:
     - `region: true` draws the zone as the tinted area everything hangs off (a zone holding
       a singleton is one by default);
     - `align` is `"start"`, `"center"` or `"end"`;
-    - `arrange` is `"stack"`, `"row"`, `"grid"` (shards) or `"ring"` (peers in a cluster).
+    - `arrange` is `"stack"`, `"row"`, `"grid"` or `"ring"`. Use a ring for peers in a
+      cluster (replicas, nodes electing a leader), a grid for shards or for several distinct
+      services that sit side by side, and a stack or row for a few things in a line.
   - On an actor, `place: { order, edge }`:
     - `order` sorts its instances within the zone;
     - `edge: "left" | "right"` sets it on the zone's border, like a gate everything passes
@@ -489,6 +498,11 @@ export default definePlayground(spec, (play) => {
 - `import { defineSpec, message } from "@leostera/feynman"` is all a spec needs.
   For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
+- **The source is the reference.** Feynman ships as TypeScript, so it is in
+  `node_modules/@leostera/feynman/src`; read it when this page does not answer.
+  `spec/dsl.ts` has the whole API with its doc comments (`SpecBuilder`, `ActorDef`,
+  `Script` for scenarios, `PropertyDef`, `ZonePlace`); `spec/engine.ts` and `spec/run.ts`
+  say what a step and a scenario do; `examples/` has complete specs with their bugs.
 - **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
   'any' because it … is referenced directly or indirectly in its own initializer", two
   actors refer to each other inside a function whose return type TypeScript has to infer.
@@ -541,6 +555,16 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   (`expired = true`), never a stored time. When an ordering really depends on durations (a
   heartbeat always beats an expiry, on one machine), model it with state and say so; usually
   the counterexample is a real risk.
+- **Scenarios** change the world only through events: spawns, actions, deliveries, timers,
+  drops and restarts. `s.world` and `s.the(X).state` are for reading. Every scenario starts
+  from the spec's start, where only the singletons exist, in their `initialState`; that
+  applies everywhere (every scenario, every state the checker explores) and sees only `id`
+  and `label`, so it is not the place for one scenario's setup. A scenario that starts after
+  some history (a second push, a fetch after pushes) replays it: write the history once as a
+  function, `function firstPush(s: Script) { … }`, call it at the top of each scenario that
+  needs it, and say so in the scenario's description. To get to a moment and step in there,
+  `s.settle({ until: (w) => w.the(R2).state.layers.length > 0 })` and then `s.restart(…)`,
+  rather than delivering each message by hand.
 - **Left alone.** `s.settle()` and the playground's Play run the system
   left alone: messages in the order they were sent, and when none is in flight, the timers
   that are set, oldest first, up to 200 events. So a scenario's `settle()` also fires
@@ -560,7 +584,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   a loop it repeats forever (or a world where nothing fair can happen). Liveness turns off
   the search's reductions and symmetry, so it costs more states. If a loop could lie past the
   depth bound (the worlds never run out, as when retries pile up copies), the verdict is
-  unfinished, not holds.
+  unfinished, not holds. When the paths that matter are simply longer than the depth (a push
+  through five services and back), raise `--depth`, or `check: { depth }` in
+  feynman.config.ts for every run, until the verdict is ✓ or ✗.
 - **Stuck.** A world where nothing can happen (no action, guard, message or timer, ignoring
   `--repeats`) is reported as stuck: a deadlock, or a wait nothing will end. A system that
   is meant to finish says where with `spec.defineFinalState({ description, when: (w) => … })`;

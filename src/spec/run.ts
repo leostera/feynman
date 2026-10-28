@@ -62,6 +62,16 @@ export class Runner {
     for (let n = 0; n < SETTLE_LIMIT && this.next(); n++);
   }
 
+  /** Leave the system alone until `until` holds; an error if it settles, or runs SETTLE_LIMIT events, first. */
+  settleUntil(until: (world: World) => boolean) {
+    for (let n = 0; !until(this.current); n++) {
+      if (n === SETTLE_LIMIT) throw new SpecError(`settle: ran ${SETTLE_LIMIT} events and \`until\` never held`);
+      const event = this.next();
+      if (!event) throw new SpecError("settle: nothing is left to happen, and `until` never held");
+      if (event.error) throw new SpecError(event.error);
+    }
+  }
+
   /** Fire an instance's timer now, ahead of anything in flight. */
   fireTimer(instance: string, timer: string): Event {
     const pending = this.current.pending.find((p) => p.kind === "timer" && p.to === instance && p.timer === timer);
@@ -146,7 +156,11 @@ function scriptFor(runner: Runner): Script {
       const event = runner.act(who.id, action, inputs);
       if (event.error) throw new SpecError(event.error);
     },
-    settle: () => runner.settle(),
+    settle(options) {
+      if (!options) return runner.settle();
+      if (typeof options.until !== "function") throw new SpecError("settle: `until` is a predicate on the world, like (w) => w.the(Store).state.saved");
+      runner.settleUntil((world) => options.until(worldView(runner.spec, world)));
+    },
     fire(who, timer) {
       const event = runner.fireTimer(who.id, timer);
       if (event.error) throw new SpecError(event.error);
