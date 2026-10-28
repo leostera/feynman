@@ -84,6 +84,9 @@ search until it is deleted.
 - the step with its argument: a message or timer by its intern id, or an action with its
   inputs.
 
+There is one cache per layout, because a step sees which instances exist (`ctx.all`,
+`ctx.the`, sending to one) without reading their states.
+
 It stores the new state id, the message and timer ids removed and added, and the trace step
 (actor, key, error, sent). Some steps depend on more than the key. A step that reads another
 instance's state, or hands out fresh ids or random numbers, is run through the engine every
@@ -123,8 +126,11 @@ replayed worlds. `judgeLiveness` reads it through the same `Graph`.
   renamed key lines, cached per renaming. The budget and memory stay as they are, as the
   classic key has them. Renamed twins share one set of renamed worlds, so they share the
   least one.
-- *Twin checks.* These run inline on the first `symmetryChecks` twins met, in the order met,
-  with the shared `successorsPrint`. A refuted claim searches again without symmetry.
+- *Twin checks.* These run inline on the first `symmetryChecks` twins met, in the order met.
+  While checks remain, each state's vector is kept, so a twin's world is materialised rather
+  than replayed. Successors are named by their least world fingerprint over the renamings,
+  without the budget, as `successorsPrint` names them. A refuted claim searches again
+  without symmetry.
 
 **Reductions.** The integer core does without sleep sets and the inputs reduction. With the
 step cache, the work they save is cheap, and it is faster without them than the classic
@@ -132,17 +138,31 @@ search with them.
 
 ### Same result as the classic search
 
-`test/check/integer.test.ts` runs every case below through both engines and compares the
+`test/check/integer.test.ts` runs the cases below through both engines and compares the
 whole reports, except the clock:
 
 - every corpus case;
 - every corpus case with symmetry on;
 - every corpus case from its scenario seeds (five examples have seeds with other instances);
 - 80 generated specs from the fuzzer (`never`, step properties and liveness, half of them
-  with symmetry on).
+  with symmetry on);
+- searches cut off by `maxStates`;
+- a broadcast to `ctx.all` from a scenario seed with an extra instance.
+
+The fuzzer's search is the integer core. Each generated spec checks it against:
+
+- the reference explorer;
+- the classic search's whole report, with and without symmetry;
+- the classic search's whole report from scenario seeds, since generated specs may now
+  spawn instances in a setup.
+
+Hardening found one bug. A broadcast cached in one layout was replayed in a scenario seed
+with another instance. The cache is now per layout. With the shared cache put back, the
+fuzzer crashes on 3 of 150 seeds; with the fix, 880 seeds come back clean (800 small and 80
+big, the big ones with the classic thread checks on).
 
 The oracles hold the integer core to TLC and P. All 107 TLA+ and wild oracles pass, and all
-97 P oracles pass. The full suite (787 tests) passes with the integer core as the default.
+97 P oracles pass. The full suite (789 tests) passes with the integer core as the default.
 
 ### Measurements
 
@@ -151,15 +171,17 @@ bounds with safety properties.
 
 | model | states | classic, reduced | classic, 4 threads | integer, 1 thread |
 |---|---:|---:|---:|---:|
-| or-set-fault | 129,242 | 4,918 ms | 1,959 ms | 449 ms |
-| read-repair | 37,309 | 1,384 ms | 779 ms | 123 ms |
-| or-set | 39,568 | 1,114 ms | | 136 ms |
-| leader-election | 35,694 | 782 ms | | 105 ms |
-| lost-update | 22,799 | 379 ms | | 74 ms |
-| two-phase-commit | 6,126 | 136 ms | | 18 ms |
+| or-set-fault | 129,242 | 4,870 ms | 1,959 ms | 595 ms |
+| read-repair | 37,309 | 1,370 ms | 779 ms | 123 ms |
+| or-set | 39,568 | 1,097 ms | | 148 ms |
+| leader-election | 35,694 | 770 ms | | 118 ms |
+| lost-update | 22,799 | 356 ms | | 80 ms |
+| two-phase-commit | 6,126 | 151 ms | | 19 ms |
 
-With symmetry on, the integer core is 1–4.6× faster. Its symmetric fingerprint is
-recomputed in full for each child, over every renaming. That is the next thing to profile.
+With symmetry on, it is 3–7.6× faster than the classic search with its reductions (for
+example, leader-election takes 154 ms against 1,115 ms). Twin checks first replayed paths
+and built string keys under every renaming. They took 78% of the time before they were made
+integer-native.
 
 ### Proposed: one search, on threads
 
@@ -209,8 +231,8 @@ The integer core keeps its two independent judges: the reference explorer
 
 ## Drawbacks
 
-- Symmetric searches gain less, until the symmetric fingerprint is made incremental or
-  cheaper.
+- The symmetric fingerprint is recomputed in full for each child, over every renaming. It
+  could be made incremental per renaming.
 - Until the classic search is deleted, there are two engines to keep in step. The
   both-engines test makes drift loud, but it is still two.
 - Nodes keep no worlds, so anything that needs a node's world replays its path. That costs
