@@ -2,23 +2,26 @@
   "name": "@feynman/share",
   "private": true,
   "type": "module",
-  "description": "feynman.leostera.dev/s/<host>/<repo>: the explorer of any public repository, built in a sandbox and kept in R2 by commit.",
+  "description": "The Feynman explorer of any public git repository, built in a sandbox and kept in R2 by commit: a Hono app for a Worker to mount.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./config.ts"
+  },
   "scripts": {
-    "dev": "cf dev",
-    "build": "cf build",
-    "deploy": "cf deploy",
-    "types": "cf workers types",
-    "typecheck": "cf workers types && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
-    "@cloudflare/sandbox": "1.0.3"
+    "@cloudflare/sandbox": "1.0.3",
+    "hono": "^4.13.14"
+  },
+  "peerDependencies": {
+    "cf": "^1.0.0-beta.21"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "beta",
+    "@cloudflare/workers-types": "^5.20261027.1",
     "@types/bun": "^1.4.4",
     "cf": "^1.0.0-beta.21",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.5"
+    "typescript": "^7.0.2"
   }
 }

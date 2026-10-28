@@ -15,14 +15,14 @@ export async function putPage(bucket: R2Bucket, repository: Repository, commit: 
 }
 
 /** A stored page as the response to a share URL. */
-export function pageResponse(object: R2ObjectBody, commit: Commit, options: { immutable: boolean; head: boolean }): Response {
+export function pageResponse(object: R2ObjectBody, commit: Commit, options: { immutable: boolean }): Response {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("x-feynman-commit", commit);
   // A branch moves, so its page is the latest commit's for a minute; a commit's page is forever.
   headers.set("cache-control", options.immutable ? "public, max-age=31536000, immutable" : "public, max-age=60");
-  return new Response(options.head ? null : object.body, { headers });
+  return new Response(object.body, { headers });
 }
 
 export function errorPage(status: number, title: string, detail = "", log = ""): Response {
