@@ -26,7 +26,7 @@ Commands:
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
       --symmetry-checks N        merged twins to test a symmetry claim on (2000; 0 trusts it)
-      --workers N                threads to share big searches with (default: cores - 1, up to 7; 0 for one)
+      --workers N                threads for the classic search (FEYNMAN_ENGINE=classic; default: cores - 1, up to 7)
       --only P,Q                 check and show only these properties
       --brief                    verdicts and counterexample sizes, without traces
       --json                     the whole result as JSON, for scripts and agents
