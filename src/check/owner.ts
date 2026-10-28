@@ -404,7 +404,7 @@ export class Owner {
 }
 
 /** A fingerprint of the worlds one step away, faults aside: renamed twins must agree on it. */
-export function successorsPrint(spec: Spec, world: World, symmetry: Symmetry): [number, number] {
+function successorsPrint(spec: Spec, world: World, symmetry: Symmetry): [number, number] {
   const keys = new Set<string>();
   for (const choice of branches(spec, world, false)) {
     const step = apply(spec, world, choice, QUIET);
