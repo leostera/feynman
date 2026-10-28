@@ -76,6 +76,12 @@ interface Layout {
   instances: Instance[];
   /** Each instance's slot, by id. */
   slots: Map<string, number>;
+  /**
+   * The step cache, by (state id, own timers list) and then by step and argument. One per
+   * layout: a step sees which instances there are (`ctx.all`, `ctx.the`, sending to one)
+   * without reading their states, so its effect holds only among the same instances.
+   */
+  cache: Map<number, Map<number, Effect>>;
   /** Index of each `instance.action` counter, after the faults. */
   acts: Map<string, number>;
   faults: number;
@@ -171,7 +177,6 @@ export class IntegerSearch {
   private nevers: PropertyInfo[];
   private everySteps: string[];
   private reachedSteps: boolean[] = [];
-  private cache = new Map<number, Effect>();
   /** Key lines (keys.ts), named by integers: what symmetric fingerprints are made of. */
   private lines = new Map<string, number>();
   private renamedBy = new WeakMap<Map<string, string>, Renamed>();
@@ -224,7 +229,7 @@ export class IntegerSearch {
     const acts = new Map<string, number>();
     for (const instance of world.instances) for (const k of Object.keys(actorNamed(this.spec, instance.actor).actions)) acts.set(`${instance.id}.${k}`, acts.size);
     const n = world.instances.length;
-    layout = { index: this.layouts.size, instances: world.instances, slots, acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
+    layout = { index: this.layouts.size, instances: world.instances, slots, cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -636,24 +641,27 @@ export class IntegerSearch {
       slot = L.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
     } else slot = L.slots.get(choice.instance)!;
-    return { layout: L, slot, at, effect: this.effectOf(vector, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
+    return { layout: L, slot, at, effect: this.effectOf(vector, L, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
-  private effectOf(vector: Int32Array, world: World, ids: number[], timers: number, slot: number, choice: Choice): Effect {
+  private effectOf(vector: Int32Array, L: Layout, world: World, ids: number[], timers: number, slot: number, choice: Choice): Effect {
     // The key: the instance's state, its own timers (start, cancel and restart read them), and
     // the step with its argument: a message or timer by its intern id, which says who sent
     // what; anything else by an interned name.
     const arg = choice.kind === "fire" ? ids[choice.pending] * 4 : choice.kind === "lose" ? ids[choice.pending] * 4 + 2 : this.argOf(choice) * 4 + 1;
-    if (arg >= ARGS || timers >= TIMER_LISTS || vector[slot] >= STATES) throw new Error("the integer core's step cache key is too small for this spec");
-    const key = (vector[slot] * TIMER_LISTS + timers) * ARGS + arg;
-    const cached = this.cache.get(key);
+    // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
+    if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
+    const local = vector[slot] * 1_048_576 + timers;
+    let byArg = L.cache.get(local);
+    if (!byArg) L.cache.set(local, (byArg = new Map()));
+    const cached = byArg.get(arg);
     if (cached) return cached;
     const observe = observation();
     const step = run(this.spec, world, choice, observe);
     const effect = this.effectFrom(world, ids, slot, step.world, step.event);
     if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0 };
-    this.cache.set(key, effect);
+    byArg.set(arg, effect);
     return effect;
   }
 
@@ -794,10 +802,6 @@ function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undef
   return { to, option, fault, ...(fair === undefined ? {} : { fair }) };
 }
 const NO_IDS: string[] = [];
-/** The step cache key packs (state, own timers, step and argument) into one number below 2^53. */
-const ARGS = 1 << 20;
-const TIMER_LISTS = 1 << 10;
-const STATES = 1 << 23;
 
 function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
   const how = { explain: false, observe };

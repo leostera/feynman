@@ -44,3 +44,39 @@ test("generated specs: the same report from both", async () => {
   }
   expect(compared).toBeGreaterThan(40);
 }, 300_000);
+
+test("a step that lists instances is not replayed from a world with other instances", async () => {
+  const { defineSpec, message } = await import("../../src/spec/index.ts");
+  // The coordinator's broadcast reads only its own state, but whom it reaches depends on the
+  // replicas there are: a scenario that spawns a third must not reuse the broadcast to two.
+  const spec = defineSpec("Broadcast", { messages: { Ping: message<{}>({ name: "ping" }) } }, (s) => {
+    const zone = s.defineZone({ name: "z" });
+    const Replica = s.defineActor({
+      name: "Replica",
+      zone,
+      initialState: () => ({ pings: 0 }),
+      transitions: { [s.messages.Ping]: { description: "Counts it.", run: (state) => void state.pings++ } },
+    });
+    s.defineActor({
+      name: "Coordinator",
+      zone,
+      singleton: true,
+      initialState: () => ({ sent: 0 }),
+      actions: {
+        ping: {
+          label: "Ping",
+          description: "Pings every replica.",
+          sends: [s.messages.Ping],
+          run: (state, _i, ctx) => {
+            state.sent++;
+            for (const r of ctx.all(Replica)) ctx.send(r, s.messages.Ping, {});
+          },
+        },
+      },
+    });
+    s.defineProperties({ fewPings: { description: "No replica is pinged twice.", always: (w) => w.all(Replica).every((r) => r.state.pings < 2) } });
+    s.defineScenario({ name: "A third replica", setup: (w) => void w.spawn(Replica, "C"), run: () => {} });
+  });
+  const report = await bothAgree(spec, { depth: 8, repeats: 2, instances: { Replica: 2 } }, scenarioSeeds(spec));
+  expect(report.seeds.length).toBe(1);
+});
