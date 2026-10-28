@@ -61,9 +61,9 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
   const bounds = { depth: 2, repeats: 9, walks: 0 };
   expect((await check(deep, bounds)).properties[0].holds).toBe(true);
   const run = runScenario(deep, deep.scenarios[0]);
-  const seeded = await check(deep, bounds, [{ name: "Count to four", world: run.worlds.at(-1)! }]);
+  const seeded = await check(deep, bounds, [{ scenario: "Count to four", at: "end", world: run.worlds.at(-1)! }]);
   const fromSeed = broken(seeded.properties[0]);
-  expect(fromSeed.counterexample.from).toBe("Count to four");
+  expect(fromSeed.counterexample.from).toEqual({ scenario: "Count to four", at: "end" });
   expect(fromSeed.counterexample.events.length).toBe(1);
 });
 
@@ -302,4 +302,39 @@ test("symmetry claims are tested on as many merged states as symmetryChecks says
   const trusted = await check(safety, { ...bounds, symmetryChecks: 0 });
   expect(trusted.reductions.refuted).toBeUndefined();
   expect(trusted.reductions.symmetric).toEqual([["Node A", "Node B", "Node C"]]);
+});
+
+test("setup: the checker explores from the world a scenario sets up, and a property it breaks is reported from there", async () => {
+  const { defineSpec, message } = await import("../../src/spec/index.ts");
+  const spec = defineSpec("Ledger", { messages: { Publish: message<{ seq: number }>({ name: "publish" }) } }, (s) => {
+    const zone = s.defineZone({ name: "z" });
+    const Ledger = s.defineActor({
+      name: "Ledger",
+      zone,
+      singleton: true,
+      initialState: () => ({ seq: 0 }),
+      transitions: { [s.messages.Publish]: { description: "Moves on.", run: (state, msg) => void (state.seq = msg.seq) } },
+    });
+    const Writer = s.defineActor({
+      name: "Writer",
+      zone,
+      singleton: true,
+      initialState: () => ({ next: 1 }),
+      actions: { publish: { label: "Publish", description: "Publishes the next one.", sends: [s.messages.Publish], run: (state, _i, ctx) => ctx.send(ctx.the(Ledger), s.messages.Publish, { seq: state.next++ }) } },
+    });
+    s.defineProperties({ belowTen: { description: "The ledger stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 } });
+    // From the spec's start, two publishes (repeats) never get near ten; from here, one does.
+    s.defineScenario({ name: "Nine published", setup: (w) => (w.set(Ledger, { seq: 9 }), w.set(Writer, { next: 10 })), run: () => {} });
+  });
+  const { scenarioSeeds } = await import("../../src/cli/shape.ts");
+  const bounds = { depth: 6, walks: 0 };
+  expect((await check(spec, bounds)).properties[0].holds).toBe(true);
+  const seeds = scenarioSeeds(spec);
+  // Its run does nothing, so it ends where it starts: one world to explore from.
+  expect(seeds.map(({ scenario, at }) => `${scenario} ${at}`)).toEqual(["Nine published start"]);
+  const report = await check(spec, bounds, seeds);
+  expect(report.seeds).toEqual([{ scenario: "Nine published", at: "start" }]);
+  const ce = broken(report.properties[0]).counterexample;
+  expect(ce.from).toEqual({ scenario: "Nine published", at: "start" });
+  expect(ce.events.map((e) => e.key)).toEqual(["publish", "message:Publish"]);
 });

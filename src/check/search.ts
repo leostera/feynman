@@ -25,12 +25,12 @@ import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type 
 import { budgetText, FAILED, FAULT, rootMemory, SLEEPY, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
 import type { Driver, InlineDriver } from "./pool.ts";
 import { PrintMap } from "./prints.ts";
-import type { Choice } from "./steps.ts";
+import type { Choice, ScenarioPlace } from "./steps.ts";
 import type { Bounds, Report, Watch } from "./explore.ts";
 
 /** Where paths start: the initial world, then each seed, with the symmetry of each. */
 export interface Root {
-  name?: string;
+  from?: ScenarioPlace;
   world: World;
   symmetry: Symmetry;
 }

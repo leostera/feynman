@@ -555,14 +555,34 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   (`expired = true`), never a stored time. When an ordering really depends on durations (a
   heartbeat always beats an expiry, on one machine), model it with state and say so; usually
   the counterexample is a real risk.
-- **Scenarios** change the world only through events: spawns, actions, deliveries, timers,
-  drops and restarts. `s.world` and `s.the(X).state` are for reading. Every scenario starts
-  from the spec's start, where only the singletons exist, in their `initialState`; that
-  applies everywhere (every scenario, every state the checker explores) and sees only `id`
-  and `label`, so it is not the place for one scenario's setup. A scenario that starts after
-  some history (a second push, a fetch after pushes) replays it: write the history once as a
-  function, `function firstPush(s: Script) { … }`, call it at the top of each scenario that
-  needs it, and say so in the scenario's description. To get to a moment and step in there,
+- **Scenarios** change the world through events in `run`: spawns, actions, deliveries,
+  timers, drops and restarts. `s.world` and `s.the(X).state` are for reading. A scenario
+  starts from the spec's start, where only the singletons exist, in their `initialState`,
+  unless it has a `setup`. A scenario that begins after some history (a second push, a fetch
+  after pushes) sets that world up rather than replaying it:
+
+  ```ts
+  spec.defineScenario({
+    name: "Second push",
+    description: "Alice pushes again to a repository that has her first commit.",
+    setup(w) {
+      w.set(Ledger, { refs: { main: "c1" }, published: ["c1"] }); // a singleton: these fields over its initialState
+      w.spawn(Git, "Alice", { head: "c1" });                       // there from the start, not spawned in the flow
+    },
+    run(s) {
+      const alice = s.the(Git);
+      s.act(alice, "commit");
+      s.act(alice, "push");
+      s.settle();
+    },
+  });
+  ```
+
+  The flow and the playground start after the setup. A setup is a claim that the system gets
+  there: the checker explores from it too, and a property the world breaks is reported
+  against the scenario ("its setup breaks …"). Set only instance states; messages in flight
+  and timers come from events. Don't seed history in `initialState`: it applies to every
+  scenario and every state the checker explores. To get to a moment and step in there,
   `s.settle({ until: (w) => w.the(R2).state.layers.length > 0 })` and then `s.restart(…)`,
   rather than delivering each message by hand.
 - **Left alone.** `s.settle()` and the playground's Play run the system

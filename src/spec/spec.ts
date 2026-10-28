@@ -1,6 +1,6 @@
 // What a spec is at runtime, and what the engine produces: plain data that views, the
 // checker, and diffs read. Functions (initial state, run, predicates) are the only code.
-import type { ActorPlace, Icon, Link, Look, Script, Shape, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
+import type { ActorPlace, Icon, Link, Look, Script, Setup, Shape, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
 
 export interface Spec {
   name: string;
@@ -149,6 +149,8 @@ export function isLiveness(p: PropertyInfo): p is LivenessProperty {
 export interface ScenarioInfo {
   name: string;
   description?: string;
+  /** The world the scenario starts in, when not the spec's start. */
+  setup?: (setup: Setup) => void;
   run: (script: Script) => void;
 }
 
@@ -256,4 +258,4 @@ export interface Run {
   worlds: World[];
 }
 
-export type { Script, Trace, TraceEvent, WorldView };
+export type { Script, Setup, Trace, TraceEvent, WorldView };

@@ -8,6 +8,14 @@ after.
 
 ### Writing specs
 
+- A scenario can start in a world it sets up, rather than replaying how the system got
+  there: `setup(w) { w.set(Ledger, { … }); w.spawn(Git, "Alice", { … }) }`. Fields are laid
+  over each instance's `initialState`, and typed against its state. The flow and the
+  playground start after it; the checker explores from it as well as from where the scenario
+  ends, and reports a property the set-up world breaks against the scenario. `--as-scenario`
+  writes a counterexample found from a scenario's world as a `setup`, when nothing is in
+  flight there. Counterexamples say where they start, `{ scenario, at: "start" | "end" }`
+  in `--json`. Two scenarios with one name are an error.
 - `s.settle({ until: (w) => … })` runs a scenario left alone until the world gets there, to
   step in at that moment (a restart, a drop) without delivering each message by hand. It is
   an error if the system settles first.

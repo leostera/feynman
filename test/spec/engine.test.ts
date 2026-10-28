@@ -181,3 +181,65 @@ test("an actor without a zone says so", () => {
     }),
   ).toThrow("A: say where it runs, with zone: a zone from spec.defineZone");
 });
+
+// A store that keeps pushed commits, and clients that push the next one.
+function repository() {
+  return defineSpec("Repository", { messages: { Push: message<{ commit: number }>({ name: "push" }) } }, (s) => {
+    const zone = s.defineZone({ name: "z" });
+    const Store = s.defineActor({
+      name: "Store",
+      zone,
+      singleton: true,
+      initialState: () => ({ commits: [] as number[], head: 0 }),
+      transitions: { [s.messages.Push]: { description: "Keeps it.", run: (state, msg) => void (state.commits.push(msg.commit), (state.head = msg.commit)) } },
+    });
+    const Client = s.defineActor({
+      name: "Client",
+      zone,
+      initialState: () => ({ head: 0 }),
+      actions: { push: { label: "Push", description: "Pushes the next commit.", sends: [s.messages.Push], run: (state, _i, ctx) => ctx.send(ctx.the(Store), s.messages.Push, { commit: ++state.head }) } },
+    });
+    s.defineScenario({
+      name: "Second push",
+      setup(w) {
+        w.set(Store, { commits: [1], head: 1 });
+        w.spawn(Client, "Alice", { head: 1 });
+      },
+      run(sc) {
+        sc.act(sc.the(Client), "push");
+        sc.settle();
+      },
+    });
+    s.defineScenario({ name: "No such field", setup: (w) => w.set(Store, { tip: 1 } as never), run: () => {} });
+    s.defineScenario({ name: "Set a client", setup: (w) => w.set(Client, { head: 1 }), run: () => {} });
+    s.defineScenario({ name: "Spawn the store", setup: (w) => w.spawn(Store, "Store"), run: () => {} });
+    s.defineScenario({ name: "Not plain", setup: (w) => w.set(Store, { commits: [() => 1] as never }), run: () => {} });
+  });
+}
+
+test("setup: a scenario starts in the world it sets, and its flow starts after it", () => {
+  const spec = repository();
+  const run = runScenario(spec, spec.scenarios[0]);
+  expect(run.error).toBeUndefined();
+  expect(run.initial.instances.map((i) => [i.label, i.state])).toEqual([
+    ["Store", { commits: [1], head: 1 }],
+    ["Alice", { head: 1 }],
+  ]);
+  // No spawn and no setup in the trace: only what the scenario does.
+  expect(run.events.map((e) => `${e.actor} ${e.key}`)).toEqual(["Client push", "Store message:Push"]);
+  expect(run.worlds.at(-1)!.instances[0].state).toEqual({ commits: [1, 2], head: 2 });
+  expect(Object.isFrozen(run.initial.instances[0].state)).toBe(true);
+});
+
+test("setup: fields the state does not have, the wrong way to set an instance, and data that is not plain are errors", () => {
+  const spec = repository();
+  const error = (name: string) => runScenario(spec, spec.scenarios.find((s) => s.name === name)!).error;
+  expect(error("No such field")).toBe('setup: Store: its state has no field "tip" (it has commits, head)');
+  expect(error("Set a client")).toBe("setup: set(Client): it is not a singleton; spawn(Client, label, state) sets up one of them");
+  expect(error("Spawn the store")).toBe("setup: spawn(Store): it is a singleton, there from the start; set(Store, state) sets it up");
+  expect(error("Not plain")).toContain("setup: Store: holds state.commits[0]: a function, which is not plain data");
+  expect(() => defineSpec("Twice", { messages: {} }, (s) => {
+    s.defineScenario({ name: "A", run: () => {} });
+    s.defineScenario({ name: "A", run: () => {} });
+  })).toThrow('Two scenarios are named "A"');
+});
