@@ -8,12 +8,15 @@ after.
 
 ### Checking
 
-- An integer core for the search (`src/check/integer.ts`): worlds are short integer vectors
-  of interned states, local steps run through the engine once and are replayed from a cache,
-  and fingerprints are updated per step. 8-13x faster on one thread than the classic search.
-  `check` uses it for every search it can do (so far: safety properties, with symmetry), and the classic search for the rest; `engine: "classic" | "integer"` (or `FEYNMAN_ENGINE`) picks one. Both
-  give the same report, to the counterexample, on every example and on generated specs, and
-  the TLA+ oracles hold it to TLC.
+- An integer core for the search (`src/check/integer.ts`), now the checker's engine: worlds
+  are short integer vectors of interned states, local steps run through the engine once and
+  are replayed from a cache, and fingerprints are updated per step. 5-13x faster on one
+  thread than the classic search with its reductions. It does everything the classic search
+  does but split the work among threads: every kind of property (liveness on the graph it
+  keeps), symmetry and its twin checks, scenario seeds, errors, stuck worlds and coverage.
+  `engine: "classic"` (or `FEYNMAN_ENGINE=classic`) runs the classic search, with its
+  reductions and worker threads. Both give the same report, to the counterexample and the
+  loop, on every example and on generated specs; the TLA+ and P oracles hold it to TLC and P.
 
 ## 0.10.0
 

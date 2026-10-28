@@ -17,15 +17,17 @@
 //
 // Steps that read other instances, or hand out fresh ids or random numbers, depend on more
 // than the key says: they run through the engine every time (the engine's Observation says
-// which). It explores exactly what the classic search does without its reductions, for
-// safety: states, `always`, `never` and step properties, errors, stuck worlds and coverage. `check` uses it
+// which). It explores exactly what the classic search does without its reductions: states,
+// every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
+// symmetry. `check` uses it
 // whenever it can (see `fitsIntegerCore`), and the oracles hold it to the classic search.
-import { act, actorNamed, fire, guard, lose, observation, restart, worldView, type Event, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, fire, guard, holdsIn, isLiveness, lose, observation, restart, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
 import { startBreaks, stepBreaks, stuck } from "./judge.ts";
 import { renamedLine, type Symmetry } from "./keys.ts";
-import { memoryOf, rootMemory, successorsPrint } from "./owner.ts";
+import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
+import { fairness, fairStepsIn, memoryOf, rootMemory, successorsPrint, type Resolved } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
 import type { Root } from "./search.ts";
 import { apply, branches, QUIET, type Choice } from "./steps.ts";
@@ -33,14 +35,6 @@ import { apply, branches, QUIET, type Choice } from "./steps.ts";
 type Instance = World["instances"][number];
 type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
-
-/**
- * Whether the integer core can do a job: safety properties only. It does without the classic
- * search's reductions (and is faster than the classic search with them), so it ignores `reduce`.
- */
-export function fitsIntegerCore(spec: Spec): boolean {
-  return spec.properties.every((p) => p.kind === "always" || p.kind === "never" || p.kind === "everyStep");
-}
 
 /** Values named by integers: each distinct one (by its key) once. */
 class Interner<T> {
@@ -184,6 +178,16 @@ export class IntegerSearch {
   /** For nodes from roots with symmetry: the fingerprint of the world without renaming, which renamed twins do not share. */
   private plains = new Map<number, [number, number]>();
   private twinChecks = 0;
+  private seen = new PrintMap();
+  /** For liveness: edges out of each expanded node, the fair steps possible there, and which predicates hold. */
+  private readonly keepsEdges: boolean;
+  private readonly predicates: Predicate[];
+  private readonly truths: number[][];
+  private expanded: boolean[] = [];
+  private shadow: boolean[] = [];
+  private option: number[] = [];
+  private edges: Edge[][] = [];
+  private enabled: Map<FairId, Fairness>[] = [];
   /** One per set of instances the roots have, by their sorted ids. */
   private layouts = new Map<string, Layout>();
   private always: { id: string; holds: (w: World) => boolean }[];
@@ -196,6 +200,9 @@ export class IntegerSearch {
     private readonly started: number,
   ) {
     this.nevers = spec.properties.filter((p) => p.kind === "never");
+    this.keepsEdges = spec.properties.some(isLiveness);
+    this.predicates = predicatesOf(spec.properties.filter(isLiveness));
+    this.truths = this.predicates.map(() => []);
     this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [p.id] : []));
     this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
   }
@@ -223,8 +230,10 @@ export class IntegerSearch {
   }
 
   run(): void {
-    const seen = new PrintMap();
+    const seen = this.seen;
     let frontier: Entry[] = [];
+    // For liveness: the nodes at the depth bound, whose edges are added at the end if they can be.
+    const open: Entry[] = [];
     const startMemory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
     for (const [r, { world }] of this.roots.entries()) {
       const L = this.layoutOf(world);
@@ -233,14 +242,16 @@ export class IntegerSearch {
       const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
       const [h1, h2] = folded ? folded.print : printOf(vector, L);
       if (seen.get(h1, h2) !== undefined) continue;
-      const gid = this.node(-1, r, -1, 0, -1);
+      const gid = this.node(-1, r, -1, -1, 0, -1);
       if (folded) this.plains.set(gid, folded.plain);
       seen.set(h1, h2, gid);
       this.states++;
       this.watch.state?.(world, this.budgetOf(vector, L));
       for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid, L);
+      if (this.keepsEdges) this.judgeTruths(world, gid);
       if (this.b.depth > 0) frontier.push({ gid, layout: L, vector, h1, h2 });
+      else if (this.keepsEdges) open.push({ gid, layout: L, vector, h1, h2 });
     }
     const deadline = this.started + this.b.timeLimit;
     for (let depth = 0; frontier.length && depth < this.b.depth; depth++) {
@@ -256,7 +267,15 @@ export class IntegerSearch {
         const trail = this.nevers.length ? this.trailOf(parent.gid) : undefined;
         const symmetry = this.roots[this.root[parent.gid]].symmetry;
         const symmetric = symmetry.classes.length > 0;
-        for (const choice of branches(this.spec, world, vector[L.faults] < this.b.faults)) {
+        const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
+        if (this.keepsEdges) {
+          // Expanded once it is begun, as in the classic search, even if the search stops partway.
+          this.expanded[parent.gid] = true;
+          this.edges[parent.gid] = [];
+          this.enabled[parent.gid] = fairStepsIn(this.spec, world, options);
+        }
+        for (let option = 0; option < options.length; option++) {
+          const choice = options[option];
           const step = this.step(vector, L, world, ids, timersOf, choice);
           if (!step) continue;
           const { effect } = step;
@@ -265,7 +284,7 @@ export class IntegerSearch {
           if (effect.error) {
             // A step that fails is a spec error, and goes nowhere; the first time an error is
             // met, a node of its own (a shadow, not a state) ends its counterexample.
-            if (!this.errors.has(effect.error)) this.errors.set(effect.error, this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), faults, effect.event));
+            if (!this.errors.has(effect.error)) this.errors.set(effect.error, this.shadowNode(parent.gid, option, this.nameOf(choice, ids), faults, effect.event));
             else if (symmetric) {
               // Its world is the one before, with the budget spent: it may land on a renamed
               // twin, as in the classic search, whose claim is tested all the same.
@@ -285,6 +304,8 @@ export class IntegerSearch {
           }
           const [h1, h2] = folded ? folded.print : childPrint(parent, step);
           const existing = seen.get(h1, h2);
+          const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, world, choice)?.id));
+          if (existing !== undefined) edgeTo(existing);
           // A step property is judged on every step, so one broken on the way to a known state
           // gets a node of its own too (see Search.land).
           let breaks = NO_IDS;
@@ -300,23 +321,95 @@ export class IntegerSearch {
             this.stoppedBy = "maxStates";
             return;
           }
-          const gid = this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), faults, effect.event);
-          if (existing === undefined) {
-            child ??= this.applied(vector, step);
-            seen.set(h1, h2, gid);
-            if (folded) this.plains.set(gid, folded.plain);
-            this.states++;
-            if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
-            if (this.always.length) this.judge(child, gid, L);
-            for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
-            this.judgeStuck(child, gid, L);
-            if (depth + 1 < this.b.depth) next.push({ gid, layout: L, vector: child, h1, h2 });
+          if (existing !== undefined) {
+            const gid = this.shadowNode(parent.gid, option, this.nameOf(choice, ids), faults, effect.event);
+            for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
+            continue;
           }
+          const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameOf(choice, ids), faults, effect.event);
+          edgeTo(gid);
+          child ??= this.applied(vector, step);
+          seen.set(h1, h2, gid);
+          if (folded) this.plains.set(gid, folded.plain);
+          this.states++;
+          if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
+          if (this.always.length) this.judge(child, gid, L);
+          for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
+          this.judgeStuck(child, gid, L);
+          if (this.keepsEdges) this.judgeTruths(this.materialize(child, L).world, gid);
+          if (depth + 1 < this.b.depth) next.push({ gid, layout: L, vector: child, h1, h2 });
+          else if (this.keepsEdges) open.push({ gid, layout: L, vector: child, h1, h2 });
           for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
         }
       }
       frontier = next;
     }
+    // Liveness needs the edges out of the worlds at the depth bound too. Where every step from
+    // one lands on a known state, nothing lies past it, and its edges are added: in a space the
+    // bound does not cut, liveness is then judged in full, as TLC would.
+    if (this.keepsEdges) for (const entry of open) this.close(entry);
+  }
+
+  /** A node at the depth bound: its edges, if every step from it lands on a known state; else it stays open. */
+  private close(entry: Entry): void {
+    const { vector, layout: L } = entry;
+    const { world, ids, timersOf } = this.materialize(vector, L);
+    const symmetry = this.roots[this.root[entry.gid]].symmetry;
+    const trail = this.nevers.length ? this.trailOf(entry.gid) : undefined;
+    const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
+    const out: Edge[] = [];
+    for (let option = 0; option < options.length; option++) {
+      const step = this.step(vector, L, world, ids, timersOf, options[option]);
+      if (!step || step.effect.error) continue;
+      if (trail) this.remember(trail, step.effect.event, step);
+      const [h1, h2] = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
+      const to = this.seen.get(h1, h2);
+      if (to === undefined) return;
+      out.push(edgeOf(to, option, step.fault, fairness(this.spec, world, options[option])?.id));
+    }
+    this.edges[entry.gid] = out;
+    this.enabled[entry.gid] = fairStepsIn(this.spec, world, options);
+    this.expanded[entry.gid] = true;
+  }
+
+  /** Which liveness predicates hold in a new state's world. */
+  private judgeTruths(world: World, gid: number): void {
+    this.predicates.forEach((p, i) => (this.truths[i][gid] = holdsIn(this.spec, world, p) ? 1 : 0));
+  }
+
+  /** The search as a graph, for liveness (liveness.ts). */
+  graph(): Graph {
+    const size = this.parent.length;
+    const index = new Map(this.predicates.map((p, i) => [p, i]));
+    return {
+      size,
+      holds: (predicate) => {
+        const truths = this.truths[index.get(predicate)!];
+        return (i) => truths[i] === 1;
+      },
+      roots: this.parent.flatMap((p, i) => (p < 0 ? [i] : [])),
+      initial: 0,
+      expanded: Array.from({ length: size }, (_, i) => this.expanded[i] === true),
+      shadow: this.shadow,
+      edges: Array.from({ length: size }, (_, i) => this.edges[i] ?? []),
+      enabled: Array.from({ length: size }, (_, i) => this.enabled[i] ?? new Map()),
+      parent: this.parent,
+      optionFrom: this.option,
+      faultFrom: this.parent.map((p, i) => p >= 0 && this.faults[i] > this.faults[p]),
+    };
+  }
+
+  /** Steps as choices, with the world each is taken in when asked for (see Search.resolve). */
+  async resolve(steps: LassoStep[], worlds: boolean): Promise<Map<string, Resolved>> {
+    const at = new Map<number, World>();
+    const out = new Map<string, Resolved>();
+    for (const { from, option } of steps) {
+      let world = at.get(from);
+      if (!world) at.set(from, (world = this.worldAt(from)));
+      const choice = branches(this.spec, world, this.faults[from] < this.b.faults)[option];
+      out.set(`${from}:${option}`, worlds ? { choice, world } : { choice });
+    }
+    return out;
   }
 
   /**
@@ -474,8 +567,10 @@ export class IntegerSearch {
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
-  private node(parent: number, root: number, choice: number, faults: number, event: number): number {
+  private node(parent: number, root: number, option: number, choice: number, faults: number, event: number): number {
     const gid = this.parent.push(parent) - 1;
+    this.option.push(option);
+    this.shadow.push(false);
     this.eventOf.push(event);
     this.root.push(root);
     this.choice.push(choice);
@@ -483,6 +578,13 @@ export class IntegerSearch {
     const depth = parent < 0 ? 0 : this.depth[parent] + 1;
     this.depth.push(depth);
     if (depth > this.depthReached) this.depthReached = depth;
+    return gid;
+  }
+
+  /** A node that stands only for a counterexample's last step (an error, a step property broken on the way to a known state): not a state. */
+  private shadowNode(parent: number, option: number, choice: number, faults: number, event: number): number {
+    const gid = this.node(parent, this.root[parent], option, choice, faults, event);
+    this.shadow[gid] = true;
     return gid;
   }
 
@@ -687,6 +789,10 @@ export class IntegerSearch {
 }
 
 const NONE = new Int32Array(0);
+
+function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undefined): Edge {
+  return { to, option, fault, ...(fair === undefined ? {} : { fair }) };
+}
 const NO_IDS: string[] = [];
 /** The step cache key packs (state, own timers, step and argument) into one number below 2^53. */
 const ARGS = 1 << 20;
