@@ -3,6 +3,23 @@
 @import "@cloudflare/kumo/styles";
 @import "tailwindcss";
 
+/* The site's accent: a deep purple in place of Kumo's blue. */
+:root,
+[data-mode] {
+  --color-kumo-brand: light-dark(oklch(42% 0.2 295), oklch(52% 0.22 295));
+  --color-kumo-brand-hover: light-dark(oklch(36% 0.19 295), oklch(46% 0.21 295));
+  --text-color-kumo-brand: light-dark(oklch(42% 0.2 295), oklch(75% 0.14 295));
+  --text-color-kumo-link: light-dark(oklch(42% 0.2 295), oklch(75% 0.14 295));
+}
+
+::selection {
+  background: light-dark(oklch(90% 0.06 295), oklch(38% 0.15 295));
+}
+
+p {
+  @apply text-pretty;
+}
+
 /* Snippets are highlighted at build time (scripts/highlight.ts), with both modes' colours. */
 .code pre.shiki {
   background: transparent !important;
