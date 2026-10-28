@@ -66,7 +66,7 @@ able to point at every actor, message and step and say where it is.
 - **Use the system's own words** for actors, messages, steps, statuses, files and tables:
   `READY`, `analysis.json`, "Pending folder". Don't invent generic roles such as
   "processor", "pipeline" or "store" unless the code uses them. Keep names short; put the
-  tool list ("yt-dlp / Instaloader") in `description` or `look.status`, not the name.
+  tool list ("yt-dlp / Instaloader") in `description` or `display.status`, not the name.
 - **Scope follows the request.** "The whole pipeline" means all of it. If that is too much
   for one spec, write several specs, one per behaviour. Never compress it into fewer,
   vaguer steps.
@@ -167,7 +167,7 @@ export default defineSpec(
       initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean }> }),
       durable: ["codes"], // survives a restart (it lives in a database)
       // How it is drawn in the playground: an icon, a status, and its state as rows.
-      look: {
+      display: {
         icon: "cloud",
         status: (s) => `${Object.values(s.codes).filter((c) => !c.used).length} code(s) waiting`,
         // `owner` names the person a row belongs to, so the account box wears their colour.
@@ -205,7 +205,7 @@ export default defineSpec(
       name: "Person",
       zone: devices,
       initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
-      look: {
+      display: {
         icon: "phone",
         names: ["Alice", "Bob"], // labels for people added in the playground
         status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in"),
@@ -232,7 +232,7 @@ export default defineSpec(
       name: "Mac",
       zone: devices,
       initialState: () => ({ account: null as string | null, pending: null as string | null }),
-      look: {
+      display: {
         icon: "laptop",
         status: (s) => (s.account ? "linked" : s.pending ? "linking" : "not linked"),
         mood: (s) => (s.account ? "ok" : s.pending ? "busy" : "off"),
@@ -347,28 +347,28 @@ export default defineSpec(
 The playground is drawn from the spec, so the spec decides how good it looks. For every
 actor, add:
 
-- **`look.icon`.** One of `person`, `people`, `phone`, `laptop`, `desktop`, `browser`,
+- **`display.icon`.** One of `person`, `people`, `phone`, `laptop`, `desktop`, `browser`,
   `server`, `cloud`, `database`, `shield`, `key`, `lock`, `terminal`, `robot`, `queue`,
   `folder`, `file`, `sheet`, `globe`, `gear`, `camera`, `video`, `mail`, `bell`, `clock`,
   `cpu`, `box`, `plug`, `wifi`, `chat`, `router`, `storage`, `code`, `pipeline`, `eye` or
   `card`.
-- **`look.status`:** a few words under the name, such as "connected", "not linked" or
+- **`display.status`:** a few words under the name, such as "connected", "not linked" or
   "3 jobs queued".
-- **`look.mood`:** `ok`, `warn`, `bad`, `busy`, `off` or `info`, which colours the node.
-- **`look.rows`** for state worth seeing as structure, such as a service's accounts and
+- **`display.mood`:** `ok`, `warn`, `bad`, `busy`, `off` or `info`, which colours the node.
+- **`display.rows`** for state worth seeing as structure, such as a service's accounts and
   hosts, or a queue's jobs. Give each row a `label`, an optional `detail` and `mood`, and
   a `group` to box rows together. Use it on hubs (singletons); on other actors, keep it to
   one to three rows.
 - **`links`** for connections that come and go: sockets, sessions, subscriptions. Only
   live links are drawn prominently.
-- **`look.owner`:** whose this is, as an instance label or id: a Mac belongs to the person
+- **`display.owner`:** whose this is, as an instance label or id: a Mac belongs to the person
   whose account it is linked to. It then wears that person's colour, so readers can
   follow Alice through the system.
 - **`routine: true`** on housekeeping steps a reader need not watch, such as heartbeats,
   lease renewals or polling. The playground folds runs of them into one timeline line
   and does not stop for them; the checker explores them like any other step. Better
   still, leave out a heartbeat unless its expiry changes what happens.
-- **`look.tokens`** for things a person would carry from one node to another: a pairing
+- **`display.tokens`** for things a person would carry from one node to another: a pairing
   code shown on a phone, a link to share, a file to upload. Each is `{ kind, value, label? }`,
   and it floats beside the node. Give the receiving action's input `accepts: kind`, as in
   `spec.defineInput(String, { examples, accepts: "pairing code" })`. Dragging the token onto
@@ -412,9 +412,9 @@ actor, add:
   suffix. A closed group is one node: messages between its members don't fly across the
   map, and they fold in the timeline as "inside Axo relay". Readers open it with "Look
   inside". Groups start closed; pass `collapsed: false` to start open.
-- **`look.names`**: labels for instances added in the playground, such as
+- **`display.names`**: labels for instances added in the playground, such as
   `["Alice", "Bob"]`, rather than "Person 2".
-- **`look.shape`** only to override the default: services (cloud, server, database…) are
+- **`display.shape`** only to override the default: services (cloud, server, database…) are
   circles with a short name inside, devices (phone, laptop…) rounded squares, and actors
   on a zone's edge gates.
 - **`expires`** on a token, in simulated milliseconds: the ticket shows the time it has
@@ -476,7 +476,7 @@ export default definePlayground(spec, (play) => {
   - `play.actor(Actor, { node, panel, size })` redraws a node or adds a panel;
   - `play.token(kind, render)` draws a token;
   - `play.link(kind, { style, flowing, color })` styles a kind of link.
-- **Render functions only draw and act.** They receive typed `state`, `look` (the
+- **Render functions only draw and act.** They receive typed `state`, `display` (the
   default, to build on), `world`, `live` and `act`. They change the model only
   through `act(action, inputs)`, which runs a declared action exactly as the playground's
   buttons do, and does nothing while the reader looks at the past (`live` is false).
@@ -496,7 +496,7 @@ export default definePlayground(spec, (play) => {
 ### Types
 
 - `import { defineSpec, message } from "@leostera/feynman"` is all a spec needs.
-  For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Look`,
+  For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **The source is the reference.** Feynman ships as TypeScript, so it is in
   `node_modules/@leostera/feynman/src`; read it when this page does not answer.
@@ -627,18 +627,18 @@ read worse. To update one:
 2. Re-read the modelling rules above against the spec: actors that are really one
    process, steps that hide several stages (check prints "stands for N pieces of
    code"), generic names, ids where people use labels.
-3. Add, for every actor: `look.icon`, `status`, `mood`, and `owner` where something
+3. Add, for every actor: `display.icon`, `status`, `mood`, and `owner` where something
    belongs to someone. Add `rows` on the service the others talk to, `links` for
    connections that come and go (with `row` when they meet a row), `say` on the steps
    that matter, and `description` on zones.
 4. Mark heartbeats, lease renewals and polling `routine: true`, or remove them if their
    expiry never changes what happens.
-5. Declare `look.tokens` and `accepts` for every hand-off a person makes, such as a code
+5. Declare `display.tokens` and `accepts` for every hand-off a person makes, such as a code
    shown on one device and typed on another.
 6. Add `place` only where the computed map misreads: a gate on the edge of a region
    (`edge`), zones in the wrong order (`column`), or a busy zone (`arrange`).
 7. Group what a newcomer would see as one thing (`spec.defineGroup`): the service whose
-   parts are separate actors, and each machine that runs two of them. Add `look.names`
+   parts are separate actors, and each machine that runs two of them. Add `display.names`
    for people and `expires` on tokens that expire. End the body with
    `return { …every actor }`.
 8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a

@@ -88,10 +88,10 @@ const SERVICES = new Set<Icon>(["cloud", "server", "database", "shield", "queue"
 const DEVICES = new Set<Icon>(["phone", "laptop", "desktop", "browser", "terminal", "camera", "video"]);
 
 /** What a node is drawn as: what the spec says, or what its icon suggests. On a zone's edge, a gate. */
-export function shapeFor(look: { icon?: Icon | null; shape?: Shape | null }, edge = false): Shape {
-  if (look.shape) return look.shape;
+export function shapeFor(display: { icon?: Icon | null; shape?: Shape | null }, edge = false): Shape {
+  if (display.shape) return display.shape;
   if (edge) return "gate";
-  if (look.icon && DEVICES.has(look.icon)) return "device";
+  if (display.icon && DEVICES.has(display.icon)) return "device";
   return "circle";
 }
 
@@ -143,32 +143,32 @@ export function toneColor(tone: string | undefined): string {
 export const PALETTE = [1, 2, 3, 4, 5].map((n) => `var(--feynman-identity-${n})`);
 
 /**
- * Who wears which colour. When the spec says whose things are (look.owner, or rows with an
+ * Who wears which colour. When the spec says whose things are (display.owner, or rows with an
  * owner), only the owners get colours, and what they own wears them: Alice blue, her Mac
  * too. Without any owners, every instance that is not a singleton gets its own.
  */
 export function identityColors(spec: Spec, world: World): Map<string, string> {
   const colors = new Map<string, string>();
   const find = (ref: string | null | undefined) => (ref ? world.instances.find((i) => i.id === ref || i.label === ref) : undefined);
-  const looks = new Map(world.instances.map((i) => [i.id, appearance(spec, world, i.id)]));
+  const displays = new Map(world.instances.map((i) => [i.id, appearance(spec, world, i.id)]));
   const owners = new Set<string>();
-  for (const look of looks.values()) {
-    const owner = find(look.owner);
+  for (const display of displays.values()) {
+    const owner = find(display.owner);
     if (owner) owners.add(owner.id);
-    for (const row of look.rows) {
+    for (const row of display.rows) {
       const of = find(row.owner);
       if (of) owners.add(of.id);
     }
   }
-  const declares = spec.actors.some((a) => a.look.owner) || owners.size > 0;
+  const declares = spec.actors.some((a) => a.display.owner) || owners.size > 0;
   let n = 0;
   for (const instance of world.instances) {
     const actor = spec.actors.find((a) => a.name === instance.actor);
     if (!actor || actor.singleton) continue;
     if (declares ? owners.has(instance.id) : true) colors.set(instance.id, PALETTE[n++ % PALETTE.length]);
   }
-  for (const [id, look] of looks) {
-    const color = find(look.owner) && colors.get(find(look.owner)!.id);
+  for (const [id, display] of displays) {
+    const color = find(display.owner) && colors.get(find(display.owner)!.id);
     if (color) colors.set(id, color);
   }
   return colors;

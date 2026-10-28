@@ -34,7 +34,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ effects: 0 }),
         place: { order: 2 },
-        look: { icon: "mail", status: (s) => `${s.effects} email(s) sent`, mood: (s) => (s.effects ? "info" : "off") },
+        display: { icon: "mail", status: (s) => `${s.effects} email(s) sent`, mood: (s) => (s.effects ? "info" : "off") },
         transitions: { [Effect]: { description: "Something happens out there: an email, a charge.", run: (state) => void (state.effects += 1) } },
       });
 
@@ -44,7 +44,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ inbox: [] as { id: string; from: string }[], done: [] as string[] }),
         place: { order: 1 },
-        look: {
+        display: {
           icon: "cpu",
           status: (s) => (s.inbox.length ? `${s.inbox.length} job(s) to do` : `${s.done.length} done`),
           mood: (s) => (s.inbox.length ? "busy" : "ok"),
@@ -75,7 +75,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ pending: null as string | null, enqueued: 0 }),
         place: { order: 0 },
-        look: { icon: "queue", status: (s) => (s.pending ? `${s.pending} out, not acknowledged` : `${s.enqueued} job(s) enqueued`), mood: (s) => (s.pending ? "busy" : "ok") },
+        display: { icon: "queue", status: (s) => (s.pending ? `${s.pending} out, not acknowledged` : `${s.enqueued} job(s) enqueued`), mood: (s) => (s.pending ? "busy" : "ok") },
         actions: {
           enqueue: {
             label: "Enqueue",

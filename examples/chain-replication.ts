@@ -36,7 +36,7 @@ export function chainReplication(variant: "buggy" | "fixed") {
         singleton: true,
         // `seen`: the newest version read so far. `regressed`: a read came back older.
         initialState: () => ({ reading: false, seen: 0, regressed: false }),
-        look: {
+        display: {
           icon: "laptop",
           status: (s) => (s.regressed ? "saw a value go back in time" : s.reading ? "reading" : s.seen ? `last read version ${s.seen}` : "nothing read"),
           mood: (s) => (s.regressed ? "bad" : s.reading ? "busy" : "ok"),
@@ -73,7 +73,7 @@ export function chainReplication(variant: "buggy" | "fixed") {
         place: { order: 0 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
-        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "info" },
+        display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "info" },
         transitions: {
           [Write]: {
             description: "Stores the write and passes it down the chain.",
@@ -93,7 +93,7 @@ export function chainReplication(variant: "buggy" | "fixed") {
         place: { order: 1 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
-        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
+        display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Update]: { description: "Stores the write.", run: (state, msg) => void (state.version = Math.max(state.version, msg.version)) },
           [Read]: { description: "Answers with what it has.", sends: [Value], run: (state, _msg, ctx) => ctx.reply(Value, { version: state.version }) },

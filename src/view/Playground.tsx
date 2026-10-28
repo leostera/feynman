@@ -13,7 +13,7 @@ import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
 import { labelOf, messageName, ordinal } from "./format";
 import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
 import { bubbleText, fitOf, type Free, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Flight, type Picking } from "./playground/Stage";
-import { nodeLook, sceneOf, type Scene } from "./scene";
+import { nodeDisplay, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, scenarioDump, type Op, type Session } from "./session";
 import { Timeline, type TimelineTab } from "./Timeline";
 import { EntityDetails, useExplorer } from "./ui";
@@ -578,7 +578,7 @@ function firstAction(spec: Spec, world: World): { instance: string; key: string 
 /** The first token some node holds that another node would accept. */
 function firstDrag(spec: Spec, world: World, scene: Scene, spent: Set<string>): { from: string; token: Token; to: string } | null {
   for (const node of scene.nodes) {
-    for (const { token } of nodeLook(spec, world, node).held) {
+    for (const { token } of nodeDisplay(spec, world, node).held) {
       if (spent.has(`${token.kind}\u0000${String(token.value)}`)) continue;
       const to = scene.nodes.find((n) => n.id !== node.id && n.members.some((m) => dropsFor(spec, world, m.id, token).length));
       if (to) return { from: node.label, token, to: to.label };
@@ -820,7 +820,7 @@ function AddMenu({ world, groups, onRun }: { world: World; groups: GroupInfo[]; 
   };
   const addActor = (name: string) => {
     const actor = spec.actors.find((a) => a.name === name)!;
-    onRun([{ op: "spawn", actor: name, label: actor.look.names?.find((n) => !taken.has(n)) ?? nextLabel(world, name) }]);
+    onRun([{ op: "spawn", actor: name, label: actor.display.names?.find((n) => !taken.has(n)) ?? nextLabel(world, name) }]);
   };
   return (
     <DropdownMenu>
@@ -829,7 +829,7 @@ function AddMenu({ world, groups, onRun }: { world: World; groups: GroupInfo[]; 
         <DropdownMenu.Group>
           <DropdownMenu.Label>Add</DropdownMenu.Label>
           {keyed.map((group) => {
-            const Icon = iconFor(group.icon ?? spec.actors.find((a) => a.name === group.members[0].actor)?.look.icon ?? null);
+            const Icon = iconFor(group.icon ?? spec.actors.find((a) => a.name === group.members[0].actor)?.display.icon ?? null);
             return (
               <DropdownMenu.Item key={group.name} icon={<Icon />} onClick={() => addGroup(group)}>
                 {group.name}
@@ -837,7 +837,7 @@ function AddMenu({ world, groups, onRun }: { world: World; groups: GroupInfo[]; 
             );
           })}
           {kinds.map((actor) => {
-            const Icon = iconFor(actor.look.icon ?? null);
+            const Icon = iconFor(actor.display.icon ?? null);
             return (
               <DropdownMenu.Item key={actor.name} icon={<Icon />} onClick={() => addActor(actor.name)}>
                 {actor.name}

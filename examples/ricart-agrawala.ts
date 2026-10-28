@@ -37,7 +37,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         // A clock that goes back on a restart can stamp a request no later than one already granted.
         durable: variant === "fixed" ? ["clock"] : [],
         initialState: () => ({ clock: 0, asking: null as number | null, oks: 0, inside: false, deferred: [] as { id: string; ts: number }[] }),
-        look: {
+        display: {
           icon: "server",
           status: (s) => (s.inside ? "in the critical section" : s.asking !== null ? `asking, at ${s.asking}` : "outside") + ` · clock ${s.clock}`,
           mood: (s) => (s.inside ? "ok" : s.asking !== null ? "busy" : "off"),

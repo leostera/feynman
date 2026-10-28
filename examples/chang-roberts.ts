@@ -28,7 +28,7 @@ export function changRoberts(variant: "buggy" | "fixed") {
         name: "Node",
         zone,
         initialState: () => ({ started: false, leader: false }),
-        look: {
+        display: {
           icon: "server",
           names: ["A", "B", "C"],
           status: (s) => (s.leader ? "leader" : s.started ? "in an election" : "idle"),

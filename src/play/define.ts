@@ -20,8 +20,8 @@ export type Act<A> = <K extends keyof ActionsOf<A> & string>(
 export interface NodeProps<A = Actor<unknown, {}>> {
   instance: Self;
   state: Readonly<StateOf<A>>;
-  /** The look the spec gives it, to build on. */
-  look: Appearance;
+  /** The display the spec gives it, to build on. */
+  display: Appearance;
   world: WorldView;
   /** False while looking at the past: acting does nothing then. */
   live: boolean;
@@ -33,7 +33,7 @@ export interface Member {
   instance: Self;
   actor: string;
   state: unknown;
-  look: Appearance;
+  display: Appearance;
 }
 
 /** What a render function for a group receives: its members, and the world to read them in. */
@@ -41,12 +41,12 @@ export interface GroupProps {
   /** The node's name: the group's, or the shared part of its members' labels ("Studio"). */
   label: string;
   members: Member[];
-  /** Its members' looks, merged: their rows and tokens, the most telling mood. */
-  look: Appearance;
+  /** Its members' displays, merged: their rows and tokens, the most telling mood. */
+  display: Appearance;
   world: WorldView;
   live: boolean;
   /** The member of an actor, typed: `member(Manager).state.pairings`. */
-  member<A extends Actor<any, any>>(actor: A): { instance: Self; state: Readonly<StateOf<A>>; look: Appearance } | undefined;
+  member<A extends Actor<any, any>>(actor: A): { instance: Self; state: Readonly<StateOf<A>>; display: Appearance } | undefined;
   /** Run an action of one member. */
   act(instance: string, key: string, inputs?: Record<string, unknown>): void;
 }

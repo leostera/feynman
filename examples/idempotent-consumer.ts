@@ -35,7 +35,7 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
         zone: queue,
         singleton: true,
         initialState: () => ({ published: 0, unacked: new Set<string>() }),
-        look: {
+        display: {
           icon: "queue",
           status: (s) => (s.unacked.size ? `waiting on ${[...s.unacked].join(", ")}` : s.published ? "all done" : "idle"),
           mood: (s) => (s.unacked.size ? "busy" : s.published ? "ok" : "off"),
@@ -87,7 +87,7 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
         // processed is its own memory, durable only when fixed.
         durable: variant === "buggy" ? ["charged"] : ["charged", "processed"],
         initialState: () => ({ processed: new Set<string>(), charged: {} as Record<string, number> }),
-        look: {
+        display: {
           icon: "card",
           status: (s) => `charged ${Object.values(s.charged).reduce((a, b) => a + b, 0)} time(s)`,
           mood: (s) => (Object.values(s.charged).some((n) => n > 1) ? "bad" : "ok"),

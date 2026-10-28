@@ -15,7 +15,7 @@ export function lightSwitch() {
       zone,
       singleton: true,
       initialState: () => ({ on: false }),
-      look: { icon: "plug", status: (s) => (s.on ? "on" : "off"), mood: (s) => (s.on ? "ok" : "off") },
+      display: { icon: "plug", status: (s) => (s.on ? "on" : "off"), mood: (s) => (s.on ? "ok" : "off") },
       transitions: {
         up: { description: "Goes on.", when: (s) => !s.on, run: (s) => void (s.on = true) },
         down: { description: "Goes off.", when: (s) => s.on, run: (s) => void (s.on = false) },

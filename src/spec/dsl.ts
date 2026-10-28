@@ -21,7 +21,7 @@ export type Source = `${string}#${string}` | `${string}:${number}-${number}`;
 
 export type Tone = "request" | "reply" | "refused" | "stream";
 
-// How things look -----------------------------------------------------------------------------
+// How things are displayed ---------------------------------------------------------------------------
 //
 // Presentation is data on the actor, read by the explorer: an icon, a status line, a mood that
 // colours it, rows that show its state as structure, and the live links it holds. These
@@ -92,7 +92,7 @@ export interface Token {
   mood?: Mood;
 }
 
-export interface Look<S> {
+export interface Display<S> {
   icon?: Icon;
   shape?: Shape;
   /** Labels for instances added in the playground, in order: "Alice", "Bob". */
@@ -376,7 +376,7 @@ interface ActorDef<M extends Registry, S, A, T> {
    * "Bob, then Alice" as one state. It tests the claim as it goes and says if it is false.
    */
   symmetric?: boolean;
-  look?: Look<NoInfer<S>>;
+  display?: Display<NoInfer<S>>;
   /** The live connections an instance holds now, from its own state. */
   links?: (state: Readonly<NoInfer<S>>, self: { id: string; label: string }) => Link[];
   actions?: ActionsFor<M, NoInfer<S>, A>;
@@ -628,7 +628,7 @@ interface RawActor {
   initialState: ActorInfo["initialState"];
   durable?: string[];
   symmetric?: boolean;
-  look?: ActorInfo["look"];
+  display?: ActorInfo["display"];
   links?: ActorInfo["links"];
   actions?: Record<string, RawStep & { label: string; inputs?: Record<string, { type: InputType; examples?: unknown; accepts?: string }> }>;
   transitions?: Record<string, RawStep>;
@@ -687,7 +687,7 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
     initialState: raw.initialState,
     durable: raw.durable ?? [],
     symmetric: raw.symmetric === true,
-    look: raw.look ?? {},
+    display: raw.display ?? {},
     place: raw.place ?? {},
     links: raw.links,
     actions,

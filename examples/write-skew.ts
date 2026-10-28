@@ -34,7 +34,7 @@ export function writeSkew(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ onCall: 2 }),
-        look: { icon: "sheet", status: (s) => `${s.onCall} on call`, mood: (s) => (s.onCall >= 1 ? "ok" : "bad") },
+        display: { icon: "sheet", status: (s) => `${s.onCall} on call`, mood: (s) => (s.onCall >= 1 ? "ok" : "bad") },
         transitions: {
           [Check]: { description: "Says how many are on call.", sends: [Count], run: (state, _msg, ctx) => ctx.reply(Count, { onCall: state.onCall }) },
           [Leave]: { description: "Takes a doctor off call.", run: (state) => void (state.onCall -= 1) },
@@ -55,7 +55,7 @@ export function writeSkew(variant: "buggy" | "fixed") {
         zone: doctors,
         symmetric: true,
         initialState: () => ({ phase: "on" as "on" | "asking" | "off" }),
-        look: {
+        display: {
           icon: "person",
           names: ["Meredith", "Cristina"],
           status: (s) => ({ on: "on call", asking: "asking to go off", off: "off call" })[s.phase],

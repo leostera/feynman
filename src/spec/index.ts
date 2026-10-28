@@ -26,7 +26,7 @@ export type {
   Token,
   ActorPlace,
   ZonePlace,
-  Look,
+  Display,
   Link,
   Shape,
   StateOf,
@@ -35,7 +35,7 @@ export type {
   Group,
   GroupDef,
 } from "./dsl.ts";
-export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
+export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./display.ts";
 export * from "./engine.ts";
 export { Runner, runScenario, scenarioStart, SETTLE_LIMIT } from "./run.ts";
 export type * from "./spec.ts";

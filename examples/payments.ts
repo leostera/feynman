@@ -29,7 +29,7 @@ export function payments(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ balance: 100, debits: 0, seen: [] as string[] }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => `balance ${s.balance} · ${s.debits} debit(s)`,
           mood: (s) => (s.debits > s.seen.length ? "bad" : "ok"),
@@ -58,7 +58,7 @@ export function payments(variant: "buggy" | "fixed") {
         // A client that retries keeps its outbox on disk: a restart must not forget a payment.
         durable: ["paid", "pending"],
         initialState: () => ({ paid: 0, pending: null as string | null }),
-        look: {
+        display: {
           icon: "phone",
           names: ["Ada", "Grace"],
           status: (s) => (s.pending ? `paying ${s.pending}` : s.paid ? `${s.paid} payment(s) made` : "ready to pay"),

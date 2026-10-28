@@ -42,7 +42,7 @@ export function orSet(variant: "buggy" | "fixed") {
         // `has`: buggy's set. `tags`: fixed's, x is in while any is, and `removed`, its
         // tombstones. `added`: adds made here, to name tags.
         initialState: () => ({ has: false, tags: new Set<string>(), removed: new Set<string>(), added: 0 }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => (contains(s) ? "has x" : "no x"),
           mood: (s) => (contains(s) ? "ok" : "off"),

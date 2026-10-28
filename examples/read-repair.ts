@@ -38,7 +38,7 @@ export function readRepair(variant: "buggy" | "fixed") {
         singleton: true,
         // `replies`: the read in progress, by replica; null when not reading.
         initialState: () => ({ written: 0, replies: null as Record<string, number> | null, read: null as number | null }),
-        look: {
+        display: {
           icon: "router",
           status: (s) => (s.replies ? `reading: ${Object.keys(s.replies).length} of 2 replies` : s.read !== null ? `read v${s.read}` : s.written ? `wrote v${s.written}` : "idle"),
           mood: (s) => (s.replies ? "busy" : "info"),
@@ -91,7 +91,7 @@ export function readRepair(variant: "buggy" | "fixed") {
         durable: ["version", "highest"],
         // `highest`: the newest version it ever held, which only the invariant reads.
         initialState: () => ({ version: 0, highest: 0 }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => (s.version ? `v${s.version}` : "empty"),
           mood: (s) => (s.version < s.highest ? "bad" : s.version ? "ok" : "off"),

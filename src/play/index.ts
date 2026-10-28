@@ -4,4 +4,4 @@ export { definePlayground, groupsOf, isPlayground } from "./define.ts";
 export type { Act, ActorPresentation, GroupPresentation, GroupProps, LinkStyle, Member, NodeProps, Playground, PlayBuilder, Self, Size, TokenProps } from "./define.ts";
 export { Badge, Card, Icon, Node, Panel, PlayProvider, Rows, Terminal, Ticket, usePlay } from "./kit.tsx";
 export type { NodeBadge, NodeVisualProps, PlayContextValue } from "./kit.tsx";
-export { iconFor, ICONS, identityColors, labelInside, moodColor, PALETTE, shapeFor, telling, toneColor, TONES } from "./look.tsx";
+export { iconFor, ICONS, identityColors, labelInside, moodColor, PALETTE, shapeFor, telling, toneColor, TONES } from "./display.tsx";

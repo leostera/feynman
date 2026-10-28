@@ -33,7 +33,7 @@ export function raftVote(variant: "buggy" | "fixed") {
         // Raft keeps `votedFor` on stable storage, so a restart cannot make a node vote twice.
         durable: variant === "fixed" ? ["votedFor"] : [],
         initialState: () => ({ votedFor: null as string | null, votes: [] as string[], leader: false }),
-        look: {
+        display: {
           icon: "server",
           names: ["A", "B", "C"],
           status: (s) => (s.leader ? `leader, ${s.votes.length} votes` : s.votes.length ? `candidate, ${s.votes.length} vote(s)` : s.votedFor ? `voted for ${s.votedFor}` : "follower"),

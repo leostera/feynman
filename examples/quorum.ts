@@ -37,7 +37,7 @@ export function quorum(variant: "buggy" | "fixed") {
         zone: clients,
         singleton: true,
         initialState: () => ({ phase: "idle" as "idle" | "writing" | "written" | "reading" | "read", acks: 0, answers: 0, newest: 0 }),
-        look: {
+        display: {
           icon: "laptop",
           status: (s) =>
             ({ idle: "ready", writing: `writing: ${s.acks} of ${W} acks`, written: "write succeeded", reading: `reading: ${s.answers} of ${R} answers`, read: s.newest ? "read version 1" : "read nothing: missed the write" })[s.phase],
@@ -94,7 +94,7 @@ export function quorum(variant: "buggy" | "fixed") {
         symmetric: true,
         durable: ["version"],
         initialState: () => ({ version: 0 }),
-        look: { icon: "database", names: ["A", "B", "C"], status: (s) => (s.version ? "has version 1" : "empty"), mood: (s) => (s.version ? "ok" : "off") },
+        display: { icon: "database", names: ["A", "B", "C"], status: (s) => (s.version ? "has version 1" : "empty"), mood: (s) => (s.version ? "ok" : "off") },
         transitions: {
           [Write]: {
             description: "Stores the write and acknowledges it.",
