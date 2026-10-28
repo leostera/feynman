@@ -30,7 +30,7 @@ import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type 
 import { fairness, fairStepsIn, memoryOf, rootMemory, type Resolved } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
 import type { Root } from "./search.ts";
-import { apply, branches, QUIET, type Choice } from "./steps.ts";
+import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
 
 type Instance = World["instances"][number];
 type Pending = World["pending"][number];
@@ -76,6 +76,12 @@ interface Layout {
   instances: Instance[];
   /** Each instance's slot, by id. */
   slots: Map<string, number>;
+  /** What each instance state can do, by state id. */
+  plans: Map<number, LocalPlan>;
+  /** A restart choice per instance that can restart (not a singleton), in slot order. */
+  restarts: Choice[];
+  /** `timersOf` for a vector without timers: shared, never written. */
+  noTimers: Int32Array;
   /**
    * The step cache, by (state id, own timers list) and then by step and argument. One per
    * layout: a step sees which instances there are (`ctx.all`, `ctx.the`, sending to one)
@@ -134,13 +140,34 @@ interface Entry {
   h2: number;
 }
 
-/** A frontier entry being expanded: its world as the engine has it, and what its steps share. */
+/**
+ * A vector ready to step from. Its world is built only when something needs it: a step that
+ * runs through the engine, or liveness fairness. Pending ids in that world are places in the
+ * vector's pending part, from 1, so the intern id of pending entry `k` is
+ * `vector[layout.messages + k]`.
+ */
+interface Here {
+  vector: Int32Array;
+  layout: Layout;
+  /** Each instance's own timers, as a list id (from 1; 0 for none), for the step cache's key. */
+  timersOf: Int32Array;
+  world(): World;
+}
+
+/** What an instance in one state can do, whatever else is in the world (see `IntegerSearch.planOf`). */
+interface LocalPlan {
+  /** Actions whose `when` holds: their choices, or their inputs when those come from `examples`, which read the world. */
+  acts: { key: string; choices?: Choice[]; inputs?: ActionInputs }[];
+  guards: Choice[];
+}
+
+type ActionInputs = Parameters<typeof inputCombinations>[2];
+
+/** A frontier entry being expanded, and what its steps share. */
 interface Expanding {
   parent: Entry;
   depth: number;
-  world: World;
-  /** Each pending entry's intern id, by its id in `world`. */
-  ids: number[];
+  here: Here;
   symmetry: Symmetry;
   /** For `never` properties: the trace steps on the way to the parent. */
   trail: TraceStep[] | undefined;
@@ -198,6 +225,14 @@ export class IntegerSearch {
   /** For nodes from roots with symmetry: the fingerprint of the world without renaming, which renamed twins do not share. */
   private plains = new Map<number, [number, number]>();
   private twinChecks = 0;
+  /**
+   * For choices that do not name a pending entry (actions, guards, restarts), which are shared
+   * objects (`planOf`, `Layout.restarts`): the action's counter in the vector, the step cache's
+   * argument, and the choice's name, worked out once.
+   */
+  private facts = new WeakMap<Choice, { actsAt: number; arg: number; named: number }>();
+  /** Choices of actions whose inputs come from `examples`, by (tuple, instance, action). */
+  private examples = new Map<string, Choice[]>();
   /** While twin checks remain: each state's vector, so a twin's world need not be replayed. */
   private twinWorlds = new Map<number, { vector: Int32Array; layout: Layout }>();
   private seen = new PrintMap();
@@ -257,7 +292,8 @@ export class IntegerSearch {
     const acts = new Map<string, number>();
     for (const instance of world.instances) for (const k of Object.keys(actorNamed(this.spec, instance.actor).actions)) acts.set(`${instance.id}.${k}`, acts.size);
     const n = world.instances.length;
-    layout = { index: this.layouts.size, instances: world.instances, slots, cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
+    const restarts = world.instances.flatMap((i): Choice[] => (actorNamed(this.spec, i.actor).singleton ? [] : [{ kind: "restart", instance: i.id }]));
+    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), restarts, noTimers: new Int32Array(world.instances.length), cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -316,18 +352,17 @@ export class IntegerSearch {
 
   /** Every step from a frontier entry, in the classic order. False when the search must stop. */
   private expand(parent: Entry, depth: number, next: Entry[], open: Entry[]): boolean {
-    const { vector, layout: L } = parent;
-    const { world, ids, timersOf } = this.materialize(vector, L);
-    const from: Expanding = { parent, depth, world, ids, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.trailOf(parent.gid) : undefined };
-    const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
+    const here = this.here(parent.vector, parent.layout);
+    const from: Expanding = { parent, depth, here, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.trailOf(parent.gid) : undefined };
+    const options = this.choicesOf(here, parent.tuple);
     if (this.keepsEdges) {
       // Expanded once it is begun, as in the classic search, even if the search stops partway.
       this.expanded[parent.gid] = true;
       this.edges[parent.gid] = [];
-      this.enabled[parent.gid] = fairStepsIn(this.spec, world, options);
+      this.enabled[parent.gid] = fairStepsIn(this.spec, here.world(), options);
     }
     for (let option = 0; option < options.length; option++) {
-      const step = this.step(vector, L, world, ids, timersOf, options[option]);
+      const step = this.step(here, options[option]);
       if (!step) continue;
       this.reachedSteps[step.effect.reached] = true;
       const goesOn = step.effect.error ? this.failed(from, option, options[option], step) : this.land(from, option, options[option], step, next, open);
@@ -344,7 +379,7 @@ export class IntegerSearch {
     const { parent, symmetry } = from;
     const error = step.effect.error!;
     if (!this.errors.has(error)) {
-      this.errors.set(error, this.shadowNode(parent.gid, option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), step.effect.event));
+      this.errors.set(error, this.shadowNode(parent.gid, option, this.nameIn(choice, parent.vector, parent.layout), this.faultsAfter(parent, step), step.effect.event));
       return true;
     }
     if (!symmetry.classes.length) return true;
@@ -362,7 +397,7 @@ export class IntegerSearch {
    * counterexample. On a new state, a node, judged and queued. False when the search must stop.
    */
   private land(from: Expanding, option: number, choice: Choice, step: Step, next: Entry[], open: Entry[]): boolean {
-    const { parent, world, symmetry, depth } = from;
+    const { parent, here, symmetry, depth } = from;
     const L = parent.layout;
     const { effect } = step;
     const nevers = from.trail ? this.remember(from.trail, effect.event, step) : NO_IDS;
@@ -374,7 +409,7 @@ export class IntegerSearch {
     }
     const [h1, h2] = folded ? folded.print : childPrint(parent, step);
     const existing = this.seen.get(h1, h2);
-    const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, world, choice)?.id));
+    const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, here.world(), choice)?.id));
     if (existing !== undefined) edgeTo(existing);
     // A step property is judged on every step, so one broken on the way to a known state counts too.
     let breaks = NO_IDS;
@@ -382,11 +417,11 @@ export class IntegerSearch {
     if (this.everySteps.some((p) => !this.broken.has(p.id))) {
       const after = (child ??= this.applied(parent.vector, step));
       tuple = this.tupleOf(after, L);
-      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => world, () => this.instancesOf(after, L));
+      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf(after, L));
     }
     if (existing !== undefined) {
       if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
-      const gid = this.shadowNode(parent.gid, option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), effect.event);
+      const gid = this.shadowNode(parent.gid, option, this.nameIn(choice, parent.vector, L), this.faultsAfter(parent, step), effect.event);
       for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
       return true;
     }
@@ -394,13 +429,13 @@ export class IntegerSearch {
       this.stoppedBy = "maxStates";
       return false;
     }
-    const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameOf(choice, from.ids), this.faultsAfter(parent, step), effect.event);
+    const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameIn(choice, parent.vector, L), this.faultsAfter(parent, step), effect.event);
     edgeTo(gid);
     child ??= this.applied(parent.vector, step);
     this.seen.set(h1, h2, gid);
     if (folded) this.keepForTwins(gid, child, L, folded.plain);
     this.states++;
-    if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
+    if (this.watch.state) this.watch.state(this.materialize(child, L), this.budgetOf(child, L));
     const state = child;
     tuple ??= this.tupleOf(state, L);
     if (this.always.length) this.judge(tuple, state, gid, L);
@@ -425,22 +460,22 @@ export class IntegerSearch {
   /** A node at the depth bound: its edges, if every step from it lands on a known state; else it stays open. */
   private close(entry: Entry): void {
     const { vector, layout: L } = entry;
-    const { world, ids, timersOf } = this.materialize(vector, L);
+    const here = this.here(vector, L);
     const symmetry = this.roots[this.root[entry.gid]].symmetry;
     const trail = this.nevers.length ? this.trailOf(entry.gid) : undefined;
-    const options = branches(this.spec, world, vector[L.faults] < this.b.faults);
+    const options = this.choicesOf(here, entry.tuple);
     const out: Edge[] = [];
     for (let option = 0; option < options.length; option++) {
-      const step = this.step(vector, L, world, ids, timersOf, options[option]);
+      const step = this.step(here, options[option]);
       if (!step || step.effect.error) continue;
       if (trail) this.remember(trail, step.effect.event, step);
       const [h1, h2] = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
       const to = this.seen.get(h1, h2);
       if (to === undefined) return;
-      out.push(edgeOf(to, option, step.fault, fairness(this.spec, world, options[option])?.id));
+      out.push(edgeOf(to, option, step.fault, fairness(this.spec, here.world(), options[option])?.id));
     }
     this.edges[entry.gid] = out;
-    this.enabled[entry.gid] = fairStepsIn(this.spec, world, options);
+    this.enabled[entry.gid] = fairStepsIn(this.spec, here.world(), options);
     this.expanded[entry.gid] = true;
   }
 
@@ -551,10 +586,10 @@ export class IntegerSearch {
    * symmetry and without its budget: renamed twins must agree on them (owner.ts successorsPrint).
    */
   private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
-    const { world, ids, timersOf } = this.materialize(vector, L);
+    const here = this.here(vector, L);
     const out = new Set<string>();
-    for (const choice of branches(this.spec, world, false)) {
-      const step = this.stepOf(vector, L, world, ids, timersOf, choice);
+    for (const choice of branches(this.spec, here.world(), false)) {
+      const step = this.stepOf(here, choice);
       out.add(step.effect.error ? `error:${step.effect.error}` : this.symmetricPrint(this.applied(vector, step), L, symmetry).world.join(","));
     }
     return [...out].sort().join("\n");
@@ -698,7 +733,12 @@ export class IntegerSearch {
     }
   }
 
-  private nameOf(choice: Choice, ids: number[]): number {
+  /** A choice's name: worked out once for shared choices, by its pending entry for the others. */
+  private nameIn(choice: Choice, vector: Int32Array, L: Layout): number {
+    return choice.kind === "fire" || choice.kind === "lose" ? this.nameOf(choice, vector, L) : this.factsOf(L, choice).named;
+  }
+
+  private nameOf(choice: Choice, vector: Int32Array, L: Layout): number {
     const name: ChoiceName =
       choice.kind === "act"
         ? { kind: "act", instance: choice.instance, key: choice.key, inputs: choice.inputs }
@@ -706,7 +746,7 @@ export class IntegerSearch {
           ? { kind: "guard", instance: choice.instance, key: choice.key }
           : choice.kind === "restart"
             ? { kind: "restart", instance: choice.instance }
-            : { kind: choice.kind, pending: ids[choice.pending] };
+            : { kind: choice.kind, pending: vector[L.messages + choice.pending] };
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
@@ -775,31 +815,42 @@ export class IntegerSearch {
   }
 
   /** What a choice does, to apply to the vector; none if it would repeat an action past the bound. */
-  private step(vector: Int32Array, L: Layout, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step | undefined {
-    if (choice.kind === "act" && vector[actsIndex(L, choice)] >= this.b.repeats) return undefined;
-    return this.stepOf(vector, L, world, ids, timersOf, choice);
+  private step(here: Here, choice: Choice): Step | undefined {
+    if (choice.kind === "act" && here.vector[this.factsOf(here.layout, choice).actsAt] >= this.b.repeats) return undefined;
+    return this.stepOf(here, choice);
+  }
+
+  private factsOf(L: Layout, choice: Choice): { actsAt: number; arg: number; named: number } {
+    let facts = this.facts.get(choice);
+    if (!facts) {
+      if (choice.kind === "fire" || choice.kind === "lose") throw new Error("a choice on a pending entry has no facts of its own");
+      this.facts.set(choice, (facts = { actsAt: choice.kind === "act" ? actsIndex(L, choice) : -1, arg: this.argOf(choice), named: this.nameOf(choice, NONE, L) }));
+    }
+    return facts;
   }
 
   /** What a choice does, whatever the repeats bound says. */
-  private stepOf(vector: Int32Array, L: Layout, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step {
-    const actsAt = choice.kind === "act" ? actsIndex(L, choice) : -1;
+  private stepOf(here: Here, choice: Choice): Step {
+    const { vector, layout: L } = here;
+    const actsAt = choice.kind === "act" ? this.factsOf(L, choice).actsAt : -1;
     let slot: number;
     let at = -1;
     if (choice.kind === "fire" || choice.kind === "lose") {
-      // Pending ids in a materialized world are places in the vector's pending part.
-      const chosen = world.pending[choice.pending - 1];
+      const chosen = this.pendings.values[vector[L.messages + choice.pending]];
       slot = L.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
     } else slot = L.slots.get(choice.instance)!;
-    return { layout: L, slot, at, effect: this.effectOf(vector, L, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
+    return { layout: L, slot, at, effect: this.effectOf(here, slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
-  private effectOf(vector: Int32Array, L: Layout, world: World, ids: number[], timers: number, slot: number, choice: Choice): Effect {
+  private effectOf(here: Here, slot: number, choice: Choice): Effect {
+    const { vector, layout: L } = here;
+    const timers = here.timersOf[slot];
     // The key: the instance's state, its own timers (start, cancel and restart read them), and
     // the step with its argument: a message or timer by its intern id, which says who sent
     // what; anything else by an interned name.
-    const arg = choice.kind === "fire" ? ids[choice.pending] * 4 : choice.kind === "lose" ? ids[choice.pending] * 4 + 2 : this.argOf(choice) * 4 + 1;
+    const arg = choice.kind === "fire" ? vector[L.messages + choice.pending] * 4 : choice.kind === "lose" ? vector[L.messages + choice.pending] * 4 + 2 : this.factsOf(L, choice).arg * 4 + 1;
     // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
     if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
     const local = vector[slot] * 1_048_576 + timers;
@@ -808,8 +859,9 @@ export class IntegerSearch {
     const cached = byArg.get(arg);
     if (cached) return cached;
     const observe = observation();
+    const world = here.world();
     const step = run(this.spec, world, choice, observe);
-    const effect = this.effectFrom(world, ids, slot, step.world, step.event);
+    const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event);
     if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0 };
     byArg.set(arg, effect);
     return effect;
@@ -821,7 +873,7 @@ export class IntegerSearch {
   }
 
   /** The integers a step changed, from the worlds before and after it. */
-  private effectFrom(before: World, ids: number[], slot: number, after: World, e: Event): Effect {
+  private effectFrom(before: World, pendingAt: (k: number) => number, slot: number, after: World, e: Event): Effect {
     const stepKey = `${e.actor}.${e.key}`;
     const reached = this.stepKeys.id(stepKey, () => stepKey);
     const sent = e.sent.map((s) => ({ message: s.message }));
@@ -836,8 +888,8 @@ export class IntegerSearch {
       reached,
       event,
       state: this.stateId(after.instances[slot]),
-      removesMessages: Int32Array.from(removed.filter((p) => p.kind === "deliver").map((p) => ids[p.id])),
-      removesTimers: Int32Array.from(removed.filter((p) => p.kind === "timer").map((p) => ids[p.id])),
+      removesMessages: Int32Array.from(removed.filter((p) => p.kind === "deliver").map((p) => pendingAt(p.id))),
+      removesTimers: Int32Array.from(removed.filter((p) => p.kind === "timer").map((p) => pendingAt(p.id))),
       addsMessages: Int32Array.from(added.filter((p) => p.kind === "deliver").map((p) => this.pendingId(p))),
       addsTimers: Int32Array.from(added.filter((p) => p.kind === "timer").map((p) => this.pendingId(p))),
     };
@@ -901,28 +953,86 @@ export class IntegerSearch {
     return v;
   }
 
-  /**
-   * The world a vector stands for, for the engine. Each pending entry's id is its place in the
-   * vector's pending part, from 1: `ids[id]` is its intern id. `timersOf[slot]` names the list
-   * of that instance's timers, for the step cache's key.
-   */
-  private materialize(vector: Int32Array, L: Layout): { world: World; ids: number[]; timersOf: Int32Array } {
+  /** The world a vector stands for, for the engine: each pending entry's id is its place in the vector's pending part, from 1. */
+  private materialize(vector: Int32Array, L: Layout): World {
     const n = L.instances.length;
     const instances = new Array<Instance>(n);
     for (let slot = 0; slot < n; slot++) instances[slot] = this.instanceStates.values[vector[slot]];
     const pending: Pending[] = [];
-    const ids: number[] = [0];
-    const timersOf = new Int32Array(n);
-    let own: string[] | undefined;
-    for (let i = L.messages + 1; i < vector.length; i++) {
-      const id = pending.length + 1;
-      const template = this.pendings.values[vector[i]];
-      pending.push({ ...template, id } as Pending);
-      ids[id] = vector[i];
-      if (template.kind === "timer") (own ??= new Array<string>(n).fill(""))[L.slots.get(template.to)!] += `${vector[i]},`;
+    for (let i = L.messages + 1; i < vector.length; i++) pending.push({ ...this.pendings.values[vector[i]], id: pending.length + 1 } as Pending);
+    return { seq: pending.length, fresh: this.freshes.values[vector[L.fresh]], rng: vector[L.rng] >>> 0, instances, pending };
+  }
+
+  private here(vector: Int32Array, L: Layout): Here {
+    let world: World | undefined;
+    return { vector, layout: L, timersOf: this.timersOf(vector, L), world: () => (world ??= this.materialize(vector, L)) };
+  }
+
+  /** Each instance's own timers, oldest first, as a list id (from 1; 0 for none). */
+  private timersOf(vector: Int32Array, L: Layout): Int32Array {
+    const n = L.instances.length;
+    const end = L.messages + 1 + vector[L.messages];
+    if (end === vector.length) return L.noTimers;
+    const out = new Int32Array(n);
+    const own = new Array<string>(n).fill("");
+    for (let i = end; i < vector.length; i++) own[L.slots.get(this.pendings.values[vector[i]].to)!] += `${vector[i]},`;
+    for (let slot = 0; slot < n; slot++) if (own[slot]) out[slot] = 1 + this.timerLists.id(own[slot], () => own[slot]);
+    return out;
+  }
+
+  /**
+   * Every choice from a vector, as `branches` gives them from its world, in the same order:
+   * actions (with their inputs), then guards, instance by instance; then everything pending,
+   * messages before timers, oldest first (pendingInOrder, which the vector keeps); then, while
+   * faults are left, losing each message and restarting each instance that can restart.
+   */
+  private choicesOf(here: Here, tuple: number): Choice[] {
+    const { vector, layout: L } = here;
+    const out: Choice[] = [];
+    const n = L.instances.length;
+    for (let slot = 0; slot < n; slot++) {
+      for (const act of this.planOf(L, vector[slot]).acts) for (const c of act.choices ?? this.exampleChoices(here, tuple, slot, act.key, act.inputs!)) out.push(c);
     }
-    if (own) for (let slot = 0; slot < n; slot++) if (own[slot]) timersOf[slot] = 1 + this.timerLists.id(own[slot], () => own![slot]);
-    return { world: { seq: pending.length, fresh: this.freshes.values[vector[L.fresh]], rng: vector[L.rng] >>> 0, instances, pending }, ids, timersOf };
+    for (let slot = 0; slot < n; slot++) for (const c of this.planOf(L, vector[slot]).guards) out.push(c);
+    const pending = vector.length - L.messages - 1;
+    for (let k = 1; k <= pending; k++) out.push(fireAt(k));
+    if (vector[L.faults] < this.b.faults) {
+      for (let k = 1; k <= vector[L.messages]; k++) out.push(loseAt(k));
+      for (const c of L.restarts) out.push(c);
+    }
+    return out;
+  }
+
+  /**
+   * What an instance in one state can do: its actions whose `when` holds (with their inputs, if
+   * those do not come from `examples`) and its guards that hold. Both read only its state.
+   */
+  private planOf(L: Layout, state: number): LocalPlan {
+    let plan = L.plans.get(state);
+    if (plan) return plan;
+    const instance = this.instanceStates.values[state];
+    const actor = actorNamed(this.spec, instance.actor);
+    const acts: LocalPlan["acts"] = [];
+    for (const info of Object.values(actor.actions)) {
+      if (info.when && !enabledIn(info.when, instance.state)) continue;
+      const inputs = info.inputs as ActionInputs;
+      if (Object.values(inputs).some((input) => input.examples)) acts.push({ key: info.key, inputs });
+      else acts.push({ key: info.key, choices: inputCombinations(this.spec, NO_WORLD, inputs).map((combo): Choice => ({ kind: "act", instance: instance.id, key: info.key, inputs: combo })) });
+    }
+    const guards = Object.values(actor.transitions)
+      .filter((t) => !t.message && t.when && enabledIn(t.when, instance.state))
+      .map((t): Choice => ({ kind: "guard", instance: instance.id, key: t.key }));
+    L.plans.set(state, (plan = { acts, guards }));
+    return plan;
+  }
+
+  /** An action's choices when its inputs come from `examples`, which read the world: kept by its tuple. */
+  private exampleChoices(here: Here, tuple: number, slot: number, key: string, inputs: ActionInputs): Choice[] {
+    const id = here.layout.instances[slot].id;
+    const cacheKey = `${tuple}|${id}|${key}`;
+    let choices = this.examples.get(cacheKey);
+    if (!choices) this.examples.set(cacheKey, (choices = inputCombinations(this.spec, this.instancesOf(here.vector, here.layout), inputs).map((combo): Choice => ({ kind: "act", instance: id, key, inputs: combo }))));
+    return choices;
   }
 
   /** An instance in one state, shared by every world it is in that way. */
@@ -947,6 +1057,18 @@ export class IntegerSearch {
 }
 
 const NONE = new Int32Array(0);
+/** A world with nothing in it, for input combinations that do not read the world. */
+const NO_WORLD = { seq: 0, fresh: {}, rng: 0, instances: [], pending: [] } as World;
+
+/** Choices on pending entry `k`, shared: they name it by its place. */
+const fires: Choice[] = [];
+const loses: Choice[] = [];
+function fireAt(k: number): Choice {
+  return (fires[k] ??= { kind: "fire", pending: k });
+}
+function loseAt(k: number): Choice {
+  return (loses[k] ??= { kind: "lose", pending: k });
+}
 /** A step property's answer, as kept: not known yet, holds, breaks. */
 const UNKNOWN = 0;
 const HOLDS = 1;
@@ -979,6 +1101,15 @@ function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
       return restart(spec, world, choice.instance, how);
     case "lose":
       return lose(spec, world, choice.pending, how);
+  }
+}
+
+/** Whether a step's `when` holds in a state: one that throws does not, as the engine has it. */
+function enabledIn(when: (state: never) => boolean, state: unknown): boolean {
+  try {
+    return when(state as never);
+  } catch {
+    return false;
   }
 }
 
