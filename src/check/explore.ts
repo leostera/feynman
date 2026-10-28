@@ -187,8 +187,10 @@ export interface CheckOptions {
   /** The frontier size at which workers join (256): lower only to test sharing on small specs. */
   shareFrom?: number;
   /**
-   * Which search to run: the integer core (integer.ts) when the job fits it, else the classic
-   * one ("auto", the default); or one of them. "integer" on a job it does not fit is an error.
+   * Which search to run: the integer core (integer.ts) whenever it can do the job, else the
+   * classic one ("auto", the default); or one of them. The integer core does without reductions,
+   * symmetry and workers; "integer" on a job it cannot do (liveness, `never`, step properties,
+   * roots with other instances) is an error.
    * FEYNMAN_ENGINE sets the default, to run a whole suite through one.
    */
   engine?: Engine;
@@ -247,12 +249,14 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const walkVerdicts = verdicts();
   const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
   const engine = options.engine ?? engineFrom(process.env.FEYNMAN_ENGINE);
-  const fits = engine !== "classic" && fitsIntegerCore(spec, b, roots);
-  if (engine === "integer" && !fits) throw new Error("the integer core does safety only, without reductions or symmetry, and from roots with the same instances");
+  const fits = engine !== "classic" && fitsIntegerCore(spec, roots);
+  if (engine === "integer" && !fits) throw new Error("the integer core does `always` properties only, from roots with the same instances");
   if (fits) {
-    const search = new IntegerSearch(spec, b, roots, options.watch ?? {}, started);
+    // The bounds as the integer core searches: with none of the classic search's reductions.
+    const plain = { ...b, reduce: false, symmetry: false };
+    const search = new IntegerSearch(spec, plain, rootsOf(spec, plain, seeds), options.watch ?? {}, started);
     search.run();
-    return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
+    return await reportOf(spec, plain, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
   }
   const shares = options.source !== undefined && b.workers > 0 && !options.watch;
   const ownPool = shares && !options.pool ? new Pool(b.workers) : undefined;

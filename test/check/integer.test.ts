@@ -45,5 +45,5 @@ test("generated specs: the same report from both", async () => {
 
 test("the integer core refuses a job it does not do", async () => {
   const spec = corpus.find((e) => e.name === "two-phase commit")!.spec("fixed");
-  await expect(check(spec, { ...PLAIN, instances: { Participant: 2 } }, [], { engine: "integer" })).rejects.toThrow("the integer core does safety only");
+  await expect(check(spec, { ...PLAIN, instances: { Participant: 2 } }, [], { engine: "integer" })).rejects.toThrow("the integer core does `always` properties only");
 });

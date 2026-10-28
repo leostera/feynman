@@ -19,7 +19,7 @@
 // than the key says: they run through the engine every time (the engine's Observation says
 // which). It explores exactly what the classic search does without its reductions, for
 // safety: states, `always` properties, errors, stuck worlds and coverage. `check` uses it
-// when that is the job (see `fitsIntegerCore`), and the oracles hold it to the classic search.
+// whenever it can (see `fitsIntegerCore`), and the oracles hold it to the classic search.
 import { act, actorNamed, fire, guard, lose, observation, restart, worldView, type Observation, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
@@ -32,10 +32,14 @@ type Instance = World["instances"][number];
 type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
 
-/** Whether a job is one the integer core does exactly as the classic search would. */
-export function fitsIntegerCore(spec: Spec, b: Bounds, roots: Root[]): boolean {
-  if (b.reduce || b.symmetry) return false;
+/**
+ * Whether the integer core can do a job: `always` properties only, from roots with the same
+ * instances, with no symmetry to fold (that changes the states). It does without the classic
+ * search's reductions (and is faster than the classic search with them), so it ignores `reduce`.
+ */
+export function fitsIntegerCore(spec: Spec, roots: Root[]): boolean {
   if (spec.properties.some((p) => p.kind !== "always")) return false;
+  if (roots.some((r) => r.symmetry.classes.length)) return false;
   // One layout for every root: the same instances, in the same order.
   const ids = roots[0].world.instances.map((i) => i.id).join("\u0000");
   return roots.every((r) => r.world.instances.map((i) => i.id).join("\u0000") === ids);

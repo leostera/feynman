@@ -90,6 +90,9 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
   expect(report.walks.runs).toBeGreaterThan(0);
 });
 
+/** The classic search's reductions, which the integer core does without. */
+const CLASSIC = { engine: "classic" } as const;
+
 test("the reductions skip work, never states: exactly the states of the plain search", async () => {
   const { defineSpec, message } = await import("../../src/spec/index.ts");
   // Clients ping a server and count the answers; a log hears about every answer. Many steps
@@ -129,8 +132,8 @@ test("the reductions skip work, never states: exactly the states of the plain se
     },
   );
   const bounds = { depth: 10, faults: 1, repeats: 2, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = await check(pings, { ...bounds, reduce: false });
-  const reduced = await check(pings, { ...bounds, reduce: true });
+  const plain = await check(pings, { ...bounds, reduce: false }, [], CLASSIC);
+  const reduced = await check(pings, { ...bounds, reduce: true }, [], CLASSIC);
   expect(plain.errors).toEqual([]);
   expect(plain.exhaustive && reduced.exhaustive).toBe(true);
   expect(reduced.states).toBe(plain.states);
@@ -140,8 +143,8 @@ test("the reductions skip work, never states: exactly the states of the plain se
 
 test("the reductions keep the verdicts and the states on a spec with timers and retries", async () => {
   const bounds = { depth: 8, faults: 1, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = await check(remoteAccess, { ...bounds, reduce: false });
-  const reduced = await check(remoteAccess, { ...bounds, reduce: true });
+  const plain = await check(remoteAccess, { ...bounds, reduce: false }, [], CLASSIC);
+  const reduced = await check(remoteAccess, { ...bounds, reduce: true }, [], CLASSIC);
   expect(reduced.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
   expect(reduced.coverage).toEqual(plain.coverage);
   expect(reduced.states).toBe(plain.states);
@@ -180,7 +183,7 @@ test("inputs an action never reads are not tried twice", async () => {
     });
     void Box;
   });
-  const report = await check(typed, { depth: 1, walks: 0 });
+  const report = await check(typed, { depth: 1, walks: 0 }, [], CLASSIC);
   // loud is read, note is not: of the four combinations, the two that differ only in the note are one.
   expect(report.reductions.inputs).toBe(2);
 });
