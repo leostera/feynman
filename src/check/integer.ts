@@ -27,7 +27,7 @@ import type { Bounds, Watch } from "./explore.ts";
 import { startBreaks, stepBreaks, stuck } from "./judge.ts";
 import { renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
-import { fairness, fairStepsIn, memoryOf, rootMemory, successorsPrint, type Resolved } from "./owner.ts";
+import { fairness, fairStepsIn, memoryOf, rootMemory, type Resolved } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
 import type { Root } from "./search.ts";
 import { apply, branches, QUIET, type Choice } from "./steps.ts";
@@ -183,6 +183,8 @@ export class IntegerSearch {
   /** For nodes from roots with symmetry: the fingerprint of the world without renaming, which renamed twins do not share. */
   private plains = new Map<number, [number, number]>();
   private twinChecks = 0;
+  /** While twin checks remain: each state's vector, so a twin's world need not be replayed. */
+  private twinWorlds = new Map<number, { vector: Int32Array; layout: Layout }>();
   private seen = new PrintMap();
   /** For liveness: edges out of each expanded node, the fair steps possible there, and which predicates hold. */
   private readonly keepsEdges: boolean;
@@ -248,7 +250,7 @@ export class IntegerSearch {
       const [h1, h2] = folded ? folded.print : printOf(vector, L);
       if (seen.get(h1, h2) !== undefined) continue;
       const gid = this.node(-1, r, -1, -1, 0, -1);
-      if (folded) this.plains.set(gid, folded.plain);
+      if (folded) this.keepForTwins(gid, vector, L, folded.plain);
       seen.set(h1, h2, gid);
       this.states++;
       this.watch.state?.(world, this.budgetOf(vector, L));
@@ -335,7 +337,7 @@ export class IntegerSearch {
           edgeTo(gid);
           child ??= this.applied(vector, step);
           seen.set(h1, h2, gid);
-          if (folded) this.plains.set(gid, folded.plain);
+          if (folded) this.keepForTwins(gid, child, L, folded.plain);
           this.states++;
           if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
           if (this.always.length) this.judge(child, gid, L);
@@ -426,10 +428,30 @@ export class IntegerSearch {
     const known = this.plains.get(existing)!;
     if (known[0] === plain[0] && known[1] === plain[1]) return true;
     if (this.twinChecks >= this.b.symmetryChecks) return true;
-    this.twinChecks++;
-    const a = successorsPrint(this.spec, this.worldAt(existing), symmetry);
-    const b = successorsPrint(this.spec, this.materialize(vector, L).world, symmetry);
-    return a[0] === b[0] && a[1] === b[1];
+    // Every state made while checks remain is kept, and checks only go up: the twin is here.
+    const twin = this.twinWorlds.get(existing)!;
+    if (++this.twinChecks === this.b.symmetryChecks) this.twinWorlds.clear();
+    return this.successorsKey(twin.vector, twin.layout, symmetry) === this.successorsKey(vector, L, symmetry);
+  }
+
+  /**
+   * The worlds one step away, faults aside and whatever the repeats bound says, each up to
+   * symmetry and without its budget: renamed twins must agree on them (owner.ts successorsPrint).
+   */
+  private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
+    const { world, ids, timersOf } = this.materialize(vector, L);
+    const out = new Set<string>();
+    for (const choice of branches(this.spec, world, false)) {
+      const step = this.stepOf(vector, L, world, ids, timersOf, choice);
+      out.add(step.effect.error ? `error:${step.effect.error}` : this.symmetricPrint(this.applied(vector, step), L, symmetry).world.join(","));
+    }
+    return [...out].sort().join("\n");
+  }
+
+  /** A new state from a root with symmetry: its plain fingerprint, and its vector while twin checks remain. */
+  private keepForTwins(gid: number, vector: Int32Array, L: Layout, plain: [number, number]): void {
+    this.plains.set(gid, plain);
+    if (this.twinChecks < this.b.symmetryChecks) this.twinWorlds.set(gid, { vector, layout: L });
   }
 
   /** A node's world, replayed from its root. */
@@ -443,9 +465,10 @@ export class IntegerSearch {
    * A fingerprint up to symmetry: the least, over the renamings, of the renamed world's
    * (instances and pending entries as renamed key lines, keys.ts), with the budget and memory
    * as they are, as the classic key has them. Renamed twins have the same set of renamed
-   * worlds, so the same least one. And the fingerprint of the world without renaming or budget.
+   * worlds, so the same least one. Also the world's own fingerprint (no renaming, no budget),
+   * and its least without the budget, for twin checks.
    */
-  private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry): { print: [number, number]; plain: [number, number] } {
+  private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry): { print: [number, number]; plain: [number, number]; world: [number, number] } {
     const M = L.messages;
     const end = M + 1 + v[M];
     let base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]);
@@ -454,6 +477,7 @@ export class IntegerSearch {
     let extra2 = lane2(1, L.memory, v[L.memory]);
     for (let i = L.faults; i < L.fresh; i++) (extra1 += lane1(1, i, v[i])), (extra2 += lane2(1, i, v[i]));
     let best: [number, number] | undefined;
+    let least: [number, number] | undefined;
     let plain: [number, number] = [0, 0];
     const timers: number[] = [];
     for (const renaming of symmetry.renamings) {
@@ -472,11 +496,13 @@ export class IntegerSearch {
       for (let i = end; i < v.length; i++) timers.push(this.renamedPending(r, v[i]));
       const t = timersHash(timers, 0);
       (h1 += lane1(4, t, 0)), (h2 += lane2(4, t, 0));
-      if (r.identity) plain = [h1 >>> 0, h2 >>> 0];
+      const world: [number, number] = [h1 >>> 0, h2 >>> 0];
+      if (r.identity) plain = world;
+      if (!least || lessThan(world, least)) least = world;
       const full: [number, number] = [(h1 + extra1) >>> 0, (h2 + extra2) >>> 0];
-      if (!best || full[0] < best[0] || (full[0] === best[0] && full[1] < best[1])) best = full;
+      if (!best || lessThan(full, best)) best = full;
     }
-    return { print: best!, plain };
+    return { print: best!, plain, world: least! };
   }
 
   private renamed(renaming: Map<string, string>): Renamed {
@@ -628,11 +654,13 @@ export class IntegerSearch {
 
   /** What a choice does, to apply to the vector; none if it would repeat an action past the bound. */
   private step(vector: Int32Array, L: Layout, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step | undefined {
-    let actsAt = -1;
-    if (choice.kind === "act") {
-      actsAt = L.faults + 1 + L.acts.get(`${choice.instance}.${choice.key}`)!;
-      if (vector[actsAt] >= this.b.repeats) return undefined;
-    }
+    if (choice.kind === "act" && vector[actsIndex(L, choice)] >= this.b.repeats) return undefined;
+    return this.stepOf(vector, L, world, ids, timersOf, choice);
+  }
+
+  /** What a choice does, whatever the repeats bound says. */
+  private stepOf(vector: Int32Array, L: Layout, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step {
+    const actsAt = choice.kind === "act" ? actsIndex(L, choice) : -1;
     let slot: number;
     let at = -1;
     if (choice.kind === "fire" || choice.kind === "lose") {
@@ -797,6 +825,15 @@ export class IntegerSearch {
 }
 
 const NONE = new Int32Array(0);
+
+function lessThan(a: [number, number], b: [number, number]): boolean {
+  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+}
+
+/** Where an action's count is in the vector. */
+function actsIndex(L: Layout, choice: Extract<Choice, { kind: "act" }>): number {
+  return L.faults + 1 + L.acts.get(`${choice.instance}.${choice.key}`)!;
+}
 
 function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undefined): Edge {
   return { to, option, fault, ...(fair === undefined ? {} : { fair }) };
