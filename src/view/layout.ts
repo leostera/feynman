@@ -7,7 +7,7 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk.bundled.js";
 import type { Spec, World } from "../spec/index.ts";
 import { labelInside } from "../play/index.ts";
-import { nodeLook, type Scene, type SceneNode } from "./scene";
+import { nodeDisplay, type Scene, type SceneNode } from "./scene";
 
 /** Every node's column: its shape, and its name and status under it. */
 export const NODE_W = 128;
@@ -91,18 +91,18 @@ export function nodeLinks(spec: Spec, scene: Scene): [string, string][] {
 
 /** A node's box: its shape and name, and its rows beside it or under it. */
 export function nodeBox(spec: Spec, world: World, node: SceneNode, sizes: Sizes): { width: number; height: number; kind: NodeShape; anchor: Anchor } {
-  const look = nodeLook(spec, world, node);
-  const inside = labelInside(look.shape, look.icon, node.label);
-  const shape = look.shape === "gate" ? { w: 60, h: inside ? 84 : 68 } : look.shape === "card" ? { w: 132, h: 48 } : look.shape === "device" ? { w: 54, h: 54 } : inside ? { w: 72, h: 72 } : { w: 60, h: 60 };
+  const display = nodeDisplay(spec, world, node);
+  const inside = labelInside(display.shape, display.icon, node.label);
+  const shape = display.shape === "gate" ? { w: 60, h: inside ? 84 : 68 } : display.shape === "card" ? { w: 132, h: 48 } : display.shape === "device" ? { w: 54, h: 54 } : inside ? { w: 72, h: 72 } : { w: 60, h: 60 };
   const r = Math.max(shape.w, shape.h) / 2 + 2;
   const custom = sizes.get(node.id);
   if (custom) return { width: custom.w, height: custom.h, kind: "plain", anchor: { x: custom.w / 2, y: Math.min(custom.h / 2, 40), r: Math.min(custom.w, custom.h) / 2 } };
-  const under = inside && look.shape !== "circle" ? 0 : 30;
-  const plainW = look.shape === "card" ? 140 : look.shape === "gate" && inside ? 76 : NODE_W;
+  const under = inside && display.shape !== "circle" ? 0 : 30;
+  const plainW = display.shape === "card" ? 140 : display.shape === "gate" && inside ? 76 : NODE_W;
   const plain = { width: plainW, height: shape.h + under + 8 };
-  if (!look.rows.length) return { ...plain, kind: "plain", anchor: { x: plainW / 2, y: shape.h / 2 + 2, r } };
-  if (node.singleton) return { width: HUB_W, height: plain.height + 12 + rowsHeight(look.rows), kind: "hub", anchor: { x: HUB_W / 2, y: shape.h / 2 + 2, r } };
-  return { width: plainW + SIDE_W, height: Math.max(plain.height, 24 + Math.min(3, look.rows.length) * 20), kind: "side", anchor: { x: plainW / 2, y: shape.h / 2 + 2, r } };
+  if (!display.rows.length) return { ...plain, kind: "plain", anchor: { x: plainW / 2, y: shape.h / 2 + 2, r } };
+  if (node.singleton) return { width: HUB_W, height: plain.height + 12 + rowsHeight(display.rows), kind: "hub", anchor: { x: HUB_W / 2, y: shape.h / 2 + 2, r } };
+  return { width: plainW + SIDE_W, height: Math.max(plain.height, 24 + Math.min(3, display.rows.length) * 20), kind: "side", anchor: { x: plainW / 2, y: shape.h / 2 + 2, r } };
 }
 
 /** Rows under a hub: each group's header, and up to six rows. */

@@ -99,8 +99,8 @@ export function sceneOf(spec: Spec, world: World, groups: GroupInfo[], opened: R
   return { nodes, of, open: [...open.values()], groups: all };
 }
 
-/** How a node looks: one instance's look, or its members' merged. */
-export interface NodeLook extends Appearance {
+/** How a node is displayed: one instance's display, or its members' merged. */
+export interface NodeDisplay extends Appearance {
   shape: Shape;
   /** Tokens with the instance holding each. */
   held: { token: Token; from: string }[];
@@ -108,27 +108,27 @@ export interface NodeLook extends Appearance {
 
 const RANK = { bad: 4, warn: 3, busy: 2, ok: 1 } as const;
 
-export function nodeLook(spec: Spec, world: World, node: SceneNode): NodeLook {
-  const looks = node.members.map((m) => ({ member: m, look: appearance(spec, world, m.id) }));
+export function nodeDisplay(spec: Spec, world: World, node: SceneNode): NodeDisplay {
+  const displays = node.members.map((m) => ({ member: m, display: appearance(spec, world, m.id) }));
   if (!node.group) {
-    const [{ member, look }] = looks;
+    const [{ member, display }] = displays;
     const actor = spec.actors.find((a) => a.name === member.actor)!;
-    return { ...look, shape: shapeFor({ icon: look.icon, shape: actor.look.shape }, Boolean(node.edge)), held: look.tokens.map((token) => ({ token, from: member.id })) };
+    return { ...display, shape: shapeFor({ icon: display.icon, shape: actor.display.shape }, Boolean(node.edge)), held: display.tokens.map((token) => ({ token, from: member.id })) };
   }
   // The most telling mood speaks for the node, and its status with it; on a tie, the later
   // member, which is usually the one doing the work (the daemon, not the app).
-  const told = [...looks].reverse().filter((l) => telling(l.look.mood)).sort((a, b) => RANK[b.look.mood as keyof typeof RANK] - RANK[a.look.mood as keyof typeof RANK])[0];
+  const told = [...displays].reverse().filter((l) => telling(l.display.mood)).sort((a, b) => RANK[b.display.mood as keyof typeof RANK] - RANK[a.display.mood as keyof typeof RANK])[0];
   const keyed = node.group.members.some((m) => m.suffix !== null);
-  const icon = node.group.icon ?? looks.find((l) => l.look.icon)?.look.icon ?? null;
+  const icon = node.group.icon ?? displays.find((l) => l.display.icon)?.display.icon ?? null;
   return {
     icon,
     shape: node.group.shape ?? shapeFor({ icon }),
-    status: told?.look.status ?? (keyed ? (looks.at(-1)?.look.status ?? null) : null),
-    mood: told?.look.mood ?? null,
-    rows: looks.flatMap((l) => l.look.rows),
-    tokens: looks.flatMap((l) => l.look.tokens),
-    held: looks.flatMap((l) => l.look.tokens.map((token) => ({ token, from: l.member.id }))),
-    owner: looks.find((l) => l.look.owner !== undefined)?.look.owner,
+    status: told?.display.status ?? (keyed ? (displays.at(-1)?.display.status ?? null) : null),
+    mood: told?.display.mood ?? null,
+    rows: displays.flatMap((l) => l.display.rows),
+    tokens: displays.flatMap((l) => l.display.tokens),
+    held: displays.flatMap((l) => l.display.tokens.map((token) => ({ token, from: l.member.id }))),
+    owner: displays.find((l) => l.display.owner !== undefined)?.display.owner,
   };
 }
 

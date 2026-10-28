@@ -1,5 +1,5 @@
-// How a world looks: each instance's icon, status, mood and rows, and the live links between
-// instances, from the actors' `look` and `links`. A presentation function that throws shows
+// How a world is displayed: each instance's icon, status, mood and rows, and the live links between
+// instances, from the actors' `display` and `links`. A presentation function that throws shows
 // nothing rather than breaking the view.
 import type { Icon, Link, Mood, Row, Token } from "./dsl.ts";
 import type { ActionInfo, Spec, World } from "./spec.ts";
@@ -54,16 +54,16 @@ export function appearance(spec: Spec, world: World, id: string): Appearance {
   const instance = world.instances.find((i) => i.id === id);
   const actor = instance && spec.actors.find((a) => a.name === instance.actor);
   if (!instance || !actor) return { icon: null, status: null, mood: null, rows: [], tokens: [], owner: undefined };
-  const { look } = actor;
+  const { display } = actor;
   return {
-    icon: look.icon ?? null,
-    status: attempt(look.status && (() => labelled(world, look.status!(instance.state as never))), null),
-    mood: attempt(look.mood && (() => look.mood!(instance.state as never)), null),
-    rows: attempt(look.rows && (() => look.rows!(instance.state as never).map((r) => labelledRow(world, r))), []),
+    icon: display.icon ?? null,
+    status: attempt(display.status && (() => labelled(world, display.status!(instance.state as never))), null),
+    mood: attempt(display.mood && (() => display.mood!(instance.state as never)), null),
+    rows: attempt(display.rows && (() => display.rows!(instance.state as never).map((r) => labelledRow(world, r))), []),
     tokens: declaresTokens(spec)
-      ? attempt(look.tokens && (() => look.tokens!(instance.state as never, { id: instance.id, label: instance.label })), [])
+      ? attempt(display.tokens && (() => display.tokens!(instance.state as never, { id: instance.id, label: instance.label })), [])
       : (inferredTokens(spec, world).get(id) ?? []),
-    owner: look.owner ? attempt(() => look.owner!(instance.state as never), null) : undefined,
+    owner: display.owner ? attempt(() => display.owner!(instance.state as never), null) : undefined,
   };
 }
 
@@ -77,7 +77,7 @@ export interface Drop {
 
 /** Whether any actor says what can be carried; if none does, it is inferred. */
 export function declaresTokens(spec: Spec): boolean {
-  return spec.actors.some((a) => a.look.tokens);
+  return spec.actors.some((a) => a.display.tokens);
 }
 
 /** The token kind an input takes when tokens are inferred for it. */

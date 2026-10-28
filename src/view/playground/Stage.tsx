@@ -9,7 +9,7 @@ import { declaresLinks, labelled, worldView, type Actor, type Event, type Instan
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "../../play/index.ts";
 import { labelOf, messageName, short } from "../format";
 import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Layouts, type Sizes, type View, type ZoneBox } from "../layout";
-import { nodeLook, sceneLinks, shownAs, type NodeLook, type Scene, type SceneNode } from "../scene";
+import { nodeDisplay, sceneLinks, shownAs, type NodeDisplay, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
 
 export interface Bubble {
@@ -359,21 +359,21 @@ function rowAnchor(row: Box, from: Point): Point {
 // Nodes -------------------------------------------------------------------------------------------
 
 /** Props for a playground file's render functions. */
-function renderProps(spec: Spec, world: World, node: SceneNode, look: NodeLook, stage: StageProps) {
+function renderProps(spec: Spec, world: World, node: SceneNode, display: NodeDisplay, stage: StageProps) {
   const view = worldView(spec, world);
   const act = (instance: string, key: string, inputs?: Record<string, unknown>) => stage.live && stage.onAct(instance, key, inputs ?? {});
   if (!node.group) {
     const [m] = node.members;
     return {
       kind: "actor" as const,
-      props: { instance: { id: m.id, label: m.label }, state: m.state, look, world: view, live: stage.live, act: ((key: string, inputs?: Record<string, unknown>) => act(m.id, key, inputs)) as NodeProps["act"] } as NodeProps,
+      props: { instance: { id: m.id, label: m.label }, state: m.state, display, world: view, live: stage.live, act: ((key: string, inputs?: Record<string, unknown>) => act(m.id, key, inputs)) as NodeProps["act"] } as NodeProps,
     };
   }
-  const members = node.members.map((m: InstanceState) => ({ instance: { id: m.id, label: m.label }, actor: m.actor, state: m.state, look: nodeLook(spec, world, { ...node, group: null, members: [m], id: m.id }) }));
+  const members = node.members.map((m: InstanceState) => ({ instance: { id: m.id, label: m.label }, actor: m.actor, state: m.state, display: nodeDisplay(spec, world, { ...node, group: null, members: [m], id: m.id }) }));
   const props: GroupProps = {
     label: node.label,
     members,
-    look,
+    display,
     world: view,
     live: stage.live,
     member: <A extends Actor<any, any>>(actor: A) => members.find((m) => m.actor === actor.name) as never,
@@ -384,8 +384,8 @@ function renderProps(spec: Spec, world: World, node: SceneNode, look: NodeLook, 
 
 function panelOf(spec: Spec, playground: Playground | null, world: World, node: SceneNode, stage: StageProps): ReactNode {
   if (!playground) return null;
-  const look = nodeLook(spec, world, node);
-  const made = renderProps(spec, world, node, look, stage);
+  const display = nodeDisplay(spec, world, node);
+  const made = renderProps(spec, world, node, display, stage);
   try {
     if (made.kind === "group") return playground.group[node.group!.name]?.panel?.(made.props) ?? null;
     return playground.actor[node.members[0].actor]?.panel?.(made.props) ?? null;
@@ -396,9 +396,9 @@ function panelOf(spec: Spec, playground: Playground | null, world: World, node: 
 }
 
 /** A custom drawing from the playground file, if it has one for this node; null otherwise. */
-function customNode(spec: Spec, playground: Playground | null, world: World, node: SceneNode, look: NodeLook, stage: StageProps): { content: ReactNode } | { failed: true } | null {
+function customNode(spec: Spec, playground: Playground | null, world: World, node: SceneNode, display: NodeDisplay, stage: StageProps): { content: ReactNode } | { failed: true } | null {
   if (!playground) return null;
-  const made = renderProps(spec, world, node, look, stage);
+  const made = renderProps(spec, world, node, display, stage);
   const render = made.kind === "group" ? playground.group[node.group!.name]?.render : playground.actor[node.members[0].actor]?.node;
   if (!render) return null;
   try {
@@ -430,26 +430,26 @@ function NodeView({
 }) {
   const { spec, playground } = useExplorer();
   const { world, dragging, picking, live } = stage;
-  const look = presentedLook(spec, playground, world, node, stage);
+  const display = presentedDisplay(spec, playground, world, node, stage);
   const identity = node.members.map((m) => colors.get(m.id)).find(Boolean);
-  const owner = look.owner ? world.instances.find((i) => i.id === look.owner || i.label === look.owner) : identity ? node.members.find((m) => colors.get(m.id)) : undefined;
-  const badge = identity && owner ? { text: owner.label.charAt(0).toUpperCase(), color: identity, title: look.owner ? `${owner.label}'s` : owner.label } : null;
+  const owner = display.owner ? world.instances.find((i) => i.id === display.owner || i.label === display.owner) : identity ? node.members.find((m) => colors.get(m.id)) : undefined;
+  const badge = identity && owner ? { text: owner.label.charAt(0).toUpperCase(), color: identity, title: display.owner ? `${owner.label}'s` : owner.label } : null;
   const drop = dragging ? (dragging.targets.has(node.id) ? "target" : dragging.fromNode === node.id ? "source" : "other") : null;
   const pickable = picking?.targets.has(node.id) ?? false;
   const timers = world.pending.filter((p): p is Extract<Pending, { kind: "timer" }> => p.kind === "timer" && node.members.some((m) => m.id === p.to));
   const waiting = timers.map((t) => t.timer).join(", ");
-  const custom = customNode(spec, playground, world, node, look, stage);
+  const custom = customNode(spec, playground, world, node, display, stage);
   const visual =
     custom && "content" in custom ? (
       custom.content
     ) : (
       <span className="relative">
         <Node
-          shape={look.shape}
-          icon={look.icon}
+          shape={display.shape}
+          icon={display.icon}
           label={node.label}
-          status={look.status}
-          mood={look.mood}
+          status={display.status}
+          mood={display.mood}
           accent={region ? "var(--color-kumo-warning)" : undefined}
           badge={badge}
           shapeClassName={cn(stage.pulse === node.id && !dragging && live && "feynman-pulse", flash !== null && "feynman-flash")}
@@ -457,7 +457,7 @@ function NodeView({
         {custom && "failed" in custom && <span className="absolute -left-1 -top-1 size-3 rounded-full bg-kumo-danger" title="The playground file's drawing failed; see the console" />}
       </span>
     );
-  const held = look.held.filter(({ token }) => !stage.spent.has(`${token.kind}\u0000${String(token.value)}`));
+  const held = display.held.filter(({ token }) => !stage.spent.has(`${token.kind}\u0000${String(token.value)}`));
   const target = drop === "target" || pickable;
   const click = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -469,7 +469,7 @@ function NodeView({
     <button
       type="button"
       title={waiting ? `Waiting: ${waiting}` : undefined}
-      aria-label={pickable ? `Choose ${node.label}` : `${node.label}${look.status ? `, ${look.status}` : ""}`}
+      aria-label={pickable ? `Choose ${node.label}` : `${node.label}${display.status ? `, ${display.status}` : ""}`}
       aria-pressed={stage.selected === node.id}
       onClick={click}
       className={cn(
@@ -497,7 +497,7 @@ function NodeView({
   );
   const frame = cn("absolute transition-opacity duration-200", (drop === "other" || (picking && !pickable)) && "opacity-35");
   const place = { left: box.x, top: box.y, width: box.w, height: box.h };
-  const shown = look.rows.map((r) => ({ ...r, label: shownAs(stage.scene, world, r.label) }));
+  const shown = display.rows.map((r) => ({ ...r, label: shownAs(stage.scene, world, r.label) }));
   const rows = <Rows rows={shown} anchor={node.id} compact={box.kind === "side"} className={box.kind === "hub" ? "mt-3 w-full" : "mt-1 w-[150px]"} />;
   return (
     <div data-node={node.id} className={cn(frame, box.kind === "side" ? "flex items-start" : "flex flex-col items-center")} style={place}>
@@ -510,17 +510,17 @@ function NodeView({
   );
 }
 
-/** The node's look, with what the playground file says about it: a group's status. */
-function presentedLook(spec: Spec, playground: Playground | null, world: World, node: SceneNode, stage: StageProps): NodeLook {
-  const look = nodeLook(spec, world, node);
+/** The node's display, with what the playground file says about it: a group's status. */
+function presentedDisplay(spec: Spec, playground: Playground | null, world: World, node: SceneNode, stage: StageProps): NodeDisplay {
+  const display = nodeDisplay(spec, world, node);
   const status = node.group && playground?.group[node.group.name]?.status;
-  if (!status) return look;
+  if (!status) return display;
   try {
-    const made = renderProps(spec, world, node, look, stage);
-    return { ...look, status: status(made.props as GroupProps) };
+    const made = renderProps(spec, world, node, display, stage);
+    return { ...display, status: status(made.props as GroupProps) };
   } catch (error) {
     console.warn(`feynman: the status for ${node.label} failed`, error);
-    return look;
+    return display;
   }
 }
 

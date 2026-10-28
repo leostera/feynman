@@ -29,7 +29,7 @@ export function barrier(variant: "buggy" | "fixed") {
         zone,
         singleton: true,
         initialState: () => ({ count: 0, arrived: [] as string[], open: false }),
-        look: {
+        display: {
           icon: "gear",
           status: (s) => (s.open ? "open" : `${variant === "buggy" ? s.count : s.arrived.length} arrival(s)`),
           mood: (s) => (s.open ? "ok" : "busy"),
@@ -59,7 +59,7 @@ export function barrier(variant: "buggy" | "fixed") {
         // `reached` is what happened, which a restart cannot undo; `arrived` is what the worker remembers.
         durable: ["reached"],
         initialState: () => ({ arrived: false, reached: false, through: false }),
-        look: {
+        display: {
           icon: "cpu",
           status: (s) => (s.through ? "through" : s.arrived ? "waiting at the barrier" : s.reached ? "restarted" : "working"),
           mood: (s) => (s.through ? "ok" : s.arrived ? "busy" : "off"),

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { appearance, defineSpec, dropsFor, liveLinks, message, runScenario } from "../../src/spec/index.ts";
 
-const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ name: "dial" }), Up: message<{ n: number }>({ name: "up", tone: "reply" }) } }, (spec) => {
+const spec = defineSpec("Display", { messages: { Dial: message<{ n: number }>({ name: "dial" }), Up: message<{ n: number }>({ name: "up", tone: "reply" }) } }, (spec) => {
   const { Dial, Up } = spec.messages;
   const zone = spec.defineZone({ name: "z" });
   const Hub = spec.defineActor({
@@ -9,7 +9,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
     zone,
     singleton: true,
     initialState: () => ({ peers: [] as string[] }),
-    look: { icon: "cloud", status: (s) => `${s.peers.length} connected`, rows: (s) => s.peers.map((p) => ({ label: p, group: "peers", mood: "ok" as const })), tokens: () => [{ kind: "slot", value: 7 }] },
+    display: { icon: "cloud", status: (s) => `${s.peers.length} connected`, rows: (s) => s.peers.map((p) => ({ label: p, group: "peers", mood: "ok" as const })), tokens: () => [{ kind: "slot", value: 7 }] },
     transitions: {
       [Dial]: {
         description: "Accepts a peer.",
@@ -27,7 +27,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
     name: "Peer",
     zone,
     initialState: () => ({ up: false, pings: 0 }),
-    look: { icon: "laptop", mood: (s) => (s.up ? "ok" : "off"), owner: (s) => (s.up ? "Hub" : null) },
+    display: { icon: "laptop", mood: (s) => (s.up ? "ok" : "off"), owner: (s) => (s.up ? "Hub" : null) },
     links: (s) => (s.up ? [{ to: "Hub", kind: "socket" }] : []),
     actions: {
       dial: {
@@ -55,7 +55,7 @@ const spec = defineSpec("Look", { messages: { Dial: message<{ n: number }>({ nam
   });
 });
 
-test("look, links and say: presentation as data, evaluated against the world", () => {
+test("display, links and say: presentation as data, evaluated against the world", () => {
   const run = runScenario(spec, spec.scenarios[0]);
   expect(run.error).toBeUndefined();
   const world = run.worlds.at(-1)!;

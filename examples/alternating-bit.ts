@@ -38,7 +38,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ delivered: [] as string[] }),
         place: { order: 1 },
-        look: {
+        display: {
           icon: "desktop",
           status: (s) => (s.delivered.length ? `has ${s.delivered.join(", ")}` : "nothing yet"),
           mood: (s) => (s.delivered.every((v, i) => v === ITEMS[i]) ? "ok" : "bad"),
@@ -61,7 +61,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ next: 0, started: false }),
         place: { order: 0 },
-        look: {
+        display: {
           icon: "laptop",
           status: (s) => (!s.started ? "ready" : s.next >= ITEMS.length ? "sent everything" : `sending ${ITEMS[s.next]}`),
           mood: (s) => (!s.started ? "off" : s.next >= ITEMS.length ? "ok" : "busy"),

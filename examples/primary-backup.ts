@@ -37,7 +37,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
         zone: clients,
         singleton: true,
         initialState: () => ({ acked: 0 }),
-        look: { icon: "laptop", status: (s) => (s.acked ? `told ${s.acked} write(s) succeeded` : "nothing acknowledged") },
+        display: { icon: "laptop", status: (s) => (s.acked ? `told ${s.acked} write(s) succeeded` : "nothing acknowledged") },
         actions: {
           write: { label: "Write", description: "Writes to the primary.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Primary), Write, {}) },
         },
@@ -51,7 +51,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
         // Both servers keep what they store on disk: a restart loses nothing.
         durable: ["stored"],
         initialState: () => ({ stored: 0 }),
-        look: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "ok" },
+        display: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "ok" },
         transitions: {
           [Write]: {
             description: variant === "buggy" ? "Stores the write, acknowledges it, and replicates it." : "Stores the write and replicates it.",
@@ -73,7 +73,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
         place: { order: 1 },
         durable: ["stored"],
         initialState: () => ({ stored: 0 }),
-        look: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "info" },
+        display: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "info" },
         transitions: {
           [Replicate]: {
             description: variant === "buggy" ? "Stores the write." : "Stores the write and confirms it.",

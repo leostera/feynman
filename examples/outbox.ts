@@ -35,7 +35,7 @@ export function outbox(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ announced: 0 }),
         place: { order: 1 },
-        look: { icon: "mail", status: (s) => `${s.announced} email(s) sent`, mood: (s) => (s.announced ? "ok" : "off") },
+        display: { icon: "mail", status: (s) => `${s.announced} email(s) sent`, mood: (s) => (s.announced ? "ok" : "off") },
         transitions: { [OrderPlaced]: { description: "Emails the customer.", run: (state) => void (state.announced += 1) } },
       });
 
@@ -46,7 +46,7 @@ export function outbox(variant: "buggy" | "fixed") {
         durable: variant === "fixed" ? ["orders", "outbox"] : ["orders"],
         initialState: () => ({ orders: 0, outbox: 0 }),
         place: { order: 0 },
-        look: {
+        display: {
           icon: "server",
           status: (s) => `${s.orders} order(s)${s.outbox ? `, ${s.outbox} to announce` : ""}`,
           mood: (s) => (s.outbox ? "busy" : "ok"),
@@ -80,7 +80,7 @@ export function outbox(variant: "buggy" | "fixed") {
         zone: customers,
         singleton: true,
         initialState: () => ({}),
-        look: { icon: "person", status: () => "shopping" },
+        display: { icon: "person", status: () => "shopping" },
         actions: {
           order: { label: "Order", description: "Places an order.", sends: [PlaceOrder], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Shop), PlaceOrder, {}) },
         },

@@ -27,7 +27,7 @@ export function leaderElection(variant: "buggy" | "fixed") {
         // Wrong for the fixed variant: the highest id wins, so nodes are not interchangeable.
         symmetric: true,
         initialState: (ctx) => ({ leader: ctx.id, announced: false }),
-        look: {
+        display: {
           icon: "server",
           names: ["A", "B", "C"],
           status: (s) => `follows ${s.leader}`,

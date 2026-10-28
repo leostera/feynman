@@ -42,7 +42,7 @@ export function lostUpdate(variant: "buggy" | "fixed") {
         symmetric: true,
         durable: ["paid"],
         initialState: () => ({ status: "idle" as Status, amount: 0, paid: 0 }),
-        look: {
+        display: {
           icon: "person",
           status: (s) => (s.status === "idle" ? (s.paid ? `paid out ${s.paid}` : "idle") : `${s.status}: ${s.amount}`),
           mood: (s) => (s.status === "conflict" ? "warn" : s.status === "idle" ? "info" : "busy"),
@@ -106,7 +106,7 @@ export function lostUpdate(variant: "buggy" | "fixed") {
         singleton: true,
         // `paidOut`: what the writes it took paid out, which only the invariant reads.
         initialState: () => ({ balance: OPENING, version: 0, paidOut: 0 }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => `balance ${s.balance}`,
           mood: (s) => (s.balance + s.paidOut === OPENING && s.balance >= 0 ? "ok" : "bad"),

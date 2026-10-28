@@ -37,7 +37,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         // Votes are written to a log before they are sent, so restarts change nothing.
         durable: ["prepared", "vote", "outcome"],
         initialState: () => ({ prepared: false, vote: null as "yes" | "no" | null, outcome: null as "commit" | "abort" | null }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => (s.outcome ? (s.outcome === "commit" ? "committed" : "aborted") : s.vote ? `voted ${s.vote}, waiting` : s.prepared ? "prepared" : "idle"),
           mood: (s) => (s.outcome === "commit" ? "ok" : s.outcome === "abort" ? "warn" : s.vote ? "busy" : "off"),
@@ -73,7 +73,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
         place: { order: 0 },
         singleton: true,
         initialState: () => ({ begun: false, votes: {} as Record<string, boolean>, decided: null as boolean | null }),
-        look: {
+        display: {
           icon: "gear",
           status: (s) => (s.decided === null ? (s.begun ? `${Object.keys(s.votes).length} vote(s) in` : "idle") : s.decided ? "decided: commit" : "decided: abort"),
           mood: (s) => (s.decided === null ? (s.begun ? "busy" : "off") : "ok"),

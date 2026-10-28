@@ -35,7 +35,7 @@ export function lwwRegister(variant: "buggy" | "fixed") {
         name: "Writer",
         zone: writers,
         initialState: () => ({ clock: 0 }),
-        look: { icon: "laptop", status: (s) => (s.clock ? `last wrote at time ${s.clock}` : "nothing written"), mood: (s) => (s.clock ? "info" : "off") },
+        display: { icon: "laptop", status: (s) => (s.clock ? `last wrote at time ${s.clock}` : "nothing written"), mood: (s) => (s.clock ? "info" : "off") },
         actions: {
           write: {
             label: "Write",
@@ -54,7 +54,7 @@ export function lwwRegister(variant: "buggy" | "fixed") {
         zone: replicas,
         durable: ["ts", "writer"],
         initialState: () => ({ ts: 0, writer: "" }),
-        look: { icon: "database", status: (s) => (s.ts ? `holds ${s.writer}'s write at time ${s.ts}` : "empty"), mood: (s) => (s.ts ? "ok" : "off") },
+        display: { icon: "database", status: (s) => (s.ts ? `holds ${s.writer}'s write at time ${s.ts}` : "empty"), mood: (s) => (s.ts ? "ok" : "off") },
         transitions: {
           [Put]: {
             description: variant === "buggy" ? "Keeps the write if its time is newer." : "Keeps the write if its time is newer, or the same and from a later writer.",

@@ -37,7 +37,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ holder: null as string | null, token: 0 }),
         place: { order: 0 },
-        look: { icon: "lock", status: (s) => (s.holder ? `leased to ${s.holder}, token ${s.token}` : "free"), mood: (s) => (s.holder ? "busy" : "ok") },
+        display: { icon: "lock", status: (s) => (s.holder ? `leased to ${s.holder}, token ${s.token}` : "free"), mood: (s) => (s.holder ? "busy" : "ok") },
         transitions: {
           [Acquire]: {
             description: "Grants the lock unless someone else's lease is still running.",
@@ -69,7 +69,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ accepted: [] as number[] }),
         place: { order: 1 },
-        look: {
+        display: {
           icon: "database",
           status: (s) => (s.accepted.length ? `${s.accepted.length} write(s)` : "empty"),
           mood: (s) => (s.accepted.every((t, i, all) => i === 0 || t >= all[i - 1]) ? "ok" : "bad"),
@@ -93,7 +93,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
         zone: clients,
         symmetric: true,
         initialState: () => ({ token: null as number | null, asking: false }),
-        look: {
+        display: {
           icon: "laptop",
           status: (s) => (s.token !== null ? `holds token ${s.token}; stalled before writing` : s.asking ? "asking for the lock" : "idle"),
           mood: (s) => (s.token !== null ? "busy" : "off"),

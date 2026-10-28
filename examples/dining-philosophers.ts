@@ -36,7 +36,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
           singleton: true,
           place: { order },
           initialState: () => ({ holder: null as string | null, queue: [] as string[] }),
-          look: {
+          display: {
             icon: "lock",
             status: (s) => (s.holder ? `held by ${s.holder}${s.queue.length ? `, ${s.queue.join(", ")} waiting` : ""}` : "on the table"),
             mood: (s) => (s.holder ? (s.queue.length ? "warn" : "busy") : "off"),
@@ -72,7 +72,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
           singleton: true,
           place: { order: seat },
           initialState: () => ({ phase: "thinking" as "thinking" | "first" | "second" | "eating", meals: 0 }),
-          look: {
+          display: {
             icon: "person",
             status: (s) => ({ thinking: "thinking", first: "reaching for a fork", second: "holds one fork, waits for the other", eating: "eating" })[s.phase] + (s.meals ? ` · ${s.meals} meal(s)` : ""),
             mood: (s) => ({ thinking: "off", first: "busy", second: "warn", eating: "ok" })[s.phase] as "off" | "busy" | "warn" | "ok",

@@ -36,7 +36,7 @@ export function cache(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ value: "a", version: 0 }),
         place: { order: 1 },
-        look: { icon: "database", status: (s) => `"${s.value}", version ${s.version}`, mood: () => "ok" },
+        display: { icon: "database", status: (s) => `"${s.value}", version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Load]: { description: "Answers with the current value.", sends: [Loaded], run: (state, _msg, ctx) => ctx.reply(Loaded, { value: state.value, version: state.version }) },
           [Update]: {
@@ -57,7 +57,7 @@ export function cache(variant: "buggy" | "fixed") {
         singleton: true,
         initialState: () => ({ entry: null as { value: string; version: number } | null, invalidated: 0, loading: false }),
         place: { order: 0 },
-        look: {
+        display: {
           icon: "storage",
           status: (s) => (s.entry ? `holds "${s.entry.value}" (version ${s.entry.version})` : s.loading ? "loading" : "empty"),
           mood: (s) => (s.entry ? "info" : s.loading ? "busy" : "off"),
@@ -96,7 +96,7 @@ export function cache(variant: "buggy" | "fixed") {
         zone: apps,
         singleton: true,
         initialState: () => ({}),
-        look: { icon: "server", status: () => "serving" },
+        display: { icon: "server", status: () => "serving" },
         actions: {
           read: { label: "Read", description: "Reads through the cache.", sends: [Get], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Cache), Get, {}) },
           write: {

@@ -33,7 +33,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
         durable: ["holds", "count", "unacked"],
         // The ring starts with the token at its first node.
         initialState: ({ label }) => ({ holds: label === "Node A", count: 0, unacked: null as number | null }),
-        look: {
+        display: {
           icon: "key",
           status: (s) => (s.holds ? "holds the token" : s.unacked !== null ? "passed it, waiting for an ack" : "waiting"),
           mood: (s) => (s.holds ? "ok" : s.unacked !== null ? "busy" : "off"),

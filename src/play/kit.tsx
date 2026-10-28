@@ -5,7 +5,7 @@ import { cn } from "@cloudflare/kumo";
 import { TicketIcon, XIcon } from "@phosphor-icons/react";
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import type { Icon as IconName, Mood, Row, Shape } from "../spec/index.ts";
-import { iconFor, labelInside, moodColor, telling } from "./look.tsx";
+import { iconFor, labelInside, moodColor, telling } from "./display.tsx";
 
 // Context ------------------------------------------------------------------------------------------
 

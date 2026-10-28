@@ -35,7 +35,7 @@ export function logReplication(variant: "buggy" | "fixed") {
         singleton: true,
         place: { order: 0 },
         initialState: () => ({ log: [] as string[] }),
-        look: {
+        display: {
           icon: "server",
           status: (s) => (s.log.length ? `log: ${s.log.join(", ")}` : "empty log"),
           mood: () => "ok",
@@ -72,7 +72,7 @@ export function logReplication(variant: "buggy" | "fixed") {
         singleton: true,
         place: { order: 1 },
         initialState: () => ({ log: [] as string[] }),
-        look: {
+        display: {
           icon: "server",
           status: (s) => (s.log.length ? `log: ${s.log.join(", ")}` : "empty log"),
           mood: (s) => (s.log.every((entry, i) => entry === ENTRIES[i]) ? "info" : "bad"),

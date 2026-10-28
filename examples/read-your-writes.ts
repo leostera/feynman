@@ -39,7 +39,7 @@ export function readYourWrites(variant: "buggy" | "fixed") {
         singleton: true,
         // `wrote`: the last write the client was told succeeded. `stale`: a read came back older.
         initialState: () => ({ wrote: 0, stale: false }),
-        look: {
+        display: {
           icon: "laptop",
           status: (s) => (s.stale ? "read an old value" : s.wrote ? `wrote version ${s.wrote}` : "nothing written"),
           mood: (s) => (s.stale ? "bad" : "ok"),
@@ -65,7 +65,7 @@ export function readYourWrites(variant: "buggy" | "fixed") {
         place: { order: 0 },
         durable: ["version"],
         initialState: () => ({ version: 0 }),
-        look: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
+        display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
         transitions: {
           [Write]: {
             description: "Numbers the write, answers with its number, and replicates it.",
@@ -87,7 +87,7 @@ export function readYourWrites(variant: "buggy" | "fixed") {
         // What it has replicated is on disk; the reads it holds (sorted) are not.
         durable: ["version"],
         initialState: () => ({ version: 0, holding: [] as number[] }),
-        look: {
+        display: {
           icon: "database",
           status: (s) => `at version ${s.version}${s.holding.length ? `, holding ${s.holding.length} read(s)` : ""}`,
           mood: (s) => (s.holding.length ? "busy" : "info"),

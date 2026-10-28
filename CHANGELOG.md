@@ -30,6 +30,15 @@ after.
   between them; zones for the system's parts and concerns, and when to use a ring or a grid;
   the shipped source as the API reference.
 
+### Migrating
+
+- An actor's `look` is now `display`, and the `Look` type is `Display`:
+  `display: { icon: "server", status: (s) => …, rows: (s) => … }`. Playground files
+  receive `display` where they received `look`.
+- `--json` counterexamples say where they start as `from: { scenario, at: "start" | "end" }`
+  rather than a scenario name.
+- Two scenarios with one name are an error.
+
 ### Fixes, found by fuzzing
 
 - A world where a path starts (the initial world, or where a scenario ends) is judged too: an
