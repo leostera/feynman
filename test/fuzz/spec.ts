@@ -65,6 +65,8 @@ export interface SpecDesc {
   properties: PropDesc[];
   final?: WorldCond;
   bounds: { depth: number; faults: number; repeats: number; instances: Record<string, number> };
+  /** A scenario whose setup spawns instances (with `a` set) other than the bounds': a root with a layout of its own. */
+  scenario?: { spawns: { actor: number; a: number }[] };
 }
 
 /** Small specs check quickly; big ones have deeper bounds, more instances and more steps, so more interleavings. */
@@ -146,14 +148,12 @@ export function describe(seed: number, size: Size = "small"): SpecDesc {
     else if (roll < 91) properties.push({ kind: "infinitelyOften", cond: worldCond() });
     else properties.push({ kind: "eventuallyAlways", cond: worldCond() });
   }
-  return {
-    seed,
-    messages,
-    actors,
-    properties,
-    ...(chance(0.3) ? { final: worldCond() } : {}),
-    bounds: { depth: big ? 7 + int(6) : 4 + int(5), faults: chance(0.6) ? 0 : 1, repeats: 1 + int(2), instances: Object.fromEntries(actors.filter((a) => !a.singleton).map((a) => [a.name, a.count])) },
-  };
+  const final = chance(0.3) ? { final: worldCond() } : {};
+  const bounds = { depth: big ? 7 + int(6) : 4 + int(5), faults: chance(0.6) ? 0 : 1, repeats: 1 + int(2), instances: Object.fromEntries(actors.filter((a) => !a.singleton).map((a) => [a.name, a.count])) };
+  // Drawn last, so the rest of a seed's spec is what it was before scenarios were drawn.
+  const many = actors.flatMap((a, i) => (a.singleton ? [] : [i]));
+  const scenario = many.length && chance(0.4) ? { scenario: { spawns: Array.from({ length: 1 + int(3) }, () => ({ actor: pick(many), a: int(2) })) } } : {};
+  return { seed, messages, actors, properties, ...final, bounds, ...scenario };
 }
 
 /** The spec a description stands for. */
@@ -286,6 +286,10 @@ export function build(desc: SpecDesc): Spec {
     });
     (spec as any).defineProperties(properties);
     if (desc.final) (spec as any).defineFinalState({ description: "final", when: (w: any) => worldHolds(desc.final!, w) });
+    if (desc.scenario) {
+      const spawns = desc.scenario.spawns;
+      (spec as any).defineScenario({ name: "Spawned", setup: (w: any) => spawns.forEach((x, n) => w.spawn(actors[x.actor], `S${n}`, { a: x.a % desc.actors[x.actor].cap })), run: () => {} });
+    }
     return {};
   });
 }
