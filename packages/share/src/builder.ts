@@ -6,6 +6,7 @@ import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
 import { pageKey, putPage } from "./pages.ts";
 import { asCommit, type Commit } from "./refs.ts";
 import type { Repository } from "./repository.ts";
+import type { ShareEnv } from "./env.ts";
 
 export interface BuildJob {
   readonly repository: Repository;
@@ -26,7 +27,7 @@ const FETCH_TIMEOUT_S = 120;
 const BUILD_TIMEOUT_S = 600;
 const LOG_TAIL = 8_000;
 
-// HTTPS leaves the container only through Outbound, which re-signs it with this CA. exec() does
+// HTTPS leaves the container only through ShareOutbound, which re-signs it with this CA. exec() does
 // not inherit start()'s environment, so every command gets it.
 const CA = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 const ENV = {
@@ -57,22 +58,32 @@ cd ${REPO}
 git -c advice.detachedHead=false checkout -q "$1"
 exec timeout ${BUILD_TIMEOUT_S} feynman build --out ${PAGE}`;
 
-interface BuilderState extends DurableObjectState {
-  readonly exports: Cloudflare.Exports;
+/** What ShareBuilder needs from the host Worker's exports: ShareOutbound, as a loopback. */
+interface ShareExports {
+  ShareOutbound(options: { props: OutboundProps }): Fetcher;
 }
 
-export class Builder extends DurableObject<Env> {
+/** The host Worker's exports, once its main module is known to export ShareOutbound. */
+function shareExports(ctx: DurableObjectState): ShareExports {
+  const exports = ctx.exports as unknown as Partial<ShareExports> | undefined;
+  if (typeof exports?.ShareOutbound !== "function") {
+    throw new Error("the Worker's main module must export ShareOutbound from @feynman/share");
+  }
+  return exports as ShareExports;
+}
+
+export class ShareBuilder extends DurableObject<ShareEnv> {
   readonly #container: Container;
   readonly #files: Files;
-  readonly #exports: Cloudflare.Exports;
+  readonly #exports: ShareExports;
   #pending: Promise<BuildResult> | null = null;
 
-  constructor(ctx: BuilderState, env: Env) {
+  constructor(ctx: DurableObjectState, env: ShareEnv) {
     super(ctx, env);
-    if (!ctx.container) throw new Error("the Builder Durable Object has no container attached");
+    if (!ctx.container) throw new Error("ShareBuilder has no container attached: give its export container: shareContainer");
     this.#container = ctx.container;
     this.#files = new Files(this.#container);
-    this.#exports = ctx.exports;
+    this.#exports = shareExports(ctx);
   }
 
   build(job: BuildJob): Promise<BuildResult> {
@@ -94,7 +105,7 @@ export class Builder extends DurableObject<Env> {
         return failure(fetched.exitCode === 3 ? 404 : 422, `could not fetch ${job.target} from ${job.cloneUrl}`, fetched);
       }
       // A prefix can name a commit built under its full id already.
-      if (await this.env.PAGES.head(pageKey(job.repository, commit))) return { ok: true, commit };
+      if (await this.env.SHARE_PAGES.head(pageKey(job.repository, commit))) return { ok: true, commit };
       log("build.feynman", { commit });
       const built = await this.#run(["/bin/sh", "-c", BUILD, "build", commit]);
       const page = await this.#read(PAGE);
@@ -102,7 +113,7 @@ export class Builder extends DurableObject<Env> {
         log("build.feynman.failed", { commit, exitCode: built.exitCode });
         return failure(422, `feynman build failed for ${job.repository.id} at ${commit.slice(0, 12)}`, built);
       }
-      await putPage(this.env.PAGES, job.repository, commit, page);
+      await putPage(this.env.SHARE_PAGES, job.repository, commit, page);
       log("build.stored", { commit, bytes: page.byteLength, exitCode: built.exitCode });
       return { ok: true, commit };
     } catch (cause) {
@@ -119,12 +130,12 @@ export class Builder extends DurableObject<Env> {
     this.#container.start({
       image: this.#container.images.builder,
       instance: "standard-1",
-      // Only HTTP and HTTPS leave, through Outbound, and only to the repository's host: specs
+      // Only HTTP and HTTPS leave, through ShareOutbound, and only to the repository's host: specs
       // run during the build, and they are code from the internet.
       enableInternet: false,
       labels: { app: "feynman-share" },
     });
-    const outbound = this.#exports.Outbound({ props: { host: repository.host } });
+    const outbound = this.#exports.ShareOutbound({ props: { host: repository.host } });
     await this.#container.interceptAllOutboundHttp(outbound);
     await this.#container.interceptOutboundHttps("*", outbound);
     await this.#container.setInactivityTimeout(INACTIVITY_TIMEOUT_MS);
@@ -151,8 +162,12 @@ function failure(status: 404 | 422, message: string, output: { stdout: string; s
   return { ok: false, status, message, log: `${output.stdout}\n${output.stderr}`.trim().slice(-LOG_TAIL) };
 }
 
+interface OutboundProps {
+  readonly host: string;
+}
+
 /** Where the build container's traffic goes: HTTPS to the repository's host, and nowhere else. */
-export class Outbound extends WorkerEntrypoint<Env, { host: string }> {
+export class ShareOutbound extends WorkerEntrypoint<ShareEnv, OutboundProps> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.protocol !== "https:" || url.hostname !== this.ctx.props.host) {

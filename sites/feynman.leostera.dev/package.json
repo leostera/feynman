@@ -8,12 +8,14 @@
     "dev": "bun scripts/pages.ts && cf dev",
     "build": "bun scripts/pages.ts && cf build",
     "deploy": "bun scripts/pages.ts && cf deploy",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && cf workers types && tsc --noEmit -p worker",
     "pages": "bun scripts/pages.ts"
   },
   "dependencies": {
     "@cloudflare/kumo": "^2.15.0",
+    "@feynman/share": "workspace:*",
     "@phosphor-icons/react": "^2.1.10",
+    "hono": "^4.13.14",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
