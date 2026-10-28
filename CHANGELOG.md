@@ -11,8 +11,8 @@ after.
 - An integer core for the search (`src/check/integer.ts`): worlds are short integer vectors
   of interned states, local steps run through the engine once and are replayed from a cache,
   and fingerprints are updated per step. 8-13x faster on one thread than the classic search.
-  `check` uses it for every search it can do (so far: `always`, `never` and step properties,
-  no symmetric actors), and the classic search for the rest; `engine: "classic" | "integer"` (or `FEYNMAN_ENGINE`) picks one. Both
+  `check` uses it for every search it can do (so far: safety properties, no symmetric
+  actors), and the classic search for the rest; `engine: "classic" | "integer"` (or `FEYNMAN_ENGINE`) picks one. Both
   give the same report, to the counterexample, on every example and on generated specs, and
   the TLA+ oracles hold it to TLC.
 

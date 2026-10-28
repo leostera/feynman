@@ -34,16 +34,13 @@ type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
 
 /**
- * Whether the integer core can do a job: `always` properties only, from roots with the same
- * instances, with no symmetry to fold (that changes the states). It does without the classic
+ * Whether the integer core can do a job: safety properties only, with no symmetry to fold
+ * (that changes the states). It does without the classic
  * search's reductions (and is faster than the classic search with them), so it ignores `reduce`.
  */
 export function fitsIntegerCore(spec: Spec, roots: Root[]): boolean {
   if (spec.properties.some((p) => p.kind !== "always" && p.kind !== "never" && p.kind !== "everyStep")) return false;
-  if (roots.some((r) => r.symmetry.classes.length)) return false;
-  // One layout for every root: the same instances, in the same order.
-  const ids = roots[0].world.instances.map((i) => i.id).join("\u0000");
-  return roots.every((r) => r.world.instances.map((i) => i.id).join("\u0000") === ids);
+  return !roots.some((r) => r.symmetry.classes.length);
 }
 
 /** Values named by integers: each distinct one (by its key) once. */
@@ -69,7 +66,11 @@ class Interner<T> {
  * and the first counterexample found is the same one.
  */
 interface Layout {
+  /** Which layout, in the fingerprint: worlds with other instances are other states. */
+  index: number;
   instances: Instance[];
+  /** Each instance's slot, by id. */
+  slots: Map<string, number>;
   /** Index of each `instance.action` counter, after the faults. */
   acts: Map<string, number>;
   faults: number;
@@ -114,6 +115,7 @@ interface ChoiceName {
 /** A frontier entry: a node, its world's vector, and its fingerprint. */
 interface Entry {
   gid: number;
+  layout: Layout;
   vector: Int32Array;
   h1: number;
   h2: number;
@@ -121,6 +123,7 @@ interface Entry {
 
 /** A step, as what it changes in the vector. */
 interface Step {
+  layout: Layout;
   slot: number;
   /** Where in the vector the message delivered or lost is; -1 for other steps. */
   at: number;
@@ -162,8 +165,8 @@ export class IntegerSearch {
   private everySteps: string[];
   private reachedSteps: boolean[] = [];
   private cache = new Map<number, Effect>();
-  private layout: Layout;
-  private slots = new Map<string, number>();
+  /** One per set of instances the roots have, by their sorted ids. */
+  private layouts = new Map<string, Layout>();
   private always: { id: string; holds: (w: World) => boolean }[];
 
   constructor(
@@ -173,12 +176,6 @@ export class IntegerSearch {
     private readonly watch: Watch,
     private readonly started: number,
   ) {
-    const first = roots[0].world;
-    first.instances.forEach((instance, slot) => this.slots.set(instance.id, slot));
-    const acts = new Map<string, number>();
-    for (const instance of first.instances) for (const key of Object.keys(actorNamed(spec, instance.actor).actions)) acts.set(`${instance.id}.${key}`, acts.size);
-    const n = first.instances.length;
-    this.layout = { instances: first.instances, acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
     this.nevers = spec.properties.filter((p) => p.kind === "never");
     this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [p.id] : []));
     this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
@@ -189,22 +186,39 @@ export class IntegerSearch {
     return { reached: new Set(this.stepKeys.values.filter((_, i) => this.reachedSteps[i])), orders: 0, inputs: 0 };
   }
 
+  /**
+   * The layout for a root's instances. The classic key sorts instances, so a set of them is one
+   * layout, in the order of the first root that has it (which the choices follow).
+   */
+  private layoutOf(world: World): Layout {
+    const key = world.instances.map((i) => i.id).sort().join("\u0000");
+    let layout = this.layouts.get(key);
+    if (layout) return layout;
+    const slots = new Map(world.instances.map((instance, slot) => [instance.id, slot]));
+    const acts = new Map<string, number>();
+    for (const instance of world.instances) for (const k of Object.keys(actorNamed(this.spec, instance.actor).actions)) acts.set(`${instance.id}.${k}`, acts.size);
+    const n = world.instances.length;
+    layout = { index: this.layouts.size, instances: world.instances, slots, acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
+    this.layouts.set(key, layout);
+    return layout;
+  }
+
   run(): void {
-    const L = this.layout;
     const seen = new PrintMap();
     let frontier: Entry[] = [];
     const startMemory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
     for (const [r, { world }] of this.roots.entries()) {
-      const vector = this.vectorOf(world, startMemory);
-      const [h1, h2] = printOf(vector, L.messages);
+      const L = this.layoutOf(world);
+      const vector = this.vectorOf(world, startMemory, L);
+      const [h1, h2] = printOf(vector, L);
       if (seen.get(h1, h2) !== undefined) continue;
       const gid = this.node(-1, r, -1, 0, -1);
       seen.set(h1, h2, gid);
       this.states++;
-      this.watch.state?.(world, this.budgetOf(vector));
+      this.watch.state?.(world, this.budgetOf(vector, L));
       for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
-      this.judgeStuck(vector, gid);
-      if (this.b.depth > 0) frontier.push({ gid, vector, h1, h2 });
+      this.judgeStuck(vector, gid, L);
+      if (this.b.depth > 0) frontier.push({ gid, layout: L, vector, h1, h2 });
     }
     const deadline = this.started + this.b.timeLimit;
     for (let depth = 0; frontier.length && depth < this.b.depth; depth++) {
@@ -215,11 +229,11 @@ export class IntegerSearch {
           return;
         }
         const parent = frontier[f];
-        const { vector } = parent;
-        const { world, ids, timersOf } = this.materialize(vector);
+        const { vector, layout: L } = parent;
+        const { world, ids, timersOf } = this.materialize(vector, L);
         const trail = this.nevers.length ? this.trailOf(parent.gid) : undefined;
         for (const choice of branches(this.spec, world, vector[L.faults] < this.b.faults)) {
-          const step = this.step(vector, world, ids, timersOf, choice);
+          const step = this.step(vector, L, world, ids, timersOf, choice);
           if (!step) continue;
           const { effect } = step;
           this.reachedSteps[effect.reached] = true;
@@ -231,7 +245,7 @@ export class IntegerSearch {
             continue;
           }
           const nevers = trail ? this.remember(trail, effect.event, step) : NO_IDS;
-          const [h1, h2] = childPrint(parent, step, L);
+          const [h1, h2] = childPrint(parent, step);
           const existing = seen.get(h1, h2);
           // A step property is judged on every step, so one broken on the way to a known state
           // gets a node of its own too (see Search.land).
@@ -239,7 +253,7 @@ export class IntegerSearch {
           let breaks = NO_IDS;
           if (this.everySteps.some((id) => !this.broken.has(id))) {
             child = this.applied(vector, step);
-            breaks = stepBreaks(this.spec, world, this.materialize(child).world, this.eventAt(effect.event, depth), this.broken);
+            breaks = stepBreaks(this.spec, world, this.materialize(child, L).world, this.eventAt(effect.event, depth), this.broken);
           }
           if (existing !== undefined && !breaks.length) continue;
           if (existing === undefined && this.states >= this.b.maxStates) {
@@ -251,11 +265,11 @@ export class IntegerSearch {
             child ??= this.applied(vector, step);
             seen.set(h1, h2, gid);
             this.states++;
-            if (this.watch.state) this.watch.state(this.materialize(child).world, this.budgetOf(child));
-            if (this.always.length) this.judge(child, gid);
+            if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
+            if (this.always.length) this.judge(child, gid, L);
             for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
-            this.judgeStuck(child, gid);
-            if (depth + 1 < this.b.depth) next.push({ gid, vector: child, h1, h2 });
+            this.judgeStuck(child, gid, L);
+            if (depth + 1 < this.b.depth) next.push({ gid, layout: L, vector: child, h1, h2 });
           }
           for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
         }
@@ -351,36 +365,35 @@ export class IntegerSearch {
   }
 
   /** The `always` properties a new world breaks. They see its instances, and whether anything is pending (`quiet`). */
-  private judge(vector: Int32Array, gid: number): void {
-    const world = this.instancesOf(vector);
+  private judge(vector: Int32Array, gid: number, L: Layout): void {
+    const world = this.instancesOf(vector, L);
     for (const p of this.always) if (!this.broken.has(p.id) && !p.holds(world)) this.breaks(p.id, gid);
   }
 
   /** Whether nothing can happen in a new world: only possible with nothing pending. Fewest faults, then first found. */
-  private judgeStuck(vector: Int32Array, gid: number): void {
-    if (vector[this.layout.messages] !== 0 || vector.length > this.layout.messages + 1) return;
+  private judgeStuck(vector: Int32Array, gid: number, L: Layout): void {
+    if (vector[L.messages] !== 0 || vector.length > L.messages + 1) return;
     const best = this.stuckAt;
     if (best !== undefined && this.faults[best] <= this.faults[gid]) return;
-    if (stuck(this.spec, this.materialize(vector).world)) this.stuckAt = gid;
+    if (stuck(this.spec, this.materialize(vector, L).world)) this.stuckAt = gid;
   }
 
   /** A world with just the instances, and as many pending entries as there are, for properties. */
-  private instancesOf(vector: Int32Array): World {
-    const n = this.layout.instances.length;
+  private instancesOf(vector: Int32Array, L: Layout): World {
+    const n = L.instances.length;
     const instances = new Array<Instance>(n);
     for (let slot = 0; slot < n; slot++) instances[slot] = this.instanceStates.values[vector[slot]];
-    return { seq: 0, fresh: {}, rng: 0, instances, pending: new Array(vector.length - this.layout.messages - 1) } as World;
+    return { seq: 0, fresh: {}, rng: 0, instances, pending: new Array(vector.length - L.messages - 1) } as World;
   }
 
-  private budgetOf(vector: Int32Array): { acts: Record<string, number>; faults: number; memory: string } {
+  private budgetOf(vector: Int32Array, L: Layout): { acts: Record<string, number>; faults: number; memory: string } {
     const acts: Record<string, number> = {};
-    for (const [id, at] of this.layout.acts) if (vector[this.layout.faults + 1 + at]) acts[id] = vector[this.layout.faults + 1 + at];
-    return { acts, faults: vector[this.layout.faults], memory: this.memories.values[vector[this.layout.memory]] };
+    for (const [id, at] of L.acts) if (vector[L.faults + 1 + at]) acts[id] = vector[L.faults + 1 + at];
+    return { acts, faults: vector[L.faults], memory: this.memories.values[vector[L.memory]] };
   }
 
   /** What a choice does, to apply to the vector; none if it would repeat an action past the bound. */
-  private step(vector: Int32Array, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step | undefined {
-    const L = this.layout;
+  private step(vector: Int32Array, L: Layout, world: World, ids: number[], timersOf: Int32Array, choice: Choice): Step | undefined {
     let actsAt = -1;
     if (choice.kind === "act") {
       actsAt = L.faults + 1 + L.acts.get(`${choice.instance}.${choice.key}`)!;
@@ -391,10 +404,10 @@ export class IntegerSearch {
     if (choice.kind === "fire" || choice.kind === "lose") {
       // Pending ids in a materialized world are places in the vector's pending part.
       const chosen = world.pending[choice.pending - 1];
-      slot = this.slots.get(chosen.to)!;
+      slot = L.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
-    } else slot = this.slots.get(choice.instance)!;
-    return { slot, at, effect: this.effectOf(vector, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
+    } else slot = L.slots.get(choice.instance)!;
+    return { layout: L, slot, at, effect: this.effectOf(vector, world, ids, timersOf[slot], slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
@@ -448,8 +461,7 @@ export class IntegerSearch {
    * The message chosen goes from where it is; any other removed message, its first copy
    * (copies are alike, but where they are decides the order of choices). New ones go last.
    */
-  private applied(vector: Int32Array, { slot, at: chosen, effect, actsAt, fault, memory }: Step): Int32Array {
-    const L = this.layout;
+  private applied(vector: Int32Array, { layout: L, slot, at: chosen, effect, actsAt, fault, memory }: Step): Int32Array {
     const M = L.messages;
     const count = vector[M];
     const { removesMessages: rm, removesTimers: rt, addsMessages: am, addsTimers: at } = effect;
@@ -487,13 +499,12 @@ export class IntegerSearch {
   }
 
   /** A root world's vector, with nothing spent. */
-  private vectorOf(world: World, memory: number): Int32Array {
-    const L = this.layout;
+  private vectorOf(world: World, memory: number, L: Layout): Int32Array {
     const inOrder = [...world.pending].sort((a, b) => a.id - b.id);
     const messages = inOrder.filter((p) => p.kind === "deliver").map((p) => this.pendingId(p));
     const timers = world.pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id).map((p) => this.pendingId(p));
     const v = new Int32Array(L.messages + 1 + messages.length + timers.length);
-    world.instances.forEach((instance, slot) => (v[slot] = this.stateId(instance)));
+    for (const instance of world.instances) v[L.slots.get(instance.id)!] = this.stateId(instance);
     v[L.fresh] = this.freshId(world.fresh);
     v[L.rng] = world.rng | 0;
     v[L.memory] = memory;
@@ -508,8 +519,7 @@ export class IntegerSearch {
    * vector's pending part, from 1: `ids[id]` is its intern id. `timersOf[slot]` names the list
    * of that instance's timers, for the step cache's key.
    */
-  private materialize(vector: Int32Array): { world: World; ids: number[]; timersOf: Int32Array } {
-    const L = this.layout;
+  private materialize(vector: Int32Array, L: Layout): { world: World; ids: number[]; timersOf: Int32Array } {
     const n = L.instances.length;
     const instances = new Array<Instance>(n);
     for (let slot = 0; slot < n; slot++) instances[slot] = this.instanceStates.values[vector[slot]];
@@ -522,7 +532,7 @@ export class IntegerSearch {
       const template = this.pendings.values[vector[i]];
       pending.push({ ...template, id } as Pending);
       ids[id] = vector[i];
-      if (template.kind === "timer") (own ??= new Array<string>(n).fill(""))[this.slots.get(template.to)!] += `${vector[i]},`;
+      if (template.kind === "timer") (own ??= new Array<string>(n).fill(""))[L.slots.get(template.to)!] += `${vector[i]},`;
     }
     if (own) for (let slot = 0; slot < n; slot++) if (own[slot]) timersOf[slot] = 1 + this.timerLists.id(own[slot], () => own![slot]);
     return { world: { seq: pending.length, fresh: this.freshes.values[vector[L.fresh]], rng: vector[L.rng] >>> 0, instances, pending }, ids, timersOf };
@@ -608,9 +618,10 @@ function timersHash(v: ArrayLike<number>, from: number): number {
 }
 
 /** A vector's fingerprint from scratch. */
-export function printOf(v: Int32Array, M: number): [number, number] {
-  let h1 = 0;
-  let h2 = 0;
+function printOf(v: Int32Array, L: Layout): [number, number] {
+  const M = L.messages;
+  let h1 = lane1(5, L.index, 0);
+  let h2 = lane2(5, L.index, 0);
   for (let i = 0; i < M; i++) (h1 += lane1(1, i, v[i])), (h2 += lane2(1, i, v[i]));
   const end = M + 1 + v[M];
   for (let i = M + 1; i < end; i++) (h1 += lane1(3, v[i], 0)), (h2 += lane2(3, v[i], 0));
@@ -619,8 +630,8 @@ export function printOf(v: Int32Array, M: number): [number, number] {
 }
 
 /** A child's fingerprint: the parent's, with the parts the step changes taken out and put back. */
-function childPrint(parent: Entry, step: Step, L: Layout): [number, number] {
-  const { slot, effect: e, actsAt, fault } = step;
+function childPrint(parent: Entry, step: Step): [number, number] {
+  const { layout: L, slot, effect: e, actsAt, fault } = step;
   const v = parent.vector;
   let h1 = parent.h1;
   let h2 = parent.h2;
