@@ -1,6 +1,3 @@
 node_modules/
 dist/
 .cloudflare/
-# Assembled on every build from static/ and the simulators (scripts/pages.ts).
-public/
-.cache/

@@ -1,8 +1,8 @@
 // /llms.txt: what Feynman is and where everything is, for agents (https://llmstxt.org).
-import { published, readSims, refLabel, SITE, simUrl, specUrl } from "./sims.ts";
+const SITE = "https://feynman.leostera.dev";
+const REPOSITORY = "https://github.com/leostera/feynman";
 
 export function llmsTxt(): string {
-  const sims = readSims().filter(published);
   return `# Feynman
 
 > Feynman is a TypeScript library and CLI (\`@leostera/feynman\` on npm). Its specs are
@@ -31,16 +31,13 @@ proof); ? the explored states never reached a case where the rule could be judge
 - [Writing and checking specs](${SITE}/SKILL.md): the skill an agent follows to model a codebase, check the model, and report what it found
 - [The package](https://www.npmjs.com/package/@leostera/feynman): @leostera/feynman on npm
 
-## Simulators
+## Explorers
 
-${sims
-  .map((sim) =>
-    [
-      `- [${sim.title}](${simUrl(sim)}): ${sim.summary} Built from ${sim.repository} at ${refLabel(sim)}.`,
-      `  - [Check report](${simUrl(sim)}check.txt): the verdicts \`feynman check\` gave there`,
-      ...sim.specs.map((spec) => `  - [${spec.title}](${specUrl(sim, spec.path)}): the spec, ${spec.path}`),
-    ].join("\n"),
-  )
-  .join("\n")}
+The site builds the explorer (simulator, checker, flows) of any public git repository with a
+\`feynman.config.ts\`, on demand, at \`${SITE}/s/<host>/<path>\`. Add \`?ref=<branch, tag or
+commit>\` for another commit than the default branch's.
+
+- [Feynman's examples](${SITE}/s/github.com/leostera/feynman/): 27 well-known systems (two-phase commit, Raft's vote, chain replication, payments, …), several with deliberate bugs; [their specs](${REPOSITORY}/tree/main/packages/feynman/examples)
+- [Remote access in axo](${SITE}/s/github.com/leostera/axo/): a model of existing code, people reaching their Macs through Cloudflare Access and a relay
 `;
 }
