@@ -14,6 +14,46 @@ export async function putPage(bucket: R2Bucket, repository: Repository, commit: 
   });
 }
 
+/** A build that failed for a reason that would not change if it ran again, kept for FAILURE_TTL_MS. */
+export interface Failure {
+  readonly status: 404 | 422;
+  readonly message: string;
+  readonly log: string;
+}
+
+const FAILURE_TTL_MS = 60 * 60 * 1_000;
+
+/** `failures/<host>/<path>/<target>.json`: the target as asked for, a commit or a prefix. */
+function failureKey(repository: Repository, target: string): string {
+  return `failures/${repository.id}/${target}.json`;
+}
+
+export async function putFailure(bucket: R2Bucket, repository: Repository, target: string, failure: Failure): Promise<void> {
+  await bucket.put(failureKey(repository, target), JSON.stringify(failure), {
+    httpMetadata: { contentType: "application/json" },
+    customMetadata: { failedAt: String(Date.now()) },
+  });
+}
+
+/** A failure recorded within the last FAILURE_TTL_MS, or null. */
+export async function getFailure(bucket: R2Bucket, repository: Repository, target: string): Promise<Failure | null> {
+  const object = await bucket.get(failureKey(repository, target));
+  if (!object) return null;
+  const failedAt = Number(object.customMetadata?.failedAt);
+  if (!(Date.now() - failedAt < FAILURE_TTL_MS)) {
+    await object.body.cancel();
+    return null;
+  }
+  const parsed: unknown = await object.json().catch(() => null);
+  return isFailure(parsed) ? parsed : null;
+}
+
+function isFailure(value: unknown): value is Failure {
+  if (typeof value !== "object" || value === null) return false;
+  const { status, message, log } = value as Record<string, unknown>;
+  return (status === 404 || status === 422) && typeof message === "string" && typeof log === "string";
+}
+
 /** A stored page as the response to a share URL. */
 export function pageResponse(object: R2ObjectBody, commit: Commit, options: { immutable: boolean }): Response {
   const headers = new Headers();
@@ -25,7 +65,7 @@ export function pageResponse(object: R2ObjectBody, commit: Commit, options: { im
   return new Response(object.body, { headers });
 }
 
-export function errorPage(status: number, title: string, detail = "", log = ""): Response {
+export function errorPage(status: number, title: string, detail = "", log = "", retryAfterSeconds?: number): Response {
   const body = `<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -44,7 +84,9 @@ ${log ? `<pre>${escape(log)}</pre>` : ""}
 <code>/s/&lt;host&gt;/&lt;path&gt;?ref=&lt;branch, tag or commit&gt;</code>.</p>
 </html>
 `;
-  return new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  const headers = new Headers({ "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  if (retryAfterSeconds !== undefined) headers.set("retry-after", String(retryAfterSeconds));
+  return new Response(body, { status, headers });
 }
 
 function escape(text: string): string {

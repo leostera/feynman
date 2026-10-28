@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { asCommit, type Commit, parseAdvertisement, resolveRef } from "../src/refs.ts";
+import { asCommit, type Commit, parseAdvertisement, parseLsRefs, resolveRef } from "../src/refs.ts";
 import { parseRepository } from "../src/repository.ts";
 
 const A = "a".repeat(40) as Commit;
@@ -61,6 +61,25 @@ describe("parseAdvertisement", () => {
 
   test("anything else is not an advertisement", () => {
     expect(parseAdvertisement(new TextEncoder().encode("<html>sign in</html>"))).toBeNull();
+  });
+});
+
+describe("parseLsRefs", () => {
+  test("HEAD, branches, and tags with what they peel to", () => {
+    const body = [pkt(`${A} HEAD symref-target:refs/heads/main\n`), pkt(`${A} refs/heads/main\n`), pkt(`${B} refs/tags/v1 peeled:${C}\n`), "0000"].join("");
+    expect(parseLsRefs(new TextEncoder().encode(body))).toEqual(
+      new Map([["HEAD", A], ["refs/heads/main", A], ["refs/tags/v1", B], ["refs/tags/v1^{}", C]]),
+    );
+  });
+
+  test("an empty repository is a flush alone", () => {
+    expect(parseLsRefs(new TextEncoder().encode("0000"))).toEqual(new Map());
+  });
+
+  test("an empty answer, an error, or a v0 advertisement is not an ls-refs answer", () => {
+    expect(parseLsRefs(new Uint8Array())).toBeNull();
+    expect(parseLsRefs(new TextEncoder().encode(pkt("ERR unknown command\n") + "0000"))).toBeNull();
+    expect(parseLsRefs(new TextEncoder().encode(pkt("# service=git-upload-pack\n") + "0000"))).toBeNull();
   });
 });
 

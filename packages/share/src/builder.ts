@@ -3,7 +3,8 @@
 // the same page while it builds wait for the same build instead of starting another.
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
 import { DurableObject, WorkerEntrypoint } from "cloudflare:workers";
-import { pageKey, putPage } from "./pages.ts";
+import { GATE_NAME } from "./gate.ts";
+import { pageKey, putFailure, putPage } from "./pages.ts";
 import { asCommit, type Commit } from "./refs.ts";
 import type { Repository } from "./repository.ts";
 import type { ShareEnv } from "./env.ts";
@@ -19,7 +20,11 @@ export interface BuildJob {
 
 export type BuildResult =
   | { ok: true; commit: Commit }
-  | { ok: false; status: 404 | 422 | 500; message: string; log: string };
+  /** The repository or its specs: building it again gives the same answer. */
+  | { ok: false; status: 404 | 422; message: string; log: string }
+  | { ok: false; status: 500; message: string; log: string }
+  /** The gate refused: another build is running, or today's builds are spent. */
+  | { ok: false; status: 503; message: string; log: string; retryAfterSeconds: number };
 
 const REPO = "/workspace/repo";
 const PAGE = "/workspace/out/index.html";
@@ -79,6 +84,28 @@ export class ShareBuilder extends DurableObject<ShareEnv> {
   }
 
   async #build(job: BuildJob): Promise<BuildResult> {
+    const name = `${job.repository.id}@${job.target}`;
+    const gate = this.#exports.ShareGate.getByName(GATE_NAME);
+    const decision = await gate.acquire(name);
+    if (!decision.ok) {
+      console.log({ event: "build.refused", repository: job.repository.id, target: job.target, reason: decision.reason });
+      const message = decision.reason === "busy" ? "Another build is running" : "Today's builds are spent";
+      return { ok: false, status: 503, message, log: "", retryAfterSeconds: decision.retryAfterSeconds };
+    }
+    try {
+      const result = await this.#runBuild(job);
+      // A repository that is not there, or whose specs do not build, says so again for a while
+      // without another container.
+      if (!result.ok && (result.status === 404 || result.status === 422)) {
+        await putFailure(this.env.SHARE_PAGES, job.repository, job.target, { status: result.status, message: result.message, log: result.log });
+      }
+      return result;
+    } finally {
+      await gate.release(name);
+    }
+  }
+
+  async #runBuild(job: BuildJob): Promise<BuildResult> {
     const started = Date.now();
     const log = (event: string, fields: Record<string, unknown> = {}) =>
       console.log({ event, repository: job.repository.id, target: job.target, ms: Date.now() - started, ...fields });
