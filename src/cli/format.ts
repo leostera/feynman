@@ -72,7 +72,8 @@ function searchNotes(report: Report): string[] {
   if (report.walks.runs) notes.push(`  also ${report.walks.runs.toLocaleString()} random run(s), ${report.walks.steps.toLocaleString()} steps, up to ${report.walks.deepest} deep: they find bugs deeper than the search, but prove nothing`);
   const saved = report.reductions.orders + report.reductions.inputs;
   const symmetric = report.reductions.symmetric.map((labels) => labels.join(" = ")).join(", ");
-  if (saved || symmetric) notes.push(`  skipped ${saved.toLocaleString()} step(s) whose result was known${symmetric ? `; treated as interchangeable: ${symmetric}` : ""}`);
+  if (saved) notes.push(`  skipped ${saved.toLocaleString()} step(s) whose result was known`);
+  if (symmetric) notes.push(`  treated as interchangeable: ${symmetric}`);
   const out = notes.map((n) => dim(n));
   if (report.reductions.refuted?.length)
     out.push(yellow(`  ! ${report.reductions.refuted.join(", ")} declared symmetric, but swapping two instances changed what happens next; checked without symmetry. Remove symmetric: true.`));
