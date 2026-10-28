@@ -15,6 +15,7 @@ See [feynman.leostera.dev](https://feynman.leostera.dev).
   demand, that the site serves under `/s/`.
 - [`sites/feynman.leostera.dev`](sites/feynman.leostera.dev): the website.
 - [`docs/rfds`](docs/rfds): design documents.
+- [`CHANGELOG.md`](CHANGELOG.md): what changed in the site, the explorer and the repository.
 
 From the root, `bun run test` tests both packages, and `bun run feynman check` checks the
 examples (`feynman.config.ts`).
