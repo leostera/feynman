@@ -1,0 +1,17 @@
+{
+  "name": "feynman",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "sites/*"],
+  "scripts": {
+    "feynman": "bun packages/feynman/bin/feynman.ts",
+    "build": "bun run --cwd packages/feynman build",
+    "test": "bun run --cwd packages/feynman test && bun run --cwd packages/share test",
+    "oracles": "bun run --cwd packages/feynman oracles",
+    "bench": "bun run --cwd packages/feynman bench",
+    "fuzz": "bun run --cwd packages/feynman fuzz",
+    "typecheck": "bun run --cwd packages/feynman typecheck",
+    "site:deploy": "bun run --cwd sites/feynman.leostera.dev deploy"
+  },
+  "devDependencies": { "@leostera/feynman": "workspace:*" }
+}
