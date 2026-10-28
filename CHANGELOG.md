@@ -4,6 +4,18 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+### Checking
+
+- An integer core for the search (`src/check/integer.ts`): worlds are short integer vectors
+  of interned states, local steps run through the engine once and are replayed from a cache,
+  and fingerprints are updated per step. 8-13x faster on one thread than the classic search.
+  `check` uses it for safety-only searches without reductions or symmetry, and the classic
+  search for the rest; `engine: "classic" | "integer"` (or `FEYNMAN_ENGINE`) picks one. Both
+  give the same report, to the counterexample, on every example and on generated specs, and
+  the TLA+ oracles hold it to TLC.
+
 ## 0.10.0
 
 ### Writing specs

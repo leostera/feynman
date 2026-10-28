@@ -14,7 +14,7 @@ for (const model of names.length ? names.map(modelNamed) : MODELS) {
   const spec: Spec = { ...full, properties: full.properties.filter((p) => p.kind === "always") };
   const bounds = { depth: 60, faults: 1, repeats: 2, instances: {}, ...model.bounds, reduce: false, symmetry: false, walks: 0, workers: 0, maxStates: 5_000_000, timeLimit: 600_000 };
   const t0 = performance.now();
-  const theirs = await check(spec, bounds);
+  const theirs = await check(spec, bounds, [], { engine: "classic" });
   const tCheck = performance.now() - t0;
   const t1 = performance.now();
   const ours = new IntegerSearch(spec, bounds, initialWorld(spec, bounds)).run();
