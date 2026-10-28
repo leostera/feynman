@@ -3,13 +3,13 @@
 ARG SANDBOX_TOOLS_IMAGE=docker.io/cloudflare/sandbox:1.0.3
 FROM ${SANDBOX_TOOLS_IMAGE} AS sandbox-tools
 
-FROM oven/bun:1.3-debian
+FROM oven/bun:1.4.4-debian
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git coreutils \
   && rm -rf /var/lib/apt/lists/*
 # The published Feynman, the same one `bunx @leostera/feynman` runs. Specs need nothing else
 # installed: their `@leostera/feynman` imports resolve to this installation.
-ARG FEYNMAN_VERSION=0.8.0
+ARG FEYNMAN_VERSION=0.11.0
 RUN mkdir -p /opt/feynman \
   && cd /opt/feynman \
   && echo '{"private":true}' > package.json \
