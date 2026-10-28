@@ -2,14 +2,12 @@
   "name": "@feynman/site",
   "private": true,
   "type": "module",
-  "description": "feynman.leostera.dev: what Feynman is, and the simulators it has published.",
+  "description": "feynman.leostera.dev: what Feynman is, and the explorer of any public repository.",
   "scripts": {
-    "sim": "bun scripts/sim.ts",
-    "dev": "bun scripts/pages.ts && cf dev",
-    "build": "bun scripts/pages.ts && cf build",
-    "deploy": "bun scripts/pages.ts && cf deploy",
-    "typecheck": "tsc --noEmit && cf workers types && tsc --noEmit -p worker",
-    "pages": "bun scripts/pages.ts"
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy",
+    "typecheck": "tsc --noEmit && cf workers types && tsc --noEmit -p worker"
   },
   "dependencies": {
     "@cloudflare/kumo": "^2.15.0",

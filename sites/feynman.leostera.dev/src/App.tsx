@@ -1,17 +1,21 @@
 import { Button, LinkButton, Text } from "@cloudflare/kumo";
 import { ArrowRightIcon, CheckIcon, CircleHalfIcon, CopyIcon, RobotIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
-import sims from "../sims.json";
-import type { Sim } from "../scripts/sims.ts";
 import payments from "../snippets/payments.ts?highlight";
 import paymentsCheck from "../snippets/payments-check.txt?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
 
-const SIMS = sims as Sim[];
-
-type Showcase = { id: string; moment: string; example: string; text: string; image: string; alt: string; /** The published simulator it opens, and where in it. */
-  sim: string;
-  at?: string };
+type Showcase = {
+  id: string;
+  moment: string;
+  example: string;
+  text: string;
+  image: string;
+  alt: string;
+  /** The repository whose explorer it opens (`<host>/<path>`, served under /s/), and where in it. */
+  repository: string;
+  at?: string;
+};
 
 /** The three moments to reach for Feynman, each shown on a real playground. */
 const SHOWCASES: Showcase[] = [
@@ -22,7 +26,7 @@ const SHOWCASES: Showcase[] = [
     text: "Settle the design with your agent before it writes the code.",
     image: "two-phase-commit",
     alt: "Playground of a two-phase commit: a coordinator and two participants that have committed",
-    sim: "github.com/leostera/feynman",
+    repository: "github.com/leostera/feynman",
     at: `#/playground/two-phase-commit/${encodeURIComponent("Everyone votes yes")}`,
   },
   {
@@ -32,7 +36,7 @@ const SHOWCASES: Showcase[] = [
     text: "Model how existing code behaves, and find the constraints it relies on.",
     image: "axo-sim",
     alt: "Playground of remote access: people, Macs, Cloudflare Access and a relay",
-    sim: "github.com/leostera/axo",
+    repository: "github.com/leostera/axo",
   },
   {
     id: "change",
@@ -41,7 +45,7 @@ const SHOWCASES: Showcase[] = [
     text: "See what a change does to every flow. Here, a retry charges twice.",
     image: "payments",
     alt: "Playground of payments: the bank debits the same payment twice and the rule is broken",
-    sim: "github.com/leostera/feynman",
+    repository: "github.com/leostera/feynman",
     at: `#/playground/payments/${encodeURIComponent("The retry fires first")}`,
   },
 ];
@@ -139,8 +143,7 @@ export function App() {
 function Showcases() {
   const [current, setCurrent] = useState(SHOWCASES[1].id);
   const shown = SHOWCASES.find((item) => item.id === current) ?? SHOWCASES[1];
-  const sim = SIMS.find((item) => item.slug === shown.sim);
-  const href = sim ? simHref(sim) + (shown.at ?? "") : null;
+  const href = `/s/${shown.repository}/${shown.at ?? ""}`;
   return (
     <div className="mt-12">
       <div role="tablist" aria-label="When to use Feynman" className="grid gap-2 sm:flex sm:flex-wrap">
@@ -164,11 +167,9 @@ function Showcases() {
         <Preview showcase={shown} href={href} />
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-kumo-subtle">{shown.text}</p>
-          {href && (
-            <LinkButton href={href} variant="secondary" icon={ArrowRightIcon} className="sm:hidden">
-              Explore playground
-            </LinkButton>
-          )}
+          <LinkButton href={href} variant="secondary" icon={ArrowRightIcon} className="sm:hidden">
+            Explore playground
+          </LinkButton>
         </div>
       </div>
     </div>
@@ -176,7 +177,7 @@ function Showcases() {
 }
 
 /** A screenshot of the playground in both modes; on wider screens, the whole image opens it. */
-function Preview({ showcase, href }: { showcase: Showcase; href: string | null }) {
+function Preview({ showcase, href }: { showcase: Showcase; href: string }) {
   const images = (
     <>
       <img src={`/${showcase.image}-light.jpg`} alt={showcase.alt} width={1500} height={900} className="block w-full [[data-mode=dark]_&]:hidden" />
@@ -187,23 +188,17 @@ function Preview({ showcase, href }: { showcase: Showcase; href: string | null }
   return (
     <>
       <div className={`${frame} sm:hidden`}>{images}</div>
-      {href ? (
-        <a href={href} className={`${frame} group relative hidden sm:block`}>
-          {images}
-          <span className="absolute inset-0 flex items-center justify-center bg-kumo-contrast/0 transition-colors duration-300 group-hover:bg-kumo-contrast/25 group-focus-visible:bg-kumo-contrast/25">
-            <span className="flex translate-y-1 items-center gap-2 rounded-lg bg-kumo-brand px-5 py-3 font-medium text-white opacity-0 shadow-lg transition duration-300 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
-              Explore playground <ArrowRightIcon size={18} />
-            </span>
+      <a href={href} className={`${frame} group relative hidden sm:block`}>
+        {images}
+        <span className="absolute inset-0 flex items-center justify-center bg-kumo-contrast/0 transition-colors duration-300 group-hover:bg-kumo-contrast/25 group-focus-visible:bg-kumo-contrast/25">
+          <span className="flex translate-y-1 items-center gap-2 rounded-lg bg-kumo-brand px-5 py-3 font-medium text-white opacity-0 shadow-lg transition duration-300 ease-out group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+            Explore playground <ArrowRightIcon size={18} />
           </span>
-        </a>
-      ) : (
-        <div className={`${frame} hidden sm:block`}>{images}</div>
-      )}
+        </span>
+      </a>
     </>
   );
 }
-
-const simHref = (sim: Sim) => `/s/${sim.slug}/`;
 
 /** A highlighted snippet (from scripts/highlight.ts) with what it is and a copy button. */
 function CodeBlock({ snippet, label }: { snippet: { code: string; html: string }; label: string }) {
