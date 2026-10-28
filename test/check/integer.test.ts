@@ -19,8 +19,8 @@ function safety(spec: Spec): Spec {
 }
 
 async function bothAgree(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[] = []): Promise<Report> {
-  const integer = await check(spec, { ...bounds, ...PLAIN }, seeds, { engine: "integer" });
-  const classic = await check(spec, { ...bounds, ...PLAIN }, seeds, { engine: "classic" });
+  const integer = await check(spec, { ...PLAIN, ...bounds }, seeds, { engine: "integer" });
+  const classic = await check(spec, { ...PLAIN, ...bounds }, seeds, { engine: "classic" });
   expect(comparable(integer)).toEqual(comparable(classic));
   return integer;
 }
@@ -31,9 +31,12 @@ for (const example of corpus) for (const c of example.cases) {
   test(`${caseName(example, c)}: the same report from the integer core as from the classic search`, async () => {
     await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {} });
   }, 120_000);
+  test(`${caseName(example, c)}, with symmetry: the same report from both`, async () => {
+    await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {}, symmetry: true });
+  }, 120_000);
   if (spec.scenarios.length)
     test(`${caseName(example, c)}, from its scenarios too: the same report from both`, async () => {
-      await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {} }, scenarioSeeds(spec));
+      await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {}, symmetry: true }, scenarioSeeds(spec));
     }, 120_000);
 }
 
@@ -42,7 +45,7 @@ test("generated specs: the same report from both", async () => {
   for (let seed = 1; seed <= 80; seed++) {
     const desc = describeSpec(seed);
     const spec = safety(build(desc));
-    const report = await bothAgree(spec, desc.bounds);
+    const report = await bothAgree(spec, { ...desc.bounds, symmetry: seed % 2 === 0 });
     if (report.exhaustive) compared++;
   }
   expect(compared).toBeGreaterThan(40);

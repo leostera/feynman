@@ -24,7 +24,8 @@ import { act, actorNamed, fire, guard, lose, observation, restart, worldView, ty
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
 import { startBreaks, stepBreaks, stuck } from "./judge.ts";
-import { memoryOf, rootMemory } from "./owner.ts";
+import { renamedLine, type Symmetry } from "./keys.ts";
+import { memoryOf, rootMemory, successorsPrint } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
 import type { Root } from "./search.ts";
 import { apply, branches, QUIET, type Choice } from "./steps.ts";
@@ -34,25 +35,35 @@ type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
 
 /**
- * Whether the integer core can do a job: safety properties only, with no symmetry to fold
- * (that changes the states). It does without the classic
+ * Whether the integer core can do a job: safety properties only. It does without the classic
  * search's reductions (and is faster than the classic search with them), so it ignores `reduce`.
  */
-export function fitsIntegerCore(spec: Spec, roots: Root[]): boolean {
-  if (spec.properties.some((p) => p.kind !== "always" && p.kind !== "never" && p.kind !== "everyStep")) return false;
-  return !roots.some((r) => r.symmetry.classes.length);
+export function fitsIntegerCore(spec: Spec): boolean {
+  return spec.properties.every((p) => p.kind === "always" || p.kind === "never" || p.kind === "everyStep");
 }
 
 /** Values named by integers: each distinct one (by its key) once. */
 class Interner<T> {
   private ids = new Map<string, number>();
   readonly values: T[] = [];
+  readonly keys: string[] = [];
 
   id(key: string, value: () => T): number {
     let id = this.ids.get(key);
-    if (id === undefined) this.ids.set(key, (id = this.values.push(value()) - 1));
+    if (id === undefined) {
+      this.ids.set(key, (id = this.values.push(value()) - 1));
+      this.keys.push(key);
+    }
     return id;
   }
+}
+
+/** For one renaming of a symmetry: the renamed key line of each state and pending entry, by id (see `IntegerSearch.symmetricPrint`). */
+interface Renamed {
+  renaming: Map<string, string>;
+  identity: boolean;
+  states: Map<number, number>;
+  pendings: Map<number, number>;
 }
 
 /**
@@ -141,6 +152,8 @@ export class IntegerSearch {
   stuckAt: number | undefined;
   states = 0;
   stoppedBy: "maxStates" | "timeLimit" | undefined;
+  /** A symmetry claim turned out false: the search stopped, to be run again without it. */
+  refuted = false;
   depthReached = 0;
   readonly ownerCount = 1;
   readonly root: number[] = [];
@@ -165,6 +178,12 @@ export class IntegerSearch {
   private everySteps: string[];
   private reachedSteps: boolean[] = [];
   private cache = new Map<number, Effect>();
+  /** Key lines (keys.ts), named by integers: what symmetric fingerprints are made of. */
+  private lines = new Map<string, number>();
+  private renamedBy = new WeakMap<Map<string, string>, Renamed>();
+  /** For nodes from roots with symmetry: the fingerprint of the world without renaming, which renamed twins do not share. */
+  private plains = new Map<number, [number, number]>();
+  private twinChecks = 0;
   /** One per set of instances the roots have, by their sorted ids. */
   private layouts = new Map<string, Layout>();
   private always: { id: string; holds: (w: World) => boolean }[];
@@ -210,9 +229,12 @@ export class IntegerSearch {
     for (const [r, { world }] of this.roots.entries()) {
       const L = this.layoutOf(world);
       const vector = this.vectorOf(world, startMemory, L);
-      const [h1, h2] = printOf(vector, L);
+      const symmetry = this.roots[r].symmetry;
+      const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
+      const [h1, h2] = folded ? folded.print : printOf(vector, L);
       if (seen.get(h1, h2) !== undefined) continue;
       const gid = this.node(-1, r, -1, 0, -1);
+      if (folded) this.plains.set(gid, folded.plain);
       seen.set(h1, h2, gid);
       this.states++;
       this.watch.state?.(world, this.budgetOf(vector, L));
@@ -232,6 +254,8 @@ export class IntegerSearch {
         const { vector, layout: L } = parent;
         const { world, ids, timersOf } = this.materialize(vector, L);
         const trail = this.nevers.length ? this.trailOf(parent.gid) : undefined;
+        const symmetry = this.roots[this.root[parent.gid]].symmetry;
+        const symmetric = symmetry.classes.length > 0;
         for (const choice of branches(this.spec, world, vector[L.faults] < this.b.faults)) {
           const step = this.step(vector, L, world, ids, timersOf, choice);
           if (!step) continue;
@@ -242,20 +266,36 @@ export class IntegerSearch {
             // A step that fails is a spec error, and goes nowhere; the first time an error is
             // met, a node of its own (a shadow, not a state) ends its counterexample.
             if (!this.errors.has(effect.error)) this.errors.set(effect.error, this.node(parent.gid, this.root[parent.gid], this.nameOf(choice, ids), faults, effect.event));
+            else if (symmetric) {
+              // Its world is the one before, with the budget spent: it may land on a renamed
+              // twin, as in the classic search, whose claim is tested all the same.
+              const unchanged = this.applied(vector, { ...step, effect: { ...effect, state: vector[step.slot], removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE }, at: -1 });
+              const folded = this.symmetricPrint(unchanged, L, symmetry);
+              const existing = seen.get(folded.print[0], folded.print[1]);
+              if (existing !== undefined && !this.sameAsTwin(existing, unchanged, L, folded.plain, symmetry)) return void (this.refuted = true);
+            }
             continue;
           }
           const nevers = trail ? this.remember(trail, effect.event, step) : NO_IDS;
-          const [h1, h2] = childPrint(parent, step);
+          let child: Int32Array | undefined;
+          let folded: { print: [number, number]; plain: [number, number] } | undefined;
+          if (symmetric) {
+            child = this.applied(vector, step);
+            folded = this.symmetricPrint(child, L, symmetry);
+          }
+          const [h1, h2] = folded ? folded.print : childPrint(parent, step);
           const existing = seen.get(h1, h2);
           // A step property is judged on every step, so one broken on the way to a known state
           // gets a node of its own too (see Search.land).
-          let child: Int32Array | undefined;
           let breaks = NO_IDS;
           if (this.everySteps.some((id) => !this.broken.has(id))) {
-            child = this.applied(vector, step);
+            child ??= this.applied(vector, step);
             breaks = stepBreaks(this.spec, world, this.materialize(child, L).world, this.eventAt(effect.event, depth), this.broken);
           }
-          if (existing !== undefined && !breaks.length) continue;
+          if (existing !== undefined && !breaks.length) {
+            if (folded && !this.sameAsTwin(existing, child!, L, folded.plain, symmetry)) return void (this.refuted = true);
+            continue;
+          }
           if (existing === undefined && this.states >= this.b.maxStates) {
             this.stoppedBy = "maxStates";
             return;
@@ -264,6 +304,7 @@ export class IntegerSearch {
           if (existing === undefined) {
             child ??= this.applied(vector, step);
             seen.set(h1, h2, gid);
+            if (folded) this.plains.set(gid, folded.plain);
             this.states++;
             if (this.watch.state) this.watch.state(this.materialize(child, L).world, this.budgetOf(child, L));
             if (this.always.length) this.judge(child, gid, L);
@@ -276,6 +317,92 @@ export class IntegerSearch {
       }
       frontier = next;
     }
+  }
+
+  /**
+   * Whether a world that landed on a known state up to symmetry behaves as that state's world
+   * does: the same next worlds, up to symmetry. Tested on the first `symmetryChecks` renamed
+   * twins met (not on the very same world), in the order met, as the classic search does.
+   */
+  private sameAsTwin(existing: number, vector: Int32Array, L: Layout, plain: [number, number], symmetry: Symmetry): boolean {
+    const known = this.plains.get(existing)!;
+    if (known[0] === plain[0] && known[1] === plain[1]) return true;
+    if (this.twinChecks >= this.b.symmetryChecks) return true;
+    this.twinChecks++;
+    const a = successorsPrint(this.spec, this.worldAt(existing), symmetry);
+    const b = successorsPrint(this.spec, this.materialize(vector, L).world, symmetry);
+    return a[0] === b[0] && a[1] === b[1];
+  }
+
+  /** A node's world, replayed from its root. */
+  private worldAt(gid: number): World {
+    let world = this.roots[this.root[gid]].world;
+    for (const choice of this.pathTo(gid)) world = apply(this.spec, world, choice, QUIET).world;
+    return world;
+  }
+
+  /**
+   * A fingerprint up to symmetry: the least, over the renamings, of the renamed world's
+   * (instances and pending entries as renamed key lines, keys.ts), with the budget and memory
+   * as they are, as the classic key has them. Renamed twins have the same set of renamed
+   * worlds, so the same least one. And the fingerprint of the world without renaming or budget.
+   */
+  private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry): { print: [number, number]; plain: [number, number] } {
+    const M = L.messages;
+    const end = M + 1 + v[M];
+    let base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]);
+    let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]);
+    let extra1 = lane1(1, L.memory, v[L.memory]);
+    let extra2 = lane2(1, L.memory, v[L.memory]);
+    for (let i = L.faults; i < L.fresh; i++) (extra1 += lane1(1, i, v[i])), (extra2 += lane2(1, i, v[i]));
+    let best: [number, number] | undefined;
+    let plain: [number, number] = [0, 0];
+    const timers: number[] = [];
+    for (const renaming of symmetry.renamings) {
+      const r = this.renamed(renaming);
+      let h1 = base1;
+      let h2 = base2;
+      for (let s = 0; s < L.instances.length; s++) {
+        const line = this.renamedState(r, v[s]);
+        (h1 += lane1(6, line, 0)), (h2 += lane2(6, line, 0));
+      }
+      for (let i = M + 1; i < end; i++) {
+        const line = this.renamedPending(r, v[i]);
+        (h1 += lane1(3, line, 0)), (h2 += lane2(3, line, 0));
+      }
+      timers.length = 0;
+      for (let i = end; i < v.length; i++) timers.push(this.renamedPending(r, v[i]));
+      const t = timersHash(timers, 0);
+      (h1 += lane1(4, t, 0)), (h2 += lane2(4, t, 0));
+      if (r.identity) plain = [h1 >>> 0, h2 >>> 0];
+      const full: [number, number] = [(h1 + extra1) >>> 0, (h2 + extra2) >>> 0];
+      if (!best || full[0] < best[0] || (full[0] === best[0] && full[1] < best[1])) best = full;
+    }
+    return { print: best!, plain };
+  }
+
+  private renamed(renaming: Map<string, string>): Renamed {
+    let r = this.renamedBy.get(renaming);
+    if (!r) this.renamedBy.set(renaming, (r = { renaming, identity: [...renaming].every(([from, to]) => from === to), states: new Map(), pendings: new Map() }));
+    return r;
+  }
+
+  private renamedState(r: Renamed, state: number): number {
+    let line = r.states.get(state);
+    if (line === undefined) r.states.set(state, (line = this.lineId(renamedLine(this.instanceStates.keys[state], r.renaming))));
+    return line;
+  }
+
+  private renamedPending(r: Renamed, pending: number): number {
+    let line = r.pendings.get(pending);
+    if (line === undefined) r.pendings.set(pending, (line = this.lineId(renamedLine(this.pendings.keys[pending], r.renaming))));
+    return line;
+  }
+
+  private lineId(line: string): number {
+    let id = this.lines.get(line);
+    if (id === undefined) this.lines.set(line, (id = this.lines.size));
+    return id;
   }
 
   /** The trace steps on the way to a node, from its root. */
@@ -540,9 +667,11 @@ export class IntegerSearch {
 
   /** An instance in one state, shared by every world it is in that way. */
   private stateId(instance: Instance): number {
-    return this.instanceStates.id(`${instance.id}|${sortedJson(instance.state)}`, () => instance);
+    // The key is the instance's key line (keys.ts), which symmetric fingerprints rename.
+    return this.instanceStates.id(`${instance.id}=${sortedJson(instance.state)}`, () => instance);
   }
 
+  /** As keys.ts pendingText writes it: symmetric fingerprints rename it. */
   private pendingId(p: Pending): number {
     const key = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}` : `t|${p.to}|${p.timer}`;
     return this.pendings.id(key, () => {

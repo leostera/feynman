@@ -145,7 +145,7 @@ function isIdentity(renaming: Map<string, string>): boolean {
 const renamedLines = new WeakMap<Map<string, string>, Map<string, string>>();
 const RENAMED_LINES = 100_000;
 
-function renamedLine(line: string, renaming: Map<string, string>): string {
+export function renamedLine(line: string, renaming: Map<string, string>): string {
   let cache = renamedLines.get(renaming);
   if (!cache) renamedLines.set(renaming, (cache = new Map()));
   let out = cache.get(line);

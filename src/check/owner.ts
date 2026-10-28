@@ -250,7 +250,10 @@ export class Owner {
   query(q: Query): Answer {
     const held = (ref: Ref) => ("k" in ref ? this.candidates[ref.k] : this.nodes.get(ref.gid)!);
     const twins = new Uint32Array(q.twins.length * 2);
-    q.twins.forEach((ref, i) => twins.set(this.successorsPrint(held(ref)), i * 2));
+    q.twins.forEach((ref, i) => {
+      const node = held(ref);
+      twins.set(successorsPrint(this.spec, node.world, this.roots[node.root].symmetry), i * 2);
+    });
     return { sleeps: q.sleeps.map((ref) => [...held(ref).sleep.keys()].map(nameHash)), twins };
   }
 
@@ -383,17 +386,6 @@ export class Owner {
     return this.nevers.length ? memoryOf(this.nevers, events()).memory : "";
   }
 
-  /** A fingerprint of the worlds one step away, faults aside: twins must agree on it. */
-  private successorsPrint(node: Held): [number, number] {
-    const symmetry = this.roots[node.root].symmetry;
-    const keys = new Set<string>();
-    for (const choice of branches(this.spec, node.world, false)) {
-      const step = apply(this.spec, node.world, choice, QUIET);
-      keys.add(step.event.error ? `error:${step.event.error}` : symmetricKey(step.world, symmetry));
-    }
-    return fingerprint([...keys].sort().join("\n\n"));
-  }
-
   private rootNode(root: number): Held {
     return { world: this.roots[root].world, acts: {}, faults: 0, depth: 0, root, sleep: new Map(), trail: undefined };
   }
@@ -409,6 +401,16 @@ export class Owner {
     for (const event of moved.trail ?? []) trail = { event, up: trail };
     this.nodes.set(moved.gid, { world: freeze(moved.world), acts: moved.acts, faults: moved.faults, depth: moved.depth, root: moved.root, sleep: new Map(moved.sleep), trail });
   }
+}
+
+/** A fingerprint of the worlds one step away, faults aside: renamed twins must agree on it. */
+export function successorsPrint(spec: Spec, world: World, symmetry: Symmetry): [number, number] {
+  const keys = new Set<string>();
+  for (const choice of branches(spec, world, false)) {
+    const step = apply(spec, world, choice, QUIET);
+    keys.add(step.event.error ? `error:${step.event.error}` : symmetricKey(step.world, symmetry));
+  }
+  return fingerprint([...keys].sort().join("\n\n"));
 }
 
 /**
