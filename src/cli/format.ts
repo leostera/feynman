@@ -1,5 +1,5 @@
 // Text output: what agents and people read in a terminal.
-import { faultsIn, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
+import { faultsIn, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
 import type { Event, RunDiff, Spec, World } from "../spec/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
@@ -100,7 +100,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const verdict = options.verdict ?? ((p: PropertyResult) => verdictOf(p, { report, brokenBy }));
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
-  const scope = [instances || "1 of each actor", ...(report.seeds ? [`and from the end of ${report.seeds} scenario(s)`] : []), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
+  const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
     ...(options.brief ? [] : searchNotes(report)),
@@ -144,6 +144,14 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   return lines.join("\n");
 }
 
+/** Which scenario worlds a search also started from: "and from the end of 4 scenario(s) and the setup of 1". */
+function seedsText(seeds: Report["seeds"]): string[] {
+  const ends = seeds.filter((s) => s.at === "end").length;
+  const starts = seeds.length - ends;
+  const parts = [...(ends ? [`the end of ${ends} scenario(s)`] : []), ...(starts ? [`the setup of ${starts}`] : [])];
+  return parts.length ? [`and from ${parts.join(" and ")}`] : [];
+}
+
 /** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
 function unfinishedWhy(report: Report): string {
   if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${report.stoppedBy === "maxStates" ? "state" : "time"} limit, not all of them`;
@@ -164,7 +172,7 @@ function formatBroken(spec: Spec, p: PropertyBroken, options: ReportOptions): st
   const found = p.foundBy === "walk" ? `found by a random run past the search's depth, shrunk to ${ce.events.length} event(s)` : `shortest counterexample, ${ce.events.length} event(s)`;
   const needs = faults ? `needs ${faults} fault(s)` : "needs no faults";
   const shorter = p.shorter ? `; a shorter one, ${p.shorter.events} event(s), needs ${p.shorter.faults} fault(s)` : "";
-  const from = ce.from ? `, from the end of scenario "${ce.from}"` : "";
+  const from = ce.from ? `, from ${placeText(ce.from)}` : "";
   if (options.brief) return [dim(`    ${found}, ${needs}${from}${shorter}${options.command ? `; see it with ${options.command} --only ${p.id}` : ""}`)];
   const lines = [dim(`    ${found}, ${needs}${from}${shorter}:`), indent(formatEvents(spec, ce.events, ce.worlds), 4)];
   if (loop?.events.length) lines.push(dim(`    then this repeats forever, and it never holds:`), indent(formatEvents(spec, loop.events, loop.worlds), 4));

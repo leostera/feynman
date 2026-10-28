@@ -1,8 +1,8 @@
 // Running a spec: a Runner applies steps and keeps the trace; scenarios script one.
-import { act, choices, emptyWorld, fire, guard, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
+import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
-import { sortedJson } from "./json.ts";
+import { sortedJson, unstorable } from "./json.ts";
 
 /** Most events one settle runs: left alone, a retry loop never ends by itself. */
 export const SETTLE_LIMIT = 200;
@@ -17,10 +17,11 @@ export class Runner {
   constructor(
     readonly spec: Spec,
     readonly seed = 1,
+    /** Where to start; by default the spec's start, where the singletons exist, in their initial state. */
+    initial?: World,
   ) {
     // Singletons exist from the start: their spawns are part of the initial world, not the trace.
-    const steps = startWorld(spec, seed);
-    this.initial = steps.at(-1)?.world ?? emptyWorld(seed);
+    this.initial = initial ?? startWorld(spec, seed).at(-1)?.world ?? emptyWorld(seed);
     this.current = this.initial;
   }
 
@@ -118,9 +119,16 @@ export class Runner {
   }
 }
 
-/** Run a scenario from the start. */
+/** Run a scenario, from the world its setup sets, or from the spec's start. */
 export function runScenario(spec: Spec, scenario: ScenarioInfo, seed = 1): Run & { error?: string } {
-  const runner = new Runner(spec, seed);
+  let initial: World;
+  try {
+    initial = scenarioStart(spec, scenario, seed);
+  } catch (error) {
+    const start = startWorld(spec, seed).at(-1)?.world ?? emptyWorld(seed);
+    return { spec: spec.name, seed, initial: start, events: [], worlds: [], error: `setup: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  const runner = new Runner(spec, seed, initial);
   const script = scriptFor(runner);
   try {
     scenario.run(script);
@@ -128,6 +136,42 @@ export function runScenario(spec: Spec, scenario: ScenarioInfo, seed = 1): Run &
     return { ...runner.run(), error: error instanceof Error ? error.message : String(error) };
   }
   return runner.run();
+}
+
+/** The world a scenario starts in: the spec's start, with the scenario's setup applied. */
+export function scenarioStart(spec: Spec, scenario: ScenarioInfo, seed = 1): World {
+  let world = startWorld(spec, seed).at(-1)?.world ?? emptyWorld(seed);
+  if (!scenario.setup) return world;
+  const lay = (id: string, fields: unknown) => {
+    const instance = world.instances.find((i) => i.id === id)!;
+    world = { ...world, instances: world.instances.map((i) => (i.id === id ? { ...i, state: laid(spec, instance, fields) } : i)) };
+  };
+  scenario.setup({
+    set(actor, fields) {
+      const info = actorNamed(spec, actor.name);
+      if (!info.singleton) throw new SpecError(`set(${actor.name}): it is not a singleton; spawn(${actor.name}, label, state) sets up one of them`);
+      lay(world.instances.find((i) => i.actor === actor.name)!.id, fields);
+    },
+    spawn(actor, label, fields) {
+      if (actorNamed(spec, actor.name).singleton) throw new SpecError(`spawn(${actor.name}): it is a singleton, there from the start; set(${actor.name}, state) sets it up`);
+      const { world: next, event } = spawn(spec, world, actor.name, label);
+      world = next;
+      if (fields !== undefined) lay(event.instance, fields);
+    },
+  });
+  return world;
+}
+
+/** An instance's state with `fields` laid over it: only fields its initial state has, and only plain data. */
+function laid(spec: Spec, instance: World["instances"][number], fields: unknown): unknown {
+  const who = instance.actor === instance.label ? instance.actor : `${instance.actor} ${instance.label}`;
+  if (typeof fields !== "object" || fields === null || Array.isArray(fields)) throw new SpecError(`${who}: the state is an object of fields, like { saved: true }`);
+  const state = instance.state as Record<string, unknown>;
+  for (const key of Object.keys(fields)) if (!Object.hasOwn(state, key)) throw new SpecError(`${who}: its state has no field "${key}" (it has ${Object.keys(state).join(", ") || "none"})`);
+  const next = { ...state, ...fields };
+  const odd = unstorable(next, "state");
+  if (odd) throw new SpecError(`${who}: ${notPlain(odd)}`);
+  return freeze(clone(next));
 }
 
 function scriptFor(runner: Runner): Script {

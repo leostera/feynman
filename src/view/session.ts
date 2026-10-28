@@ -1,7 +1,7 @@
 // A playground session: the world at the start, the steps taken since, and the operations
 // that produced them, so a session survives reloads by replaying its operations against
 // the (possibly edited) spec.
-import { act, fire, guard, lose, pendingInOrder, restart, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
+import { act, scenarioStart, fire, guard, lose, pendingInOrder, restart, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 
 /** What a person did in the playground. */
@@ -207,9 +207,20 @@ export function rollback(session: Session, count: number): Session {
   return { ...session, steps: session.steps.slice(0, count), ops: session.ops ? session.ops.slice(0, count) : null };
 }
 
-/** Replay a session's operations against a spec, stopping at the first that no longer applies. */
+/**
+ * Replay a session's operations against a spec, stopping at the first that no longer applies.
+ * A session that began as a scenario with a setup starts in the world its setup sets.
+ */
 export function replay(spec: Spec, ops: Op[], origin: string): Session {
   let session: Session = { ...freshSession(spec), origin };
+  const scenario = spec.scenarios.find((s) => s.name === origin);
+  if (scenario?.setup) {
+    try {
+      session = { ...session, initial: scenarioStart(spec, scenario) };
+    } catch {
+      // A setup that fails leaves the spec's start; the scenario reports why.
+    }
+  }
   for (const op of ops) {
     try {
       const next = apply(spec, session, op);

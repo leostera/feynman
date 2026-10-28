@@ -98,7 +98,7 @@ export function App({ bundle, loaded }: { bundle: Bundle; loaded: Loaded[] }) {
   const openCounterexample = (ce: Counterexample, origin: string) => {
     const source = currentRoute();
     const currentView = parsePlaygroundUrlState(source.query);
-    const from = ce.from ? `${origin}, after “${ce.from}”` : origin;
+    const from = ce.from ? `${origin}, from ${ce.from.at === "end" ? "the end" : "the setup"} of “${ce.from.scenario}”` : origin;
     const nextSession = sessionFromRun({ initial: ce.initial, events: ce.events, worlds: ce.worlds }, from);
     const query = writePlaygroundUrlState(source.query, { ...currentView, ops: nextSession.ops });
     const updated = { spec: current.entry.id, page: "play" as const, item: NEW_SCENARIO, query };

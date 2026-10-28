@@ -221,3 +221,23 @@ export default defineSpec("Count", { messages: {} }, (spec) => {
   expect(out).toContain(`"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is 10 now)`);
   expect((await capture(["check", "count", "--depth", "40", "--walks", "0"], root)).out).toContain("✓ reaches");
 });
+
+test("check: a scenario's setup is explored from, and one that breaks a property says so", async () => {
+  const { root } = repo();
+  writeFileSync(
+    join(root, "specs/ledger.ts"),
+    `import { defineSpec } from "@leostera/feynman";
+export default defineSpec("Ledger", { messages: {} }, (spec) => {
+  const zone = spec.defineZone({ name: "Here" });
+  const Ledger = spec.defineActor({ name: "Ledger", zone, singleton: true, initialState: () => ({ seq: 0 }),
+    actions: { bump: { label: "Bump", description: "Moves on.", sources: ["src/server.ts#say"], run: (s) => void s.seq++ } } });
+  spec.defineProperties({ belowTen: { description: "It stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 } });
+  spec.defineScenario({ name: "Ten already", setup: (w) => w.set(Ledger, { seq: 10 }), run: () => {} });
+});
+`,
+  );
+  const { out } = await capture(["check", "ledger", "--walks", "0"], root);
+  expect(out).toContain(`✗ scenario "Ten already": its setup breaks belowTen`);
+  expect(out).toContain("and from the setup of 1");
+  expect(out).toContain(`shortest counterexample, 0 event(s), needs no faults, from the setup of scenario "Ten already"`);
+});

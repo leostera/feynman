@@ -596,7 +596,7 @@ function frozenCollection(): never {
   throw new TypeError("Cannot change a frozen set or map: it is read-only");
 }
 
-function notPlain(where: string): string {
+export function notPlain(where: string): string {
   return `holds ${where}, which is not plain data: states and payloads hold strings, numbers, booleans, null, arrays, plain objects, sets, maps and dates, so that the checker can tell them apart`;
 }
 

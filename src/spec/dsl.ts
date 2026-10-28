@@ -437,6 +437,22 @@ type ActionsWithoutInputs<A> = [NoInputs<A>] extends [never]
   ? `every action of this actor takes inputs (${ActionsWithInputs<A>}); pass them as the third argument`
   : NoInputs<A>;
 
+/**
+ * The world a scenario starts in, set up rather than reached by events: a repository already
+ * pushed to, a cluster with a leader. Each instance starts in its `initialState` with the
+ * fields given here laid over it. The flow starts after it. It is a claim that the system
+ * gets there; the checker explores from here too, and reports a property this world breaks.
+ */
+export interface Setup {
+  /** A singleton's state at the start: these fields, over its `initialState`. */
+  set<X extends Actor<any, any>>(actor: X, state: Partial<StateOf<X>>): void;
+  /**
+   * An instance there from the start, rather than spawned in the flow: its `initialState`,
+   * with these fields over it. In `run`, find it with `s.the(Actor)` or `s.all(Actor)`.
+   */
+  spawn<X extends Actor<any, any>>(actor: X, label: string, state?: Partial<StateOf<X>>): void;
+}
+
 export interface Script {
   spawn<X extends Actor<any, any>>(actor: X, label: string): Instance<StateOf<X>, ActionsOf<X>>;
   /** The one instance of an actor (a singleton, or the only one spawned). */
@@ -493,7 +509,12 @@ export interface SpecBuilder<M extends Registry> {
    */
   defineFinalState(def: { description: string; when: (world: World) => boolean }): void;
   defineGroup(def: GroupDef): Group;
-  defineScenario(def: { name: string; description?: string; run(script: Script): void }): void;
+  /**
+   * A flow a reader should see, scripted: `run` replays it event by event. `setup`, when
+   * given, sets the world it starts in (see Setup), for a scenario that begins after some
+   * history: a second push, a fetch after pushes.
+   */
+  defineScenario(def: { name: string; description?: string; setup?(setup: Setup): void; run(script: Script): void }): void;
 }
 
 export interface SpecOptions<M extends Registry> {
@@ -564,7 +585,9 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
       return group;
     },
     defineScenario(def) {
-      const scenario: ScenarioInfo = { name: def.name, description: def.description, run: def.run as ScenarioInfo["run"] };
+      if (spec.scenarios.some((s) => s.name === def.name)) throw new Error(`Two scenarios are named "${def.name}"`);
+      if (def.setup !== undefined && typeof def.setup !== "function") throw new Error(`Scenario "${def.name}": setup is a function, like setup(w) { w.set(Store, { saved: true }) }`);
+      const scenario: ScenarioInfo = { name: def.name, description: def.description, ...(def.setup ? { setup: def.setup as ScenarioInfo["setup"] } : {}), run: def.run as ScenarioInfo["run"] };
       spec.scenarios.push(scenario);
     },
   };

@@ -2,7 +2,7 @@
 // outcome is gathered first (SpecCheck), then shown as text, briefly, as JSON, or as the
 // scenario replaying one counterexample.
 import { join } from "node:path";
-import { check, DEFAULT_BOUNDS, faultsIn, Pool, withFewestFaults, type Bounds, type PropertyBroken, type Report, type SpecSource } from "../check/index.ts";
+import { check, DEFAULT_BOUNDS, faultsIn, Pool, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type SpecSource } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
@@ -126,10 +126,14 @@ async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial
   const scenarios = runs.map(({ scenario, run }): ScenarioOutcome => {
     const failure = run.error ?? run.events.find((e) => e.error)?.error;
     if (failure) return { name: scenario.name, broken: failure };
-    const violated = [...new Set(run.events.flatMap((e) => e.violations))];
+    // A setup is a claim the system gets there: a world it sets that breaks a property refutes it, or finds a bug.
+    const atStart = scenario.setup ? startBreaks(spec, run.initial) : [];
+    const later = [...new Set(run.events.flatMap((e) => e.violations))].filter((id) => !atStart.includes(id));
+    const violated = [...atStart, ...later];
     for (const id of violated) if (!brokenBy.has(id)) brokenBy.set(id, scenario.name);
     if (!violated.length) return { name: scenario.name };
-    return { name: scenario.name, broken: violated.join(", "), known: violated.every((id) => known.has(id)) };
+    const broken = [...(atStart.length ? [`its setup breaks ${atStart.join(", ")}`] : []), ...later].join(", ");
+    return { name: scenario.name, broken, known: violated.every((id) => known.has(id)) };
   });
   const seeds = scenarioSeeds(spec, runs);
   const report = await withFewestFaults(spec, await check(spec, merged, seeds, threads), seeds, threads);

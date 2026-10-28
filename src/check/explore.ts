@@ -24,10 +24,10 @@ import { judgeLiveness, type Lasso } from "./liveness.ts";
 import { Owner } from "./owner.ts";
 import { InlineDriver, Pool, type SpecSource } from "./pool.ts";
 import { Search, type Root } from "./search.ts";
-import { apply, replay, type Choice, type Counterexample } from "./steps.ts";
+import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
 import { rebind, shrink, walk, type WalkResult } from "./walk.ts";
 
-export { apply, branches, QUIET, replay, type Choice, type Counterexample } from "./steps.ts";
+export { apply, branches, placeText, QUIET, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
 
 export interface Bounds {
   /** Instances of each actor that is not a singleton (1 by default). */
@@ -135,8 +135,8 @@ export interface Report {
   spec: string;
   bounds: Bounds;
   states: number;
-  /** How many scenario ends were explored from, besides the initial world. */
-  seeds: number;
+  /** The scenario worlds explored from, besides the initial world. */
+  seeds: ScenarioPlace[];
   /** Whether every state within the bounds was explored. */
   exhaustive: boolean;
   /** Why the search stopped early, when it did. */
@@ -164,9 +164,8 @@ export interface Report {
   };
 }
 
-/** A world to explore from besides the initial one, such as where a scenario ends. */
-export interface Seed {
-  name: string;
+/** A world to explore from besides the initial one: where a scenario's setup leaves it, or where it ends. */
+export interface Seed extends ScenarioPlace {
   world: World;
 }
 
@@ -237,7 +236,7 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   try {
     const search = await explore(spec, b, roots, started, options, shares ? (options.pool ?? ownPool) : undefined);
     if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, { ...options, pool: options.pool ?? ownPool }, roots, started);
-    return await reportOf(spec, b, seeds.length, search, walked, walkVerdicts, started);
+    return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
   } finally {
     ownPool?.close();
   }
@@ -272,7 +271,8 @@ function boundsFor(spec: Spec, bounds: Partial<Bounds>): Bounds {
 }
 
 function rootsOf(spec: Spec, b: Bounds, seeds: Seed[]): Root[] {
-  return [{ world: initialWorld(spec, b) }, ...seeds].map((r) => ({ ...r, symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY }));
+  const scenarios = seeds.map(({ world, ...from }): Omit<Root, "symmetry"> => ({ world, from }));
+  return [{ world: initialWorld(spec, b) }, ...scenarios].map((r) => ({ ...r, symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY }));
 }
 
 /** A symmetry claim turned out false: search again without it, and say which actors claimed it. */
@@ -284,9 +284,9 @@ async function withoutSymmetry(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[
 }
 
 /** The report: each property's verdict (from the search, else a random run), errors, stuck, coverage. */
-async function reportOf(spec: Spec, b: Bounds, seeds: number, search: Search, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
+async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: Search, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
   const { roots } = search;
-  const named = (root: number, ce: Counterexample): Counterexample => ({ ...ce, ...(roots[root].name ? { from: roots[root].name } : {}) });
+  const named = (root: number, ce: Counterexample): Counterexample => ({ ...ce, ...(roots[root].from ? { from: roots[root].from } : {}) });
   const fromRoot = (root: number, choices: Choice[]) => named(root, replay(spec, roots[root].world, choices));
   const fromWalk = (id: string): Counterexample | undefined => {
     const found = walked.findings.find((f) => f.id === id);
@@ -365,7 +365,7 @@ async function livenessVerdicts(spec: Spec, liveness: LivenessProperty[], search
       const base = { ...verdictBase(property), ...(verdict.tested === undefined ? {} : { tested: verdict.tested }) };
       if (verdict.holds) return [property.id, { ...base, holds: true, ...(verdict.unfinished || search.stoppedBy ? { unfinished: true } : {}) }];
       const root = search.roots[search.root[verdict.lasso.root]];
-      return [property.id, { ...base, holds: false, ...lassoOf(spec, root.world, verdict.lasso, resolved, root.name), foundBy: "search" }];
+      return [property.id, { ...base, holds: false, ...lassoOf(spec, root.world, verdict.lasso, resolved, root.from), foundBy: "search" }];
     }),
   );
 }
@@ -375,7 +375,7 @@ async function livenessVerdicts(spec: Spec, liveness: LivenessProperty[], search
  * matched to the world they run in by what they carry, since paths through the graph differ
  * from the ones the search took.
  */
-function lassoOf(spec: Spec, start: World, lasso: Lasso, resolved: Map<string, { choice: Choice; world?: World }>, from: string | undefined): { counterexample: Counterexample; loop: Counterexample } {
+function lassoOf(spec: Spec, start: World, lasso: Lasso, resolved: Map<string, { choice: Choice; world?: World }>, from: ScenarioPlace | undefined): { counterexample: Counterexample; loop: Counterexample } {
   const run = (initial: World, steps: Lasso["prefix"]): Counterexample => {
     const out: Counterexample = { initial, choices: [], events: [], worlds: [] };
     let world = initial;

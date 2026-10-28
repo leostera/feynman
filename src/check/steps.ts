@@ -9,9 +9,20 @@ export type Choice =
   | { kind: "restart"; instance: string };
 
 /** A path from the initial world, replayed with every world along it. */
+/** Where in a scenario the checker started a search: the world its setup sets, or where it ends. */
+export interface ScenarioPlace {
+  scenario: string;
+  at: "start" | "end";
+}
+
+/** A scenario place in words: `the end of scenario "First push"`, `the setup of scenario "Second push"`. */
+export function placeText(place: ScenarioPlace): string {
+  return `the ${place.at === "end" ? "end" : "setup"} of scenario "${place.scenario}"`;
+}
+
 export interface Counterexample {
-  /** The scenario whose end the path starts from; none for the empty world. */
-  from?: string;
+  /** The scenario world the path starts from; none for the spec's start. */
+  from?: ScenarioPlace;
   initial: World;
   choices: Choice[];
   events: Event[];

@@ -10,6 +10,7 @@ export type {
   MessageKey,
   ReplyCtx,
   Script,
+  Setup,
   Source,
   SpecBuilder,
   SpecOptions,
@@ -36,7 +37,7 @@ export type {
 } from "./dsl.ts";
 export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./look.ts";
 export * from "./engine.ts";
-export { Runner, runScenario, SETTLE_LIMIT } from "./run.ts";
+export { Runner, runScenario, scenarioStart, SETTLE_LIMIT } from "./run.ts";
 export type * from "./spec.ts";
 export { diffRuns, type RunDiff, type StepDiff, type StepStatus } from "./diff.ts";
 export { flowsOf, type Flow } from "./flows.ts";

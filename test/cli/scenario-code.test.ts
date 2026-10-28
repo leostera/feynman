@@ -3,15 +3,20 @@
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
 import { actorVariable, scenarioCode } from "../../src/cli/scenario-code.ts";
-import { runScenario, type Script, type Spec } from "../../src/spec/index.ts";
+import { scenarioSeeds } from "../../src/cli/shape.ts";
+import { runScenario, type ScenarioInfo, type Script, type Setup, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 
-/** The scenario the code defines, compiled with the spec's actors in scope. */
-function compile(spec: Spec, code: string): (s: Script) => void {
-  const body = code.slice(code.indexOf("run(s) {") + "run(s) {".length, code.lastIndexOf("},"));
-  const run = new Function(...spec.actors.map((a) => actorVariable(a.name)), `return (s) => {${body}}`);
-  const handles = spec.actors.map((a) => ({ name: a.name }));
-  return run(...handles);
+/** The scenario the code defines, its setup and run compiled with the spec's actors in scope. */
+function compile(spec: Spec, name: string, code: string): ScenarioInfo {
+  // The code is TypeScript (`find(…)!`): transpile it, with the spec's actors in scope.
+  const scope = (body: string, param: string) => {
+    const js = new Bun.Transpiler({ loader: "ts" }).transformSync(`const f = (${param}) => {${body}};`);
+    return new Function(...spec.actors.map((a) => actorVariable(a.name)), `${js}\nreturn f;`)(...spec.actors.map((a) => ({ name: a.name })));
+  };
+  const run = code.slice(code.indexOf("run(s) {") + "run(s) {".length, code.lastIndexOf("},"));
+  const setup = code.includes("setup(w) {") ? code.slice(code.indexOf("setup(w) {") + "setup(w) {".length, code.indexOf("\n  },\n  run(s) {")) : null;
+  return { name, run: scope(run, "s") as (s: Script) => void, ...(setup ? { setup: scope(setup, "w") as (w: Setup) => void } : {}) };
 }
 
 for (const example of corpus)
@@ -20,9 +25,12 @@ for (const example of corpus)
     if (!broken.length) continue;
     test(`${caseName(example, c)}: counterexamples replay as scenarios`, async () => {
       const spec = example.spec(c.variant);
-      const report = await check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 });
-      for (const p of report.properties.filter((x) => !x.holds).filter((x) => !x.counterexample.from)) {
-        const run = runScenario(spec, { name: p.id, run: compile(spec, scenarioCode(spec, p)) });
+      const report = await check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 }, scenarioSeeds(spec));
+      for (const p of report.properties.filter((x) => !x.holds)) {
+        const code = scenarioCode(spec, p);
+        // From a scenario world a setup cannot build (messages in flight, fresh ids): the code says to copy the scenario.
+        if (p.counterexample.from && !code.includes("setup(w) {")) continue;
+        const run = runScenario(spec, compile(spec, p.id, code));
         expect(run.error).toBeUndefined();
         const steps = (events: typeof run.events) => events.filter((e) => e.kind !== "spawn").map((e) => `${e.instance} ${e.kind} ${e.key}`);
         // A liveness counterexample is followed by one round of its loop.
