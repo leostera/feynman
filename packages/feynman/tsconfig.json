@@ -13,6 +13,6 @@
     "resolveJsonModule": true,
     "types": ["bun", "node", "vite/client"]
   },
-  "include": ["bin", "src", "test", "examples", "feynman.config.ts"],
+  "include": ["bin", "src", "test", "examples"],
   "exclude": ["test/**/fixtures/projects"]
 }

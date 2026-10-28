@@ -49,7 +49,7 @@ function forAgents(): Plugin {
     generateBundle() {
       if (this.environment.name !== "client") return;
       this.emitFile({ type: "asset", fileName: "llms.txt", source: llmsTxt() });
-      this.emitFile({ type: "asset", fileName: "SKILL.md", source: readFileSync(resolve(import.meta.dirname, "../../skills/feynman/SKILL.md"), "utf8") });
+      this.emitFile({ type: "asset", fileName: "SKILL.md", source: readFileSync(resolve(import.meta.dirname, "../../packages/feynman/skills/feynman/SKILL.md"), "utf8") });
     },
   };
 }

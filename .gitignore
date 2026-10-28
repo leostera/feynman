@@ -1,8 +1,8 @@
 node_modules/
 dist/
-.feynman/index.html
-.feynman/index.html.gz
-.feynman/index.html.br
+**/.feynman/index.html
+**/.feynman/index.html.gz
+**/.feynman/index.html.br
 
 # benchmark results and profiles
-bench/out/
+packages/feynman/bench/out/

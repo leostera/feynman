@@ -13,8 +13,9 @@ import { join, resolve } from "node:path";
 import { readSims, writeSims, type Sim } from "./sims.ts";
 
 const site = resolve(import.meta.dirname, "..");
-const root = resolve(site, "../..");
-const cli = join(root, "bin/feynman.ts");
+/** The package: its CLI, and its examples, which the site publishes as a simulator. */
+const pkg = resolve(site, "../../packages/feynman");
+const cli = join(pkg, "bin/feynman.ts");
 const publicDir = join(site, "public");
 
 /** Run the CLI in a checkout; NO_COLOR keeps the check report plain text. */
@@ -36,9 +37,9 @@ export function cloneOf(sim: Sim): string {
   return dir;
 }
 
-/** Where a simulator's specs are: this repository, or its clone at the recorded commit. */
+/** Where a simulator's specs are: this repository's package, or its clone at the recorded commit. */
 export function checkoutOf(sim: Sim): string {
-  if (sim.build === "deploy") return root;
+  if (sim.build === "deploy") return pkg;
   if (!sim.commit) throw new Error(`${sim.slug} has no commit in sims.json; run bun run sim first`);
   const dir = cloneOf(sim);
   // The commit may be here already (bun run sim fetches it from a local checkout); else ask the remote.
