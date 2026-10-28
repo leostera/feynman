@@ -11,7 +11,7 @@ export default defineConfig({
   accountId: "0f436d2aabf1f872be90b8dd9d5715e6",
   worker: {
     name,
-    compatibilityDate: "2026-10-06",
+    compatibilityDate: "2026-10-23",
     // Files from @cloudflare/sandbox resolves Linux errno names through node:os.
     compatibilityFlags: ["nodejs_compat"],
     entrypoint: "./worker/index.ts",
