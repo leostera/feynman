@@ -602,7 +602,7 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   that keep being possible on and off, `fair: false` for none). Actions and faults are never
   fair: a person may stop, the network may stop failing. A counterexample is a path and then
   a loop it repeats forever (or a world where nothing fair can happen). Liveness turns off
-  the search's reductions and symmetry, so it costs more states. If a loop could lie past the
+  symmetry, so it costs more states. If a loop could lie past the
   depth bound (the worlds never run out, as when retries pile up copies), the verdict is
   unfinished, not holds. When the paths that matter are simply longer than the depth (a push
   through five services and back), raise `--depth`, or `check: { depth }` in
@@ -665,8 +665,8 @@ feynman open
 `--depth` and finds the shortest counterexample. Random runs (`--walks N`, up to
 `--walk-depth` steps, a quarter of the time) go far deeper and find bugs the search cannot
 reach. Their counterexamples are shrunk but may not be the shortest, and they prove nothing.
-A big search is shared among threads (`--workers N`, one fewer than the cores by default),
-with the same result as on one.
+The search runs on one thread, on worlds as integers (RFD0008); `--workers N` applies only
+to the classic search (`FEYNMAN_ENGINE=classic`), which is slower even on several threads.
 Read the verdicts as:
 
 - `✓` holds in every state within the bounds;
