@@ -3,8 +3,8 @@
 import { share, type ShareEnv } from "@feynman/share";
 import { Hono } from "hono";
 
-// The Durable Object and entrypoint share's builds run on are exported from the main module.
-export { ShareBuilder, ShareOutbound } from "@feynman/share";
+// The Durable Objects and entrypoint share's builds run on are exported from the main module.
+export { ShareBuilder, ShareGate, ShareOutbound } from "@feynman/share";
 
 type Bindings = ShareEnv & { readonly ASSETS: Fetcher };
 
