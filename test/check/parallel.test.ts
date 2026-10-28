@@ -1,5 +1,6 @@
 // The search split among worker threads (RFD0007) gives the same report as on one thread:
-// the same states, verdicts, counterexamples, stuck worlds and coverage.
+// the same states, verdicts, counterexamples, stuck worlds and coverage. The classic search is
+// the one that splits; the integer core (which plain safety jobs get) runs on one thread.
 import { afterAll, expect, test } from "bun:test";
 import { check, Pool, type Bounds, type Report } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
@@ -25,9 +26,9 @@ const cases: { name: string; spec: Spec; module: string; export?: string; bounds
 for (const c of cases) {
   test(`${c.name}: the same report on one thread and on four`, async () => {
     const bounds = { walks: 0, timeLimit: 120_000, ...c.bounds };
-    const alone = await check(c.spec, { ...bounds, workers: 0 });
+    const alone = await check(c.spec, { ...bounds, workers: 0 }, [], { engine: "classic" });
     const source = { module: `${import.meta.dir}/../../examples/${c.module}.ts`, ...(c.export ? { export: c.export } : {}) };
-    const shared = await check(c.spec, { ...bounds, workers: 3 }, [], { source, pool });
+    const shared = await check(c.spec, { ...bounds, workers: 3 }, [], { source, pool, engine: "classic" });
     expect(alone.threads).toBe(1);
     expect(shared.threads).toBe(4);
     expect(comparable(shared)).toEqual(comparable(alone));

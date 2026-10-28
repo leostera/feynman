@@ -22,6 +22,7 @@ import { verdicts, type Verdicts } from "./judge.ts";
 import { NO_SYMMETRY, symmetryOf } from "./keys.ts";
 import { judgeLiveness, type Lasso } from "./liveness.ts";
 import { Owner } from "./owner.ts";
+import { fitsIntegerCore, IntegerSearch } from "./integer.ts";
 import { InlineDriver, Pool, type SpecSource } from "./pool.ts";
 import { Search, type Root } from "./search.ts";
 import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
@@ -185,6 +186,20 @@ export interface CheckOptions {
   watch?: Watch;
   /** The frontier size at which workers join (256): lower only to test sharing on small specs. */
   shareFrom?: number;
+  /**
+   * Which search to run: the integer core (integer.ts) when the job fits it, else the classic
+   * one ("auto", the default); or one of them. "integer" on a job it does not fit is an error.
+   * FEYNMAN_ENGINE sets the default, to run a whole suite through one.
+   */
+  engine?: Engine;
+}
+
+export type Engine = "auto" | "classic" | "integer";
+
+function engineFrom(env: string | undefined): Engine {
+  if (env === undefined || env === "") return "auto";
+  if (env === "auto" || env === "classic" || env === "integer") return env;
+  throw new Error(`FEYNMAN_ENGINE is auto, classic or integer, not ${JSON.stringify(env)}`);
 }
 
 /**
@@ -231,6 +246,14 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const roots = rootsOf(spec, b, seeds);
   const walkVerdicts = verdicts();
   const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
+  const engine = options.engine ?? engineFrom(process.env.FEYNMAN_ENGINE);
+  const fits = engine !== "classic" && fitsIntegerCore(spec, b, roots);
+  if (engine === "integer" && !fits) throw new Error("the integer core does safety only, without reductions or symmetry, and from roots with the same instances");
+  if (fits) {
+    const search = new IntegerSearch(spec, b, roots, options.watch ?? {}, started);
+    search.run();
+    return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
+  }
   const shares = options.source !== undefined && b.workers > 0 && !options.watch;
   const ownPool = shares && !options.pool ? new Pool(b.workers) : undefined;
   try {
@@ -284,7 +307,7 @@ async function withoutSymmetry(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[
 }
 
 /** The report: each property's verdict (from the search, else a random run), errors, stuck, coverage. */
-async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: Search, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
+async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: Search | IntegerSearch, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
   const { roots } = search;
   const named = (root: number, ce: Counterexample): Counterexample => ({ ...ce, ...(roots[root].from ? { from: roots[root].from } : {}) });
   const fromRoot = (root: number, choices: Choice[]) => named(root, replay(spec, roots[root].world, choices));
@@ -292,7 +315,9 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: S
     const found = walked.findings.find((f) => f.id === id);
     return found && named(found.root, shrink(spec, roots[found.root].world, found, fromRoot(found.root, found.choices)));
   };
-  const liveness = await livenessVerdicts(spec, spec.properties.filter(isLiveness), search);
+  const live = spec.properties.filter(isLiveness);
+  if (live.length && !(search instanceof Search)) throw new Error("liveness is judged on the classic search's graph");
+  const liveness = search instanceof Search ? await livenessVerdicts(spec, live, search) : new Map<string, PropertyResult>();
   const paths = await search.paths([...search.failures.values(), ...search.errors.values(), ...(search.stuckAt === undefined ? [] : [search.stuckAt])]);
   const fromSearch = (gid: number) => fromRoot(search.root[gid], paths.get(gid)!);
   const properties = spec.properties.map((property): PropertyResult => {
