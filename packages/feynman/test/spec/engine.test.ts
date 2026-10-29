@@ -182,6 +182,21 @@ test("an actor without a zone says so", () => {
   ).toThrow("A: say where it runs, with zone: a zone from spec.defineZone");
 });
 
+test("a timer whose run takes a message says so when the spec is defined", () => {
+  expect(() =>
+    defineSpec("Retries", { messages: {} }, (s) => {
+      const zone = s.defineZone({ name: "z" });
+      s.defineActor({
+        name: "Client",
+        zone,
+        singleton: true,
+        initialState: () => ({ tries: 0 }),
+        transitions: { retry: { description: "Tries again.", run: ((state: { tries: number }, _msg: unknown, _ctx: unknown) => void state.tries++) as never } },
+      });
+    }),
+  ).toThrow("Client.retry: a timer or guarded transition receives no message: its run is (state, ctx), not (state, msg, ctx)");
+});
+
 // A store that keeps pushed commits, and clients that push the next one.
 function repository() {
   return defineSpec("Repository", { messages: { Push: message<{ commit: number }>({ name: "push" }) } }, (s) => {

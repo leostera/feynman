@@ -140,6 +140,8 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   if (report.stuck) {
     lines.push(red(`  ✗ stuck: nothing can happen, and the spec does not call this world final (defineFinalState)`));
     if (!options.brief) lines.push(indent(formatEvents(spec, report.stuck.counterexample.events, report.stuck.counterexample.worlds), 4));
+    const lost = lostHint(spec, report.stuck.counterexample);
+    if (lost) lines.push(yellow(`    ${lost}`));
   }
   if (report.coverage.missed.length) lines.push(yellow(`  never ran: ${report.coverage.missed.join(", ")}`));
   return lines.join("\n");
@@ -178,7 +180,28 @@ function formatBroken(spec: Spec, p: PropertyBroken, options: ReportOptions): st
   const lines = [dim(`    ${found}, ${needs}${from}${shorter}:`), indent(formatEvents(spec, ce.events, ce.worlds), 4)];
   if (loop?.events.length) lines.push(dim(`    then this repeats forever, and it never holds:`), indent(formatEvents(spec, loop.events, loop.worlds), 4));
   else if (loop) lines.push(dim(`    then nothing fair can happen: it stays there forever, and never holds`));
+  const lost = loop && !loop.events.length ? lostHint(spec, ce) : null;
+  if (lost) lines.push(yellow(`    ${lost}`));
   return lines;
+}
+
+/**
+ * For a path that ends with nothing left to happen after a message was lost: the sender is
+ * waiting for an answer that cannot come. Agents tend to make this go away by weakening the
+ * property or calling every quiet world final; say what the code does instead.
+ */
+function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly World[] }): string | null {
+  const lost = path.events.find((e) => e.kind === "lose");
+  if (!lost || !lost.message) return null;
+  const message = spec.messages[lost.message];
+  const labelOf = (id: string | undefined) => path.worlds.at(-1)?.instances.find((i) => i.id === id)?.label ?? id;
+  // A lost request leaves its sender waiting; a lost reply, the one it was for.
+  const waiting = labelOf(message?.tone && message.tone !== "request" ? lost.instance : lost.from);
+  return [
+    `The lost ${message?.name ?? lost.message} to ${labelOf(lost.instance)} is never sent again, so ${waiting} waits for an answer that cannot come.`,
+    `Model what the code does when none comes: a timer that retries, or the error the call raises. If it cannot be lost here, check with --faults 0.`,
+    `If the code has no answer for it, that is a finding: report it, rather than weaken the property or call this world final.`,
+  ].join("\n    ");
 }
 
 export function formatDiff(spec: Spec, scenario: string, diff: RunDiff | "added" | "removed"): string {
