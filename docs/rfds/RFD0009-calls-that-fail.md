@@ -1,7 +1,7 @@
 # RFD0009 - Calls that fail
 
 - Feature Name: `calls`
-- Status: Accepted
+- Status: Implemented
 - Author: `leostera`
 - Start Date: `2026-10-29`
 - Updated: `2026-10-29`
