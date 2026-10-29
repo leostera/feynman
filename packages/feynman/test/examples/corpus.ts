@@ -17,6 +17,7 @@ import { lwwRegister } from "../../examples/lww-register.ts";
 import { gCounter } from "../../examples/g-counter.ts";
 import { orSet } from "../../examples/or-set.ts";
 import { idempotentConsumer } from "../../examples/idempotent-consumer.ts";
+import { retriedCall } from "../../examples/retried-call.ts";
 import { readRepair } from "../../examples/read-repair.ts";
 import { lostUpdate } from "../../examples/lost-update.ts";
 import { outbox } from "../../examples/outbox.ts";
@@ -433,6 +434,29 @@ export const corpus: Example[] = [
         { testCase: "tcBuggy", variant: "buggy", faults: 0 },
         { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
         { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+      ],
+    },
+  },
+  {
+    name: "retried call",
+    spec: retriedCall,
+    cases: [
+      { variant: "buggy", bounds: { depth: 10, faults: 0 }, expect: { chargedOnce: "holds", paymentsEnd: "holds" } },
+      // The bank charges, its answer is lost, the call fails, the client retries, the bank charges again.
+      { variant: "buggy", bounds: { depth: 10, faults: 1 }, expect: { chargedOnce: { events: 5, faults: 1 }, paymentsEnd: "holds" } },
+      { variant: "fixed", bounds: { depth: 12, faults: 2 }, expect: { chargedOnce: "holds", paymentsEnd: "holds" } },
+    ],
+    tla: { module: "RetriedCall", invariants: ["chargedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    p: {
+      project: "RetriedCall",
+      property: "chargedOnce",
+      assertion: "the customer was charged twice",
+      depth: 12,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+        { testCase: "tcFixedTwoFaults", variant: "fixed", faults: 2 },
       ],
     },
   },

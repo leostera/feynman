@@ -37,7 +37,7 @@ The site builds the explorer (simulator, checker, flows) of any public git repos
 \`feynman.config.ts\`, on demand, at \`${SITE}/s/<host>/<path>\`. Add \`?ref=<branch, tag or
 commit>\` for another commit than the default branch's.
 
-- [Feynman's examples](${SITE}/s/github.com/leostera/feynman/): 27 well-known systems (two-phase commit, Raft's vote, chain replication, payments, …), several with deliberate bugs; [their specs](${REPOSITORY}/tree/main/packages/feynman/examples)
+- [Feynman's examples](${SITE}/s/github.com/leostera/feynman/): 28 well-known systems (two-phase commit, Raft's vote, chain replication, payments, …), several with deliberate bugs; [their specs](${REPOSITORY}/tree/main/packages/feynman/examples)
 - [Remote access in axo](${SITE}/s/github.com/leostera/axo/): a model of existing code, people reaching their Macs through Cloudflare Access and a relay
 `;
 }
