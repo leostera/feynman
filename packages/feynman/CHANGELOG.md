@@ -4,6 +4,15 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+### Fixes
+
+- A source naming a generic function or method is found: `src/client.ts#Client.call` for
+  `async call<M extends Keys<T>>(…)`, and `#wrap` for `const wrap = <T,>(value: T) => …`.
+  Type parameters nested inside a function's own type parameters used to hide it ("is not
+  defined"), and the "did you mean" list came up empty too.
+
 ## 0.11.0
 
 ### Checking

@@ -131,6 +131,9 @@ export function findSymbol(lines: string[], symbol: string): [number, number] | 
 const KEYWORDS =
   "(?:export\\s+)?(?:default\\s+)?(?:pub(?:\\([^)]*\\))?\\s+)?(?:public\\s+|private\\s+|protected\\s+|internal\\s+|fileprivate\\s+|open\\s+)?(?:static\\s+|final\\s+|override\\s+|abstract\\s+)*(?:async\\s+|unsafe\\s+|const\\s+|extern\\s+\"[^\"]*\"\\s+)*";
 
+/** Type parameters, `<T>` or `<M extends Keys<Map<string, T>>>`: nested up to three deep, as a regex can. */
+const GENERICS = "<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>";
+
 function definitionPatterns(name: string): RegExp[] {
   const n = name.replace(/[$]/g, "\\$");
   return [
@@ -143,8 +146,8 @@ function definitionPatterns(name: string): RegExp[] {
     // impl Type for Trait … { / impl Trait for Type
     new RegExp(`^\\s*impl(?:<[^>]*>)?\\s+[\\w:<>, ]*\\bfor\\s+${n}\\b`),
     // method: name(…) {   or   async name(…) {   or   name = (…) =>   or   name: function
-    new RegExp(`^\\s*${KEYWORDS}(?:get\\s+|set\\s+)?${n}\\s*(?:<[^>]*>)?\\s*\\([^;]*$`),
-    new RegExp(`^\\s*${KEYWORDS}${n}\\s*[:=]\\s*(?:async\\s*)?(?:function|\\(|[A-Za-z_$][\\w$]*\\s*=>)`),
+    new RegExp(`^\\s*${KEYWORDS}(?:get\\s+|set\\s+)?${n}\\s*(?:${GENERICS})?\\s*\\([^;]*$`),
+    new RegExp(`^\\s*${KEYWORDS}${n}\\s*[:=]\\s*(?:async\\s*)?(?:function|(?:${GENERICS}\\s*)?\\(|[A-Za-z_$][\\w$]*\\s*=>)`),
   ];
 }
 

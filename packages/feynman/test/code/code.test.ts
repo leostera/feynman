@@ -81,6 +81,32 @@ test("symbols are found by their definitions, with their extent, in several lang
   expect(at(TS, "nowhere")).toBeNull();
 });
 
+test("generic functions and methods are found, with type parameters nested in theirs", () => {
+  const GENERIC = [
+    "export class Client<T extends Record<string, unknown>> {",
+    "  async call<M extends KeyMethods<T>>(keys: readonly string[], method: M): Promise<Result<T[M]>[]> {",
+    "    return this.route<M>(keys, method);",
+    "  }",
+    "  private async route<M extends Keys<Map<string, T>>, R = Out<M>>(keys: readonly string[], method: M): Promise<R[]> {",
+    "    return [];",
+    "  }",
+    "}",
+    "export function pick<K extends keyof Shape<T>, T>(value: T, key: K) {",
+    "  return value;",
+    "}",
+    "export const wrap = <T extends Box<T>>(value: T) => {",
+    "  return value;",
+    "};",
+    "const handlers = { send: async <M,>(m: M) => m };",
+  ].join("\n");
+  const at = (symbol: string) => findSymbol(GENERIC.split("\n"), symbol);
+  expect(at("Client")).toEqual([1, 8]);
+  expect(at("Client.call")).toEqual([2, 4]);
+  expect(at("Client.route")).toEqual([5, 7]);
+  expect(at("pick")).toEqual([9, 11]);
+  expect(at("wrap")).toEqual([12, 14]);
+});
+
 test("sources resolve to their text and hash; bad ones say why", () => {
   const root = repo({ "src/relay.ts": TS });
   const ok = resolveSource(root, "src/relay.ts#Relay.redeem");
