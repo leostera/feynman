@@ -5,8 +5,8 @@
 // that are singletons or many (and sometimes declared symmetric), actions with inputs,
 // message handlers, replies, timers started and cancelled, guards, reading other instances,
 // shared counters (fresh ids, random numbers), durable fields across restarts, steps that
-// throw, final states, and every kind of property.
-import { defineSpec, message, type Spec } from "../../src/spec/index.ts";
+// throw, final states, every kind of property, and calls whose failures reach their callers.
+import { call, defineSpec, message, type Spec } from "../../src/spec/index.ts";
 
 type Random = () => number;
 
@@ -67,6 +67,8 @@ export interface SpecDesc {
   bounds: { depth: number; faults: number; repeats: number; instances: Record<string, number> };
   /** A scenario whose setup spawns instances (with `a` set) other than the bounds': a root with a layout of its own. */
   scenario?: { spawns: { actor: number; a: number }[] };
+  /** Messages that are calls (RFD0009), and what each actor does when one it sent fails. */
+  calls?: { messages: number[]; failures: Op[][] };
 }
 
 /** Small specs check quickly; big ones have deeper bounds, more instances and more steps, so more interleavings. */
@@ -153,12 +155,16 @@ export function describe(seed: number, size: Size = "small"): SpecDesc {
   // Drawn last, so the rest of a seed's spec is what it was before scenarios were drawn.
   const many = actors.flatMap((a, i) => (a.singleton ? [] : [i]));
   const scenario = many.length && chance(0.4) ? { scenario: { spawns: Array.from({ length: 1 + int(3) }, () => ({ actor: pick(many), a: int(2) })) } } : {};
-  return { seed, messages, actors, properties, ...final, bounds, ...scenario };
+  // Drawn after the scenario, for the same reason. A failure is handled like a timer: no message to read or answer.
+  const callMessages = chance(0.4) ? Array.from({ length: messages }, (_, m) => m).filter(() => chance(0.5)) : [];
+  const calls = callMessages.length ? { calls: { messages: callMessages, failures: actors.map((_, i) => ops(i, "timer")) } } : {};
+  return { seed, messages, actors, properties, ...final, bounds, ...scenario, ...calls };
 }
 
 /** The spec a description stands for. */
 export function build(desc: SpecDesc): Spec {
-  const messageDefs = Object.fromEntries(Array.from({ length: desc.messages }, (_, m) => [`M${m}`, message<{ v: number }>({ name: `m${m}` })]));
+  const isCall = (m: number) => desc.calls?.messages.includes(m) ?? false;
+  const messageDefs = Object.fromEntries(Array.from({ length: desc.messages }, (_, m) => [`M${m}`, (isCall(m) ? call : message)<{ v: number }>({ name: `m${m}` })]));
   return defineSpec(`Fuzz ${desc.seed}`, { messages: messageDefs }, (spec) => {
     const zone = spec.defineZone({ name: "Zone" });
     const actors: any[] = [];
@@ -218,12 +224,21 @@ export function build(desc: SpecDesc): Spec {
         }
       }
     };
-    for (const a of desc.actors) {
+    desc.actors.forEach((a, index) => {
       const transitions: Record<string, unknown> = {};
       const fairOf = (x: { fair?: Fair }) => (x.fair === undefined ? {} : { fair: x.fair });
       for (const h of a.handlers) transitions[messageKey(h.message)] = { description: `handles M${h.message}`, ...fairOf(h), sends: sendsOf(h.ops), starts: startsOf(h.ops), run: (state: any, msg: any, ctx: any) => runOps(a, h.ops, state, ctx, { payload: msg.v }) };
       for (const t of a.timers) transitions[t.key] = { description: t.key, after: "1 second", ...fairOf(t), sends: sendsOf(t.ops), starts: startsOf(t.ops), run: (state: any, ctx: any) => runOps(a, t.ops, state, ctx, {}) };
       for (const g of a.guards) transitions[g.key] = { description: g.key, ...fairOf(g), when: (s: any) => holds(g.when, s), sends: sendsOf(g.ops), starts: startsOf(g.ops), run: (state: any, ctx: any) => runOps(a, g.ops, state, ctx, {}) };
+      // Every call this actor sends, it handles the failure of, as the DSL requires.
+      const sent = new Set([...a.actions, ...a.handlers, ...a.timers, ...a.guards].flatMap((x) => sendsOf(x.ops)));
+      const failure = desc.calls?.failures[index] ?? [];
+      // A failure handler's own sends count too: a call it sends fails in turn.
+      if ([...sent].some((key) => desc.calls?.messages.some((m) => messageKey(m) === key))) for (const key of sendsOf(failure)) sent.add(key);
+      for (let m = 0; m < desc.messages; m++) {
+        if (!isCall(m) || !sent.has(messageKey(m))) continue;
+        transitions[(spec as any).failed(messageKey(m))] = { description: `M${m} failed`, sends: sendsOf(failure), starts: startsOf(failure), run: (state: any, f: any, ctx: any) => runOps(a, failure, state, ctx, { payload: f.payload.v }) };
+      }
       const actions = Object.fromEntries(
         a.actions.map((x) => [
           x.key,
@@ -250,7 +265,7 @@ export function build(desc: SpecDesc): Spec {
           transitions,
         }),
       );
-    }
+    });
     const worldHolds = (c: WorldCond, w: any) => {
       if (c.quiet && !w.quiet) return false;
       const all = w.all(actors[c.actor]);
