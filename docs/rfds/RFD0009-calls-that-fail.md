@@ -329,5 +329,3 @@ production.
 - `lossy: false` for messages that are never lost.
 - Per-call budgets: "this call may fail at most once", for specs where the fault budget is
   too coarse.
-- A `feynman check` note when a spec's message is sent `over: "https"` or `"rpc"` but isn't
-  a call: likely a model that loses requests silently where the code would throw.
