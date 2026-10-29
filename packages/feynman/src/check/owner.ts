@@ -32,6 +32,12 @@ export interface Facts {
   failed: boolean;
   /** Whether it sets a timer: timers are kept in age order (keys.ts), so two that set one do not commute. */
   setsTimer: boolean;
+  /**
+   * Whether it meets calls' failures (RFD0009): a loss that fails a call, or a restart, which
+   * drops the failures on their way to it. Two such steps may not commute: a restart after a
+   * loss drops the failure, before it does not.
+   */
+  meetsFailures: boolean;
 }
 
 /** A node an owner holds: a world, the budget spent getting there, and what the reductions know of it. */
@@ -191,6 +197,8 @@ export class Owner {
   private readonly nevers: PropertyInfo[];
   private readonly keepsEdges: boolean;
   private readonly predicates: Predicate[];
+  /** Whether the spec has calls, whose failures a restart drops (RFD0009). */
+  private readonly hasCalls: boolean;
   private readonly nodes = new Map<number, Held>();
   private candidates: Candidate[] = [];
   /** Properties this owner knows are broken: by itself, or as the coordinator says. */
@@ -208,6 +216,7 @@ export class Owner {
     this.nevers = spec.properties.filter((p) => p.kind === "never");
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
+    this.hasCalls = Object.values(spec.messages).some((m) => m.call);
   }
 
   prepare(order: Prepare): Prepared {
@@ -322,7 +331,13 @@ export class Owner {
         const id = `${choice.instance}.${choice.key}`;
         inputsTried.set(id, [...(inputsTried.get(id) ?? []), { inputs: choice.inputs, read: observed.inputs }]);
       }
-      const facts: Facts = { target: targetOf(node.world, choice), observed, failed: !!step.event.error, setsTimer: step.event.started.length > 0 };
+      const facts: Facts = {
+        target: targetOf(node.world, choice),
+        observed,
+        failed: !!step.event.error,
+        setsTimer: step.event.started.length > 0,
+        meetsFailures: (choice.kind === "lose" && step.event.sent.length > 0) || (choice.kind === "restart" && this.hasCalls),
+      };
       const sleep = this.childSleep(node, facts, tried, !!only);
       tried.push([name, facts]);
       this.candidateOf(node, choice, option, step, budget, sleep, out);
@@ -542,7 +557,8 @@ function commute(a: Facts, b: Facts): boolean {
     !a.observed.readsOthers &&
     !b.observed.readsOthers &&
     !(a.observed.shared && b.observed.shared) &&
-    !(a.setsTimer && b.setsTimer)
+    !(a.setsTimer && b.setsTimer) &&
+    !(a.meetsFailures && b.meetsFailures)
   );
 }
 

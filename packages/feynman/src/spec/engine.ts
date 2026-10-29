@@ -220,6 +220,8 @@ export function fire(spec: Spec, world: World, pendingId: number, how: StepOptio
     }, how);
   }
   const from = consumed.instances.find((i) => i.id === pending.from);
+  // A call's failure carries the call's payload and whom it was to (the callee, its `from`).
+  const failed = calledBy(pending.message) !== undefined;
   return runStep(spec, consumed, {
     kind: "deliver",
     instance,
@@ -228,7 +230,9 @@ export function fire(spec: Spec, world: World, pendingId: number, how: StepOptio
     delivery,
     notes: pending.text ? [pending.text] : [],
     from,
-    call: (state, ctx) => transition.run(state, pending.payload, ctx),
+    call: failed
+      ? (state, ctx) => transition.run(state, { payload: pending.payload, to: (ctx as { from: unknown }).from }, ctx)
+      : (state, ctx) => transition.run(state, pending.payload, ctx),
   }, how);
 }
 
@@ -245,20 +249,42 @@ export function guard(spec: Spec, world: World, instanceId: string, key: string,
 export function lose(spec: Spec, world: World, pendingId: number, how: StepOptions = FULL): Step {
   const pending = world.pending.find((p) => p.id === pendingId);
   if (!pending || pending.kind !== "deliver") throw new SpecError(`No pending delivery has id ${pendingId}`);
+  if (!losable(pending)) throw new SpecError(`${messageName(spec, pending.message)} happens in ${pending.to}'s own process: it cannot be lost`);
   const next = { ...world, pending: world.pending.filter((p) => p.id !== pendingId) };
   const to = instanceById(world, pending.to);
+  let description = `${messageName(spec, pending.message)} to ${to.label} is lost on the way.`;
+  // Losing a call, or the reply to one, fails the call: its caller hears of it (RFD0009).
+  const failure = failureFor(spec, pending);
+  const sent: Sent[] = [];
+  if (failure) {
+    const id = ++next.seq;
+    next.pending.push({ id, kind: "deliver", ...failure });
+    sent.push({ id, to: failure.to, message: failure.message, payload: failure.payload });
+    const caller = instanceById(world, failure.to).label;
+    description = pending.answers
+      ? `${messageName(spec, pending.message)} to ${to.label} is lost on the way: ${caller}'s ${messageName(spec, pending.answers.message)} fails.`
+      : `${messageName(spec, pending.message)} to ${to.label} is lost on the way: ${caller}'s call fails.`;
+  }
   return finish(spec, world, next, {
     kind: "lose",
     instance: pending.to,
     actor: to.actor,
     key: pending.message,
-    description: `${messageName(spec, pending.message)} to ${to.label} is lost on the way.`,
+    description,
     sources: [],
     message: pending.message,
     payload: pending.payload,
     from: pending.from,
     changes: [],
+    sent,
   }, how);
+}
+
+/** The failure losing this message delivers: for a call, to its sender; for a call's reply, to the one it answers. */
+function failureFor(spec: Spec, pending: Extract<Pending, { kind: "deliver" }>): { to: string; from: string; message: string; payload: unknown } | undefined {
+  if (pending.answers) return { to: pending.to, from: pending.from, message: failureOf(pending.answers.message), payload: pending.answers.payload };
+  if (spec.messages[pending.message]?.call) return { to: pending.from, from: pending.to, message: failureOf(pending.message), payload: pending.payload };
+  return undefined;
 }
 
 /** A fault: an instance restarts. State returns to its initial value, except durable fields; its timers are gone. */
@@ -271,7 +297,8 @@ export function restart(spec: Spec, world: World, instanceId: string, how: StepO
   const next = {
     ...world,
     instances: world.instances.map((i) => (i.id === instanceId ? { ...i, state: freeze(fresh) } : i)),
-    pending: world.pending.filter((p) => !(p.kind === "timer" && p.to === instanceId)),
+    // Its timers are gone, and so are the failures on their way to it: the calls that would have thrown went with its memory.
+    pending: world.pending.filter((p) => !(p.to === instanceId && (p.kind === "timer" || calledBy(p.message) !== undefined))),
   };
   return finish(spec, world, next, {
     kind: "restart",
@@ -325,7 +352,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     ...run.delivery,
   };
   try {
-    const returned = run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe));
+    const returned = run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe, run.delivery));
     if (returned instanceof Promise) throw new SpecError("its run is async: a step happens at once, so it cannot await; tell others with a message and handle their reply in another step");
     // `(s) => s.n++` and `(s) => (s.list = [...])` return what they assign, harmlessly; an object
     // the state does not hold looks like a new state, which would be lost.
@@ -369,9 +396,13 @@ function makeCtx(
   effects: { sent: Sent[]; started: { timer: string }[]; cancelled: string[]; notes: string[] },
   from?: InstanceState,
   observe?: Observation,
+  delivery?: { message: string; payload: unknown },
 ) {
+  // Handling a call: its reply is tagged with the call, so losing it fails the call (RFD0009).
+  const answering = delivery && spec.messages[delivery.message]?.call ? { message: delivery.message, payload: delivery.payload } : undefined;
+  let replied = false;
   const view = worldView(spec, world, observe ? (id) => id !== self.id && (observe.readsOthers = true) : undefined);
-  const send = (to: { id: string }, message: string, payload: unknown, text?: string) => {
+  const send = (to: { id: string }, message: string, payload: unknown, text?: string, answers?: { message: string; payload: unknown }) => {
     if (!step.sends.includes(message)) throw new SpecError(`sends ${message}, which it does not declare in sends`);
     const info = spec.messages[message];
     if (!info) throw new SpecError(`${message} is not one of this spec's messages`);
@@ -382,7 +413,7 @@ function makeCtx(
     const odd = unstorable(payload, "payload");
     if (odd) throw new SpecError(notPlain(odd));
     const body = freeze(clone(payload));
-    world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text });
+    world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text, ...(answers ? { answers } : {}) });
     effects.sent.push({ id, to: target.id, message, payload: body, text });
   };
   return {
@@ -395,7 +426,13 @@ function makeCtx(
     send,
     reply(message: string, payload: unknown, text?: string) {
       if (!from) throw new SpecError("reply is only possible in a message transition");
-      send(from, message, payload, text);
+      if (delivery && calledBy(delivery.message)) throw new SpecError("a failure happens in this instance: there is no one to reply to");
+      if (answering) {
+        if (replied) throw new SpecError(`replies twice to ${messageName(spec, answering.message)}, a call: a call has one reply`);
+        if (spec.messages[message]?.call) throw new SpecError(`replies to ${messageName(spec, answering.message)} with ${messageName(spec, message)}, a call: a call's reply is part of it, not a call of its own`);
+        replied = true;
+      }
+      send(from, message, payload, text, answering);
     },
     start(label: string) {
       if (!step.starts.includes(label)) throw new SpecError(`starts ${label}, which it does not declare in starts`);
@@ -526,7 +563,24 @@ export function traceView(events: readonly Event[]): Trace {
 // Helpers ----------------------------------------------------------------------------------------------
 
 export function messageName(spec: Spec, key: string): string {
+  const call = calledBy(key);
+  if (call) return `${spec.messages[call]?.name ?? call} failed`;
   return spec.messages[key]?.name ?? key;
+}
+
+/** The key a call's failure is delivered as (RFD0009): `failed:message:Write`. */
+export function failureOf(call: string): string {
+  return `failed:${call}`;
+}
+
+/** For a failure's key, the call that failed; otherwise undefined. */
+export function calledBy(key: string): string | undefined {
+  return key.startsWith("failed:") ? key.slice("failed:".length) : undefined;
+}
+
+/** Whether a fault can lose this pending entry: a message, but not a call's failure, which happens in the caller. */
+export function losable(p: Pending): boolean {
+  return p.kind === "deliver" && !calledBy(p.message);
 }
 
 /** A deterministic, readable stand-in for a hash. */
