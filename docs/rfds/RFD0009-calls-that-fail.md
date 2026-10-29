@@ -10,7 +10,7 @@
 
 ## Summary
 
-A message can be declared a **call**: `message<P>({ name: "write", call: true })`. When the
+A message can be declared a **call**, with `call<P>({ name: "write" })` in place of `message`. When the
 checker loses a call, or loses the reply to one, the message no longer vanishes silently.
 Instead, the caller gets the call's **failure**, a transition keyed by `spec.failed(Write)`.
 That is what happens to code that makes an RPC or a `fetch`: the call throws.
@@ -81,9 +81,14 @@ It models a timeout, not a failure:
 
 ### Declaring a call
 
+A call is declared with `call` where a message would use `message`. It takes the same
+options, so the messages list says which of them are calls:
+
 ```ts
+import { call, defineSpec, message } from "@leostera/feynman";
+
 messages: {
-  Write: message<{ key: Key }>({ name: "write", call: true }),
+  Write: call<{ key: Key }>({ name: "write", over: "rpc" }),
   Ok: message<{ key: Key; value: number }>({ name: "ok", tone: "reply" }),
 },
 ```
@@ -150,8 +155,10 @@ a call in flight, and on its reply.
 
 ### Data model
 
-- **`MessageDef`** gains `call?: boolean`. `message()` keeps it on the registry entry, next
-  to `over` and `tone`.
+- **`call<P>(def)`** is exported next to `message`, with the same options. It returns a
+  `MessageDef<P>` marked as a call, and the registry entry keeps `call: true` next to `over`
+  and `tone`. Everything that takes a message takes a call: `sends`, `ctx.send`, transitions
+  keyed by it, `trace.count`.
 - **`spec.failed(key)`** returns the transition key `failed:<message key>`.
   - `TransitionsFor` accepts `failed:${MessageKey}` keys, with
     `run(state, failure: { payload: PayloadOf<M, P>; to: Instance }, ctx)`.
@@ -203,9 +210,9 @@ a call in flight, and on its reply.
 
 ### Compatibility and migration
 
-Nothing changes for a spec without `call: true`. Feynman is v0, so `call` lands without a
+Nothing changes for a spec without a `call`. Feynman is v0, so `call` lands without a
 flag. The skill's timer workaround (from the change that added the lost-message hint) is
-replaced by `call: true` in the "Faults" bullet.
+replaced by `call` in the "Faults" bullet.
 
 ### Rollout and validation
 
@@ -223,7 +230,7 @@ replaced by `call: true` in the "Faults" bullet.
    playground's "fail the call".
 5. **The skill:** "Faults" says when a message is a call (RPC, `fetch`, a Durable Object
    stub, a request on a connection that closes) and shows the retry pattern. The lost-message
-   hint names `call: true` when the lost message isn't already a call.
+   hint names `call` when the lost message isn't already a call.
 
 ## Drawbacks
 
@@ -258,6 +265,11 @@ disappears from the search.
 
 ### Other alternatives considered
 
+- **A flag on the message,** `message({ name: "write", call: true })` or `fails: true`. It
+  works, but a call is a different kind of message, with a failure and at most one reply.
+  Its own constructor says so where messages are declared, and keeps `message`'s options
+  about how a message looks. `over: "rpc"` was rejected too: `over` is free text for
+  readers, and shouldn't change behaviour.
 - **`ctx.call(target, Write, payload)` instead of a message flag.** The sender chooses per
   send. It's more flexible, but the same message would sometimes be a call and sometimes
   not, and the callee's `ctx.reply` would need to know which. Rejected for now; it could
@@ -294,12 +306,9 @@ production.
 
 ### Before acceptance
 
-- **The name.** `call: true`, `fails: true`, or `over: "rpc"` with a meaning attached? A
-  flag that reads as what the code does seems best. `over` is already free text for
-  readers, and shouldn't change behaviour.
 - **The missing handler.** Should a call without a failure handler be an error (proposed)
   or a warning? An error is stricter, but every existing RPC spec gets louder the day it
-  adopts `call: true`.
+  adopts `call`.
 
 ### During implementation
 
