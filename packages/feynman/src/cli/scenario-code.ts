@@ -86,7 +86,8 @@ function line(event: Event, before: World, choice: Counterexample["choices"][num
       return `s.act(${who}, ${json(event.key)}${event.inputs && Object.keys(event.inputs).length ? `, ${json(event.inputs)}` : ""});`;
     case "deliver":
     case "lose": {
-      const message = event.key.replace(/^message:/, "");
+      // "Charge", or "failed:Charge" for a call's failure.
+      const message = event.key.replace("message:", "");
       const call = event.kind === "deliver" ? "deliver" : "drop";
       return `s.${call}(${who}, ${json(message)}${needsPayload(before, choice, event) ? `, ${json(event.payload)}` : ""});${event.from ? ` // from ${names.of(event.from, before)}` : ""}`;
     }

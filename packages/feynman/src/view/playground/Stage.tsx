@@ -7,7 +7,7 @@ import { cn } from "@cloudflare/kumo";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { declaresLinks, labelled, worldView, type Actor, type Event, type InstanceState, type Pending, type Spec, type Token, type World } from "../../spec/index.ts";
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "../../play/index.ts";
-import { labelOf, messageName, short } from "../format";
+import { labelOf, messageName, messageTone, short } from "../format";
 import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Layouts, type Sizes, type View, type ZoneBox } from "../layout";
 import { nodeDisplay, sceneLinks, shownAs, type NodeDisplay, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
@@ -571,7 +571,7 @@ export function TokenChip({ token, holder, onPick }: { token: Token; holder?: { 
 /** The faint path a message travels. */
 function Trail({ pending, scene, graph }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout }) {
   const { spec } = useExplorer();
-  const tone = spec.messages[pending.message]?.tone;
+  const tone = messageTone(spec, pending.message);
   const c = flight(pending, scene, graph, tone);
   if (!c) return null;
   return <path d={c.d} fill="none" stroke={toneColor(tone)} strokeOpacity={0.3} strokeWidth={1.5} strokeDasharray="2 5" />;
@@ -589,11 +589,11 @@ const IN_FLIGHT = 0.35;
 /** A message in flight; `progress` (0 to 1) carries it from where it waits to its destination. */
 function Packet({ pending, scene, graph, world, progress, next, live, onClick }: { pending: Extract<Pending, { kind: "deliver" }>; scene: Scene; graph: Layout; world: World; progress: number; next: boolean; live: boolean; onClick: () => void }) {
   const { spec } = useExplorer();
-  const message = spec.messages[pending.message];
-  const c = flight(pending, scene, graph, message?.tone);
+  const tone = messageTone(spec, pending.message);
+  const c = flight(pending, scene, graph, tone);
   if (!c) return null;
   const at = c.at(0.04 + (IN_FLIGHT + (1 - IN_FLIGHT) * progress) * 0.92);
-  const color = toneColor(message?.tone);
+  const color = toneColor(tone);
   const name = messageName(spec, pending.message);
   if (routineDelivery(spec, world, pending)) {
     return <span className="pointer-events-none absolute z-10 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60" style={{ left: at.x, top: at.y, background: color }} title={name} />;

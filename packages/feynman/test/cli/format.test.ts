@@ -33,7 +33,7 @@ test("a path that ends waiting on a lost message says who waits, and what to mod
   // Losing the write leaves its sender waiting; losing the reply, the one it was for. The shortest path loses the write.
   expect(text).toContain("then nothing fair can happen: it stays there forever, and never holds\n    The lost write to Store is never sent again, so Client waits for an answer that cannot come.");
   expect(text).toContain("✗ stuck");
-  expect(text.match(/Model what the code does when none comes: a timer that retries, or the error the call raises/g)).toHaveLength(2);
+  expect(text.match(/Model what the code does when none comes: if the code is told \(an RPC or fetch that throws\), declare write with call\(…\) and handle its failure; otherwise a timer that retries/g)).toHaveLength(2);
   // Without faults, nothing is lost, and nothing is said about it.
   expect(plain(formatReport(writes, await check(writes, { depth: 10, faults: 0, walks: 0 })))).not.toContain("lost");
 });

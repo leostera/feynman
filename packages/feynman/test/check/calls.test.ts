@@ -198,3 +198,18 @@ test("reductions and symmetry keep the verdicts on calls", async () => {
     expect(reduced.properties.map((p) => [p.id, p.holds])).toEqual(plain.properties.map((p) => [p.id, p.holds]));
   }
 });
+
+test("a scenario delivers a call's failure by the call's name, and --as-scenario writes it so", async () => {
+  const { retriedCall } = await import("../../examples/retried-call.ts");
+  const { runScenario } = await import("../../src/spec/index.ts");
+  const { scenarioCode } = await import("../../src/cli/scenario-code.ts");
+  const spec = retriedCall("buggy");
+  const lost = spec.scenarios.find((s) => s.name === "The answer is lost")!;
+  const run = runScenario(spec, lost);
+  expect(run.error).toBeUndefined();
+  expect(run.events.map((e) => e.key)).toEqual(["pay", "message:Charge", "message:Charged", "failed:message:Charge", "message:Charge", "message:Charged"]);
+  const report = await check(spec, { ...PLAIN, faults: 1 }, [], { engine: "integer" });
+  const broken = report.properties.find((p) => p.id === "chargedOnce")!;
+  if (broken.holds) throw new Error("chargedOnce should break");
+  expect(scenarioCode(spec, broken)).toContain('s.deliver(client, "failed:Charge"); // from bank');
+});

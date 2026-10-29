@@ -1,7 +1,7 @@
 // Text output: what agents and people read in a terminal.
 import { faultsIn, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
-import type { Event, RunDiff, Spec, World } from "../spec/index.ts";
+import { messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -27,7 +27,7 @@ function label(world: World | undefined, id: string): string {
 
 function stepName(spec: Spec, event: Event): string {
   if (event.kind === "spawn" || event.kind === "restart" || event.kind === "lose") return event.kind;
-  if (event.key.startsWith("message:")) return spec.messages[event.key]?.name ?? event.key;
+  if (event.key.startsWith("message:") || event.key.startsWith("failed:")) return messageName(spec, event.key);
   return event.key;
 }
 
@@ -43,7 +43,7 @@ export function formatEvent(spec: Spec, event: Event, world?: World, position = 
   if (event.kind !== "spawn") lines.push(pad + dim(event.description));
   for (const note of event.notes) lines.push(pad + dim(`“${note}”`));
   if (event.kind !== "spawn") for (const c of event.changes) lines.push(`${pad}${c.path || "state"}: ${value(c.before)} → ${value(c.after)}`);
-  for (const s of event.sent) lines.push(`${pad}→ ${label(world, s.to)}: ${spec.messages[s.message]?.name ?? s.message} ${dim(value(s.payload))}`);
+  for (const s of event.sent) lines.push(`${pad}→ ${label(world, s.to)}: ${messageName(spec, s.message)} ${dim(value(s.payload))}`);
   for (const t of event.started) lines.push(`${pad}${dim(`⏱ ${t.timer} set`)}`);
   for (const t of event.cancelled) lines.push(`${pad}${dim(`⏱ ${t} cancelled`)}`);
   if (event.error) lines.push(`${pad}${red(`spec error: ${event.error}`)}`);
@@ -191,7 +191,8 @@ function formatBroken(spec: Spec, p: PropertyBroken, options: ReportOptions): st
  * property or calling every quiet world final; say what the code does instead.
  */
 function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly World[] }): string | null {
-  const lost = path.events.find((e) => e.kind === "lose");
+  // A loss that failed a call was heard: its caller's failure handler ran (RFD0009).
+  const lost = path.events.find((e) => e.kind === "lose" && e.sent.length === 0);
   if (!lost || !lost.message) return null;
   const message = spec.messages[lost.message];
   const labelOf = (id: string | undefined) => path.worlds.at(-1)?.instances.find((i) => i.id === id)?.label ?? id;
@@ -199,7 +200,7 @@ function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly
   const waiting = labelOf(message?.tone && message.tone !== "request" ? lost.instance : lost.from);
   return [
     `The lost ${message?.name ?? lost.message} to ${labelOf(lost.instance)} is never sent again, so ${waiting} waits for an answer that cannot come.`,
-    `Model what the code does when none comes: a timer that retries, or the error the call raises. If it cannot be lost here, check with --faults 0.`,
+    `Model what the code does when none comes: if the code is told (an RPC or fetch that throws), declare ${message?.name ?? lost.message} with call(…) and handle its failure; otherwise a timer that retries. If it cannot be lost here, check with --faults 0.`,
     `If the code has no answer for it, that is a finding: report it, rather than weaken the property or call this world final.`,
   ].join("\n    ");
 }

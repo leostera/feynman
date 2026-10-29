@@ -90,13 +90,15 @@ export class Runner {
 
   /** A message in flight to `instance`: the oldest named `message`, or the oldest carrying `payload`. */
   inFlight(instance: string, message: string, payload?: unknown): number {
-    const key = message.startsWith("message:") ? message : `message:${message}`;
+    // A call's failure is named for the call: "failed:Charge" (RFD0009).
+    const named = (m: string) => (m.startsWith("message:") ? m : `message:${m}`);
+    const key = message.startsWith("failed:") ? `failed:${named(message.slice("failed:".length))}` : named(message);
     const wanted = payload === undefined ? undefined : sortedJson(payload);
     const match = this.current.pending
       .filter((p) => p.kind === "deliver" && p.to === instance && p.message === key)
       .sort((a, b) => a.id - b.id)
       .find((p) => wanted === undefined || (p.kind === "deliver" && sortedJson(p.payload) === wanted));
-    if (!match) throw new SpecError(`No ${key.slice("message:".length)}${wanted ? ` carrying ${wanted}` : ""} is in flight to ${instance}`);
+    if (!match) throw new SpecError(`No ${key.replace("message:", "")}${wanted ? ` carrying ${wanted}` : ""} is in flight to ${instance}`);
     return match.id;
   }
 

@@ -341,10 +341,20 @@ function messageArrows(rows: Row[]): { from: string; to: string; sentAt: number;
   const used = new Set<number>();
   for (let i = 0; i < rows.length; i++) {
     for (const sent of rows[i].event.sent) {
-      const j = rows.findIndex((r, k) => k > i && !used.has(k) && (r.event.kind === "deliver" || r.event.kind === "lose") && r.event.instance === sent.to && (r.event.message ?? r.event.key) === sent.message && r.event.from === rows[i].event.instance);
+      // A call's failure is sent by the loss that caused it, but comes from the callee (RFD0009).
+      const failure = sent.message.startsWith("failed:");
+      const j = rows.findIndex(
+        (r, k) =>
+          k > i &&
+          !used.has(k) &&
+          (r.event.kind === "deliver" || r.event.kind === "lose") &&
+          r.event.instance === sent.to &&
+          (r.event.message ?? r.event.key) === sent.message &&
+          (failure || r.event.from === rows[i].event.instance),
+      );
       if (j < 0) continue;
       used.add(j);
-      arrows.push({ from: rows[i].event.instance, to: sent.to, sentAt: i, at: j, lost: rows[j].event.kind === "lose" });
+      arrows.push({ from: failure ? rows[j].event.from ?? rows[i].event.instance : rows[i].event.instance, to: sent.to, sentAt: i, at: j, lost: rows[j].event.kind === "lose" });
     }
   }
   return arrows;

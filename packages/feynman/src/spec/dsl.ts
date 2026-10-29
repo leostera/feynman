@@ -511,6 +511,7 @@ export interface Script {
   /**
    * Deliver a message in flight to `who` now, ahead of the rest: the oldest one named
    * `message`, or the oldest carrying `payload` when given. Any message may overtake another.
+   * A call's failure is named for the call: `s.deliver(client, "failed:Charge")`.
    */
   deliver(who: Instance<any, any>, message: string, payload?: unknown): void;
   /** Lose a message in flight to `who` now, picked as `deliver` picks it. A fault. */
