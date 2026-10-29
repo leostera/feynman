@@ -864,9 +864,12 @@ function PacketMenu({ pending, world, onClose, onRun }: { pending: Extract<Pendi
       <Button size="xs" variant="primary" icon={<PlayIcon size={12} />} onClick={() => onRun({ op: "fire", pending: pending.id })}>
         Deliver now
       </Button>
-      <Button size="xs" variant="secondary-destructive" icon={<XIcon size={12} />} onClick={() => onRun({ op: "lose", pending: pending.id })}>
-        Lose it
-      </Button>
+      {/* A call's failure happens in the caller: it cannot be lost. Losing a call, or its reply, fails the call (RFD0009). */}
+      {!pending.message.startsWith("failed:") && (
+        <Button size="xs" variant="secondary-destructive" icon={<XIcon size={12} />} onClick={() => onRun({ op: "lose", pending: pending.id })}>
+          {pending.answers || spec.messages[pending.message]?.call ? "Fail the call" : "Lose it"}
+        </Button>
+      )}
       <Button size="xs" variant="ghost" shape="square" aria-label="Close" icon={<XIcon size={12} />} onClick={onClose} />
     </div>
   );

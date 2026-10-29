@@ -548,12 +548,18 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
 - **Repeats.** The checker lets each instance take the same action at most `--repeats N`
   times on one path (2 by default). Raise it when a bug needs more.
 - **Faults.** The checker loses messages and restarts instances within `--faults N` (1 by
-  default). State listed in `durable` survives a restart. A lost message is lost silently:
-  the sender hears nothing. When its code would hear (an RPC or `fetch` throws, a stream
-  closes), model what it does then as a timer on the sender, set with the send and cancelled
-  by the answer (`failed`, `after: "when the call throws"`), and let the timer retry or give
-  up as the code does. A counterexample that ends with someone waiting on a lost message is
-  the code having no answer for it (a finding), or the model missing the one it has.
+  default). State listed in `durable` survives a restart. A message is lost silently: the
+  sender hears nothing, as with a queue, a datagram or a stream. A **call** is a message
+  whose failure reaches the caller, as an RPC, a `fetch` or a Durable Object stub throws:
+  declare it with `call<P>({ name })` instead of `message`. Losing it, or the reply its
+  handler sends with `ctx.reply`, delivers its failure to the caller, handled by a
+  transition keyed by `spec.failed(Call)`: `run(state, failure, ctx)`, with
+  `failure.payload` and `failure.to`. The caller cannot tell which was lost, as the code
+  cannot: a retry after a lost reply runs the call twice, so that is where to look for
+  duplicates. Every actor that sends a call handles its failure (retry, give up, or record
+  it); a call has one reply; a restart drops the failures on their way to the instance. A
+  counterexample that ends with someone waiting on a lost message is the code having no
+  answer for it (a finding), or the model missing the one it has (often: it is a call).
 - **Time.** Specs have no clock: a run is an order of events, and anything pending may go
   next. A timer (`ctx.start(name)`) may fire at any moment until it fires or is cancelled,
   so "the retry fires before the reply arrives" is always possible, as it is in production.

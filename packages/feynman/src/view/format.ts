@@ -29,7 +29,14 @@ export function short(value: unknown, max = 48): string {
 }
 
 export function messageName(spec: Spec, key: string): string {
+  // A call's failure (RFD0009) is named for the call: "charge failed".
+  if (key.startsWith("failed:")) return `${messageName(spec, key.slice("failed:".length))} failed`;
   return spec.messages[key]?.name ?? key.replace(/^message:/, "");
+}
+
+/** How a message reads on screen; a call's failure reads as refused. */
+export function messageTone(spec: Spec, key: string): Spec["messages"][string]["tone"] | undefined {
+  return key.startsWith("failed:") ? "refused" : spec.messages[key]?.tone;
 }
 
 export function labelOf(world: World | undefined, id: string): string {

@@ -6,6 +6,24 @@ after.
 
 ## Unreleased
 
+### Writing specs: calls that fail
+
+- `call<P>({ name })` declares a message whose failure reaches its caller, as an RPC, a
+  `fetch` or a Durable Object stub throws (RFD0009). The checker can lose it, or the reply
+  its handler sends with `ctx.reply`, and either way the caller gets the call's failure:
+  `[spec.failed(Charge)]: { run(state, failure, ctx) { … } }`, with `failure.payload` and
+  `failure.to`. The caller cannot tell which was lost, so a retry after a lost reply runs the
+  call twice: the duplicates a silent loss never reaches.
+  - A failure costs one fault, as a loss does, and it cannot be lost itself. A restart of the
+    caller drops the failures on their way to it.
+  - An actor that sends a call must handle its failure, a call has one reply, and that reply
+    is not a call: each is an error.
+  - Scenarios deliver a failure by the call's name: `s.deliver(client, "failed:Charge")`.
+    In the playground, "Fail the call" replaces "Lose it" on a call and on its reply.
+- A new example, `retried-call.ts`: a client that retries a payment when the call to the bank
+  fails charges twice when the answer is lost, and an idempotency key fixes it. TLC and P
+  agree with the checker on it.
+
 ### Checking
 
 - A counterexample that ends with someone waiting on a lost message (a liveness verdict where
