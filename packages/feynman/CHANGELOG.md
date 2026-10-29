@@ -4,9 +4,9 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
-## Unreleased
+## 0.12.0
 
-### Writing specs: calls that fail
+### Calls that fail
 
 - `call<P>({ name })` declares a message whose failure reaches its caller, as an RPC, a
   `fetch` or a Durable Object stub throws (RFD0009). The checker can lose it, or the reply
@@ -28,8 +28,9 @@ after.
 
 - A counterexample that ends with someone waiting on a lost message (a liveness verdict where
   nothing fair can happen, or a stuck world) says who waits for what, and what to model
-  instead: a timer that retries, or the error the call raises; `--faults 0` if it cannot be
-  lost. It is a finding, not a reason to weaken the property or call every quiet world final.
+  instead: a `call` when the code is told (an RPC or fetch that throws), otherwise a timer
+  that retries; `--faults 0` if it cannot be lost. It is a finding, not a reason to weaken
+  the property or call every quiet world final.
 - Type errors are said again at the end of `feynman check`'s report, so its last lines (a
   `tail`) show that the results come from code that does not compile.
 
@@ -38,9 +39,8 @@ after.
 - A timer or guarded transition whose `run` takes a message, `run(state, msg, ctx)`, is an
   error when the spec is defined: it receives no message, and its run is `(state, ctx)`. It
   used to fail when it first ran, on `ctx` being undefined.
-- The skill: what to do when a call's failure reaches its caller (a timer on the caller, set
-  with the send), why a final state of `w.quiet` alone hides deadlocks, and pointing sources
-  at methods rather than classes.
+- The skill: calls, why a final state of `w.quiet` alone hides deadlocks, and pointing
+  sources at methods rather than classes.
 
 ### Fixes
 
