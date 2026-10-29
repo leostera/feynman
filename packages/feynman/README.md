@@ -109,7 +109,7 @@ export default defineSpec(
 );
 ```
 
-[`examples/`](examples/) has 27 well-known systems (two-phase commit, Raft's vote, chain
+[`examples/`](examples/) has 28 well-known systems (two-phase commit, Raft's vote, chain
 replication, CRDTs, dining philosophers and more), each with a real bug for the checker to
 find, the fix beside it, and most with TLA+ and P models that check the checker.
 
