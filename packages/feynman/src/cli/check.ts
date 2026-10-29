@@ -95,6 +95,11 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   } finally {
     pool.close();
   }
+  // Type errors print first; said again last, so the end of the output (a `tail`) still shows them.
+  if (typeErrors.length) {
+    const files = [...new Set(typeErrors.map((e) => e.file))];
+    out(red(`✗ ${typeErrors.length} type error(s) in ${files.join(", ")}, listed at the top: the results above may come from code that does not compile`));
+  }
   if (options.output === "json") console.log(JSON.stringify({ ok: status === 0, typeErrors, specs: results.map(toJson) }, null, 2));
   return status;
 }

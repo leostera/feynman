@@ -241,3 +241,13 @@ export default defineSpec("Ledger", { messages: {} }, (spec) => {
   expect(out).toContain("and from the setup of 1");
   expect(out).toContain(`shortest counterexample, 0 event(s), needs no faults, from the setup of scenario "Ten already"`);
 });
+
+test("type errors are said again at the end, so the end of the output shows them", async () => {
+  const { root, commit } = repo();
+  writeFileSync(join(root, "specs/echo.ts"), SPEC(false).replace("state.heard.push(msg.text);", "state.heard.push(msg.text.length);"));
+  commit("echo");
+  const check = await capture(["check", "--depth", "4", "--brief"], root);
+  expect(check.status).toBe(1);
+  expect(check.out).toContain("specs/echo.ts:");
+  expect(check.out.trimEnd().split("\n").at(-1)).toBe("✗ 1 type error(s) in specs/echo.ts, listed at the top: the results above may come from code that does not compile");
+}, 60_000);

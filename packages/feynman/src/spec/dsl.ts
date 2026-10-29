@@ -664,6 +664,11 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
   for (const [key, step] of Object.entries(raw.transitions ?? {})) {
     const message = key.startsWith("message:") ? key : undefined;
     if (message && !spec.messages[message]) throw new Error(`${raw.name}: ${message} is not one of this spec's messages`);
+    // Keyed by a label, it is a timer or a guarded step: no message arrives, so its run is
+    // (state, ctx). A third parameter would take ctx's place and fail when it first runs.
+    if (!message && step.run.length >= 3) {
+      throw new Error(`${raw.name}.${key}: a timer or guarded transition receives no message: its run is (state, ctx), not (state, msg, ctx)`);
+    }
     transitions[key] = {
       key,
       message,
