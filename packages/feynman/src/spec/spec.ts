@@ -41,6 +41,11 @@ export interface MessageInfo {
   name: string;
   over?: string;
   tone: "request" | "reply" | "refused" | "stream";
+  /**
+   * A call (RFD0009): losing it, or the reply to it, gives the caller its failure, delivered
+   * as `failed:<key>`, instead of silence.
+   */
+  call: boolean;
 }
 
 export interface ZoneInfo {
@@ -188,6 +193,8 @@ export type Pending =
       message: string;
       payload: unknown;
       text?: string;
+      /** For a reply to a call (RFD0009): the call it answers, whose failure losing it gives. */
+      answers?: { message: string; payload: unknown };
     }
   | {
       id: number;

@@ -21,7 +21,7 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, fire, guard, holdsIn, isLiveness, lose, observation, restart, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Watch } from "./explore.ts";
 import { startBreaks, stuck } from "./judge.ts";
@@ -209,6 +209,10 @@ export class IntegerSearch {
 
   private instanceStates = new Interner<Instance>();
   private pendings = new Interner<PendingTemplate>();
+  /** By pending id: whether a fault can lose it (a call's failure cannot; engine.ts losable). */
+  private canLose: boolean[] = [];
+  /** By pending id, the instance a call's failure is on its way to; a restart drops it, so it is in what a restart does. */
+  private failureTo: (string | undefined)[] = [];
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
   private timerLists = new Interner<string>();
@@ -854,6 +858,12 @@ export class IntegerSearch {
     // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
     if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
     const local = vector[slot] * 1_048_576 + timers;
+    // A restart drops the failures on their way to it, which the key does not hold: work it out each time then.
+    if (choice.kind === "restart" && this.failuresTo(vector, L, choice.instance)) {
+      const world = here.world();
+      const step = run(this.spec, world, choice, observation());
+      return this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event);
+    }
     let byArg = L.cache.get(local);
     if (!byArg) L.cache.set(local, (byArg = new Map()));
     const cached = byArg.get(arg);
@@ -865,6 +875,11 @@ export class IntegerSearch {
     if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0 };
     byArg.set(arg, effect);
     return effect;
+  }
+
+  private failuresTo(vector: Int32Array, L: Layout, instance: string): boolean {
+    for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) if (this.failureTo[vector[i]] === instance) return true;
+    return false;
   }
 
   private argOf(choice: Choice): number {
@@ -997,7 +1012,7 @@ export class IntegerSearch {
     const pending = vector.length - L.messages - 1;
     for (let k = 1; k <= pending; k++) out.push(fireAt(k));
     if (vector[L.faults] < this.b.faults) {
-      for (let k = 1; k <= vector[L.messages]; k++) out.push(loseAt(k));
+      for (let k = 1; k <= vector[L.messages]; k++) if (this.canLose[vector[L.messages + k]]) out.push(loseAt(k));
       for (const c of L.restarts) out.push(c);
     }
     return out;
@@ -1043,11 +1058,16 @@ export class IntegerSearch {
 
   /** As keys.ts pendingText writes it: symmetric fingerprints rename it. */
   private pendingId(p: Pending): number {
-    const key = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}` : `t|${p.to}|${p.timer}`;
-    return this.pendings.id(key, () => {
+    const key = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}${p.answers ? `|a|${p.answers.message}|${sortedJson(p.answers.payload)}` : ""}` : `t|${p.to}|${p.timer}`;
+    const id = this.pendings.id(key, () => {
       const { id: _, ...template } = p;
       return template;
     });
+    if (this.canLose[id] === undefined) {
+      this.canLose[id] = losable(p);
+      this.failureTo[id] = p.kind === "deliver" && calledBy(p.message) ? p.to : undefined;
+    }
+    return id;
   }
 
   private freshId(fresh: Record<string, number>): number {

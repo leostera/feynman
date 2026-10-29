@@ -1,5 +1,5 @@
 // Steps the checker can take from a world, and replaying them.
-import { act, actorNamed, choices, fire, guard, lose, restart, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
+import { act, actorNamed, choices, fire, guard, losable, lose, restart, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
 
 export type Choice =
   | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }
@@ -41,7 +41,7 @@ export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[
   // Anything pending may happen next: any message may overtake any other, and a timer may fire at any moment (RFD0004).
   for (const p of pending) out.push({ kind: "fire", pending: p.id });
   if (faultsLeft) {
-    for (const p of pending) if (p.kind === "deliver") out.push({ kind: "lose", pending: p.id });
+    for (const p of pending) if (losable(p)) out.push({ kind: "lose", pending: p.id });
     for (const instance of world.instances) if (!actorNamed(spec, instance.actor).singleton) out.push({ kind: "restart", instance: instance.id });
   }
   return out;

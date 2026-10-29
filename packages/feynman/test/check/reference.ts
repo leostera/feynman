@@ -11,7 +11,7 @@
 // properties are left to the checker.
 import { initialWorld } from "../../src/check/explore.ts";
 import { inputCombinations } from "../../src/check/steps.ts";
-import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, lose, restart, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
+import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, losable, lose, restart, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
 import { sortedJson } from "../../src/spec/json.ts";
 
 export interface ReferenceBounds {
@@ -227,7 +227,7 @@ function successors(spec: Spec, node: { world: World; acts: Record<string, numbe
   for (const g of guards) out.push({ step: guard(spec, world, g.instance, g.key), acts, faults, fair: fairOf(spec, world, g.instance, g.key, `g|${g.instance}|${g.key}`)?.id });
   for (const p of pending) out.push({ step: fire(spec, world, p.id), acts, faults, fair: fairOf(spec, world, p.to, p.kind === "deliver" ? p.message : p.timer, idOf(p))?.id });
   if (faults < bounds.faults) {
-    for (const p of pending) if (p.kind === "deliver") out.push({ step: lose(spec, world, p.id), acts, faults: faults + 1 });
+    for (const p of pending) if (losable(p)) out.push({ step: lose(spec, world, p.id), acts, faults: faults + 1 });
     for (const i of world.instances) if (!actorNamed(spec, i.actor).singleton) out.push({ step: restart(spec, world, i.id), acts, faults: faults + 1 });
   }
   return out;

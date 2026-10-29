@@ -43,7 +43,7 @@ const pendingTexts = new WeakMap<object, string>();
 
 export function pendingText(p: Pending): string {
   let text = pendingTexts.get(p);
-  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}` : `t|${p.to}|${p.timer}`));
+  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}${p.answers ? `|a|${p.answers.message}|${textOf(p.answers.payload)}` : ""}` : `t|${p.to}|${p.timer}`));
   return text;
 }
 

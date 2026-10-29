@@ -132,12 +132,24 @@ export interface MessageDef<P> {
   /** The protocol it travels over: "https", "websocket", "unix socket". */
   over?: string;
   tone?: Tone;
+  /** A call (see `call`): its loss, or its reply's, reaches the caller as a failure. */
+  readonly call?: true;
   /** Phantom: carries the payload type. */
   readonly payload?: P;
 }
 
 export function message<P>(def: { name: string; over?: string; tone?: Tone }): MessageDef<P> {
   return def;
+}
+
+/**
+ * A call (RFD0009): a message whose failure reaches its caller, as an RPC or a `fetch` throws.
+ * Losing it, or the reply its handler sends with `ctx.reply`, delivers the call's failure to
+ * the caller, which handles it with a transition keyed by `spec.failed(Call)`. The caller
+ * cannot tell which of the two was lost. Every actor that sends a call handles its failure.
+ */
+export function call<P>(def: { name: string; over?: string; tone?: Tone }): MessageDef<P> {
+  return { ...def, call: true };
 }
 
 type Registry = Record<string, MessageDef<any>>;
@@ -216,6 +228,12 @@ export interface ReplyCtx<M extends Registry, Sends extends MessageKey<M>, Start
   reply<K extends Sends>(key: K, payload: PayloadOf<M, K>, text?: string): void;
 }
 
+/** What a call's failure carries: the payload of the call that failed, and whom it was to. */
+export interface Failure<P> {
+  readonly payload: P;
+  readonly to: Instance<any, any>;
+}
+
 // Transitions and actions -------------------------------------------------------------------------
 
 interface StepFields<M extends Registry, Sends extends MessageKey<M>, Starts extends string> {
@@ -242,6 +260,16 @@ export interface MessageTransition<M extends Registry, S, P, Sends extends Messa
    * Fairness for delivering this message (RFD0006): weak by default, so a message in flight
    * arrives unless a fault loses it. "strong", or false for a delivery that may never happen.
    */
+  fair?: Fairness | false;
+}
+
+/** A call's failure, keyed by `spec.failed(Call)`: the call threw, and the caller handles it. */
+export interface FailureTransition<M extends Registry, S, P, Sends extends MessageKey<M> = never, Starts extends string = never>
+  extends StepFields<M, Sends, Starts> {
+  run(state: S, failure: Failure<P>, ctx: Ctx<M, Sends, Starts>): void;
+  say?: (state: Readonly<S>, failure: Failure<P>) => string;
+  routine?: boolean;
+  /** Fairness for delivering the failure (RFD0006): weak by default, like a message. */
   fair?: Fairness | false;
 }
 
@@ -346,7 +374,11 @@ export interface Group {
  * `T` maps each key to the messages its transition sends, inferred from its `sends`.
  */
 type TransitionsFor<M extends Registry, S, T> = {
-  [P in keyof T]: P extends `message:${string}`
+  [P in keyof T]: P extends `failed:${infer K}`
+    ? K extends MessageKey<M>
+      ? FailureTransition<M, S, PayloadOf<M, K>, T[P] & MessageKey<M>, string>
+      : `${P & string} is not the failure of one of this spec's calls`
+    : P extends `message:${string}`
     ? P extends MessageKey<M>
       ? MessageTransition<M, S, PayloadOf<M, P>, T[P] & MessageKey<M>, string>
       : `${P & string} is not one of this spec's messages`
@@ -493,6 +525,8 @@ export interface Script {
 
 export interface SpecBuilder<M extends Registry> {
   readonly messages: { [N in keyof M & string]: `message:${N}` };
+  /** The key of a call's failure, for the caller's transition: `[spec.failed(Write)]`. */
+  failed<K extends MessageKey<M>>(call: K): `failed:${K}`;
   defineZone(def: { name: string; description?: string; place?: ZonePlace }): Zone;
   defineLimit(def: { name: string; value: number; unit?: string; sources?: Source[] }): Limit;
   defineActor<S, A = {}, T = {}>(def: ActorDef<M, S, A, T>): Actor<S, A>;
@@ -535,7 +569,7 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
   const messages: Record<string, MessageInfo> = {};
   for (const [id, def] of Object.entries(options.messages)) {
     const key = `message:${id}`;
-    messages[key] = { key, id, name: def.name, over: def.over, tone: def.tone ?? "request" };
+    messages[key] = { key, id, name: def.name, over: def.over, tone: def.tone ?? "request", call: def.call === true };
   }
   const spec: Spec = {
     name,
@@ -550,6 +584,10 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
   };
   const builder: SpecBuilder<M> = {
     messages: Object.fromEntries(Object.keys(options.messages).map((id) => [id, `message:${id}`])) as SpecBuilder<M>["messages"],
+    failed(key) {
+      if (!spec.messages[key]?.call) throw new Error(`spec.failed(${key}): ${spec.messages[key] ? `${spec.messages[key].name} is a message, not a call; declare it with call(…) for its failure to reach the caller` : "not one of this spec's messages"}`);
+      return `failed:${key}` as const;
+    },
     defineZone(def) {
       const zone: ZoneInfo = { name: def.name, description: def.description, place: def.place ?? {} };
       spec.zones.push(zone);
@@ -662,8 +700,12 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
   }
   const transitions: Record<string, TransitionInfo> = {};
   for (const [key, step] of Object.entries(raw.transitions ?? {})) {
-    const message = key.startsWith("message:") ? key : undefined;
-    if (message && !spec.messages[message]) throw new Error(`${raw.name}: ${message} is not one of this spec's messages`);
+    // A call's failure is delivered like a message, keyed by `failed:<call>` (RFD0009).
+    const message = key.startsWith("message:") || key.startsWith("failed:") ? key : undefined;
+    if (message?.startsWith("failed:")) {
+      const called = spec.messages[message.slice("failed:".length)];
+      if (!called?.call) throw new Error(`${raw.name}: ${message} is not the failure of one of this spec's calls`);
+    } else if (message && !spec.messages[message]) throw new Error(`${raw.name}: ${message} is not one of this spec's messages`);
     // Keyed by a label, it is a timer or a guarded step: no message arrives, so its run is
     // (state, ctx). A third parameter would take ctx's place and fail when it first runs.
     if (!message && step.run.length >= 3) {
@@ -683,6 +725,12 @@ function actorInfo(spec: Spec, raw: RawActor): ActorInfo {
       routine: step.routine ?? false,
       run: step.run as TransitionInfo["run"],
     };
+  }
+  // Every caller has an answer for a call that throws, even if that answer is to give up (RFD0009).
+  const sent = new Set([...Object.values(actions), ...Object.values(transitions)].flatMap((step) => step.sends));
+  for (const key of sent) {
+    const info = spec.messages[key];
+    if (info?.call && !transitions[`failed:${key}`]) throw new Error(`${raw.name}: sends ${info.name}, a call: handle its failure with a transition keyed by spec.failed(${key.slice("message:".length)})`);
   }
   return {
     name: raw.name,
