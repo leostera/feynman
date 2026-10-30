@@ -28,47 +28,54 @@ const Client = defineActor({
   name: "Client",
   zone: shop,
   initialState: () => ({ paying: false, paid: false }),
+  receives: [Charged, failed(Charge)],
   actions: {
     pay: {
       label: "Pay",
       when: (s) => !s.paying && !s.paid,
+      sends: [Charge],
       run(state, _inputs, ctx) {
         state.paying = true;
         ctx.send(ctx.the(Bank), Charge, { payment: "pay-1" });
       },
     },
   },
-  handles: ({ on, failed }) => [
-    on(Charged, {
+  on: {
+    Charged: {
       description: "The bank charged the payment: the order is paid.",
       run(state) {
         state.paying = false;
         state.paid = true;
       },
-    }),
-    failed(Charge, {
+    },
+  },
+  failed: {
+    Charge: {
       description: "The call threw: the client sends the same charge again.",
+      sends: [Charge],
       run(_state, failure, ctx) {
         ctx.send(failure.to, Charge, failure.payload);
       },
-    }),
-  ],
+    },
+  },
 });
 
 const Bank = defineActor({
   name: "Bank",
   zone: bank,
   initialState: () => ({ charges: 0, seen: [] as string[] }),
-  handles: ({ on }) => [
-    on(Charge, {
+  receives: [Charge],
+  on: {
+    Charge: {
       description: "Charges the customer, once per payment, and answers.",
+      sends: [Charged],
       run(state, msg, ctx) {
         if (!(idempotencyKey.on && state.seen.includes(msg.payment))) state.charges += 1;
         state.seen.push(msg.payment);
         ctx.reply(Charged, { payment: msg.payment });
       },
-    }),
-  ],
+    },
+  },
 });
 
 const chargedOnce = defineProperty("chargedOnce", {
@@ -95,7 +102,7 @@ export default defineSpec({
 });
 ```
 
-Three things change together:
+Two things change:
 
 1. **No builder closure.** Parts are values, so a spec reads top to bottom, at one level of
    indentation, and can be split across files or share parts with other specs. `defineSpec`
@@ -103,18 +110,18 @@ Three things change together:
 2. **Payloads are schemas, not type annotations.** `{ payment: String }` is a value the
    checker can read at run time, and its TypeScript type is inferred from it. Action inputs
    use the same vocabulary.
-3. **Nothing is said twice.** A message is defined once. An actor's handlers say which
-   messages it handles, and its code says what it sends: there are no `sends`, `starts` or
-   `messages` lists to keep in step with the code.
+
+An actor reads as a summary before its code: `receives` lists what it reacts to, and each
+step's `sends` lists what it may send, as today.
 
 Type safety stays where it is: a handler's `msg` and `state` are typed, a payload of the wrong
-shape is a type error wherever it is sent, and messages are values, not strings, everywhere,
-scenarios included.
+shape is a type error wherever it is sent, a handler for a message the actor doesn't receive
+is a type error, and messages are values, not strings, everywhere, scenarios included.
 
 ## Motivation
 
 Specs are read by people deciding whether a design is right, and written more and more by
-agents. Five things about the current shape make both harder than they need to be.
+agents. Four things about the current shape make both harder than they need to be.
 
 **Everything is nested in a closure.** A spec is `defineSpec(name, { messages }, (spec) => {
 … })`, and every zone, actor, property and scenario is defined inside it, through `spec.`.
@@ -125,11 +132,6 @@ builder can collect the parts and so the message registry's types reach them.
 **A message is declared in two places.** It goes into the options (`messages: { Charge:
 call<…>(…) }`), and then out again (`const { Charge } = spec.messages`). Adding one means
 editing both, and agents regularly forget the second.
-
-**Steps repeat their code.** `sends: [Charged]` and `starts: ["retry"]` list what `run` does.
-They are checked at run time, so they can't drift silently, but every change to a handler
-means changing them too, and a forgotten one is the most common error agents hit when
-editing a spec.
 
 **Payloads are types only.** `message<{ payment: string }>(…)` gives TypeScript the shape,
 and nothing else:
@@ -153,7 +155,7 @@ Client, Bank }` at the end of the closure to reach actors.
   and reused.
 - A spec reads top to bottom: messages, zones, rules, actors, properties, scenarios, and the
   `defineSpec` that assembles them.
-- Nothing is declared twice: not messages, not what a handler handles, not what it sends.
+- Each message is defined once.
 - Payloads and inputs are described by schemas: values the checker reads at run time, with
   their TypeScript types inferred from them.
 - Type safety is unchanged or better: handler payloads and states, sends, replies, failures
@@ -208,28 +210,35 @@ examples, `input(Number, { examples: [30, 80] })`.
 
 ### Actors
 
-An actor's `handles` lists everything it reacts to, each built by a helper it is given:
-
 ```ts
-handles: ({ on, failed, timer, guard }) => [
-  on(Charge, { run(state, msg, ctx) { … } }),          // a message arrives
-  failed(Charge, { run(state, failure, ctx) { … } }),  // a call this actor made threw
-  timer("retry", { after: "the answer is late", run(state, _, ctx) { … } }),
-  guard("drain", { when: (s) => s.queue.length > 0, run(state, _, ctx) { … } }),
-],
+const Client = defineActor({
+  name: "Client",
+  zone: shop,
+  initialState: () => ({ paying: false, paid: false }),
+  receives: [Charged, failed(Charge)],
+  actions: { pay: { label: "Pay", sends: [Charge], run(state, _inputs, ctx) { … } } },
+  on: { Charged: { run(state, msg) { … } } },
+  failed: { Charge: { sends: [Charge], run(state, failure, ctx) { … } } },
+  timers: { retry: { after: "the answer is late", run(state, _timer, ctx) { … } } },
+  guards: { drain: { when: (s) => s.queue.length > 0, run(state, _, ctx) { … } } },
+});
 ```
 
-- `on(Charge, …)` types `msg` from `Charge`'s schema and `state` from the actor's
-  `initialState`. The actor handles exactly the messages it has an `on` for.
-- `failed(Charge, …)` handles a call that threw. An actor that sends a call needs one, as today
-  (RFD0009).
-- `timer` and `guard` are the internal steps that `transitions` holds today: one fires when
-  a timer started with `ctx.start` is due, the other whenever its `when` holds.
+- `receives` lists what the actor reacts to: messages, and `failed(Call)` for the calls it
+  makes that may throw.
+- `on` has a handler for each message received, keyed by its id. `msg` is typed from the
+  message's schema and `state` from `initialState`. A handler for a message not in
+  `receives` is a type error ("Did you mean 'Charged'?").
+- `failed` has a handler for each `failed(Call)` received. An actor that sends a call must
+  receive its failure, as today (RFD0009).
+- `sends` (and `starts`, for timers) list what a step may send, as today. A step that sends
+  anything else is an error when it runs.
+- `timers` and `guards` hold the internal steps that `transitions` holds today: one fires
+  when a timer started with `ctx.start` is due, the other whenever its `when` holds.
 - `ctx.the(Bank)` refers to the actor value, defined anywhere in the file: handlers run
   later, so the order of definitions doesn't matter to them.
 
-Handlers don't list what they send or start. The checker reads that from their code (see
-"What a step sends").
+Actions stay inside their actor (see "Actions defined apart").
 
 ### Rules, properties and scenarios
 
@@ -270,9 +279,10 @@ they aren't listed. Groups and limits are fields too.
 
 - `defineMessage(id, schema?, options?)` and `defineCall(…)` return `Message<Id, Payload>`:
   `{ id, key, name, over, tone, call, schema }`, where `key` is the engine's `message:<id>`.
-- `defineActor` calls `handles` once, at definition, with helpers that record each handler,
-  and normalizes the result into today's `ActorInfo` (transitions keyed `message:<id>`,
-  `failed:message:<id>`, or the timer or guard name). The engine doesn't change.
+- `failed(Call)` returns `Failure<Id, Payload>`, which `receives` and scenarios accept.
+- `defineActor` normalizes `on`, `failed`, `timers` and `guards` into today's `ActorInfo`
+  (transitions keyed `message:<id>`, `failed:message:<id>`, or the timer or guard name).
+  The engine doesn't change.
 - `defineRule`, `defineProperty` and `defineScenario` return values that `defineSpec` collects.
 - `defineSpec(parts)` returns the `Spec` the engine runs today, with `rules`, `without` and
   `withoutRules` from RFD0010.
@@ -283,45 +293,18 @@ they aren't listed. Groups and limits are fields too.
 
 A handler needs two types: its payload, from its message, and its state, from its actor.
 
-- **Why not an object keyed by message.** `{ [Charge]: … }` can't type `msg`: a computed key
-  reduces to its string, and TypeScript drops anything attached to it. `{ Charge: … }` keyed
-  by id works only with a list of the messages the actor handles (`hears: [Charge]`) to look
-  the payload up in, which says each message twice.
-- **Why not standalone `on(Charge, …)`.** A handler built outside the actor gets its payload
-  but not its state, which comes out as `unknown`.
-- **Why `handles: ({ on }) => […]`.** `initialState` has no context-sensitive parameters, so
-  TypeScript infers the state type from it first. Then it types `handles`'s parameter as
-  `{ on: <P>(m: Message<string, P>, h: Handler<S, P>) => Handled, … }`, so each `on` gets both.
-  A wrong payload field and a wrong state field are both type errors.
+- **Payloads.** `receives` is inferred as a tuple of `Message` and `Failure` values. Mapped by
+  id, it gives `on` and `failed` their keys and each handler's `msg` type. Excess property
+  checks reject a handler for anything not received.
+- **State.** `initialState` has no context-sensitive parameters, so TypeScript infers the
+  state type from it first, then types every handler's `state` from it.
+- **Why not `{ [Charge]: … }`.** A computed key reduces to its string, and TypeScript drops
+  anything attached to it, so the payload type is lost. Keys are ids, typed through `receives`.
+- **Sends.** `sends: [Charged]` narrows `ctx.send` and `ctx.reply` in that step to the listed
+  messages, with each payload checked against its message's schema type, as today.
 
-All three were checked with `tsc` before writing this RFD.
-
-`ctx.send(to, Charged, payload)`, `ctx.reply(Charged, payload)` and `ctx.start("retry")`
-take any message or timer of the spec, with the payload checked against the message's schema
-type. They are no longer narrowed to a `sends` list.
-
-### What a step sends
-
-Today `sends` and `starts` serve four purposes. Each is kept without them:
-
-| Purpose | Today | With this RFD |
-| --- | --- | --- |
-| A step sends only what it declares | checked at run time | gone: there is nothing to declare |
-| An actor that sends a call handles its failure | checked at definition, from `sends` | checked at definition, from the code; and at run time, when a call is sent by an actor without a `failed` handler |
-| The views draw who talks to whom before exploring | `actorLinks`, from `sends` | from the code, and from what exploring sends |
-| A step's sends are listed in the Code view and the flows | from `sends` | from the code |
-
-"From the code" means a static pass over the spec's source, which Feynman already does for
-the Code view (TypeScript and calldiff are dependencies). It finds, in each handler and
-action, the messages passed to `ctx.send`, `ctx.reply` and `ctx.broadcast`, and the timers
-passed to `ctx.start`. It sees through local helpers that receive `ctx`. Where it can't tell
-(a message chosen at run time, from a variable), it lists what the step's code may send as
-unknown, and exploring fills in what is actually sent.
-
-What a step sends is a property of its code. The runtime checks are the guarantee; the static
-pass gives the views and the definition-time check their answers before anything runs.
-
-Types can't do this: a function's type says nothing about the calls in its body.
+All of this was checked with `tsc` before writing this RFD: wrong payload fields, wrong state
+fields and handlers for messages not received are all type errors.
 
 ### Semantics
 
@@ -331,7 +314,9 @@ Types can't do this: a function's type says nothing about the calls in its body.
   Checks are skipped for `type<T>()`.
 - **Assembly checks**, in `defineSpec`: ids unique per spec (two different messages with one
   id is an error); every message an actor sends is handled by some actor of the spec; every
-  call sent has a failure handler; actors referenced in handlers are in the spec. `ctx.the(X)`
+  call sent is received as `failed(Call)` and handled; every message received is
+in `on`, and every handler's message is received; actors referenced in handlers are in the
+spec. `ctx.the(X)`
   for an actor not in the spec fails when it runs, saying so.
 - **Rules.** A rule is a module-level value, but its `on` belongs to the spec being run: the
   engine and the checker set the spec in effect while they run a step or judge a property,
@@ -357,11 +342,11 @@ shows each change before and after:
 | `messages: { Charge: call<{ payment: string }>({ name: "charge" }) }` | `const Charge = defineCall("Charge", { payment: String })` |
 | `const { Charge } = spec.messages` | (gone) |
 | `spec.defineZone(…)`, `spec.defineActor(…)` | `defineZone(…)`, `defineActor(…)` |
-| `transitions: { [Charge]: { … } }` | `handles: ({ on }) => [on(Charge, { … })]` |
-| `transitions: { [spec.failed(Charge)]: { … } }` | `failed(Charge, { … })` |
-| `transitions: { retry: { after, … } }` | `timer("retry", { after, … })` |
-| `transitions: { drain: { when, … } }` | `guard("drain", { when, … })` |
-| `sends: [Charged]`, `starts: ["retry"]` | (gone) |
+| `transitions: { [Charge]: { … } }` | `receives: [Charge]`, `on: { Charge: { … } }` |
+| `transitions: { [spec.failed(Charge)]: { … } }` | `receives: [failed(Charge)]`, `failed: { Charge: { … } }` |
+| `transitions: { retry: { after, … } }` | `timers: { retry: { after, … } }` |
+| `transitions: { drain: { when, … } }` | `guards: { drain: { when, … } }` |
+| `sends: [Charged]`, `starts: ["retry"]` | (unchanged) |
 | `spec.defineProperties({ p: … })` | `defineProperty("p", …)`, listed in `properties` |
 | `spec.defineScenario({ name, … })` | `defineScenario(name, …)`, listed in `scenarios` |
 | `s.deliver(x, "Charge")`, `"failed:Charge"` | `s.deliver(x, Charge)`, `failed(Charge)` |
@@ -375,22 +360,18 @@ codemod. The skill gets a "Migrating to 0.14" section, as it has for RFD0004.
 ### Rollout and validation
 
 1. Schemas: the vocabulary, `TypeOf`, runtime checks, with tests for every form.
-2. The static pass for what a step sends, tested against every example's current `sends` and
-   `starts`: it must find each of them.
-3. The new DSL beside the old one in the source tree only, building the same `Spec`.
-4. Migrate every example, test spec and fixture. Each must keep its state counts and
+2. The new DSL beside the old one in the source tree only, building the same `Spec`.
+3. Migrate every example, test spec and fixture. Each must keep its state counts and
    verdicts (the corpus tests, the TLA+ and P oracles, and the engine comparisons all apply
    unchanged), and the fuzzer's generated specs move to the new form.
-5. Remove the closure API, then update the views, playground files, the skill and the site.
-6. Release 0.14 with the migration guide.
+4. Remove the closure API, then update the views, playground files, the skill and the site.
+5. Release 0.14 with the migration guide.
 
 ## Drawbacks
 
 - Every spec changes. Agents make this cheap, but users with many specs pay it once.
-- `handles: ({ on }) => […]` is a callback where today there is an object. It is the shape
-  that types both payload and state without saying any message twice.
-- A static pass over the source is less certain than a list the author writes. It's backed
-  by runtime checks, and only the views and an early error depend on it.
+- `receives` repeats the keys of `on` and `failed`. It is what types the handlers without a
+  spec-wide registry, and it reads as the actor's summary: what it reacts to, before how.
 - Rules read through a value that depends on what is running: a small piece of dynamic
   scope, confined to `rule.on`, and an error outside a step or a property.
 - Schemas cover less than TypeScript's types. `type<T>()` is the escape hatch, unchecked.
@@ -401,19 +382,42 @@ codemod. The skill gets a "Migrating to 0.14" section, as it has for RFD0004.
 
 Parts as values are the simplest structure a spec can have: one definition per thing, read
 top to bottom, at one level of nesting, and imported like any other code. Typing comes from
-values the parts already hold (messages with schemas, the actor's initial state), not from a
-registry that every part has to sit inside. What can be read from the code isn't written
-again beside it.
+values the parts already hold (messages with schemas, the actor's `receives` and initial
+state), not from a registry that every part has to sit inside.
 
-### A `hears` list and an object keyed by id
+### Handlers built by helpers
 
 ```ts
-hears: [Charge],
-on: { Charge: { run(state, msg, ctx) { … } } },
+handles: ({ on, failed }) => [
+  on(Charged, { run(state, msg) { … } }),
+  failed(Charge, { run(state, failure, ctx) { … } }),
+],
 ```
 
-It types correctly, and a handler for a message not heard is an error with a "did you mean".
-But `hears` repeats the keys of `on`, and failures need a second pair (`calls`, `failed`).
+It types payload and state with no `receives`, since each handler is built from its message.
+It reads worse: a callback returning a list of calls, where an object keyed by message shows
+the same thing plainly, and is the form reviewers found hardest to read.
+
+### Deriving `sends` from the code
+
+TypeScript can't see the calls inside a function body, so `sends` could only be derived by a
+static pass over the source (Feynman already parses sources for the Code view). It would
+remove the lists, but they are worth keeping: they show what a step may do before reading
+its code, and they're checked when it runs.
+
+### Actions defined apart
+
+```ts
+const clientState = () => ({ paying: false, paid: false });
+const pay = defineAction(clientState, { label: "Pay", when: (s) => !s.paid, run(state) { … } });
+const Client = defineActor({ name: "Client", initialState: clientState, actions: { pay } });
+```
+
+This types correctly, and an action given to an actor with a different state is a type
+error. But an action reads and writes its actor's state, so it can't be typed without it:
+each actor's state has to be named apart, and its steps end up away from the state they
+change. Actions, like handlers, stay in their actor. A step shared by several actors can
+still be a function that returns the step.
 
 ### Handlers added to the actor
 
@@ -424,12 +428,6 @@ Bank.on(Charge, { run(state, msg, ctx) { … } });
 
 The flattest form, and fully typed. But the actor is built up by statements spread over the
 file, a value that changes after it's made, and an actor can't be read in one place.
-
-### Keeping `sends`, inferred by types
-
-TypeScript can't see the calls inside a function body, so `sends` can only be written or read
-from the source. A `run` that returned what it sent would be typed, but turns every handler
-inside out.
 
 ### Keeping types for payloads
 
@@ -444,7 +442,7 @@ nesting and keeps parts from being shared.
 
 ### Do nothing
 
-Specs stay nested, messages and sends stay declared twice, payloads stay invisible at run
+Specs stay nested, messages stay declared twice, payloads stay invisible at run
 time, and parts can't be shared. Each is small; together they're most of what makes a spec
 harder to read than the design it describes.
 
@@ -463,14 +461,11 @@ harder to read than the design it describes.
 
 ### Before acceptance
 
-- `handles` as the name, or `on: ({ on }) => […]`, or `reacts`?
-- `timer` and `guard` in `handles`, or kept apart as objects keyed by name (they don't need a
-  message's type)?
+- `receives` as the name, or `hears`, or `handles`?
 - Should `name` default to the id in words, or stay required?
 
 ### During implementation
 
-- How far the static pass follows helpers, and how unknown sends are shown.
 - Whether payload checks are cached per payload object: payloads are frozen and shared
   between worlds, so one check per distinct payload is enough.
 - How schemas show in the playground (a payload's fields, or examples).
