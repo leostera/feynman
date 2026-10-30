@@ -1,7 +1,7 @@
 // A playground session: the world at the start, the steps taken since, and the operations
 // that produced them, so a session survives reloads by replaying its operations against
 // the (possibly edited) spec.
-import { act, scenarioStart, fire, guard, pendingInOrder, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, instanceById, scenarioStart, fire, guard, pendingInOrder, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 
 /** What a person did in the playground. */
@@ -224,7 +224,9 @@ export type Hint =
 
 export function nextHint(spec: Spec, world: World): Hint {
   const { guards, actions } = choices(spec, world);
-  if (guards.length) return { kind: "guard", ...guards[0] };
+  // As a run left alone does: a step with `fair: false`, such as a crash, waits to be asked for.
+  const fair = guards.find((g) => actorNamed(spec, instanceById(world, g.instance).actor).transitions[g.key]!.fair !== false);
+  if (fair) return { kind: "guard", ...fair };
   const [first] = pendingInOrder(world);
   if (first) return { kind: "pending", pending: first };
   const spawnable = spec.actors.filter((a) => !a.singleton);
