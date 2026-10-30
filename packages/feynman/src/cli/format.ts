@@ -74,7 +74,7 @@ export function formatSources(statuses: SourceStatus[]): string[] {
 /** What else the search did: random runs, and the instances it took as interchangeable. */
 function searchNotes(report: Report): string[] {
   const notes: string[] = [];
-  if (report.walks.runs) notes.push(`  also ${report.walks.runs.toLocaleString()} random run(s), ${report.walks.steps.toLocaleString()} steps, up to ${report.walks.deepest} deep: they find bugs deeper than the search, but prove nothing`);
+  if (report.walks.runs) notes.push(`  also ${thousands(report.walks.runs)} random run(s), ${thousands(report.walks.steps)} steps, up to ${report.walks.deepest} deep: they find bugs deeper than the search, but prove nothing`);
   const symmetric = report.reductions.symmetric.map((labels) => labels.join(" = ")).join(", ");
   if (symmetric) notes.push(`  treated as interchangeable: ${symmetric}`);
   const out = notes.map((n) => dim(n));
@@ -106,7 +106,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, ...variablesText(spec)].join(", ");
   const lines = [
-    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
+    `${bold(spec.name)}: explored ${thousands(report.states)} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
     ...varietyLines(report),
     ...(hasFaults(spec) ? [] : [yellow("! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().")]),
     ...(options.brief ? [] : searchNotes(report)),
@@ -167,7 +167,7 @@ function seedsText(seeds: Report["seeds"]): string[] {
  */
 function varietyLines(report: Report): string[] {
   if (!report.variety) return [];
-  const list = report.variety.map((v) => `${v.what} (${v.values.toLocaleString()} values)`).join(", ");
+  const list = report.variety.map((v) => `${v.what} (${thousands(v.values)} values)`).join(", ");
   const inFlight = `up to ${report.mostInFlight ?? 0} message(s) in flight at once`;
   // A field with many values is the usual culprit; without one, it is the orders of what is in flight.
   const grows = (report.variety[0]?.values ?? 0) >= GROWS;
@@ -189,7 +189,7 @@ export function limitName(reason: Report["stoppedBy"]): string {
 function unfinishedWhy(report: Report, p: Report["properties"][number]): string {
   const limit = limitName(report.stoppedBy);
   if (report.stoppedBy && p.holds && p.upTo !== undefined) return `held on every path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
-  if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${limit} limit, not all of them`;
+  if (report.stoppedBy) return `held in the ${thousands(report.states)} states explored before the ${limit} limit, not all of them`;
   return `held to depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may break further on`;
 }
 
@@ -265,4 +265,12 @@ function indent(text: string, n: number): string {
     .split("\n")
     .map((line) => pad + line)
     .join("\n");
+}
+
+/**
+ * A count with thousands separators: 1,359. Not toLocaleString, whose first call loads the
+ * locale data, a third of a second of a check's run.
+ */
+function thousands(n: number): string {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }

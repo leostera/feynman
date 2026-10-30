@@ -1,7 +1,6 @@
 // Type-checking specs: the DSL's types catch most mistakes (an unknown message, a send not
 // declared, a missing input) before anything runs. A repository need not install anything:
 // tsc runs from this installation with a temporary config mapping `@leostera/feynman` here.
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -22,8 +21,11 @@ export interface TypeError {
   message: string;
 }
 
-/** Type errors in the given spec and playground files (repository-relative), or [] when they check. */
-export function typecheck(root: string, files: string[]): TypeError[] {
+/**
+ * Type errors in the given spec and playground files (repository-relative), or [] when they
+ * check. tsc runs in a process of its own, so the caller can check specs meanwhile.
+ */
+export async function typecheck(root: string, files: string[]): Promise<TypeError[]> {
   if (!files.length) return [];
   const dir = mkdtempSync(join(tmpdir(), "feynman-types-"));
   const config = {
@@ -53,7 +55,8 @@ export function typecheck(root: string, files: string[]): TypeError[] {
   // tsc prints paths relative to its working directory, which it reads from PWD: run it in
   // the repository's real directory, past any symlink like /tmp, and say so in PWD too.
   const real = realpathSync(root);
-  const out = spawnSync(TSC, ["-p", join(dir, "tsconfig.json"), "--pretty", "false"], { encoding: "utf8", cwd: real, env: { ...process.env, PWD: real } });
+  const tsc = Bun.spawn([TSC, "-p", join(dir, "tsconfig.json"), "--pretty", "false"], { cwd: real, env: { ...process.env, PWD: real }, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr] = await Promise.all([new Response(tsc.stdout).text(), new Response(tsc.stderr).text(), tsc.exited]);
   const errors: TypeError[] = [];
   const fromRoot = (path: string): string => {
     const absolute = resolve(real, path);
@@ -64,7 +67,7 @@ export function typecheck(root: string, files: string[]): TypeError[] {
     }
   };
   let last: TypeError | null = null;
-  for (const line of (out.stdout + out.stderr).split("\n")) {
+  for (const line of (stdout + stderr).split("\n")) {
     const m = /^(.+?)\((\d+),(\d+)\): error TS\d+: (.*)$/.exec(line);
     if (m) {
       last = { file: fromRoot(m[1]), line: Number(m[2]), column: Number(m[3]), message: hint(m[4]) };

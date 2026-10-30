@@ -12,7 +12,7 @@ import { loadPlayground } from "./load.ts";
 import { scenarioCode } from "./scenario-code.ts";
 import { scenarioSeeds } from "../check/seeds.ts";
 import { shapeWarnings, totalSteps, unbuilt, type ShapeWarning } from "./shape.ts";
-import { typecheck } from "./types.ts";
+import { typecheck, type TypeError } from "./types.ts";
 import { verdictOf } from "../check/verdict.ts";
 
 export interface CheckOptions {
@@ -74,13 +74,21 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   if (options.output === "scenario" && options.only.length !== 1) throw new Error("--as-scenario replays one counterexample: name its property with --only");
 
   const plays = selected.map((s) => playgroundFor(ctx.repository.root, s.path)).filter((p): p is string => p !== null);
-  const typeErrors = typecheck(ctx.repository.root, [...selected.map((s) => s.path), ...plays]);
-  for (const e of typeErrors) out(red(`${e.file}:${e.line}:${e.column} ${e.message}`));
-  if (typeErrors.length) status = 1;
+  // tsc runs while the first spec is checked; its errors print before anything else.
+  const typing = typecheck(ctx.repository.root, [...selected.map((s) => s.path), ...plays]);
+  let typeErrors: TypeError[] | undefined;
+  const typed = async (): Promise<TypeError[]> => {
+    if (typeErrors) return typeErrors;
+    typeErrors = await typing;
+    for (const e of typeErrors) out(red(`${e.file}:${e.line}:${e.column} ${e.message}`));
+    if (typeErrors.length) status = 1;
+    return typeErrors;
+  };
   for (const play of plays) {
     try {
       await loadPlayground(join(ctx.repository.root, play));
     } catch (error) {
+      await typed();
       status = 1;
       out(red((error as Error).message));
     }
@@ -94,6 +102,7 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
     const focused = focus(spec, options.only);
     if (!focused) continue;
     const result = await checkSpec(ctx, path, focused, options.bounds, options.rules);
+    await typed();
     results.push(result);
     if (fails(result, options.only.length > 0)) status = 1;
     if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
@@ -104,11 +113,12 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
     }
   }
   // Type errors print first; said again last, so the end of the output (a `tail`) still shows them.
-  if (typeErrors.length) {
-    const files = [...new Set(typeErrors.map((e) => e.file))];
-    out(red(`✗ ${typeErrors.length} type error(s) in ${files.join(", ")}, listed at the top: the results above may come from code that does not compile`));
+  const errors = await typed();
+  if (errors.length) {
+    const files = [...new Set(errors.map((e) => e.file))];
+    out(red(`✗ ${errors.length} type error(s) in ${files.join(", ")}, listed at the top: the results above may come from code that does not compile`));
   }
-  if (options.output === "json") console.log(JSON.stringify({ ok: status === 0, typeErrors, specs: results.map(toJson) }, null, 2));
+  if (options.output === "json") console.log(JSON.stringify({ ok: status === 0, typeErrors: errors, specs: results.map(toJson) }, null, 2));
   return status;
 }
 

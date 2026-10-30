@@ -15,15 +15,39 @@ export interface Repository {
   fileUrl: string | null;
 }
 
+/**
+ * The repository `dir` is in, or null outside one. Only the root is asked for up front: each
+ * of the rest is another git command, run when first read (`check` reads none of them).
+ */
 export function repositoryAt(dir: string): Repository | null {
   const root = tryGit(dir, "rev-parse", "--show-toplevel");
   if (!root) return null;
-  const commit = tryGit(root, "rev-parse", "HEAD") ?? "0000000";
-  const dirty = (tryGit(root, "status", "--porcelain") ?? "") !== "";
-  const branch = tryGit(root, "symbolic-ref", "--short", "HEAD");
-  const web = webUrl(tryGit(root, "remote", "get-url", "origin"));
-  const fileUrl = web ? `${web}${/gitlab/.test(web) ? "/-" : ""}/blob/${commit}/{path}` : null;
-  return { root, commit, dirty, branch, fileUrl };
+  const once = <T>(get: () => T) => {
+    let value: { v: T } | undefined;
+    return () => (value ??= { v: get() }).v;
+  };
+  const commit = once(() => tryGit(root, "rev-parse", "HEAD") ?? "0000000");
+  const dirty = once(() => (tryGit(root, "status", "--porcelain") ?? "") !== "");
+  const branch = once(() => tryGit(root, "symbolic-ref", "--short", "HEAD"));
+  const fileUrl = once(() => {
+    const web = webUrl(tryGit(root, "remote", "get-url", "origin"));
+    return web ? `${web}${/gitlab/.test(web) ? "/-" : ""}/blob/${commit()}/{path}` : null;
+  });
+  return {
+    root,
+    get commit() {
+      return commit();
+    },
+    get dirty() {
+      return dirty();
+    },
+    get branch() {
+      return branch();
+    },
+    get fileUrl() {
+      return fileUrl();
+    },
+  };
 }
 
 export function webUrl(remote: string | null): string | null {
