@@ -7,7 +7,7 @@ import type { Repository } from "./repository.ts";
  * A page depends on it as much as on the commit: a spec using what an older Feynman lacks
  * fails to build there, and a newer one checks and draws differently.
  */
-export const FEYNMAN_VERSION = "0.13.0";
+export const FEYNMAN_VERSION = "0.14.0";
 
 /** `pages/0.13.0/github.com/leostera/feynman/<commit>.html`: a commit's page, built by one Feynman, never changes. */
 export function pageKey(repository: Repository, commit: Commit): string {
