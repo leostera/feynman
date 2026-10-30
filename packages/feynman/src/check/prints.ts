@@ -1,11 +1,13 @@
 // The states the search has seen: each 64-bit fingerprint (keys.ts) and the node it names,
 // in flat typed arrays, since a big search sees millions.
 
-/** Fingerprint → node, by open addressing. Fingerprint (0, 0) is stored as (0, 1): (0, 0) marks an empty slot. */
+/**
+ * Fingerprint → node, by open addressing, each slot three integers side by side (hi, lo, node),
+ * so a probe reads one cache line. Fingerprint (0, 0) is stored as (0, 1): (0, 0) marks an empty slot.
+ */
 export class PrintMap {
-  private hi = new Uint32Array(1 << 12);
-  private lo = new Uint32Array(1 << 12);
-  private node = new Int32Array(1 << 12);
+  private slots = new Uint32Array(3 << 12);
+  private mask = (1 << 12) - 1;
   size = 0;
 
   /** The node with this fingerprint, if any. */
@@ -13,43 +15,41 @@ export class PrintMap {
     hi >>>= 0;
     lo >>>= 0;
     if (hi === 0 && lo === 0) lo = 1;
-    const mask = this.hi.length - 1;
+    const { slots, mask } = this;
     for (let i = slotOf(hi, lo, mask); ; i = (i + 1) & mask) {
-      if (this.hi[i] === 0 && this.lo[i] === 0) return undefined;
-      if (this.hi[i] === hi && this.lo[i] === lo) return this.node[i];
+      const at = i * 3;
+      const h = slots[at];
+      const l = slots[at + 1];
+      if (h === 0 && l === 0) return undefined;
+      if (h === hi && l === lo) return slots[at + 2] | 0;
     }
   }
 
   /** Remember a fingerprint that is not here yet. */
   set(hi: number, lo: number, node: number): void {
-    if ((this.size + 1) * 2 > this.hi.length) this.grow();
-    this.put(...nonzero(hi, lo), node);
+    if ((this.size + 1) * 2 > this.mask + 1) this.grow();
+    hi >>>= 0;
+    lo >>>= 0;
+    if (hi === 0 && lo === 0) lo = 1;
+    this.put(hi, lo, node);
     this.size++;
   }
 
   private put(hi: number, lo: number, node: number): void {
-    const mask = this.hi.length - 1;
+    const { slots, mask } = this;
     let i = slotOf(hi, lo, mask);
-    while (this.hi[i] !== 0 || this.lo[i] !== 0) i = (i + 1) & mask;
-    this.hi[i] = hi;
-    this.lo[i] = lo;
-    this.node[i] = node;
+    while (slots[i * 3] !== 0 || slots[i * 3 + 1] !== 0) i = (i + 1) & mask;
+    slots[i * 3] = hi;
+    slots[i * 3 + 1] = lo;
+    slots[i * 3 + 2] = node;
   }
 
   private grow(): void {
-    const { hi, lo, node } = this;
-    this.hi = new Uint32Array(hi.length * 2);
-    this.lo = new Uint32Array(hi.length * 2);
-    this.node = new Int32Array(hi.length * 2);
-    for (let i = 0; i < hi.length; i++) if (hi[i] !== 0 || lo[i] !== 0) this.put(hi[i], lo[i], node[i]);
+    const old = this.slots;
+    this.mask = this.mask * 2 + 1;
+    this.slots = new Uint32Array((this.mask + 1) * 3);
+    for (let at = 0; at < old.length; at += 3) if (old[at] !== 0 || old[at + 1] !== 0) this.put(old[at], old[at + 1], old[at + 2]);
   }
-}
-
-/** Both halves as unsigned 32-bit numbers, with (0, 0) moved to (0, 1). */
-function nonzero(hi: number, lo: number): [number, number] {
-  hi >>>= 0;
-  lo >>>= 0;
-  return hi === 0 && lo === 0 ? [0, 1] : [hi, lo];
 }
 
 function slotOf(hi: number, lo: number, mask: number): number {
