@@ -4,7 +4,7 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
-## Unreleased
+## 0.13.0
 
 ### Rules that are needed
 
