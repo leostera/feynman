@@ -23,7 +23,7 @@ import { verdicts, type Verdicts } from "./judge.ts";
 import { NO_SYMMETRY, symmetryOf } from "./keys.ts";
 import { judgeLiveness, type Lasso } from "./liveness.ts";
 import { Owner } from "./owner.ts";
-import { IntegerSearch } from "./integer.ts";
+import { IntegerSearch, type Variety } from "./integer.ts";
 import { InlineDriver, Pool, type SpecSource } from "./pool.ts";
 import { Search, type Root } from "./search.ts";
 import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
@@ -154,6 +154,10 @@ export interface Report {
   exhaustive: boolean;
   /** Why the search stopped early, when it did. */
   stoppedBy?: StopReason;
+  /** When the search stopped early: what its states differ in, most first (integer engine). */
+  variety?: Variety[];
+  /** With `variety`: the most messages in flight at once in an explored world. */
+  mostInFlight?: number;
   depthReached: number;
   durationMs: number;
   /** Threads the search ran on: the main thread, plus the workers that joined. */
@@ -246,6 +250,7 @@ async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], op
     states: a.states + b.states,
     exhaustive: a.exhaustive && b.exhaustive,
     stoppedBy: a.stoppedBy ?? b.stoppedBy,
+    ...(a.variety || b.variety ? { variety: a.variety ?? b.variety, mostInFlight: a.mostInFlight ?? b.mostInFlight } : {}),
     depthReached: Math.max(a.depthReached, b.depthReached),
     durationMs: Date.now() - started,
     threads: Math.max(a.threads, b.threads),
@@ -353,6 +358,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: S
     states: search.states,
     exhaustive: !search.stoppedBy,
     stoppedBy: search.stoppedBy,
+    ...(search.stoppedBy && search instanceof IntegerSearch ? { variety: search.variety(), mostInFlight: search.mostInFlight } : {}),
     depthReached: search.depthReached,
     durationMs: Date.now() - started,
     threads: search.ownerCount,

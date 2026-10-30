@@ -42,5 +42,11 @@ for (const engine of ["integer", "classic"] as const) {
     expect(report.stoppedBy).toBe("memoryLimit");
     expect(report.states).toBeLessThan(10_000);
     expect(report.properties[0]).toMatchObject({ id: "small", holds: true });
+    if (engine === "integer") {
+      // What the states differ in: the two counters, each in many values; nothing in flight.
+      expect(report.variety?.map((v) => v.what).sort()).toEqual(["Counter.a", "Counter.b"]);
+      expect(report.variety![0].values).toBeGreaterThan(20);
+      expect(report.mostInFlight).toBe(0);
+    }
   }, 60_000);
 }

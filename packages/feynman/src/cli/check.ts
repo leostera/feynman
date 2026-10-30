@@ -187,6 +187,7 @@ function toJson(result: SpecCheck) {
     states: report.states,
     exhaustive: report.exhaustive,
     stoppedBy: report.stoppedBy ?? null,
+    ...(report.variety ? { variety: report.variety } : {}),
     durationMs: report.durationMs,
     scenarios: result.scenarios,
     properties: report.properties.map((p) => ({
