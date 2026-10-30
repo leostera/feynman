@@ -485,7 +485,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     }
   };
   // Handling a call: its reply is tagged with the call, so losing it fails the call (RFD0009).
-  const answering = delivery && spec.messages[delivery.message]?.call ? { message: delivery.message, payload: delivery.payload } : undefined;
+  const answering = delivery && (spec.messages[delivery.message]?.call || spec.messages[delivery.message]?.correlate) ? { message: delivery.message, payload: delivery.payload } : undefined;
   let replied = false;
   const view = worldView(spec, world, observe ? (id) => id !== self.id && (observe.readsOthers = true) : undefined);
   const send = (to: { id: string }, value: unknown, payload: unknown, options?: SendOptions, tagged?: { message: string; payload: unknown }) => {
@@ -507,6 +507,10 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text, ...(answers ? { answers } : {}) });
     effects.sent.push({ id, to: target.id, message, payload: body, text });
   };
+  const deliveryOf = (p: Extract<Pending, { kind: "deliver" }>) => {
+    const sender = world.instances.find((i) => i.id === p.from);
+    return { message: p.message, from: sender ? view.instance(sender) : undefined, payload: p.payload, ...(p.answers ? { answers: p.answers } : {}) };
+  };
   return {
     id: self.id,
     label: self.label,
@@ -527,22 +531,36 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       send(from, value, payload, text, answering);
     },
     /** The message being handled: its key, sender, payload, and the request it answers, if any. */
-    delivery: received
-      ? { message: received.message, from: from ? view.instance(from) : undefined, payload: received.payload, ...(received.answers ? { answers: received.answers } : {}) }
-      : undefined,
-    /** Puts the message being handled back in flight as it was: same sender, payload, and request it answers. */
-    forward() {
+    delivery: received ? deliveryOf(received) : undefined,
+    /**
+     * Puts the message being handled back in flight as it was: same sender, payload, and request
+     * it answers. As another message, it keeps the sender and answers nothing.
+     */
+    forward(as?: { message: unknown; payload: unknown }) {
       if (!received) throw new SpecError("forward is only possible in a step on a message");
       const id = ++world.seq;
-      world.pending.push({ ...received, id });
-      effects.sent.push({ id, to: received.to, message: received.message, payload: received.payload, text: received.text });
+      if (!as) {
+        world.pending.push({ ...received, id });
+        effects.sent.push({ id, to: received.to, message: received.message, payload: received.payload, text: received.text });
+        return;
+      }
+      const message = keyOf(as.message);
+      if (!step.sends.includes(message)) throw new SpecError(`forwards as ${message.slice("message:".length)}, which it does not declare in sends`);
+      const info = spec.messages[message];
+      const wrong = info && mismatch(info.schema, as.payload);
+      if (wrong) throw new SpecError(`forwards as ${info.name} with ${wrong}`);
+      const odd = unstorable(as.payload, "payload");
+      if (odd) throw new SpecError(notPlain(odd));
+      const body = freeze(clone(as.payload));
+      world.pending.push({ id, kind: "deliver", to: received.to, from: received.from, message, payload: body });
+      effects.sent.push({ id, to: received.to, message, payload: body });
     },
     /**
      * Starts this instance again: its state becomes its initial state, with the fields in
-     * `keeps` carried over; its timers are cancelled; replies on their way to it are dropped,
-     * since what it was waiting for went with its memory.
+     * `keeps` carried over; its timers are cancelled; the messages on their way to it that
+     * `drops` picks are dropped.
      */
-    reset(options?: { keeps?: readonly string[] }) {
+    reset(options?: { keeps?: readonly string[]; drops?: (delivery: ReturnType<typeof deliveryOf>) => boolean }) {
       const keeps = options?.keeps ?? [];
       const old = state as Record<string, unknown>;
       for (const field of keeps) if (!(field in old)) throw new SpecError(`reset keeps ${field}, which its state does not have`);
@@ -551,7 +569,8 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       for (const key of Object.keys(old)) delete old[key];
       Object.assign(old, fresh);
       for (const p of world.pending) if (p.kind === "timer" && p.to === self.id) effects.cancelled.push(p.timer);
-      world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !p.answers && calledBy(p.message) === undefined));
+      const drops = options?.drops;
+      world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !drops?.(deliveryOf(p))));
     },
     get(variable: { name: string }) {
       return variableValue(variable, false);

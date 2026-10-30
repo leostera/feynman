@@ -57,6 +57,8 @@ export interface MessageInfo {
    * as `failed:<key>`, instead of silence.
    */
   call: boolean;
+  /** A reply to it records the request it answers, as `answers` on the reply in flight. */
+  correlate?: boolean;
   /** Its payload's schema (RFD0011): every payload sent is checked against it. */
   schema: Fields;
 }

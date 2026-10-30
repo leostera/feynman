@@ -146,6 +146,8 @@ export interface Message<Id extends string = string, P = unknown> {
   readonly tone: Tone;
   /** A call (RFD0009): its loss, or its reply's, reaches the caller as its failure. */
   readonly call: boolean;
+  /** A reply to it carries the request it answers (`ctx.delivery.answers`); see `MessageOptions`. */
+  readonly correlate: boolean;
   readonly schema: Fields;
   readonly seq: number;
   /** Phantom: the payload type. */
@@ -178,10 +180,17 @@ interface MessageOptions {
   name?: string;
   over?: string;
   tone?: Tone;
+  /**
+   * A reply to it (`ctx.reply`) carries the request it answers, which the step handling the
+   * reply reads as `ctx.delivery.answers`: how a library knows which call a lost reply fails.
+   * Replies to different requests are then different messages in flight, even with the same
+   * payload.
+   */
+  correlate?: boolean;
 }
 
 function makeMessage(id: string, schema: unknown, options: MessageOptions | undefined, call: boolean, what: string): Message<string, unknown> {
-  if (typeof id !== "string" || !/^[A-Za-z_][\w]*$/.test(id)) throw new Error(`${what}'s first argument is its id, a word like "Charge": not ${JSON.stringify(id)}`);
+  if (typeof id !== "string" || !/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(id)) throw new Error(`${what}'s first argument is its id, a word like "Charge" (or words joined by dots, like "Charge.failed"): not ${JSON.stringify(id)}`);
   const fields = schema ?? {};
   if (typeof fields !== "object" || fields === null || Array.isArray(fields) || !isSchema(fields))
     throw new Error(`${what}("${id}", …): its payload is an object of field schemas, like { payment: String }`);
@@ -193,6 +202,7 @@ function makeMessage(id: string, schema: unknown, options: MessageOptions | unde
     over: options?.over,
     tone: options?.tone ?? "request",
     call,
+    correlate: options?.correlate === true,
     schema: fields as Fields,
     seq: ++defined,
   }) as Message<string, unknown>;
@@ -297,10 +307,11 @@ export interface Ctx<Sends extends AnyMessage = AnyMessage> {
   set<T>(variable: Variable<T>, value: T): void;
   /**
    * Start this instance again, as a crash and restart does: its state becomes its initial
-   * state with the fields in `keeps` carried over, its timers are cancelled, and answers on
-   * their way to it are dropped (replies to calls, and messages sent with `answers`).
+   * state with the fields in `keeps` carried over, and its timers are cancelled. Messages on
+   * their way to it stay, but those `drops` picks, which went with its memory (a failure
+   * that would have thrown in code that is no longer running).
    */
-  reset(options?: { keeps?: readonly string[] }): void;
+  reset(options?: { keeps?: readonly string[]; drops?: (delivery: Delivery) => boolean }): void;
 }
 
 /** What `send` takes after the payload, besides a text: the request the message answers. */
@@ -325,8 +336,12 @@ export interface ReplyCtx<Sends extends AnyMessage = AnyMessage> extends Ctx<Sen
   reply<M extends Sends>(message: M, payload: PayloadOf<M>, text?: string): void;
   /** The message being handled, as it was in flight. */
   readonly delivery: Delivery;
-  /** Put the message being handled back in flight as it was; twice, and it is there twice. */
-  forward(): void;
+  /**
+   * Put the message being handled back in flight as it was; twice, and it is there twice. With
+   * `as`, it goes on as another message (declared in `sends`), still from its sender: how a lost
+   * reply becomes its call's failure.
+   */
+  forward<M extends Sends>(as?: { message: M; payload: PayloadOf<M> }): void;
 }
 
 /** What a call's failure carries: the payload of the call that failed, and whom it was to. */
@@ -462,6 +477,24 @@ export function defineVariable<T>(name: string, initial: T, options?: { each?: b
   const odd = unstorable(initial, "initial value");
   if (odd) throw new Error(`Variable ${name}: ${odd}: a variable holds plain data`);
   return Object.freeze({ kind: "variable", name, initial: freezeDeep(initial), each: options?.each === true, seq: ++defined }) as Variable<T>;
+}
+
+/**
+ * A variable of one step, named by it when its actor is read: `Client.pay`. For libraries that
+ * bound a step without asking for a name (`atMost`); one step uses it.
+ */
+export function stepVariable<T>(initial: T, options?: { each?: boolean }): Variable<T> {
+  const odd = unstorable(initial, "initial value");
+  if (odd) throw new Error(`A step's variable: ${odd}: a variable holds plain data`);
+  return { kind: "variable", name: "", initial: freezeDeep(initial), each: options?.each === true, seq: ++defined } as Variable<T>;
+}
+
+/** A variable's name, naming a step's variable after the first step that uses it. */
+function nameVariable(v: Variable<unknown>, where: string): string {
+  if (v.name !== "") return v.name;
+  Object.defineProperty(v, "name", { value: where, enumerable: true });
+  Object.freeze(v);
+  return where;
 }
 
 function freezeDeep<T>(value: T): T {
@@ -819,6 +852,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
     for (const [key, step] of [...Object.entries(def.actions ?? {}), ...Object.entries(def.transitions ?? {})] as [string, RawStep][]) {
       for (const v of step.uses ?? []) {
         if ((v as Variable<unknown>)?.kind !== "variable") throw new Error(`${def.name}.${key}: uses lists variables from defineVariable, not ${describe(v)}`);
+        nameVariable(v, `${def.name}.${key}`);
         const known = variables.get(v.name);
         if (known && known !== v) throw new Error(`${parts.name}: two different variables are named "${v.name}"`);
         if (v.each) {
@@ -856,7 +890,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
     name,
     description: parts.description,
     messages: Object.fromEntries(
-      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, call: m.call, schema: m.schema }]),
+      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, call: m.call, ...(m.correlate ? { correlate: true } : {}), schema: m.schema }]),
     ),
     zones: [...zones.values()].sort(bySeq).map((z) => ({ name: z.name, description: (z as unknown as ZoneInfo).description, place: (z as unknown as ZoneInfo).place })),
     limits: (parts.limits ?? []).map((l) => l as unknown as LimitInfo),
