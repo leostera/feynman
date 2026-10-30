@@ -15,7 +15,7 @@ after.
   HostDO.sockets (46 values) …; up to 7 message(s) in flight at once", and whether to bound a
   growing field or cut the orders in flight. `--json` gives `variety` and `mostInFlight`.
 - A memory limit: the search stops past `--memory-limit GB` (`check.memoryLimit`, in
-  megabytes; 60% of the machine's memory by default) and keeps its verdicts, instead of being
+  megabytes; 50% of the machine's memory by default) and keeps its verdicts, instead of being
   killed by the system with nothing reported.
 
 ### Using Feynman from a project

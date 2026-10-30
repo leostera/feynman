@@ -42,7 +42,7 @@ export interface Bounds {
   maxStates: number;
   /** Stop after this long, in milliseconds. */
   timeLimit: number;
-  /** Stop when the process holds more than this many megabytes (60% of the machine's by default). */
+  /** Stop when the process holds more than this many megabytes (50% of the machine's by default). */
   memoryLimit: number;
   /** Times one instance may take the same action on one path. */
   repeats: number;
