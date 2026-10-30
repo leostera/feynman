@@ -85,7 +85,8 @@ const CLASSIC = { engine: "classic" } as const;
 
 /** Two reports alike in everything but the clock. */
 function sameReport(check: string, ours: Report, theirs: Report, find: (check: string, detail: string) => void): void {
-  const comparable = (r: Report) => ({ ...r, durationMs: 0 });
+  // What a stopped search's states differ in is the integer engine's diagnostic only.
+  const comparable = ({ variety: _v, mostInFlight: _m, ...r }: Report) => ({ ...r, durationMs: 0 });
   if (!Bun.deepEquals(comparable(ours), comparable(theirs))) find(check, `states ${ours.states} vs ${theirs.states}; verdicts ${JSON.stringify(signature(ours))} vs ${JSON.stringify(signature(theirs))}`);
 }
 

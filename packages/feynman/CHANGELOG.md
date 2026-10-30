@@ -6,6 +6,28 @@ after.
 
 ## Unreleased
 
+### When a search does not finish
+
+- A search stopped by a limit says how far it got in full: a safety property that held "held
+  on every path of up to 6 event(s)", rather than "in the 300,000 states explored". `--json`
+  gives `heldUpTo`.
+- It also says what its states differ in, most first: "Session.outcomes (1,359 values),
+  HostDO.sockets (46 values) …; up to 7 message(s) in flight at once", and whether to bound a
+  growing field or cut the orders in flight. `--json` gives `variety` and `mostInFlight`.
+- A memory limit: the search stops past `--memory-limit GB` (`check.memoryLimit`, in
+  megabytes; 60% of the machine's memory by default) and keeps its verdicts, instead of being
+  killed by the system with nothing reported.
+
+### Using Feynman from a project
+
+- The package ships declaration files (`dist/types`), so a project that type-checks its specs
+  with its own `tsconfig` no longer type-checks Feynman's source (TS5097 without
+  `allowImportingTsExtensions`, errors under `noUncheckedIndexedAccess`).
+- `feynman run` with several scenarios prints how each ended, a line each; `--scenario NAME`
+  or `--all` print traces.
+- APIs from before time became the order of events say what replaced them: `s.wait`,
+  `s.settle(duration)`, and type errors on `ctx.now` and `ctx.clock`.
+
 ### Fixes
 
 - A spec with `symmetric: true` actors that answers a call crashed the check with "JSON Parse
