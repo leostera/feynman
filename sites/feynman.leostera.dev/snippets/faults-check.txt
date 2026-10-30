@@ -1,0 +1,6 @@
+$ bunx feynman check retried-call --brief --set faults=0
+  ✓ chargedOnce  The customer is never charged twice.
+
+$ bunx feynman check retried-call --brief
+  ✗ chargedOnce  The customer is never charged twice.
+    shortest counterexample, 5 event(s), needs 1 fault(s)
