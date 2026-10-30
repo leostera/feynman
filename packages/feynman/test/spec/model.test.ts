@@ -116,7 +116,7 @@ test("a step uses only the variables it lists", () => {
 const Ask = defineMessage("Ask");
 const Told = defineMessage("Told", {}, { tone: "reply" });
 
-test("ctx.reset starts the instance again: initial state but for what it keeps, no timers, no replies on their way", () => {
+test("ctx.reset starts the instance again: initial state but for what it keeps, no timers, and drops what it picks", () => {
   const Server = defineActor({
     name: "Server",
     zone,
@@ -138,7 +138,7 @@ test("ctx.reset starts the instance again: initial state but for what it keeps, 
     initialState: () => ({ asked: 0, told: 0, disk: 0 }),
     actions: {
       ask: { label: "Ask", description: "Asks, and waits.", sends: [Ask], starts: ["giveUp"], run: (s, _i, ctx) => void (s.asked++, s.disk++, ctx.send(ctx.the(Server), Ask, {}), ctx.start("giveUp")) },
-      crash: { label: "Crash", description: "Crashes, keeping its disk.", run: (_s, _i, ctx) => ctx.reset({ keeps: ["disk"] }) },
+      crash: { label: "Crash", description: "Crashes, keeping its disk, and forgets answers to what it asked.", run: (_s, _i, ctx) => ctx.reset({ keeps: ["disk"], drops: (d) => d.answers !== undefined }) },
     },
     transitions: {
       told: { on: Told, description: "Is told.", run: (s) => void s.told++ },
@@ -159,7 +159,7 @@ test("ctx.reset starts the instance again: initial state but for what it keeps, 
   const last = run.events.at(-1)!;
   expect(last.cancelled).toEqual(["giveUp"]);
   expect(last.changes.map((c) => `${c.path}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`)).toEqual(["asked: 1 → 0"]);
-  // The reply to its question went with its memory.
+  // The answer to its question went, as drops picked.
   expect(run.worlds.at(-1)!.pending).toEqual([]);
 });
 
