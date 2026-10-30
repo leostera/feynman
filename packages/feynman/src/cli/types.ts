@@ -80,5 +80,9 @@ export function typecheck(root: string, files: string[]): TypeError[] {
 function hint(message: string): string {
   if (/referenced directly or indirectly in its own initializer/.test(message))
     return `${message}\n  Two actors refer to each other in functions whose return type TypeScript must infer, usually input examples. Give that function a return type, like examples: (w): string[] => …`;
+  if (/^Property '(now|clock)' does not exist on type '(Reply)?Ctx/.test(message))
+    return `${message}\n  There is no clock: time is the order of events (RFD0004). A deadline or lease is a timer (ctx.start) that may fire at any point; compare what happened first, not times.`;
+  if (/^Property 'wait' does not exist on type 'Script/.test(message))
+    return `${message}\n  There is no waiting: time is the order of events (RFD0004). Fire the timer the scenario waits for: s.fire(instance, "timer").`;
   return message;
 }
