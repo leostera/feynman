@@ -37,6 +37,13 @@ type Instance = World["instances"][number];
 type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
 
+/** One thing the explored states differ in, and in how many ways (see `IntegerSearch.variety`). */
+export interface Variety {
+  /** `Actor.field`, or `message name` for the messages of that name in flight. */
+  what: string;
+  values: number;
+}
+
 /** Values named by integers: each distinct one (by its key) once. */
 class Interner<T> {
   private ids = new Map<string, number>();
@@ -199,6 +206,8 @@ export class IntegerSearch {
   depthReached = 0;
   /** Every path of up to this many events, from each root, was explored; the rest only if not stopped. */
   completeDepth = 0;
+  /** The most messages in flight at once in any explored world. */
+  mostInFlight = 0;
   readonly ownerCount = 1;
   readonly root: number[] = [];
   private parent: number[] = [];
@@ -448,6 +457,7 @@ export class IntegerSearch {
     this.seen.set(h1, h2, gid);
     if (folded) this.keepForTwins(gid, child, L, folded.plain);
     this.states++;
+    if (child[L.messages] > this.mostInFlight) this.mostInFlight = child[L.messages];
     if (this.watch.state) this.watch.state(this.materialize(child, L), this.budgetOf(child, L));
     const state = child;
     tuple ??= this.tupleOf(state, L);
@@ -542,6 +552,36 @@ export class IntegerSearch {
   }
 
   /** The search as a graph, for liveness (liveness.ts). */
+  /**
+   * What the states differ in, most first: for each actor's state field, how many values it
+   * took across the explored worlds, and for each message, how many different ones were in
+   * flight. A search too big to finish is usually one or two of these growing without bound.
+   */
+  variety(): Variety[] {
+    const values = new Map<string, Set<string>>();
+    const seen = (what: string, value: string) => {
+      let set = values.get(what);
+      if (!set) values.set(what, (set = new Set()));
+      set.add(value);
+    };
+    for (const instance of this.instanceStates.values) {
+      const state = instance.state as Record<string, unknown>;
+      if (state === null || typeof state !== "object") continue;
+      for (const [field, value] of Object.entries(state)) seen(`${instance.actor}.${field}`, sortedJson(value));
+    }
+    for (const pending of this.pendings.values) {
+      if (pending.kind !== "deliver") continue;
+      const p = pending as Extract<Pending, { kind: "deliver" }>;
+      const name = p.message.startsWith("failed:") ? p.message : (this.spec.messages[p.message]?.name ?? p.message);
+      seen(`message ${name}`, sortedJson([p.to, p.from, p.payload]));
+    }
+    return [...values]
+      .map(([what, set]) => ({ what, values: set.size }))
+      .filter((v) => v.values > 1)
+      .sort((a, b) => b.values - a.values)
+      .slice(0, 5);
+  }
+
   graph(): Graph {
     const size = this.parent.length;
     const index = new Map(this.predicates.map((p, i) => [p, i]));

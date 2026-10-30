@@ -103,7 +103,8 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
   const lines = [
-    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at ${report.stoppedBy}; raise it or lower depth to explore everything`)}`,
+    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
+    ...varietyLines(report),
     ...(options.brief ? [] : searchNotes(report)),
   ];
   for (const p of report.properties) {
@@ -154,6 +155,26 @@ function seedsText(seeds: Report["seeds"]): string[] {
   const parts = [...(ends ? [`the end of ${ends} scenario(s)`] : []), ...(starts ? [`the setup of ${starts}`] : [])];
   return parts.length ? [`and from ${parts.join(" and ")}`] : [];
 }
+
+/**
+ * What the states of a stopped search differ in, most first: where to make a model smaller
+ * (a field that only grows, a log, a counter, a message with many payloads) rather than
+ * only raising limits.
+ */
+function varietyLines(report: Report): string[] {
+  if (!report.variety) return [];
+  const list = report.variety.map((v) => `${v.what} (${v.values.toLocaleString()} values)`).join(", ");
+  const inFlight = `up to ${report.mostInFlight ?? 0} message(s) in flight at once`;
+  // A field with many values is the usual culprit; without one, it is the orders of what is in flight.
+  const grows = (report.variety[0]?.values ?? 0) >= GROWS;
+  const advice = grows
+    ? "A field that only grows (a log, a counter, ids) keeps every state new: bound it, or keep only what the properties read."
+    : "No one field grows much: it is the orders of the steps in flight. Fewer --repeats, instances or --faults, or fewer requests at once in the scenarios, shrink it.";
+  return [dim(`  states differ most in: ${list || "nothing"}; ${inFlight}. ${advice}`)];
+}
+
+/** How many values make a field the likely reason a search does not finish. */
+const GROWS = 50;
 
 /** The limit that stopped a search, as a word: "state", "time", "memory". */
 export function limitName(reason: Report["stoppedBy"]): string {
