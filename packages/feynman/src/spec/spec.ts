@@ -52,11 +52,6 @@ export interface MessageInfo {
   name: string;
   over?: string;
   tone: "request" | "reply" | "refused" | "stream";
-  /**
-   * A call (RFD0009): losing it, or the reply to it, gives the caller its failure, delivered
-   * as `failed:<key>`, instead of silence.
-   */
-  call: boolean;
   /** A reply to it records the request it answers, as `answers` on the reply in flight. */
   correlate?: boolean;
   /** Its payload's schema (RFD0011): every payload sent is checked against it. */
@@ -105,6 +100,12 @@ export interface StepInfo {
   tags: string[];
   when?: (state: unknown, model: ModelView) => boolean;
   /**
+   * What its parts (`with`) require of the model, such as a budget left: a bound of the model
+   * rather than something the system waits for, so a step held back only by it does not leave
+   * the system stuck.
+   */
+  bound?: (model: ModelView) => boolean;
+  /**
    * Fairness (RFD0006): whether this transition, once it stays (weak) or keeps coming back
    * (strong) possible, must eventually happen. Deliveries, timers and guards are weak unless
    * they say otherwise; actions are never fair.
@@ -147,7 +148,6 @@ export interface ActorInfo {
   zone: string;
   singleton: boolean;
   initialState: (ctx: { id: string; label: string }) => unknown;
-  durable: string[];
   /** Its instances are interchangeable (see `defineActor({ symmetric })`). */
   symmetric: boolean;
   display: Display<unknown>;
@@ -263,7 +263,7 @@ export type Pending =
 
 // Events -------------------------------------------------------------------------------------------
 
-export type EventKind = "spawn" | "action" | "deliver" | "timer" | "guard" | "lose" | "restart";
+export type EventKind = "spawn" | "action" | "deliver" | "timer" | "guard";
 
 export interface Change {
   instance: string;
@@ -289,8 +289,10 @@ export interface Event {
   /** The instance that took the step. */
   instance: string;
   actor: string;
-  /** The action or transition key: `link`, `message:Redeem`, `redeemTimeout`. */
+  /** The action or step's name: `link`, `redeem`, `redeemTimeout`. */
   key: string;
+  /** Its step's tags, when it has any: a fault is tagged `fault` (RFD0012). */
+  tags?: readonly string[];
   description: string;
   sources: string[];
   inputs?: Record<string, unknown>;

@@ -11,7 +11,12 @@
 // (read, miss, load, write, update, the invalidation lost, stale fill). Not 6: just after the
 // invalidation is lost the cache is still empty, which is fine; `converges` breaks only where
 // the cache can stay wrong forever, which takes the stale fill.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Get = defineMessage("Get");
 const Load = defineMessage("Load");
@@ -42,6 +47,8 @@ export function cache(variant: "buggy" | "fixed") {
           ctx.send(ctx.the(Cache), Invalidate, { version: state.version });
         },
       },
+      loadLost: lose(Load, { spend: faults }),
+      updateLost: lose(Update, { spend: faults }),
     },
   });
 
@@ -85,6 +92,9 @@ export function cache(variant: "buggy" | "fixed") {
           state.invalidated = Math.max(state.invalidated, msg.version);
         },
       },
+      getLost: lose(Get, { spend: faults }),
+      loadedLost: lose(Loaded, { spend: faults }),
+      invalidateLost: lose(Invalidate, { spend: faults }),
     },
   });
 
@@ -95,8 +105,9 @@ export function cache(variant: "buggy" | "fixed") {
     initialState: () => ({}),
     display: { icon: "server", status: () => "serving" },
     actions: {
-      read: { label: "Read", description: "Reads through the cache.", sends: [Get], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Cache), Get, {}) },
+      read: { with: [atMost(repeats)], label: "Read", description: "Reads through the cache.", sends: [Get], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Cache), Get, {}) },
       write: {
+        with: [atMost(repeats)],
         label: "Write",
         description: "Writes a new value.",
         inputs: { value: oneOf("b", "c") },

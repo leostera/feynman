@@ -1,17 +1,17 @@
 // The playground: the spec's world as a living diagram on one canvas, with its controls
 // floating over it. Time runs (Play) or steps (Step); messages travel between nodes, slowed
 // while in flight so you can see them. Click a node to act on it, carry what a node holds to
-// another to use it there, click a message to deliver it now or lose it. Routine steps such
+// another to use it there, click a message to deliver it now or take it by another step on it, a fault say. Routine steps such
 // as heartbeats run quietly: no bubbles, no tips, and Step goes past them. The timeline is
 // the event log: hover to peek, click to travel back, step through it with ← and →; acting
 // in the past continues from there.
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowsDownUpIcon, ArrowsLeftRightIcon, CheckIcon, CopyIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { choices, dropsFor, labelled, pendingInOrder, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
+import { choices, dropsFor, labelled, leftAloneStep as fairStepOn, pendingInOrder, stepsTaking, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
 import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
-import { labelOf, messageName, ordinal } from "./format";
-import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, type Asking, type Choosing } from "./playground/Actions";
+import { isFault, labelOf, messageName, ordinal } from "./format";
+import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, words, type Asking, type Choosing } from "./playground/Actions";
 import { bubbleText, fitOf, type Free, routineDelivery, sizesOf, Stage, TokenChip, useLayout, useView, type Bubble, type Dragging, type Flight, type Picking } from "./playground/Stage";
 import { nodeDisplay, sceneOf, type Scene } from "./scene";
 import { apply, current, nextHint, nextLabel, rollback, scenarioDump, type Op, type Session } from "./session";
@@ -561,7 +561,7 @@ function bubbleFor(spec: Spec, session: Session, index: number, fading: boolean)
 }
 
 function toneOf(event: Event): Bubble["tone"] {
-  if (event.error || event.violations.length || event.kind === "lose") return "bad";
+  if (event.error || event.violations.length || isFault(event)) return "bad";
   return event.kind === "action" ? "action" : event.kind === "timer" ? "quiet" : "message";
 }
 
@@ -852,6 +852,8 @@ function AddMenu({ world, groups, onRun }: { world: World; groups: GroupInfo[]; 
 
 function PacketMenu({ pending, world, onClose, onRun }: { pending: Extract<Pending, { kind: "deliver" }>; world: World; onClose: () => void; onRun: (op: Op) => void }) {
   const { spec } = useExplorer();
+  const receiver = spec.actors.find((a) => a.name === world.instances.find((i) => i.id === pending.to)?.actor);
+  const leftAlone = receiver && fairStepOn(receiver, pending.message);
   return (
     <div className="absolute bottom-20 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-kumo-elevated py-1 pl-4 pr-1 shadow-xl ring ring-kumo-line" onClick={(e) => e.stopPropagation()}>
       <span className="text-[13px]">
@@ -861,14 +863,17 @@ function PacketMenu({ pending, world, onClose, onRun }: { pending: Extract<Pendi
           from {labelOf(world, pending.from)} to {labelOf(world, pending.to)}
         </span>
       </span>
-      <Button size="xs" variant="primary" icon={<PlayIcon size={12} />} onClick={() => onRun({ op: "fire", pending: pending.id })}>
-        Deliver now
-      </Button>
-      {/* A call's failure happens in the caller: it cannot be lost. Losing a call, or its reply, fails the call (RFD0009). */}
-      {!pending.message.startsWith("failed:") && (
-        <Button size="xs" variant="secondary-destructive" icon={<XIcon size={12} />} onClick={() => onRun({ op: "lose", pending: pending.id })}>
-          {pending.answers || spec.messages[pending.message]?.call ? "Fail the call" : "Lose it"}
-        </Button>
+      {/* Every step that can take it now (RFD0012): the one left alone delivers it, faults and others by name. */}
+      {stepsTaking(spec, world, pending).map((step) =>
+        step === leftAlone ? (
+          <Button key={step} size="xs" variant="primary" icon={<PlayIcon size={12} />} onClick={() => onRun({ op: "fire", pending: pending.id })}>
+            Deliver now
+          </Button>
+        ) : (
+          <Button key={step} size="xs" variant={receiver?.transitions[step]?.tags.includes("fault") ? "secondary-destructive" : "secondary"} onClick={() => onRun({ op: "fire", pending: pending.id, step })}>
+            {words(step)}
+          </Button>
+        ),
       )}
       <Button size="xs" variant="ghost" shape="square" aria-label="Close" icon={<XIcon size={12} />} onClick={onClose} />
     </div>

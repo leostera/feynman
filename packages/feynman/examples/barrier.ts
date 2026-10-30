@@ -9,7 +9,12 @@
 // arrives and is counted, A restarts and arrives again, and is counted again: the barrier
 // opens); fixed holds, with a fault too. Both get stuck in 4 steps when an arrival is lost:
 // nothing resends it, so the barrier never opens.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Arrived = defineMessage("Arrived");
 const Go = defineMessage("Go");
@@ -44,6 +49,7 @@ export function barrier(variant: "buggy" | "fixed") {
           for (const w of ctx.all(Worker)) ctx.send(w, Go, {});
         },
       },
+      arrivedLost: lose(Arrived, { spend: faults }),
     },
   });
 
@@ -51,7 +57,6 @@ export function barrier(variant: "buggy" | "fixed") {
     name: "Worker",
     zone,
     // `reached` is what happened, which a restart cannot undo; `arrived` is what the worker remembers.
-    durable: ["reached"],
     initialState: () => ({ arrived: false, reached: false, through: false }),
     display: {
       icon: "cpu",
@@ -60,6 +65,7 @@ export function barrier(variant: "buggy" | "fixed") {
     },
     actions: {
       arrive: {
+        with: [atMost(repeats)],
         label: "Reach the barrier",
         description: "Tells the coordinator it is here.",
         when: (state) => !state.arrived,
@@ -71,7 +77,11 @@ export function barrier(variant: "buggy" | "fixed") {
         },
       },
     },
-    transitions: { go: { on: Go, description: "Goes on past the barrier.", run: (state) => void (state.through = true) } },
+    transitions: {
+      go: { on: Go, description: "Goes on past the barrier.", run: (state) => void (state.through = true) },
+      goLost: lose(Go, { spend: faults }),
+      crash: crash({ keeps: ["reached"], spend: faults }),
+    },
   });
 
   const waitsForAll = defineProperty("waitsForAll", {
@@ -97,7 +107,7 @@ export function barrier(variant: "buggy" | "fixed") {
       const [a] = ["Worker A", "Worker B"].map((name) => s.spawn(Worker, name));
       s.act(a, "arrive");
       s.settle();
-      s.restart(a);
+      s.step(a, "crash");
       s.act(a, "arrive");
       s.settle();
     },

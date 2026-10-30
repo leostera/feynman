@@ -11,7 +11,12 @@
 // Expected, with three nodes: buggy breaks `oneLeader` in 7 steps with one fault (A
 // campaigns, B votes for A, A leads; B restarts and forgets its vote, B campaigns, C votes for
 // B, B leads); fixed holds, with a restart too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const RequestVote = defineMessage("RequestVote");
 const Vote = defineMessage("Vote", {}, { tone: "reply" });
@@ -24,7 +29,6 @@ export function raftVote(variant: "buggy" | "fixed") {
     zone,
     symmetric: true,
     // Raft keeps `votedFor` on stable storage, so a restart cannot make a node vote twice.
-    durable: variant === "fixed" ? ["votedFor"] : [],
     initialState: () => ({ votedFor: null as string | null, votes: [] as string[], leader: false }),
     display: {
       icon: "server",
@@ -34,6 +38,7 @@ export function raftVote(variant: "buggy" | "fixed") {
     },
     actions: {
       campaign: {
+        with: [atMost(repeats)],
         label: "Campaign",
         description: "Votes for itself and asks the others for their votes.",
         when: (state) => state.votedFor === null,
@@ -67,6 +72,9 @@ export function raftVote(variant: "buggy" | "fixed") {
           if (state.votes.length >= 2) state.leader = true;
         },
       },
+      requestVoteLost: lose(RequestVote, { spend: faults }),
+      voteLost: lose(Vote, { spend: faults }),
+      crash: crash({ keeps: variant === "fixed" ? ["votedFor"] : [], spend: faults }),
     },
   });
 
@@ -94,7 +102,7 @@ export function raftVote(variant: "buggy" | "fixed") {
       s.act(a, "campaign");
       s.deliver(b, RequestVote);
       s.deliver(a, Vote);
-      s.restart(b);
+      s.step(b, "crash");
       s.act(c, "campaign");
       s.deliver(b, RequestVote);
       s.settle();

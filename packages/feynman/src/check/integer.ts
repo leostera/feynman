@@ -21,7 +21,7 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, stepsTaking, traceView, whenHolds, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, FAULT, fire, guard, holdsIn, isLiveness, observation, stepsTaking, traceView, whenHolds, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
@@ -70,8 +70,8 @@ interface Renamed {
 
 /**
  * Where things are in a world's vector:
- * [state id per instance | faults | actions taken per (instance, action) | fresh id | rng |
- *  variables | memory | message count | message ids | timer ids], messages and timers each
+ * [state id per instance | fresh id | rng | variables | memory | message count | message ids |
+ *  timer ids], messages and timers each
  * oldest first. An instance's state id covers its own variables; `variables` is the world's.
  * The memory is what `never` properties remember of the path (owner.ts memoryOf), interned.
  *
@@ -87,8 +87,6 @@ interface Layout {
   slots: Map<string, number>;
   /** What each instance state can do, by state id. */
   plans: Map<number, LocalPlan>;
-  /** A restart choice per instance that can restart (not a singleton), in slot order. */
-  restarts: Choice[];
   /** `timersOf` for a vector without timers: shared, never written. */
   noTimers: Int32Array;
   /**
@@ -97,9 +95,6 @@ interface Layout {
    * without reading their states, so its effect holds only among the same instances.
    */
   cache: Map<number, Map<number, Effect>>;
-  /** Index of each `instance.action` counter, after the faults. */
-  acts: Map<string, number>;
-  faults: number;
   fresh: number;
   rng: number;
   /** The world's model variables (RFD0012), interned. */
@@ -137,7 +132,7 @@ interface ChoiceName {
   instance?: string;
   key?: string;
   inputs?: Record<string, unknown>;
-  /** For `fire` and `lose`: the pending entry's intern id. */
+  /** For `fire`: the pending entry's intern id. */
   pending?: number;
 }
 
@@ -189,10 +184,10 @@ interface Expanding {
 interface Step {
   layout: Layout;
   slot: number;
-  /** Where in the vector the message delivered or lost is; -1 for other steps. */
+  /** Where in the vector the message delivered is; -1 for other steps. */
   at: number;
   effect: Effect;
-  actsAt: number;
+  /** Its step is tagged `fault` (RFD0012): counterexamples prefer fewer. */
   fault: boolean;
   /** What `never` properties remember after it. */
   memory: number;
@@ -229,10 +224,8 @@ export class IntegerSearch {
 
   private instanceStates = new Interner<Instance>();
   private pendings = new Interner<PendingTemplate>();
-  /** By pending id: whether a fault can lose it (a call's failure cannot; engine.ts losable). */
-  private canLose: boolean[] = [];
-  /** By pending id, the instance a call's failure is on its way to; a restart drops it, so it is in what a restart does. */
-  private failureTo: (string | undefined)[] = [];
+  /** By `actor.step`: whether the step is tagged `fault`. */
+  private faultSteps = new Map<string, boolean>();
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
   private stepNames = new Interner<string>();
@@ -260,11 +253,10 @@ export class IntegerSearch {
   private plains = new Map<number, [number, number]>();
   private twinChecks = 0;
   /**
-   * For choices that do not name a pending entry (actions, guards, restarts), which are shared
-   * objects (`planOf`, `Layout.restarts`): the action's counter in the vector, the step cache's
-   * argument, and the choice's name, worked out once.
+   * For choices that do not name a pending entry (actions, guards), which are shared objects
+   * (`planOf`): the step cache's argument, and the choice's name, worked out once.
    */
-  private facts = new WeakMap<Choice, { actsAt: number; arg: number; named: number }>();
+  private facts = new WeakMap<Choice, { arg: number; named: number }>();
   /** Choices of actions whose inputs come from `examples`, by (tuple, instance, action). */
   private examples = new Map<string, Choice[]>();
   /** While twin checks remain: each state's vector, so a twin's world need not be replayed. */
@@ -323,11 +315,8 @@ export class IntegerSearch {
     let layout = this.layouts.get(key);
     if (layout) return layout;
     const slots = new Map(world.instances.map((instance, slot) => [instance.id, slot]));
-    const acts = new Map<string, number>();
-    for (const instance of world.instances) for (const k of Object.keys(actorNamed(this.spec, instance.actor).actions)) acts.set(`${instance.id}.${k}`, acts.size);
     const n = world.instances.length;
-    const restarts = world.instances.flatMap((i): Choice[] => (actorNamed(this.spec, i.actor).singleton ? [] : [{ kind: "restart", instance: i.id }]));
-    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), restarts, noTimers: new Int32Array(world.instances.length), cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, variables: n + 3 + acts.size, memory: n + 4 + acts.size, messages: n + 5 + acts.size };
+    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), noTimers: new Int32Array(n), cache: new Map(), fresh: n, rng: n + 1, variables: n + 2, memory: n + 3, messages: n + 4 };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -374,7 +363,7 @@ export class IntegerSearch {
       if (folded) this.keepForTwins(gid, vector, L, folded.plain);
       this.seen.set(h1, h2, gid);
       this.states++;
-      this.watch.state?.(world, this.budgetOf(vector, L));
+      this.watch.state?.(world, this.memoryText(vector, L));
       for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid, L);
       const tuple = this.tupleOf(vector, L);
@@ -403,7 +392,6 @@ export class IntegerSearch {
     }
     for (let option = 0; option < options.length; option++) {
       const step = this.step(here, options[option]);
-      if (!step) continue;
       this.reachedSteps[step.effect.reached] = true;
       const goesOn = step.effect.error ? this.failed(from, option, options[option], step) : this.land(from, option, options[option], step, next, open);
       if (!goesOn) return false;
@@ -480,7 +468,7 @@ export class IntegerSearch {
     if (folded) this.keepForTwins(gid, child, L, folded.plain);
     this.states++;
     if (child[L.messages] > this.mostInFlight) this.mostInFlight = child[L.messages];
-    if (this.watch.state) this.watch.state(this.materialize(child, L), this.budgetOf(child, L));
+    if (this.watch.state) this.watch.state(this.materialize(child, L), this.memoryText(child, L));
     const state = child;
     tuple ??= this.tupleOf(state, L);
     if (this.always.length) this.judge(tuple, state, gid, L);
@@ -512,7 +500,7 @@ export class IntegerSearch {
     const out: Edge[] = [];
     for (let option = 0; option < options.length; option++) {
       const step = this.step(here, options[option]);
-      if (!step || step.effect.error) continue;
+      if (step.effect.error) continue;
       if (trail) this.remember(trail, step.effect.event, step);
       const [h1, h2] = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
       const to = this.seen.get(h1, h2);
@@ -594,7 +582,7 @@ export class IntegerSearch {
     for (const pending of this.pendings.values) {
       if (pending.kind !== "deliver") continue;
       const p = pending as Extract<Pending, { kind: "deliver" }>;
-      const name = p.message.startsWith("failed:") ? p.message : (this.spec.messages[p.message]?.name ?? p.message);
+      const name = this.spec.messages[p.message]?.name ?? p.message;
       seen(`message ${name}`, sortedJson([p.to, p.from, p.payload]));
     }
     return [...values]
@@ -635,7 +623,7 @@ export class IntegerSearch {
     for (const { from, option } of steps) {
       let world = at.get(from);
       if (!world) at.set(from, (world = this.worldAt(from)));
-      const choice = branches(this.spec, world, this.faults[from] < this.b.faults)[option];
+      const choice = branches(this.spec, world)[option];
       out.set(`${from}:${option}`, worlds ? { choice, world } : { choice });
     }
     return out;
@@ -657,14 +645,14 @@ export class IntegerSearch {
   }
 
   /**
-   * The worlds one step away, faults aside and whatever the repeats bound says, each up to
-   * symmetry and without its budget: renamed twins must agree on them (owner.ts successorsPrint).
+   * The worlds one step away, each up to symmetry: renamed twins must agree on them (owner.ts
+   * successorsPrint).
    */
   private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
     const here = this.here(vector, L);
     const out = new Set<string>();
-    for (const choice of branches(this.spec, here.world(), false)) {
-      const step = this.stepOf(here, choice);
+    for (const choice of branches(this.spec, here.world())) {
+      const step = this.step(here, choice);
       out.add(step.effect.error ? `error:${step.effect.error}` : this.symmetricPrint(this.applied(vector, step), L, symmetry).world.join(","));
     }
     return [...out].sort().join("\n");
@@ -697,7 +685,6 @@ export class IntegerSearch {
     let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]) + lane2(1, L.variables, v[L.variables]);
     let extra1 = lane1(1, L.memory, v[L.memory]);
     let extra2 = lane2(1, L.memory, v[L.memory]);
-    for (let i = L.faults; i < L.fresh; i++) (extra1 += lane1(1, i, v[i])), (extra2 += lane2(1, i, v[i]));
     let best: [number, number] | undefined;
     let least: [number, number] | undefined;
     let plain: [number, number] = [0, 0];
@@ -797,20 +784,17 @@ export class IntegerSearch {
         return { kind: "act", instance: name.instance!, key: name.key!, inputs: name.inputs! };
       case "guard":
         return { kind: "guard", instance: name.instance!, key: name.key! };
-      case "restart":
-        return { kind: "restart", instance: name.instance! };
-      case "fire":
-      case "lose": {
+      case "fire": {
         const p = world.pending.find((x) => this.pendingId(x) === name.pending);
         if (!p) throw new Error("a path from the integer core does not replay: what it names is not pending");
-        return name.kind === "fire" ? { kind: "fire", pending: p.id, step: name.key! } : { kind: "lose", pending: p.id };
+        return { kind: "fire", pending: p.id, step: name.key! };
       }
     }
   }
 
   /** A choice's name: worked out once for shared choices, by its pending entry for the others. */
   private nameIn(choice: Choice, vector: Int32Array, L: Layout): number {
-    return choice.kind === "fire" || choice.kind === "lose" ? this.nameOf(choice, vector, L) : this.factsOf(L, choice).named;
+    return choice.kind === "fire" ? this.nameOf(choice, vector, L) : this.factsOf(L, choice).named;
   }
 
   private nameOf(choice: Choice, vector: Int32Array, L: Layout): number {
@@ -819,11 +803,7 @@ export class IntegerSearch {
         ? { kind: "act", instance: choice.instance, key: choice.key, inputs: choice.inputs }
         : choice.kind === "guard"
           ? { kind: "guard", instance: choice.instance, key: choice.key }
-          : choice.kind === "restart"
-            ? { kind: "restart", instance: choice.instance }
-            : choice.kind === "fire"
-              ? { kind: "fire", key: choice.step, pending: vector[L.messages + choice.pending] }
-              : { kind: "lose", pending: vector[L.messages + choice.pending] };
+          : { kind: "fire", key: choice.step, pending: vector[L.messages + choice.pending] };
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
@@ -885,58 +865,61 @@ export class IntegerSearch {
     return { seq: 0, fresh: {}, rng: 0, instances, pending: new Array(vector.length - L.messages - 1), ...this.variablesOf(vector, L) } as World;
   }
 
-  private budgetOf(vector: Int32Array, L: Layout): { acts: Record<string, number>; faults: number; memory: string } {
-    const acts: Record<string, number> = {};
-    for (const [id, at] of L.acts) if (vector[L.faults + 1 + at]) acts[id] = vector[L.faults + 1 + at];
-    return { acts, faults: vector[L.faults], memory: this.memories.values[vector[L.memory]] };
+  /** What the search's watcher sees of a state besides its world: what `never` properties remember. */
+  private memoryText(vector: Int32Array, L: Layout): string {
+    return this.memories.values[vector[L.memory]];
   }
 
-  /** What a choice does, to apply to the vector; none if it would repeat an action past the bound. */
-  private step(here: Here, choice: Choice): Step | undefined {
-    if (choice.kind === "act" && here.vector[this.factsOf(here.layout, choice).actsAt] >= this.b.repeats) return undefined;
-    return this.stepOf(here, choice);
-  }
-
-  private factsOf(L: Layout, choice: Choice): { actsAt: number; arg: number; named: number } {
+  private factsOf(L: Layout, choice: Choice): { arg: number; named: number } {
     let facts = this.facts.get(choice);
     if (!facts) {
-      if (choice.kind === "fire" || choice.kind === "lose") throw new Error("a choice on a pending entry has no facts of its own");
-      this.facts.set(choice, (facts = { actsAt: choice.kind === "act" ? actsIndex(L, choice) : -1, arg: this.argOf(choice), named: this.nameOf(choice, NONE, L) }));
+      if (choice.kind === "fire") throw new Error("a choice on a pending entry has no facts of its own");
+      // Shared choices only: an action's or a guard's.
+      this.facts.set(choice, (facts = { arg: this.argOf(choice), named: this.nameOf(choice, NONE, L) }));
     }
     return facts;
   }
 
-  /** What a choice does, whatever the repeats bound says. */
-  private stepOf(here: Here, choice: Choice): Step {
+  /** What a choice does, to apply to the vector. */
+  private step(here: Here, choice: Choice): Step {
     const { vector, layout: L } = here;
-    const actsAt = choice.kind === "act" ? this.factsOf(L, choice).actsAt : -1;
     let slot: number;
     let at = -1;
-    if (choice.kind === "fire" || choice.kind === "lose") {
+    let name: string;
+    if (choice.kind === "fire") {
       const chosen = this.pendings.values[vector[L.messages + choice.pending]];
       slot = L.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
-    } else slot = L.slots.get(choice.instance)!;
-    return { layout: L, slot, at, effect: this.effectOf(here, slot, choice), actsAt, fault: choice.kind === "lose" || choice.kind === "restart", memory: vector[L.memory] };
+      name = choice.step;
+    } else {
+      slot = L.slots.get(choice.instance)!;
+      name = choice.key;
+    }
+    return { layout: L, slot, at, effect: this.effectOf(here, slot, choice), fault: this.isFault(L.instances[slot].actor, name), memory: vector[L.memory] };
+  }
+
+  /** Whether an actor's step is tagged `fault`, worked out once per step. */
+  private isFault(actor: string, step: string): boolean {
+    const key = `${actor}.${step}`;
+    let fault = this.faultSteps.get(key);
+    if (fault === undefined) {
+      const info = actorNamed(this.spec, actor);
+      this.faultSteps.set(key, (fault = (info.transitions[step] ?? info.actions[step])?.tags.includes(FAULT) === true));
+    }
+    return fault;
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
   private effectOf(here: Here, slot: number, choice: Choice): Effect {
     const { vector, layout: L } = here;
     const timers = here.timersOf[slot];
-    // The key: the instance's state, its own timers (start, cancel and restart read them), and
+    // The key: the instance's state, its own timers (start, cancel and reset read them), and
     // the step with its argument: a message or timer by its intern id, which says who sent
     // what; anything else by an interned name.
-    const arg = choice.kind === "fire" ? (vector[L.messages + choice.pending] * STEPS + this.stepIndex(choice.step)) * 4 : choice.kind === "lose" ? vector[L.messages + choice.pending] * 4 + 2 : this.factsOf(L, choice).arg * 4 + 1;
+    const arg = choice.kind === "fire" ? (vector[L.messages + choice.pending] * STEPS + this.stepIndex(choice.step)) * 2 : this.factsOf(L, choice).arg * 2 + 1;
     // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
     if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
     const local = vector[slot] * 1_048_576 + timers;
-    // A restart drops the failures on their way to it, which the key does not hold: work it out each time then.
-    if (choice.kind === "restart" && this.failuresTo(vector, L, choice.instance)) {
-      const world = here.world();
-      const step = run(this.spec, world, choice, observation());
-      return this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event);
-    }
     let byArg = L.cache.get(local);
     if (!byArg) L.cache.set(local, (byArg = new Map()));
     const cached = byArg.get(arg);
@@ -948,11 +931,6 @@ export class IntegerSearch {
     if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0, variables: this.variablesId(step.world) };
     byArg.set(arg, effect);
     return effect;
-  }
-
-  private failuresTo(vector: Int32Array, L: Layout, instance: string): boolean {
-    for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) if (this.failureTo[vector[i]] === instance) return true;
-    return false;
   }
 
   /** A step's name as a small number, for the step cache's key. */
@@ -980,8 +958,8 @@ export class IntegerSearch {
     return steps;
   }
 
-  private argOf(choice: Choice): number {
-    const name = choice.kind === "act" ? `a|${choice.key}|${JSON.stringify(choice.inputs)}` : choice.kind === "guard" ? `g|${choice.key}` : "r";
+  private argOf(choice: Exclude<Choice, { kind: "fire" }>): number {
+    const name = choice.kind === "act" ? `a|${choice.key}|${JSON.stringify(choice.inputs)}` : `g|${choice.key}`;
     return this.stepArgs.id(name, () => name);
   }
 
@@ -1013,7 +991,7 @@ export class IntegerSearch {
    * The message chosen goes from where it is; any other removed message, its first copy
    * (copies are alike, but where they are decides the order of choices). New ones go last.
    */
-  private applied(vector: Int32Array, { layout: L, slot, at: chosen, effect, actsAt, fault, memory }: Step): Int32Array {
+  private applied(vector: Int32Array, { layout: L, slot, at: chosen, effect, memory }: Step): Int32Array {
     const M = L.messages;
     const count = vector[M];
     const { removesMessages: rm, removesTimers: rt, addsMessages: am, addsTimers: at } = effect;
@@ -1022,8 +1000,6 @@ export class IntegerSearch {
     out.set(vector.subarray(0, M));
     out[slot] = effect.state;
     out[L.memory] = memory;
-    if (actsAt >= 0) out[actsAt]++;
-    if (fault) out[L.faults]++;
     if (effect.fresh !== undefined) out[L.fresh] = effect.fresh;
     if (effect.rng !== undefined) out[L.rng] = effect.rng;
     if (effect.variables !== undefined) out[L.variables] = effect.variables;
@@ -1098,8 +1074,8 @@ export class IntegerSearch {
   /**
    * Every choice from a vector, as `branches` gives them from its world, in the same order:
    * actions (with their inputs), then guards, instance by instance; then everything pending,
-   * messages before timers, oldest first (pendingInOrder, which the vector keeps); then, while
-   * faults are left, losing each message and restarting each instance that can restart.
+   * messages before timers, oldest first (pendingInOrder, which the vector keeps), each to
+   * every step that can take it.
    */
   private choicesOf(here: Here, tuple: number): Choice[] {
     const { vector, layout: L } = here;
@@ -1113,10 +1089,6 @@ export class IntegerSearch {
     for (let k = 1; k <= pending; k++) {
       const id = vector[L.messages + k];
       for (const step of this.takers(id, vector[L.slots.get(this.pendings.values[id].to)!], vector[L.variables])) out.push(fireAt(k, step));
-    }
-    if (vector[L.faults] < this.b.faults) {
-      for (let k = 1; k <= vector[L.messages]; k++) if (this.canLose[vector[L.messages + k]]) out.push(loseAt(k));
-      for (const c of L.restarts) out.push(c);
     }
     return out;
   }
@@ -1135,7 +1107,7 @@ export class IntegerSearch {
     const actor = actorNamed(this.spec, instance.actor);
     const acts: LocalPlan["acts"] = [];
     for (const info of Object.values(actor.actions)) {
-      if (info.when && !whenHolds(this.spec, world, instance, info)) continue;
+      if (!whenHolds(this.spec, world, instance, info)) continue;
       const inputs = info.inputs as ActionInputs;
       if (Object.values(inputs).some((input) => input.examples)) acts.push({ key: info.key, inputs });
       else acts.push({ key: info.key, choices: inputCombinations(this.spec, NO_WORLD, inputs).map((combo): Choice => ({ kind: "act", instance: instance.id, key: info.key, inputs: combo })) });
@@ -1153,7 +1125,7 @@ export class IntegerSearch {
     if (reads === undefined) {
       const info = actorNamed(this.spec, actor);
       const one = new Set(this.spec.variables.filter((v) => !v.each).map((v) => v.name));
-      reads = [...Object.values(info.actions), ...Object.values(info.transitions)].some((s) => s.when && s.uses.some((u) => one.has(u)));
+      reads = [...Object.values(info.actions), ...Object.values(info.transitions)].some((s) => (s.when || s.bound) && s.uses.some((u) => one.has(u)));
       this.readsWorld.set(actor, reads);
     }
     return reads;
@@ -1181,10 +1153,6 @@ export class IntegerSearch {
       const { id: _, ...template } = p;
       return template;
     });
-    if (this.canLose[id] === undefined) {
-      this.canLose[id] = losable(p);
-      this.failureTo[id] = p.kind === "deliver" && calledBy(p.message) ? p.to : undefined;
-    }
     return id;
   }
 
@@ -1209,7 +1177,6 @@ const NO_WORLD = { seq: 0, fresh: {}, rng: 0, instances: [], pending: [] } as Wo
 
 /** Choices on pending entry `k`, shared: they name it by its place, and the step that takes it. */
 const fires: Map<string, Choice>[] = [];
-const loses: Choice[] = [];
 function fireAt(k: number, step: string): Choice {
   const byStep = (fires[k] ??= new Map());
   let choice = byStep.get(step);
@@ -1218,9 +1185,6 @@ function fireAt(k: number, step: string): Choice {
 }
 /** Distinct step names the step cache tells apart in a key. */
 const STEPS = 4096;
-function loseAt(k: number): Choice {
-  return (loses[k] ??= { kind: "lose", pending: k });
-}
 /** A step property's answer, as kept: not known yet, holds, breaks. */
 const UNKNOWN = 0;
 const HOLDS = 1;
@@ -1228,11 +1192,6 @@ const BREAKS = 2;
 
 function lessThan(a: [number, number], b: [number, number]): boolean {
   return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
-}
-
-/** Where an action's count is in the vector. */
-function actsIndex(L: Layout, choice: Extract<Choice, { kind: "act" }>): number {
-  return L.faults + 1 + L.acts.get(`${choice.instance}.${choice.key}`)!;
 }
 
 function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undefined): Edge {
@@ -1249,10 +1208,6 @@ function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
       return fire(spec, world, choice.pending, choice.step, how);
     case "guard":
       return guard(spec, world, choice.instance, choice.key, how);
-    case "restart":
-      return restart(spec, world, choice.instance, how);
-    case "lose":
-      return lose(spec, world, choice.pending, how);
   }
 }
 
@@ -1308,7 +1263,7 @@ function printOf(v: Int32Array, L: Layout): [number, number] {
 
 /** A child's fingerprint: the parent's, with the parts the step changes taken out and put back. */
 function childPrint(parent: Entry, step: Step): [number, number] {
-  const { layout: L, slot, effect: e, actsAt, fault } = step;
+  const { layout: L, slot, effect: e } = step;
   const v = parent.vector;
   let h1 = parent.h1;
   let h2 = parent.h2;
@@ -1318,8 +1273,6 @@ function childPrint(parent: Entry, step: Step): [number, number] {
     h2 += lane2(1, i, to) - lane2(1, i, v[i]);
   };
   swap(slot, e.state);
-  if (actsAt >= 0) swap(actsAt, v[actsAt] + 1);
-  if (fault) swap(L.faults, v[L.faults] + 1);
   if (e.fresh !== undefined) swap(L.fresh, e.fresh);
   if (e.rng !== undefined) swap(L.rng, e.rng);
   if (e.variables !== undefined) swap(L.variables, e.variables);

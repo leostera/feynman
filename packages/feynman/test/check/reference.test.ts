@@ -4,19 +4,20 @@
 // the checker's search, its state identity and its judging lose nothing.
 import { describe, expect, test } from "bun:test";
 import { check, initialWorld } from "../../src/check/explore.ts";
-import { caseName, corpus } from "../examples/corpus.ts";
+import { faultsIn } from "../../src/check/faults.ts";
+import { caseName, configured, corpus } from "../examples/corpus.ts";
 import { explore, worldKey } from "./reference.ts";
 
 describe("the checker against a reference explorer", () => {
   for (const example of corpus) for (const c of example.cases) {
     test(caseName(example, c), async () => {
-      const spec = example.spec(c.variant);
-      const bounds = { depth: c.bounds.depth ?? 60, faults: c.bounds.faults ?? 0, repeats: 2, instances: example.instances ?? {} };
+      const { spec } = configured(example.spec(c.variant), { faults: c.bounds.faults ?? 0, repeats: 2 });
+      const bounds = { depth: c.bounds.depth ?? 60, instances: example.instances ?? {} };
       const theirs = explore(spec, bounds);
 
-      const worlds = new Set([worldKey(initialWorld(spec, bounds), {}, 0)]);
+      const worlds = new Set([worldKey(initialWorld(spec, bounds))]);
       const ours = await check(spec, { ...bounds, walks: 0, reduce: false, symmetry: false, maxStates: 2_000_000, timeLimit: 120_000 }, [], {
-        watch: { state: (world, b) => worlds.add(worldKey(world, b.acts, b.faults)) },
+        watch: { state: (world) => worlds.add(worldKey(world)) },
       });
 
       expect(ours.exhaustive).toBe(true);
@@ -26,7 +27,7 @@ describe("the checker against a reference explorer", () => {
       expect(broken).toEqual(Object.fromEntries(theirs.broken));
       expect(ours.errors.map((e) => e.message).sort()).toEqual([...theirs.errors].sort());
       expect([...ours.coverage.reached].sort()).toEqual([...theirs.reached].sort());
-      const stuck = ours.stuck && { events: ours.stuck.counterexample.events.length, faults: ours.stuck.counterexample.events.filter((e) => e.kind === "lose" || e.kind === "restart").length };
+      const stuck = ours.stuck && { events: ours.stuck.counterexample.events.length, faults: faultsIn(ours.stuck.counterexample.events) };
       expect(stuck).toEqual(theirs.stuck);
       const live = Object.fromEntries(ours.properties.filter((p) => theirs.liveness.has(p.id)).map((p) => [p.id, p.holds ? (p.unfinished ? "unfinished" : "holds") : "broken"]));
       expect(live).toEqual(Object.fromEntries(theirs.liveness));

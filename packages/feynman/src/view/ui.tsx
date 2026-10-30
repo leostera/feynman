@@ -207,7 +207,6 @@ export function EntityDetails({ ids, world }: { ids: string[]; world: World }) {
             <section>
               <h4 className="mb-1 text-[11px] font-medium text-kumo-subtle">State</h4>
               <StateTree value={instance.state} />
-              {actor.durable.length > 0 && <p className="mt-1 text-xs text-kumo-subtle">A restart keeps {actor.durable.join(", ")}.</p>}
             </section>
             {Object.values(actor.actions).length > 0 && (
               <section className="flex flex-col gap-2">

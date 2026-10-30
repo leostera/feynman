@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { check, type Bounds, type Report, type Seed } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { defineActor, defineMessage, defineProperty, defineScenario, defineZone, type Spec } from "../../src/spec/index.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineZone, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 import { build, describe as describeSpec } from "../fuzz/spec.ts";
 
@@ -68,6 +68,7 @@ test("a step that lists instances is not replayed from a world with other instan
         ping: {
           label: "Ping",
           description: "Pings every replica.",
+          with: [atMost(2)],
           sends: [Ping],
           run: (state, _i, ctx) => {
             state.sent++;
@@ -87,7 +88,7 @@ test("a step that lists instances is not replayed from a world with other instan
       scenarios: [aThirdReplica],
     });
   })();
-  const report = await bothAgree(spec, { depth: 8, repeats: 2, instances: { Replica: 2 } }, scenarioSeeds(spec));
+  const report = await bothAgree(spec, { depth: 8, instances: { Replica: 2 } }, scenarioSeeds(spec));
   expect(report.seeds.length).toBe(1);
 });
 

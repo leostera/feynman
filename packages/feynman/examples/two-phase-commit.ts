@@ -13,7 +13,12 @@
 //   can happen: the coordinator waits forever. The checker reports that as stuck, too, as
 //   early as it can: in 5 steps (begin, prepare one, it votes, the vote is counted, the
 //   other prepare lost).
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf, type Script } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf, type Script } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Prepare = defineMessage("Prepare");
 const Vote = defineMessage("Vote", { yes: Boolean });
@@ -28,7 +33,6 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     place: { order: 1 },
     symmetric: true,
     // Votes are written to a log before they are sent, so restarts change nothing.
-    durable: ["prepared", "vote", "outcome"],
     initialState: () => ({ prepared: false, vote: null as "yes" | "no" | null, outcome: null as "commit" | "abort" | null }),
     display: {
       icon: "database",
@@ -37,6 +41,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     actions: {
       vote: {
+        with: [atMost(repeats)],
         label: "Vote",
         description: "Votes on the transaction; a no aborts it here at once.",
         when: (state) => state.prepared && state.vote === null,
@@ -58,6 +63,9 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
           if (state.outcome === null) state.outcome = msg.commit ? "commit" : "abort";
         },
       },
+      prepareLost: lose(Prepare, { spend: faults }),
+      decideLost: lose(Decide, { spend: faults }),
+      crash: crash({ keeps: ["prepared", "vote", "outcome"], spend: faults }),
     },
   });
 
@@ -75,6 +83,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     actions: {
       begin: {
+        with: [atMost(repeats)],
         label: "Begin",
         description: "Asks every participant to prepare.",
         when: (state) => !state.begun,
@@ -102,6 +111,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
           for (const p of participants) ctx.send(p, Decide, { commit: state.decided });
         },
       },
+      voteLost: lose(Vote, { spend: faults }),
     },
   });
 
@@ -165,7 +175,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
       const [a, b] = start(s);
       s.act(a, "vote", { choice: "yes" });
       s.act(b, "vote", { choice: "yes" });
-      s.drop(s.the(Coordinator), Vote);
+      s.step(s.the(Coordinator), "voteLost");
       s.settle();
     },
   });

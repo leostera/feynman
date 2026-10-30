@@ -14,7 +14,12 @@
 // Expected: buggy breaks `ackedIsReplicated` in 3 steps without faults (write, the primary
 // stores, acknowledges and replicates, the acknowledgement arrives first); fixed holds, with
 // a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Ack = defineMessage("Ack", {}, { tone: "reply" });
@@ -32,9 +37,12 @@ export function primaryBackup(variant: "buggy" | "fixed") {
     initialState: () => ({ acked: 0 }),
     display: { icon: "laptop", status: (s) => (s.acked ? `told ${s.acked} write(s) succeeded` : "nothing acknowledged") },
     actions: {
-      write: { label: "Write", description: "Writes to the primary.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Primary), Write, {}) },
+      write: { with: [atMost(repeats)], label: "Write", description: "Writes to the primary.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Primary), Write, {}) },
     },
-    transitions: { ack: { on: Ack, description: "Is told the write succeeded.", run: (state) => void (state.acked += 1) } },
+    transitions: {
+      ack: { on: Ack, description: "Is told the write succeeded.", run: (state) => void (state.acked += 1) },
+      ackLost: lose(Ack, { spend: faults }),
+    },
   });
 
   const Primary = defineActor({
@@ -42,7 +50,6 @@ export function primaryBackup(variant: "buggy" | "fixed") {
     zone,
     place: { order: 0 },
     // Both servers keep what they store on disk: a restart loses nothing.
-    durable: ["stored"],
     initialState: () => ({ stored: 0 }),
     display: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "ok" },
     transitions: {
@@ -58,6 +65,9 @@ export function primaryBackup(variant: "buggy" | "fixed") {
         },
       },
       replicated: { on: Replicated, description: "Acknowledges a write the backup has.", sends: [Ack], run: (_state, _msg, ctx) => ctx.send(ctx.the(Client), Ack, {}) },
+      writeLost: lose(Write, { spend: faults }),
+      replicatedLost: lose(Replicated, { spend: faults }),
+      crash: crash({ keeps: ["stored"], spend: faults }),
     },
   });
 
@@ -65,7 +75,6 @@ export function primaryBackup(variant: "buggy" | "fixed") {
     name: "Backup",
     zone,
     place: { order: 1 },
-    durable: ["stored"],
     initialState: () => ({ stored: 0 }),
     display: { icon: "database", status: (s) => `${s.stored} write(s)`, mood: () => "info" },
     transitions: {
@@ -78,6 +87,8 @@ export function primaryBackup(variant: "buggy" | "fixed") {
           if (variant === "fixed") ctx.reply(Replicated, {});
         },
       },
+      replicateLost: lose(Replicate, { spend: faults }),
+      crash: crash({ keeps: ["stored"], spend: faults }),
     },
   });
 
@@ -102,7 +113,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
       const backup = s.spawn(Backup, "Backup");
       s.act(client, "write");
       s.deliver(primary, Write);
-      s.drop(backup, Replicate);
+      s.step(backup, "replicateLost");
       s.settle();
     },
   });

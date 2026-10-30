@@ -153,12 +153,12 @@ export default defineSpec({ name: "Capped", actors: [Counter], properties: [belo
 `,
   );
   commit("capped");
-  const checked = await capture(["check", "capped", "--repeats", "5", "--walks", "0"], root);
+  const checked = await capture(["check", "capped", "--walks", "0"], root);
   expect(checked.out).toContain("✓ cap    needed: without it, belowThree breaks (3 events)");
   expect(checked.out).toContain("✗ decoy  not needed by belowThree: held without the rule, in every state.");
   expect(checked.status).toBe(1);
-  expect((await capture(["check", "capped", "--repeats", "5", "--walks", "0", "--no-rules"], root)).status).toBe(0);
-  const without = await capture(["check", "capped", "--repeats", "5", "--walks", "0", "--without", "cap"], root);
+  expect((await capture(["check", "capped", "--walks", "0", "--no-rules"], root)).status).toBe(0);
+  const without = await capture(["check", "capped", "--walks", "0", "--without", "cap"], root);
   expect(without.out).toContain("Capped without cap: explored");
   expect(without.out).toContain("✗ belowThree");
   expect(without.out).not.toContain("✓ cap");

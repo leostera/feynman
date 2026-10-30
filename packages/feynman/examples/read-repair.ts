@@ -14,7 +14,12 @@
 // Expected, with three replicas: buggy breaks `neverGoesBack` in 10 steps without faults
 // (v1 reaches one replica; a read hears from it and a stale one, and repairs the stale one;
 // v2 reaches the stale one; the repair arrives); fixed holds, with a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Put = defineMessage("Put", { version: Number });
 const Get = defineMessage("Get");
@@ -38,6 +43,7 @@ export function readRepair(variant: "buggy" | "fixed") {
     },
     actions: {
       write: {
+        with: [atMost(repeats)],
         label: "Write",
         description: "Writes the next version to every replica.",
         when: (state) => state.written < 2,
@@ -48,6 +54,7 @@ export function readRepair(variant: "buggy" | "fixed") {
         },
       },
       read: {
+        with: [atMost(repeats)],
         label: "Read",
         description: "Asks every replica for the key.",
         when: (state) => state.replies === null && state.read === null,
@@ -75,6 +82,7 @@ export function readRepair(variant: "buggy" | "fixed") {
           state.replies = null;
         },
       },
+      gotLost: lose(Got, { spend: faults }),
     },
   });
 
@@ -82,7 +90,6 @@ export function readRepair(variant: "buggy" | "fixed") {
     name: "Replica",
     zone: store,
     symmetric: true,
-    durable: ["version", "highest"],
     // `highest`: the newest version it ever held, which only the invariant reads.
     initialState: () => ({ version: 0, highest: 0 }),
     display: {
@@ -115,6 +122,10 @@ export function readRepair(variant: "buggy" | "fixed") {
           state.highest = Math.max(state.highest, state.version);
         },
       },
+      putLost: lose(Put, { spend: faults }),
+      getLost: lose(Get, { spend: faults }),
+      repairLost: lose(Repair, { spend: faults }),
+      crash: crash({ keeps: ["version", "highest"], spend: faults }),
     },
   });
 

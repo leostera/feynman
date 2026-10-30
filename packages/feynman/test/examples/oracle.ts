@@ -1,8 +1,9 @@
 // Comparing the checker with TLC, the TLA+ model checker, on the same systems.
 //
 // Each oracle in ../oracles is an independent TLA+ model of a spec in ../specs, following
-// Feynman's semantics: the network is a bag, any message in it may go next, a fault loses one
-// or restarts an instance, and each instance takes each action at most `repeats` times. TLC
+// Feynman's semantics: the network is a bag, any message in it may go next, a fault (a step
+// the spec declares, RFD0012) loses one or restarts an instance, and each instance takes each
+// action at most `repeats` times. TLC
 // then gives the reachable states, which invariants break, and the shortest way there.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -76,22 +77,25 @@ export function tlc(module: string, constants: Record<string, string | number | 
   }
 }
 
-/** A world as TLA+ sees it: states, what is in flight (as a bag, no times), counters, the budget spent, and what `never` properties remember. */
-function projection(world: World, budget: { acts: Record<string, number>; faults: number; memory: string }): string {
+/**
+ * A world as TLA+ sees it: states with each instance's own variables (its action counters),
+ * what is in flight (as a bag, no times), counters, the world's variables (the fault budget),
+ * and what `never` properties remember.
+ */
+function projection(world: World, memory: string): string {
   return [
-    world.instances.map((i) => `${i.id}=${sortedJson(i.state)}`).sort().join("\n"),
+    world.instances.map((i) => `${i.id}=${sortedJson(i.state)}${i.variables ? `@${sortedJson(i.variables)}` : ""}`).sort().join("\n"),
     world.pending.map((p) => pendingText(p)).sort().join("\n"),
     sortedJson(world.fresh),
-    sortedJson(budget.acts),
-    budget.faults,
-    budget.memory,
+    sortedJson(world.variables ?? {}),
+    memory,
   ].join("\n--\n");
 }
 
 /** The checker's exhaustive search, plain, and the distinct states it reached as TLA+ sees them. */
 export async function feynman(spec: Spec, bounds: Partial<Bounds>): Promise<{ report: Report; distinct: number }> {
   const seen = new Set<string>();
-  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, reduce: false, symmetry: false, ...bounds }, [], { watch: { state: (w, b) => seen.add(projection(w, b)) } });
+  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, reduce: false, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
   return { report, distinct: seen.size };
 }
 

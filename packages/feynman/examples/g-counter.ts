@@ -14,7 +14,12 @@
 // Expected, with two replicas: buggy breaks `countsEveryIncrementOnceQuiet` in 4 steps
 // without faults (both increment, each hears the other); fixed holds without faults, and
 // both break in 2 steps with one (an increment, and its state lost).
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, recordOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, recordOf } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Gossip = defineMessage("Gossip", { total: Number, counts: recordOf(Number) }, { name: "state" });
 
@@ -27,7 +32,6 @@ export function gCounter(variant: "buggy" | "fixed") {
     name: "Replica",
     zone,
     symmetric: true,
-    durable: ["total", "counts", "increments"],
     // `increments`: how many this replica took itself, to judge the count by.
     initialState: () => ({ total: 0, counts: {} as Record<string, number>, increments: 0 }),
     display: {
@@ -38,6 +42,7 @@ export function gCounter(variant: "buggy" | "fixed") {
     },
     actions: {
       increment: {
+        with: [atMost(repeats)],
         label: "Increment",
         description: "Counts one more, and sends its state to the other replica.",
         sends: [Gossip],
@@ -61,6 +66,8 @@ export function gCounter(variant: "buggy" | "fixed") {
           state.counts = merged;
         },
       },
+      gossipLost: lose(Gossip, { spend: faults }),
+      crash: crash({ keeps: ["total", "counts", "increments"], spend: faults }),
     },
   });
 

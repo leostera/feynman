@@ -12,7 +12,12 @@
 // Expected, with three nodes: buggy breaks `oneToken` in 6 steps without faults (A passes
 // the token, the resend fires, B takes the first copy and passes it on, B takes the second,
 // C takes the first); fixed holds, with a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Token = defineMessage("Token", { count: Number });
 const Ack = defineMessage("Ack", { count: Number }, { tone: "reply" });
@@ -23,7 +28,6 @@ export function tokenRing(variant: "buggy" | "fixed") {
   const Node = defineActor({
     name: "Node",
     zone,
-    durable: ["holds", "count", "unacked"],
     // The ring starts with the token at its first node.
     initialState: ({ label }) => ({ holds: label === "Node A", count: 0, unacked: null as number | null }),
     display: {
@@ -33,6 +37,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
     },
     actions: {
       pass: {
+        with: [atMost(repeats)],
         label: "Pass the token",
         description: "Hands the token to the next node, and resends it until acknowledged.",
         when: (state) => state.holds,
@@ -84,6 +89,9 @@ export function tokenRing(variant: "buggy" | "fixed") {
           ctx.start("resend");
         },
       },
+      tokenLost: lose(Token, { spend: faults }),
+      ackLost: lose(Ack, { spend: faults }),
+      crash: crash({ keeps: ["holds", "count", "unacked"], spend: faults }),
     },
   });
 

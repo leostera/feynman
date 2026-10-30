@@ -1,13 +1,13 @@
 // Liveness, step properties and stuck worlds on systems small enough to work out by hand:
-// what is fair (messages, timers and guards; never actions or faults), weak against strong,
+// what is fair (messages, timers and guards; never actions or steps with fair: false), weak against strong,
 // the loop a counterexample ends with, and when a verdict is unfinished.
 import { brokenIn } from "../helpers.ts";
 import { expect, test } from "bun:test";
 import { check, type Report } from "../../src/check/index.ts";
-import { defineActor, defineMessage, defineProperty, defineSpec, defineZone, type Event, type Spec, type WorldView } from "../../src/spec/index.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineSpec, defineZone, type Event, type Spec, type WorldView } from "../../src/spec/index.ts";
 import { explore } from "./reference.ts";
 
-const BOUNDS = { depth: 20, faults: 0, walks: 0, maxStates: 100_000, timeLimit: 30_000 };
+const BOUNDS = { depth: 20, walks: 0, maxStates: 100_000, timeLimit: 30_000 };
 
 function verdict(report: Report, id: string) {
   const p = report.properties.find((x) => x.id === id)!;
@@ -18,7 +18,7 @@ function verdict(report: Report, id: string) {
 
 /** The reference explorer's liveness verdict, to agree with. */
 function reference(spec: Spec, id: string) {
-  return explore(spec, { depth: BOUNDS.depth, faults: 0, repeats: 2, instances: {} }).liveness.get(id);
+  return explore(spec, { depth: BOUNDS.depth, instances: {} }).liveness.get(id);
 }
 
 
@@ -149,7 +149,7 @@ function counter() {
     zone,
     singleton: true,
     initialState: () => ({ n: 0 }),
-    actions: { reset: { label: "Reset", description: "Someone resets it.", run: (s) => void (s.n = 0) } },
+    actions: { reset: { label: "Reset", description: "Someone resets it, twice at most.", with: [atMost(2)], run: (s) => void (s.n = 0) } },
     transitions: { tick: { description: "Counts.", when: () => true, run: (s) => void s.n++ } },
   });
 

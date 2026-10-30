@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { broken } from "../helpers.ts";
 import { check } from "../../src/check/index.ts";
-import { defineActor, defineMessage, defineProperty, defineScenario, defineZone, isLiveness, oneOf } from "../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineZone, isLiveness, lose, oneOf } from "../../src/spec/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
 /**
@@ -13,7 +13,7 @@ const UNTIMED = { walks: 0, timeLimit: 600_000 };
 
 /** One fault, explored once and shared: the slowest check here. */
 let oneFault: ReturnType<typeof check> | undefined;
-const withOneFault = () => (oneFault ??= check(remoteAccess, { depth: 12, faults: 1, maxStates: 100_000, ...UNTIMED }));
+const withOneFault = () => (oneFault ??= check(remoteAccess, { depth: 12, maxStates: 100_000, ...UNTIMED }));
 
 test("with one fault, a Mac given a valid code can end up never linked, and the checker shows how", async () => {
   const report = await withOneFault();
@@ -23,14 +23,14 @@ test("with one fault, a Mac given a valid code can end up never linked, and the 
   const links = broken(byId.macWithValidCodeLinks);
   const example = links.counterexample;
   // It takes a lost message…
-  expect(example.events.some((e) => e.kind === "lose")).toBe(true);
+  expect(example.events.some((e) => e.tags?.includes("fault"))).toBe(true);
   // …after which no fair behaviour links the Mac.
   expect(links.loop).toBeDefined();
   expect(report.errors).toEqual([]);
 });
 
 test("without faults, every redemption gets its answer and the property holds", { timeout: 30_000 }, async () => {
-  const report = await check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000, ...UNTIMED });
+  const report = await check(remoteAccess.setting({ faults: 0 }), { depth: 10, maxStates: 100_000, ...UNTIMED });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
   expect(report.coverage.reached).toContain("Axo relay.redeem");
@@ -66,7 +66,7 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
       scenarios: [countToFour],
     });
   })();
-  const bounds = { depth: 2, repeats: 9, walks: 0 };
+  const bounds = { depth: 2, walks: 0 };
   expect((await check(deep, bounds)).properties[0].holds).toBe(true);
   const run = runScenario(deep, deep.scenarios[0]);
   const seeded = await check(deep, bounds, [{ scenario: "Count to four", at: "end", world: run.worlds.at(-1)! }]);
@@ -96,7 +96,7 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
       properties: [belowFive],
     });
   })();
-  const report = await check(deep, { depth: 2, repeats: 20, walks: 50 });
+  const report = await check(deep, { depth: 2, walks: 50 });
   const p = broken(report.properties[0]);
   expect(p.foundBy).toBe("walk");
   // Shrunk to the five steps it takes, without the fidgeting.
@@ -116,7 +116,8 @@ test("the reductions skip work, never states: exactly the states of the plain se
     const Pong = defineMessage("Pong", { n: Number });
     const Note = defineMessage("Note", { n: Number });
     const zone = defineZone({ name: "z" });
-    const Log = defineActor({ name: "Log", zone, singleton: true, initialState: () => ({ seen: 0 }), transitions: { note: { on: Note, description: "Counts.", run: (s) => void (s.seen += 1) } } });
+    const faults = budget("faults", 1);
+    const Log = defineActor({ name: "Log", zone, singleton: true, initialState: () => ({ seen: 0 }), transitions: { note: { on: Note, description: "Counts.", run: (s) => void (s.seen += 1) }, noteLost: lose(Note, { spend: faults }) } });
     const Server = defineActor({
       name: "Server",
       zone,
@@ -133,14 +134,15 @@ test("the reductions skip work, never states: exactly the states of the plain se
             ctx.send(ctx.the(Log), Note, { n: msg.n });
           },
         },
+        pingLost: lose(Ping, { spend: faults }),
       },
     });
     const Client = defineActor({
       name: "Client",
       zone,
       initialState: () => ({ sent: 0, got: 0 }),
-      actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
-      transitions: { pong: { on: Pong, description: "Counts.", run: (s) => void (s.got += 1) } },
+      actions: { ping: { label: "Ping", description: "Pings.", with: [atMost(2)], sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
+      transitions: { pong: { on: Pong, description: "Counts.", run: (s) => void (s.got += 1) }, pongLost: lose(Pong, { spend: faults }), crash: crash({ keeps: ["sent"], spend: faults }) },
     });
 
     const answered = defineProperty("answered", { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) });
@@ -150,7 +152,7 @@ test("the reductions skip work, never states: exactly the states of the plain se
       properties: [answered],
     });
   })();
-  const bounds = { depth: 10, faults: 1, repeats: 2, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
+  const bounds = { depth: 10, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   const plain = await check(pings, { ...bounds, reduce: false }, [], CLASSIC);
   const reduced = await check(pings, { ...bounds, reduce: true }, [], CLASSIC);
   expect(plain.errors).toEqual([]);
@@ -161,7 +163,7 @@ test("the reductions skip work, never states: exactly the states of the plain se
 });
 
 test("the reductions keep the verdicts and the states on a spec with timers and retries", async () => {
-  const bounds = { depth: 8, faults: 1, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
+  const bounds = { depth: 8, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   const plain = await check(remoteAccess, { ...bounds, reduce: false }, [], CLASSIC);
   const reduced = await check(remoteAccess, { ...bounds, reduce: true }, [], CLASSIC);
   expect(reduced.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
@@ -170,11 +172,12 @@ test("the reductions keep the verdicts and the states on a spec with timers and 
 }, 30_000);
 
 test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", async () => {
-  const bounds = { depth: 7, faults: 0, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
+  const bounds = { depth: 7, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   // Symmetry is off for liveness. This spec has `never` properties too, so its safety and its
   // liveness are judged in searches of their own, and the safety search folds.
-  const safety = { ...remoteAccess, properties: remoteAccess.properties.filter((p) => !isLiveness(p)) };
-  expect((await check(remoteAccess, { ...bounds, symmetry: true })).reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
+  const spec = remoteAccess.setting({ faults: 0 });
+  const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
+  expect((await check(spec, { ...bounds, symmetry: true })).reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
   const plain = await check(safety, { ...bounds, symmetry: false });
   const folded = await check(safety, { ...bounds, symmetry: true });
   expect(folded.reductions.symmetric).toEqual([["Mac A", "Mac B"]]);
@@ -213,9 +216,10 @@ test("inputs an action never reads are not tried twice", async () => {
 
 test("a map that gained its entries in another order is the same state, renamed too", async () => {
   const { gCounter } = await import("../../examples/g-counter.ts");
-  const bounds = { depth: 10, faults: 0, walks: 0, instances: { Replica: 2 } };
-  const plain = await check(gCounter("fixed"), { ...bounds, symmetry: false });
-  const folded = await check(gCounter("fixed"), bounds);
+  const bounds = { depth: 10, walks: 0, instances: { Replica: 2 } };
+  const spec = gCounter("fixed").setting({ faults: 0 });
+  const plain = await check(spec, { ...bounds, symmetry: false });
+  const folded = await check(spec, bounds);
   // Replica A's counts can be {A, B} or {B, A} depending on what came first; they are one state.
   expect(plain.states).toBe(104);
   expect(folded.reductions.refuted).toBeUndefined();
@@ -334,9 +338,9 @@ test("a step that stores what is not plain data, or changes another's set, fails
 test("symmetry claims are tested on as many merged states as symmetryChecks says; 0 trusts them", async () => {
   const { leaderElection } = await import("../../examples/leader-election.ts");
   // The fixed nodes elect the highest id, so they are not interchangeable: a wrong claim.
-  const spec = leaderElection("fixed");
+  const spec = leaderElection("fixed").setting({ faults: 0 });
   const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
-  const bounds = { depth: 12, faults: 0, walks: 0, instances: { Node: 3 } };
+  const bounds = { depth: 12, walks: 0, instances: { Node: 3 } };
   expect((await check(safety, bounds)).reductions.refuted).toEqual(["Node"]);
   expect((await check(safety, { ...bounds, symmetryChecks: 10 })).reductions.refuted).toEqual(["Node"]);
   const trusted = await check(safety, { ...bounds, symmetryChecks: 0 });

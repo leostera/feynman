@@ -13,7 +13,12 @@
 // first fork is granted, each grant lands: both hold one fork and wait for the other); fixed
 // holds, with a lost message too. Both get stuck: buggy in 8 steps, once each queued request
 // has landed; fixed when a grant is lost, in 5 (nothing resends it).
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Take = defineMessage("Take");
 const Granted = defineMessage("Granted", {}, { tone: "reply" });
@@ -55,6 +60,8 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
             if (next) ctx.send(next, Granted, {});
           },
         },
+        takeLost: lose(Take, { spend: faults }),
+        releaseLost: lose(Release, { spend: faults }),
       },
     });
   const ForkOne = fork("Fork one", 1);
@@ -74,6 +81,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
       },
       actions: {
         eat: {
+          with: [atMost(repeats)],
           label: "Get hungry",
           description: "Reaches for the first fork.",
           when: (state) => state.phase === "thinking",
@@ -84,6 +92,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
           },
         },
         finish: {
+          with: [atMost(repeats)],
           label: "Finish eating",
           description: "Puts both forks back.",
           when: (state) => state.phase === "eating",
@@ -107,6 +116,7 @@ export function diningPhilosophers(variant: "buggy" | "fixed") {
             } else if (state.phase === "second") state.phase = "eating";
           },
         },
+        grantedLost: lose(Granted, { spend: faults }),
       },
     });
   const Plato = philosopher("Plato", [ForkOne, ForkTwo], 0);

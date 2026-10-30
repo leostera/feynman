@@ -1,7 +1,7 @@
 // Text output: what agents and people read in a terminal.
-import { faultsIn, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
+import { faultsIn, hasFaults, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
-import { deliveryName, messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
+import { deliveryName, FAULT, messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -21,12 +21,17 @@ function value(v: unknown): string {
   return text === undefined ? "—" : text.length > 80 ? `${text.slice(0, 77)}…` : text;
 }
 
+/** The spec's model variables as they are set: `faults=1`, `repeats=2` (one per instance aside). */
+function variablesText(spec: Spec): string[] {
+  return spec.variables.filter((v) => !v.each).map((v) => `${v.name}=${JSON.stringify(v.initial)}`);
+}
+
 function label(world: World | undefined, id: string): string {
   return world?.instances.find((i) => i.id === id)?.label ?? id;
 }
 
 function stepName(spec: Spec, event: Event): string {
-  if (event.kind === "spawn" || event.kind === "restart" || event.kind === "lose") return event.kind;
+  if (event.kind === "spawn") return event.kind;
   if (event.kind === "deliver") return deliveryName(spec, event);
   return event.key;
 }
@@ -101,10 +106,11 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const verdict = options.verdict ?? ((p: PropertyResult) => verdictOf(p, { report, brokenBy }));
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
-  const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, `${b.faults} fault(s)`, `actions repeated up to ${b.repeats}×`].join(", ");
+  const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, ...variablesText(spec)].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
     ...varietyLines(report),
+    ...(hasFaults(spec) ? [] : [yellow("! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().")]),
     ...(options.brief ? [] : searchNotes(report)),
   ];
   for (const p of report.properties) {
@@ -169,7 +175,7 @@ function varietyLines(report: Report): string[] {
   const grows = (report.variety[0]?.values ?? 0) >= GROWS;
   const advice = grows
     ? "A field that only grows (a log, a counter, ids) keeps every state new: bound it, or keep only what the properties read."
-    : "No one field grows much: it is the orders of the steps in flight. Fewer --repeats, instances or --faults, or fewer requests at once in the scenarios, shrink it.";
+    : "No one field grows much: it is the orders of the steps in flight. Smaller budgets (--set faults=0, --set repeats=1), fewer instances, or fewer requests at once in the scenarios, shrink it.";
   return [dim(`  states differ most in: ${list || "nothing"}; ${inFlight}. ${advice}`)];
 }
 
@@ -194,7 +200,7 @@ export function unfinishedHint(report: Report): string {
   if (report.stoppedBy === "maxStates") return `"~" is not a proof: raise --max-states (check.maxStates in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "timeLimit") return `"~" is not a proof: raise --time-limit (check.timeLimit in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "memoryLimit")
-    return `"~" is not a proof: the search filled the memory it may use (--memory-limit GB, or check.memoryLimit in megabytes in feynman.config.ts). Lower --depth or --repeats, or make the state smaller: see what varies most above.`;
+    return `"~" is not a proof: the search filled the memory it may use (--memory-limit GB, or check.memoryLimit in megabytes in feynman.config.ts). Lower --depth or a budget (--set repeats=1), or make the state smaller: see what varies most above.`;
   return `"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is ${report.bounds.depth} now) until no path is cut off before it gets there or loops.`;
 }
 
@@ -221,8 +227,8 @@ function formatBroken(spec: Spec, p: PropertyBroken, options: ReportOptions): st
  * property or calling every quiet world final; say what the code does instead.
  */
 function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly World[] }): string | null {
-  // A loss that failed a call was heard: its caller's failure handler ran (RFD0009).
-  const lost = path.events.find((e) => e.kind === "lose" && e.sent.length === 0);
+  // A fault on a message that sent nothing on lost it; one that failed a call was heard.
+  const lost = path.events.find((e) => e.kind === "deliver" && e.tags?.includes(FAULT) && e.sent.length === 0);
   if (!lost || !lost.message) return null;
   const message = spec.messages[lost.message];
   const labelOf = (id: string | undefined) => path.worlds.at(-1)?.instances.find((i) => i.id === id)?.label ?? id;
@@ -230,7 +236,7 @@ function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly
   const waiting = labelOf(message?.tone && message.tone !== "request" ? lost.instance : lost.from);
   return [
     `The lost ${message?.name ?? lost.message} to ${labelOf(lost.instance)} is never sent again, so ${waiting} waits for an answer that cannot come.`,
-    `Model what the code does when none comes: if the code is told (an RPC or fetch that throws), define ${message?.id ?? lost.message} with defineCall and handle its failure with a step on failed(${message?.id ?? "it"}); otherwise a timer that retries. If it cannot be lost here, check with --faults 0.`,
+    `Model what the code does when none comes: if the code is told (an RPC or fetch that throws), define ${message?.id ?? lost.message} with defineCall and handle its failure with a step on failed(${message?.id ?? "it"}); otherwise a timer that retries. If it cannot be lost here, drop its lose step.`,
     `If the code has no answer for it, that is a finding: report it, rather than weaken the property or call this world final.`,
   ].join("\n    ");
 }

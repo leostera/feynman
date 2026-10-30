@@ -12,7 +12,12 @@
 //
 // Expected, with two tellers: buggy breaks `moneyAddsUp` in 8 steps without faults (both
 // ask, both hear 100, both write); fixed holds, with a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const OPENING = 100;
 
@@ -32,7 +37,6 @@ export function lostUpdate(variant: "buggy" | "fixed") {
     name: "Teller",
     zone: branch,
     symmetric: true,
-    durable: ["paid"],
     initialState: () => ({ status: "idle" as Status, amount: 0, paid: 0 }),
     display: {
       icon: "person",
@@ -41,6 +45,7 @@ export function lostUpdate(variant: "buggy" | "fixed") {
     },
     actions: {
       withdraw: {
+        with: [atMost(repeats)],
         label: "Withdraw",
         description: "Starts a withdrawal by asking for the balance.",
         when: (state) => state.status === "idle",
@@ -92,6 +97,10 @@ export function lostUpdate(variant: "buggy" | "fixed") {
           ctx.send(ctx.the(Account), Get, {});
         },
       },
+      balanceLost: lose(Balance, { spend: faults }),
+      okLost: lose(Ok, { spend: faults }),
+      conflictLost: lose(Conflict, { spend: faults }),
+      crash: crash({ keeps: ["paid"], spend: faults }),
     },
   });
 
@@ -127,6 +136,8 @@ export function lostUpdate(variant: "buggy" | "fixed") {
           ctx.reply(Ok, {});
         },
       },
+      getLost: lose(Get, { spend: faults }),
+      setLost: lose(Set, { spend: faults }),
     },
   });
 

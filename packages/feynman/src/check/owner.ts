@@ -8,7 +8,7 @@
 // Every message here is plain data, so it can cross threads. Successors are numbered per
 // owner, in the order they were made (candidates); the coordinator answers with the global
 // node ids of the ones to keep (`prepare`), before the next round of expanding (`expand`).
-import { actorNamed, freeze, holdsIn, isLiveness, observation, traceView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { actorNamed, FAULT as FAULT_TAG, freeze, holdsIn, isLiveness, observation, traceView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { stepBreaks, stuck } from "./judge.ts";
 import { fingerprint, nameHash, NO_SYMMETRY, pendingText, statePrint, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 import { predicatesOf, type FairId, type Predicate } from "./liveness.ts";
@@ -21,9 +21,6 @@ export interface OwnerJob {
   roots: World[];
 }
 
-/** Actions taken on a path, by `instance.key`: the repeats bound counts them. */
-export type Acts = Record<string, number>;
-
 /** What one step did, as far as commuting with another step goes. */
 export interface Facts {
   /** The instance whose state it changes. */
@@ -32,19 +29,11 @@ export interface Facts {
   failed: boolean;
   /** Whether it sets a timer: timers are kept in age order (keys.ts), so two that set one do not commute. */
   setsTimer: boolean;
-  /**
-   * Whether it meets calls' failures (RFD0009): a loss that fails a call, or a restart, which
-   * drops the failures on their way to it. Two such steps may not commute: a restart after a
-   * loss drops the failure, before it does not.
-   */
-  meetsFailures: boolean;
 }
 
-/** A node an owner holds: a world, the budget spent getting there, and what the reductions know of it. */
+/** A node an owner holds: a world, and what the reductions know of it. */
 interface Held {
   world: World;
-  acts: Acts;
-  faults: number;
   depth: number;
   root: number;
   /** Steps not to try from here: another order already reaches what they would. */
@@ -59,8 +48,6 @@ type Trail = { event: Event; up: Trail | undefined };
 export interface Moved {
   gid: number;
   world: World;
-  acts: Acts;
-  faults: number;
   depth: number;
   root: number;
   sleep: [string, Facts][];
@@ -197,8 +184,6 @@ export class Owner {
   private readonly nevers: PropertyInfo[];
   private readonly keepsEdges: boolean;
   private readonly predicates: Predicate[];
-  /** Whether the spec has calls, whose failures a restart drops (RFD0009). */
-  private readonly hasCalls: boolean;
   private readonly nodes = new Map<number, Held>();
   private candidates: Candidate[] = [];
   /** Properties this owner knows are broken: by itself, or as the coordinator says. */
@@ -216,7 +201,6 @@ export class Owner {
     this.nevers = spec.properties.filter((p) => p.kind === "never");
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
-    this.hasCalls = Object.values(spec.messages).some((m) => m.call);
   }
 
   prepare(order: Prepare): Prepared {
@@ -269,19 +253,17 @@ export class Owner {
   close(gids: number[]): Closed[] {
     return gids.map((gid) => {
       const node = this.nodes.get(gid)!;
-      const options = branches(this.spec, node.world, node.faults < this.b.faults);
+      const options = branches(this.spec, node.world);
       const prints: number[] = [];
       const indexes: number[] = [];
       const faults: number[] = [];
       const fair: number[] = [];
       options.forEach((choice, option) => {
-        const budget = spend(node, choice, this.b.repeats);
-        if (!budget) return;
         const step = apply(this.spec, node.world, choice, QUIET);
         if (step.event.error) return;
-        prints.push(...statePrint(step.world, this.roots[node.root].symmetry, budgetText(budget, this.memory(() => [...eventsOf(node.trail), step.event]))).print);
+        prints.push(...statePrint(step.world, this.roots[node.root].symmetry, this.memory(() => [...eventsOf(node.trail), step.event])).print);
         indexes.push(option);
-        faults.push(isFault(choice) ? 1 : 0);
+        faults.push(isFault(step.event) ? 1 : 0);
         fair.push(fairness(this.spec, node.world, choice)?.id ?? NaN);
       });
       return { gid, prints: Uint32Array.from(prints), options: Uint16Array.from(indexes), faults: Uint8Array.from(faults), fair: Float64Array.from(fair), enabled: [...fairStepsIn(this.spec, node.world, options)] };
@@ -291,7 +273,7 @@ export class Owner {
   resolve(steps: StepRef[], worlds: boolean): Resolved[] {
     return steps.map(({ gid, option }) => {
       const node = this.nodes.get(gid)!;
-      const choice = branches(this.spec, node.world, node.faults < this.b.faults)[option];
+      const choice = branches(this.spec, node.world)[option];
       return worlds ? { choice, world: node.world } : { choice };
     });
   }
@@ -301,15 +283,15 @@ export class Owner {
   }
 
   /** A candidate's world and budget, for tools that watch every state (inline only). */
-  candidate(k: number): { world: World; acts: Acts; faults: number; memory: string } {
-    const { world, acts, faults, memory } = this.candidates[k];
-    return { world, acts, faults, memory };
+  candidate(k: number): { world: World; memory: string } {
+    const { world, memory } = this.candidates[k];
+    return { world, memory };
   }
 
   /** Every step from a node, as candidates; the fair steps possible there, for liveness. */
   private expandOne(entry: Entry, out: ExpansionBuilder): [FairId, Fairness][] {
     const node = this.nodes.get(entry.gid)!;
-    const options = branches(this.spec, node.world, node.faults < this.b.faults);
+    const options = branches(this.spec, node.world);
     const only = entry.only && new Set(entry.only);
     const tried: [string, Facts][] = [];
     const inputsTried = new Map<string, { inputs: Record<string, unknown>; read: Set<string> }[]>();
@@ -319,8 +301,6 @@ export class Owner {
         if (!only) this.saved.orders++;
         return;
       }
-      const budget = spend(node, choice, this.b.repeats);
-      if (!budget) return;
       if (this.sameInputsTried(choice, inputsTried)) {
         this.saved.inputs++;
         return;
@@ -336,29 +316,28 @@ export class Owner {
         observed,
         failed: !!step.event.error,
         setsTimer: step.event.started.length > 0,
-        meetsFailures: (choice.kind === "lose" && step.event.sent.length > 0) || (choice.kind === "restart" && this.hasCalls),
       };
       const sleep = this.childSleep(node, facts, tried, !!only);
       tried.push([name, facts]);
-      this.candidateOf(node, choice, option, step, budget, sleep, out);
+      this.candidateOf(node, choice, option, step, sleep, out);
     });
     return this.keepsEdges ? [...fairStepsIn(this.spec, node.world, options)] : [];
   }
 
   /** A successor: fingerprinted, judged, and kept until the coordinator says whether it is new. */
-  private candidateOf(node: Held, choice: Choice, option: number, step: ReturnType<typeof apply>, budget: { acts: Acts; faults: number }, sleep: Map<string, Facts>, out: ExpansionBuilder): void {
+  private candidateOf(node: Held, choice: Choice, option: number, step: ReturnType<typeof apply>, sleep: Map<string, Facts>, out: ExpansionBuilder): void {
     const event = step.event;
     this.reached.add(`${event.actor}.${event.key}`);
     const trail = this.nevers.length ? { event, up: node.trail } : undefined;
     const { memory, nevers } = this.remember(trail);
     const k = this.candidates.length;
-    this.candidates.push({ world: step.world, acts: budget.acts, faults: budget.faults, depth: node.depth + 1, root: node.root, sleep, trail, memory });
+    this.candidates.push({ world: step.world, depth: node.depth + 1, root: node.root, sleep, trail, memory });
     const symmetry = this.roots[node.root].symmetry;
-    const { print, plain } = statePrint(step.world, symmetry, budgetText(budget, memory));
+    const { print, plain } = statePrint(step.world, symmetry, memory);
     out.prints.push(...print);
     out.plains.push(...(symmetry.classes.length ? plain : [0, 0]));
     out.options.push(option);
-    out.flags.push((event.error ? FAILED : 0) | (isFault(choice) ? FAULT : 0) | (sleep.size ? SLEEPY : 0));
+    out.flags.push((event.error ? FAILED : 0) | (isFault(event) ? FAULT : 0) | (sleep.size ? SLEEPY : 0));
     if (this.keepsEdges) out.fair.push(fairness(this.spec, node.world, choice)?.id ?? NaN);
     // What it breaks, of what this owner does not know is broken: the coordinator keeps the
     // first of each. A step that breaks a step property, or fails, is always judged (it gets a
@@ -402,38 +381,30 @@ export class Owner {
   }
 
   private rootNode(root: number): Held {
-    return { world: this.roots[root].world, acts: {}, faults: 0, depth: 0, root, sleep: new Map(), trail: undefined };
+    return { world: this.roots[root].world, depth: 0, root, sleep: new Map(), trail: undefined };
   }
 
   private export(gid: number): Moved {
     const node = this.nodes.get(gid)!;
     this.nodes.delete(gid);
-    return { gid, world: node.world, acts: node.acts, faults: node.faults, depth: node.depth, root: node.root, sleep: [...node.sleep], ...(node.trail ? { trail: eventsOf(node.trail) } : {}) };
+    return { gid, world: node.world, depth: node.depth, root: node.root, sleep: [...node.sleep], ...(node.trail ? { trail: eventsOf(node.trail) } : {}) };
   }
 
   private import(moved: Moved): void {
     let trail: Trail | undefined;
     for (const event of moved.trail ?? []) trail = { event, up: trail };
-    this.nodes.set(moved.gid, { world: freeze(moved.world), acts: moved.acts, faults: moved.faults, depth: moved.depth, root: moved.root, sleep: new Map(moved.sleep), trail });
+    this.nodes.set(moved.gid, { world: freeze(moved.world), depth: moved.depth, root: moved.root, sleep: new Map(moved.sleep), trail });
   }
 }
 
-/** A fingerprint of the worlds one step away, faults aside: renamed twins must agree on it. */
+/** A fingerprint of the worlds one step away: renamed twins must agree on it. */
 function successorsPrint(spec: Spec, world: World, symmetry: Symmetry): [number, number] {
   const keys = new Set<string>();
-  for (const choice of branches(spec, world, false)) {
+  for (const choice of branches(spec, world)) {
     const step = apply(spec, world, choice, QUIET);
     keys.add(step.event.error ? `error:${step.event.error}` : symmetricKey(step.world, symmetry));
   }
   return fingerprint([...keys].sort().join("\n\n"));
-}
-
-/**
- * What a state is besides its world: the budget spent getting there, and what `never`
- * properties remember of the way. The coordinator fingerprints the roots with it too.
- */
-export function budgetText(budget: { acts: Acts; faults: number }, memory: string): string {
-  return `${actsKey(budget.acts)}|${budget.faults}|${memory}`;
 }
 
 /** What `never` properties remember of no path at all: a root's memory. */
@@ -471,26 +442,9 @@ class ExpansionBuilder {
   }
 }
 
-/** The budget after a step: actions repeated and faults used; none if the step would take an action past the repeats bound. */
-export function spend(node: { acts: Acts; faults: number }, choice: Choice, repeats: number): { acts: Acts; faults: number } | undefined {
-  if (isFault(choice)) return { acts: node.acts, faults: node.faults + 1 };
-  if (choice.kind !== "act") return { acts: node.acts, faults: node.faults };
-  const id = `${choice.instance}.${choice.key}`;
-  const taken = node.acts[id] ?? 0;
-  return taken >= repeats ? undefined : { acts: { ...node.acts, [id]: taken + 1 }, faults: node.faults };
-}
-
-function isFault(choice: Choice): boolean {
-  return choice.kind === "lose" || choice.kind === "restart";
-}
-
-/** Actions taken, written once per budget object: steps other than actions pass theirs on. */
-const actsKeys = new WeakMap<Acts, string>();
-
-function actsKey(acts: Acts): string {
-  let key = actsKeys.get(acts);
-  if (key === undefined) actsKeys.set(acts, (key = JSON.stringify(Object.entries(acts).sort(([a], [b]) => (a < b ? -1 : 1)))));
-  return key;
+/** Whether a step is a fault: its step is tagged `fault` (RFD0012). Reports prefer paths with fewer. */
+export function isFault(event: { tags?: readonly string[] }): boolean {
+  return event.tags?.includes(FAULT_TAG) === true;
 }
 
 function eventsOf(trail: Trail | undefined): Event[] {
@@ -557,14 +511,13 @@ function commute(a: Facts, b: Facts): boolean {
     !a.observed.readsOthers &&
     !b.observed.readsOthers &&
     !(a.observed.shared && b.observed.shared) &&
-    !(a.setsTimer && b.setsTimer) &&
-    !(a.meetsFailures && b.meetsFailures)
+    !(a.setsTimer && b.setsTimer)
   );
 }
 
 /** The instance a step changes. */
 function targetOf(world: World, choice: Choice): string {
-  if (choice.kind === "fire" || choice.kind === "lose") return world.pending.find((p) => p.id === choice.pending)!.to;
+  if (choice.kind === "fire") return world.pending.find((p) => p.id === choice.pending)!.to;
   return choice.instance;
 }
 
@@ -575,13 +528,9 @@ function stepName(world: World, choice: Choice): string {
       return `a|${choice.instance}|${choice.key}|${JSON.stringify(choice.inputs)}`;
     case "guard":
       return `g|${choice.instance}|${choice.key}`;
-    case "restart":
-      return `r|${choice.instance}`;
     case "fire":
       // What it carries, and which step takes it: two identical entries reach the same world either way.
       return `f|${choice.step}|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
-    case "lose":
-      return `l|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
   }
 }
 
@@ -590,10 +539,10 @@ function stepName(world: World, choice: Choice): string {
 /**
  * A step's fairness (RFD0006): its identity, the same wherever it is possible, and how fair it
  * is. Deliveries, timers and guards are weakly fair unless their transition says otherwise;
- * actions and faults are never fair.
+ * actions are never fair.
  */
 export function fairness(spec: Spec, world: World, choice: Choice): { id: FairId; kind: Fairness } | undefined {
-  if (choice.kind === "act" || choice.kind === "lose" || choice.kind === "restart") return undefined;
+  if (choice.kind === "act") return undefined;
   let name: string;
   let key: string;
   let instance: string;

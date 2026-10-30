@@ -65,7 +65,8 @@ test("who talks to whom is checked when the spec is assembled", () => {
   const Ask = defineCall("Ask");
   expect(talk({ receives: Ping, sends: [Ping] })).not.toThrow();
   expect(talk({ sends: [Ping] })).toThrow("Sender.go: sends ping, but no actor of Talk has a step on Ping");
-  expect(talk({ receives: Ask, sends: [Ask] })).toThrow("Sender: sends ask, a call: handle its failure with a step on failed(Ask)");
+  // A call that nothing makes fail needs no step on its failure: a fault that sends one does (lose).
+  expect(talk({ receives: Ask, sends: [Ask] })).not.toThrow();
   expect(talk({ receives: Ask, sends: [Ask], failure: true })).not.toThrow();
   expect(talk({ receives: Ping, sends: ["Ping"] })).toThrow('Sender.go: "Ping" is not a message from defineMessage or defineCall');
   expect(talk({ receives: Ping, sends: [defineMessage("Ping")] })).toThrow('Talk: two different messages have the id "Ping"');
@@ -80,7 +81,7 @@ test("several steps may be on one message, of which at most one is fair; an acti
   );
   expect(actor({ a: { on: Ping, description: "", run: () => {} }, b: { on: Ping, fair: false, description: "", run: () => {} } })()).toMatchObject({ actors: [{ stepsOn: { "message:Ping": ["a", "b"] } }] });
   expect(actor({ ping: { on: Ping, description: "", run: () => {} } }, { ping: { label: "Ping", description: "", run: () => {} } })).toThrow("A: an action and a step are both named ping; give them different names");
-  expect(actor({ a: { on: "Ping", description: "", run: () => {} } })).toThrow('A.a: on is a message from defineMessage, or failed(Call), not "Ping"');
+  expect(actor({ a: { on: "Ping", description: "", run: () => {} } })).toThrow('A.a: on is a message from defineMessage, not "Ping"');
 });
 
 test("a payload is checked against its message's schema when it is sent", () => {

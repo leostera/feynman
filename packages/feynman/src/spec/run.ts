@@ -1,5 +1,5 @@
 // Running a spec: a Runner applies steps and keeps the trace; scenarios script one.
-import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, instanceById, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
+import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, instanceById, nextLeftAlone, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
@@ -12,7 +12,6 @@ export class Runner {
   readonly worlds: World[] = [];
   readonly initial: World;
   private current: World;
-  private toLose: string[] = [];
 
   constructor(
     readonly spec: Spec,
@@ -44,17 +43,12 @@ export class Runner {
     return this.apply(act(this.spec, this.current, instance, key, inputs));
   }
 
-  /** What the system does next left alone: a guarded transition that holds, else the next message, else the next timer. */
+  /** What the system does next left alone: a fair guarded transition that holds, else the next message, else the next timer. A step with `fair: false`, such as a fault, waits to be asked for. */
   next(): Event | null {
-    const { guards } = choices(this.spec, this.current);
-    if (guards.length) return this.apply(guard(this.spec, this.current, guards[0].instance, guards[0].key));
+    const fair = choices(this.spec, this.current).guards.find((g) => actorNamed(this.spec, instanceById(this.current, g.instance).actor).transitions[g.key]!.fair !== false);
+    if (fair) return this.apply(guard(this.spec, this.current, fair.instance, fair.key));
     const first = nextLeftAlone(this.current);
     if (!first) return null;
-    const lost = first.kind === "deliver" ? this.toLose.indexOf(first.message) : -1;
-    if (lost >= 0) {
-      this.toLose.splice(lost, 1);
-      return this.apply(lose(this.spec, this.current, first.id));
-    }
     return this.apply(fire(this.spec, this.current, first.id));
   }
 
@@ -80,19 +74,9 @@ export class Runner {
     return this.apply(fire(this.spec, this.current, pending.id));
   }
 
-  loseNext(message: string) {
-    this.toLose.push(message);
-  }
-
-  restart(instance: string): Event {
-    return this.apply(restart(this.spec, this.current, instance));
-  }
-
   /** A message in flight to `instance`: the oldest named `message`, or the oldest carrying `payload`. */
   inFlight(instance: string, message: string, payload?: unknown): number {
-    // A call's failure is named for the call: "failed:Charge" (RFD0009).
-    const named = (m: string) => (m.startsWith("message:") ? m : `message:${m}`);
-    const key = message.startsWith("failed:") ? `failed:${named(message.slice("failed:".length))}` : named(message);
+    const key = message.startsWith("message:") ? message : `message:${message}`;
     const wanted = payload === undefined ? undefined : sortedJson(payload);
     const match = this.current.pending
       .filter((p) => p.kind === "deliver" && p.to === instance && p.message === key)
@@ -104,10 +88,6 @@ export class Runner {
 
   deliver(instance: string, message: string, payload?: unknown): Event {
     return this.apply(fire(this.spec, this.current, this.inFlight(instance, message, payload)));
-  }
-
-  drop(instance: string, message: string, payload?: unknown): Event {
-    return this.apply(lose(this.spec, this.current, this.inFlight(instance, message, payload)));
   }
 
   /** One of an instance's steps, by name: on a message, it takes the oldest it is on in flight; else a guard. */
@@ -186,11 +166,11 @@ function laid(spec: Spec, instance: World["instances"][number], fields: unknown)
 }
 
 /** Why there is no waiting, and no clock, in a spec. */
-/** A message or a call's failure, as a scenario names it: by value, `Charge` or `failed(Charge)`. */
+/** A message, as a scenario names it: by value, `Charge`. */
 function messageKey(message: unknown, what: string): string {
   const key = (message as { key?: unknown })?.key;
-  if (typeof key === "string" && (key.startsWith("message:") || key.startsWith("failed:"))) return key;
-  throw new SpecError(`s.${what} takes a message, like s.${what}(bank, Charge), or a call's failure, failed(Charge): not ${JSON.stringify(message)}`);
+  if (typeof key === "string" && key.startsWith("message:")) return key;
+  throw new SpecError(`s.${what} takes a message, like s.${what}(bank, Charge): not ${JSON.stringify(message)}`);
 }
 
 const NO_CLOCK = "there is no clock, time is the order of events (RFD0004): a timer may fire at any point, or not, as a slow or fast clock would let it.";
@@ -231,16 +211,9 @@ function scriptFor(runner: Runner): Script {
       const event = runner.fireTimer(who.id, timer);
       if (event.error) throw new SpecError(event.error);
     },
-    lose: (message) => runner.loseNext(messageKey(message, "lose")),
-    restart(who) {
-      runner.restart(who.id);
-    },
     deliver(who, message, payload) {
       const event = runner.deliver(who.id, messageKey(message, "deliver"), payload);
       if (event.error) throw new SpecError(event.error);
-    },
-    drop(who, message, payload) {
-      runner.drop(who.id, messageKey(message, "drop"), payload);
     },
     step(who, name, payload) {
       const event = runner.step(who.id, name, payload);

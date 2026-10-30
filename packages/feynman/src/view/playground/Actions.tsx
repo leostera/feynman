@@ -2,9 +2,10 @@
 // its members can take now. An action without inputs runs at once. One with a single input
 // offers its choices in the bar; when those name instances, the nodes themselves light up
 // and clicking one chooses it ("Open a Mac", then click the Mac). Anything more opens a
-// small dialog. The bar also opens and closes groups, inspects state, and restarts.
+// small dialog. The bar also opens and closes groups, inspects state, and offers faults on
+// nothing, such as a crash.
 import { Button, Dialog, Input, Select } from "@cloudflare/kumo";
-import { ArrowCounterClockwiseIcon, ArrowLeftIcon, CornersInIcon, CornersOutIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, CornersInIcon, CornersOutIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { whenHolds, worldView, type ActionInfo, type Spec, type World } from "../../spec/index.ts";
 import type { Op } from "../session";
@@ -52,9 +53,25 @@ export function actionsOf(spec: Spec, node: SceneNode, world: World) {
   return node.members.flatMap((m) => {
     const actor = spec.actors.find((a) => a.name === m.actor)!;
     return Object.values(actor.actions)
-      .filter((a) => !a.when || safe(() => whenHolds(spec, world, m, a)))
+      .filter((a) => safe(() => whenHolds(spec, world, m, a)))
       .map((action) => ({ member: m, action }));
   });
+}
+
+/** The steps on nothing a node's members may take now that are not fair: faults such as a crash. */
+export function unfairGuardsOf(spec: Spec, node: SceneNode, world: World) {
+  return node.members.flatMap((m) => {
+    const actor = spec.actors.find((a) => a.name === m.actor)!;
+    return Object.values(actor.transitions)
+      .filter((t) => !t.message && t.when && t.fair === false && safe(() => whenHolds(spec, world, m, t)))
+      .map((step) => ({ member: m, step }));
+  });
+}
+
+/** A step's name in words: `chargeLost` is "Charge lost". */
+export function words(name: string): string {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 export function ActionBar({
@@ -127,9 +144,13 @@ export function ActionBar({
           {group.open ? `Close ${group.label}` : "Look inside"}
         </Button>
       )}
-      {node.members.length === 1 && (
-        <Button size="xs" variant="ghost" shape="square" aria-label={`Restart ${node.label}`} title={`Restart ${node.label}`} icon={<ArrowCounterClockwiseIcon size={11} />} onClick={() => onRun({ op: "restart", instance: node.members[0].id })} />
-      )}
+      {/* Steps on nothing that are not fair, a crash say, sit beside the actions: left alone they never happen (RFD0012). */}
+      {unfairGuardsOf(spec, node, world).map(({ member, step }) => (
+        <Button key={`${member.id}.${step.key}`} size="xs" variant="secondary-destructive" onClick={() => onRun({ op: "guard", instance: member.id, key: step.key })}>
+          {words(step.key)}
+          {node.members.length > 1 ? ` ${member.label}` : ""}
+        </Button>
+      ))}
       <Button size="xs" variant="ghost" shape="square" aria-label="Close" icon={<XIcon size={11} />} onClick={onClose} />
     </>
   );

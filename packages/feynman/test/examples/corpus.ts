@@ -42,10 +42,25 @@ export type Variant = "buggy" | "fixed";
  */
 export type Expected = "holds" | "unfinished" | { events: number; faults: number };
 
+/**
+ * A case's bounds: the checker's, and the budgets the example declares (RFD0012), which TLA+
+ * and P models keep as constants: `faults` (budget("faults", 1)) and `repeats`
+ * (atMost(repeats) on every action). `configured` sets them on the spec.
+ */
+export type CaseBounds = Partial<Bounds> & { faults?: number; repeats?: number };
+
+/** The spec with a case's budgets set, and the checker's bounds without them. */
+export function configured(spec: Spec, bounds: CaseBounds): { spec: Spec; bounds: Partial<Bounds> } {
+  const { faults, repeats, ...rest } = bounds;
+  const has = (name: string) => spec.variables.some((v) => v.name === name);
+  const values = { ...(faults !== undefined && has("faults") ? { faults } : {}), ...(repeats !== undefined && has("repeats") ? { repeats } : {}) };
+  return { spec: Object.keys(values).length ? spec.setting(values) : spec, bounds: rest };
+}
+
 /** One run of the checker, and the verdicts worked out by hand. */
 export interface Case {
   variant: Variant;
-  bounds: Partial<Bounds>;
+  bounds: CaseBounds;
   expect: Record<string, Expected>;
   /** Where the system gets stuck, short of its final state: the shortest way there. None if absent. */
   stuck?: { events: number; faults: number };

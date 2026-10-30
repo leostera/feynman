@@ -6,7 +6,7 @@ import { Badge, Button, cn, Switch } from "@cloudflare/kumo";
 import { CaretRightIcon, PlayIcon } from "@phosphor-icons/react";
 import { useMemo, useState, type ReactNode } from "react";
 import { diffRuns, flowsOf, runScenario, type Event, type Flow, type Run, type RunDiff, type ScenarioInfo, type Spec, type StepStatus, type World } from "../spec/index.ts";
-import { labelOf, ordinal, stepTitle } from "./format";
+import { isFault, isLoss, labelOf, ordinal, stepTitle } from "./format";
 import { EventDetail, useExplorer } from "./ui";
 
 export interface FlowRun {
@@ -64,12 +64,11 @@ export function selectionItem(s: FlowSelection): string | null {
   return s.scenario === null ? null : s.flow === null ? s.scenario : `${s.scenario}/${s.flow}`;
 }
 
-/** A flow's name, from the event that started it: "Alice · Pair a host", "Studio daemon restarts". */
+/** A flow's name, from the event that started it: "Alice · Pair a host", "Studio daemon · Crash". */
 export function flowTitle(spec: Spec, run: Run, flow: Flow): string {
   const first = run.events[flow.start];
   const world = run.worlds[flow.start];
   if (flow.kind === "spawn") return `${flow.events.map((i) => labelOf(run.worlds[i], run.events[i].instance)).join(", ")} appear`;
-  if (flow.kind === "restart") return `${labelOf(world, first.instance)} restarts`;
   return `${labelOf(world, first.instance)} · ${stepTitle(spec, first)}`;
 }
 
@@ -321,7 +320,7 @@ function Sequence({ rows, run, actorOrder, chosen, onChoose }: { rows: Row[]; ru
             <span className={cn("absolute left-0 top-1 bottom-1 w-1 rounded-r", { same: "", changed: "bg-kumo-warning", added: "bg-kumo-success", removed: "bg-kumo-danger" }[row.status])} />
             <span className="absolute left-3 w-16 text-right font-mono text-[10.5px] text-kumo-subtle">{ordinal(row.position)}</span>
             <span
-              className={cn("absolute size-2.5 -translate-x-1/2 rounded-full ring-2 ring-kumo-base", bad ? "bg-kumo-danger" : e.kind === "action" ? "bg-kumo-brand" : e.kind === "lose" || e.kind === "restart" ? "bg-kumo-warning" : "bg-(--text-color-kumo-subtle)")}
+              className={cn("absolute size-2.5 -translate-x-1/2 rounded-full ring-2 ring-kumo-base", bad ? "bg-kumo-danger" : e.kind === "action" ? "bg-kumo-brand" : isFault(e) ? "bg-kumo-warning" : "bg-(--text-color-kumo-subtle)")}
               style={{ left: x(e.instance) }}
             />
             <span className={cn("absolute truncate pl-3 text-left text-xs", row.status === "removed" && "line-through")} style={{ left: x(e.instance), maxWidth: 360 }}>
@@ -341,20 +340,20 @@ function messageArrows(rows: Row[]): { from: string; to: string; sentAt: number;
   const used = new Set<number>();
   for (let i = 0; i < rows.length; i++) {
     for (const sent of rows[i].event.sent) {
-      // A call's failure is sent by the loss that caused it, but comes from the callee (RFD0009).
-      const failure = sent.message.startsWith("failed:");
+      // A fault may send on as another sender, as a lost reply fails its call from the callee (ctx.forward).
+      const forwarded = isFault(rows[i].event);
       const j = rows.findIndex(
         (r, k) =>
           k > i &&
           !used.has(k) &&
-          (r.event.kind === "deliver" || r.event.kind === "lose") &&
+          r.event.kind === "deliver" &&
           r.event.instance === sent.to &&
           (r.event.message ?? r.event.key) === sent.message &&
-          (failure || r.event.from === rows[i].event.instance),
+          (forwarded || r.event.from === rows[i].event.instance),
       );
       if (j < 0) continue;
       used.add(j);
-      arrows.push({ from: failure ? rows[j].event.from ?? rows[i].event.instance : rows[i].event.instance, to: sent.to, sentAt: i, at: j, lost: rows[j].event.kind === "lose" });
+      arrows.push({ from: forwarded ? rows[j].event.from ?? rows[i].event.instance : rows[i].event.instance, to: sent.to, sentAt: i, at: j, lost: isLoss(rows[j].event) });
     }
   }
   return arrows;

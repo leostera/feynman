@@ -1,4 +1,9 @@
-import { defineActor, defineLimit, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, input, oneOf } from "../../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineLimit, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, input, lose, oneOf } from "../../../src/spec/index.ts";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const NewCode = defineMessage("NewCode", { account: String }, { name: "new pairing code", over: "https" });
 const Code = defineMessage("Code", { code: String }, { name: "pairing code", over: "https", tone: "reply" });
@@ -52,6 +57,8 @@ const Relay = defineActor({
         ctx.reply(Redeemed, { account: code.account });
       },
     },
+    newCodeLost: lose(NewCode, { spend: faults }),
+    redeemLost: lose(Redeem, { spend: faults }),
   },
 });
 
@@ -61,6 +68,7 @@ const Person = defineActor({
   initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
   actions: {
     pairHost: {
+      with: [atMost(repeats)],
       label: "Pair a host",
       description: "Ask the relay for a pairing code to type on a Mac.",
       sources: ["apps/web/src/settings/pair.tsx#createCode"],
@@ -77,6 +85,8 @@ const Person = defineActor({
       sources: ["apps/web/src/settings/pair.tsx#showCode"],
       run: (state, msg) => void state.codes.push(msg.code),
     },
+    codeLost: lose(Code, { spend: faults }),
+    crash: crash({ spend: faults }),
   },
 });
 
@@ -91,6 +101,7 @@ const Mac = defineActor({
   }),
   actions: {
     link: {
+      with: [atMost(repeats)],
       label: "Paste a pairing code",
       description: "Link this Mac to the account that issued the code.",
       inputs: {
@@ -143,6 +154,9 @@ const Mac = defineActor({
         }
       },
     },
+    redeemedLost: lose(Redeemed, { spend: faults }),
+    refusedLost: lose(Refused, { spend: faults }),
+    crash: crash({ spend: faults }),
   },
 });
 
