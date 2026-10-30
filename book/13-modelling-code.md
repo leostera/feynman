@@ -141,7 +141,7 @@ const holdLifetime = defineLimit({ name: "Hold lifetime", value: 10, unit: "minu
 `feynman check` resolves every source. One that points at nothing fails the check:
 
 ```text
-  ✗ source book/code/box-office/src/db.ts#Db.holdIfFree: Db.holdIfFree is not defined in book/code/box-office/src/db.ts
+  ✗ source book/code/box-office/src/db.ts#Db.holdIfFree Db.holdIfFree is not defined in book/code/box-office/src/db.ts
 ```
 
 (That one was ours: an interface's members aren't definitions. We used line ranges instead.)
