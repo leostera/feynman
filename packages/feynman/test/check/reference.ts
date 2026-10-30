@@ -40,7 +40,8 @@ type GraphNode = { world: World; acts: Record<string, number>; faults: number; d
 /** What a world is, for this explorer: states, messages in flight as a bag, which timers are set, and the counters the bounds read. */
 export function worldKey(world: World, acts: Record<string, number>, faults: number): string {
   return sortedJson({
-    instances: world.instances.map((i) => [i.id, i.state]),
+    instances: world.instances.map((i) => (i.variables ? [i.id, i.state, i.variables] : [i.id, i.state])),
+    variables: world.variables ?? {},
     messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload])).sort(),
     timers: world.pending.filter((p) => p.kind === "timer").map((p) => `${p.to}|${p.timer}`).sort(),
     fresh: world.fresh,

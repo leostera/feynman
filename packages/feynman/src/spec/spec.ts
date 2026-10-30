@@ -19,6 +19,10 @@ export interface Spec {
   groups: GroupInfo[];
   /** The rules of the design (RFD0010). */
   rules: RuleInfo[];
+  /** The model's variables (RFD0012), found from the steps that use them. */
+  variables: VariableInfo[];
+  /** The same spec, with these variables starting at other values (`--set name=value`). */
+  setting(values: Record<string, unknown>): Spec;
   /** The rules turned off in this spec, by name: it is a variant of the design without them. */
   without: string[];
   /** The same design without these rules too, assembled again from the spec's parts. */
@@ -57,6 +61,18 @@ export interface MessageInfo {
   schema: Fields;
 }
 
+/**
+ * State that belongs to the model rather than to an actor (RFD0012), as a TLA+ variable no
+ * process owns: bounds, budgets, ghost history for properties. One value, or with `each`, one
+ * per instance of that actor, kept with the instance.
+ */
+export interface VariableInfo {
+  name: string;
+  initial: unknown;
+  /** The actor whose every instance has its own. */
+  each?: string;
+}
+
 export interface ZoneInfo {
   name: string;
   description?: string;
@@ -81,7 +97,11 @@ export interface StepInfo {
   sources: string[];
   sends: string[];
   starts: string[];
-  when?: (state: unknown) => boolean;
+  /** The model variables it reads or writes, by name (its `when` too). */
+  uses: string[];
+  /** Strings the core keeps and never reads, for libraries and reports: `fault`. */
+  tags: string[];
+  when?: (state: unknown, model: ModelView) => boolean;
   /**
    * Fairness (RFD0006): whether this transition, once it stays (weak) or keeps coming back
    * (strong) possible, must eventually happen. Deliveries, timers and guards are weak unless
@@ -90,6 +110,11 @@ export interface StepInfo {
   fair?: Fairness | false;
   /** For a timer, when the code fires it, in words; it does not change when it can fire. */
   after?: string;
+}
+
+/** The model's variables as a guard reads them. */
+export interface ModelView {
+  get<T>(variable: { name: string; initial: T }): T;
 }
 
 export interface InputInfo {
@@ -202,6 +227,8 @@ export interface World {
   instances: InstanceState[];
   /** Messages in flight and timers set, in the order they were created (by `id`). */
   pending: Pending[];
+  /** The model's variables that have one value (RFD0012), by name; absent when the spec has none. */
+  variables?: Record<string, unknown>;
 }
 
 export interface InstanceState {
@@ -209,6 +236,8 @@ export interface InstanceState {
   actor: string;
   label: string;
   state: unknown;
+  /** Its own value of each variable defined for each instance of its actor; absent when there are none. */
+  variables?: Record<string, unknown>;
 }
 
 export type Pending =
@@ -220,7 +249,7 @@ export type Pending =
       message: string;
       payload: unknown;
       text?: string;
-      /** For a reply to a call (RFD0009): the call it answers, whose failure losing it gives. */
+      /** The request it answers: a reply to a call, or a message sent as answering one (`ctx.send(…, { answers })`). */
       answers?: { message: string; payload: unknown };
     }
   | {

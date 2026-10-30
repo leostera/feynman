@@ -47,6 +47,8 @@ export interface SpecSource {
   properties?: string[];
   /** The rules turned off: the variant of the design without them (RFD0010). */
   without?: string[];
+  /** Model variables started at other values (`--set`, RFD0012). */
+  set?: Record<string, unknown>;
 }
 
 /** The spec a source names, loaded as a worker does. */
@@ -54,7 +56,8 @@ export async function loadSource(source: SpecSource): Promise<Spec> {
   const module = (await import(source.module)) as Record<string, unknown>;
   const spec = module[source.export ?? "default"] as Spec | undefined;
   if (!spec || typeof spec !== "object" || !Array.isArray(spec.actors)) throw new Error(`${source.module} does not export a spec as ${source.export ?? "default"}`);
-  const variant = source.without?.length ? spec.withoutRules(source.without) : spec;
+  const set = source.set && Object.keys(source.set).length ? spec.setting(source.set) : spec;
+  const variant = source.without?.length ? set.withoutRules(source.without) : set;
   return source.properties ? { ...variant, properties: variant.properties.filter((p) => source.properties!.includes(p.id)) } : variant;
 }
 

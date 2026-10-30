@@ -6,7 +6,7 @@
 import { Button, Dialog, Input, Select } from "@cloudflare/kumo";
 import { ArrowCounterClockwiseIcon, ArrowLeftIcon, CornersInIcon, CornersOutIcon, XIcon } from "@phosphor-icons/react";
 import { useState } from "react";
-import { worldView, type ActionInfo, type Spec, type World } from "../../spec/index.ts";
+import { whenHolds, worldView, type ActionInfo, type Spec, type World } from "../../spec/index.ts";
 import type { Op } from "../session";
 import type { SceneNode } from "../scene";
 import { useExplorer } from "../ui";
@@ -48,11 +48,11 @@ export function startAction(spec: Spec, world: World, instance: string, action: 
 export const STACK_FROM = 4;
 
 /** The actions a node offers now: every member's actions whose `when` holds. */
-export function actionsOf(spec: Spec, node: SceneNode) {
+export function actionsOf(spec: Spec, node: SceneNode, world: World) {
   return node.members.flatMap((m) => {
     const actor = spec.actors.find((a) => a.name === m.actor)!;
     return Object.values(actor.actions)
-      .filter((a) => !a.when || safe(() => a.when!(m.state)))
+      .filter((a) => !a.when || safe(() => whenHolds(spec, world, m, a)))
       .map((action) => ({ member: m, action }));
   });
 }
@@ -105,7 +105,7 @@ export function ActionBar({
       </div>
     );
   }
-  const actions = actionsOf(spec, node);
+  const actions = actionsOf(spec, node, world);
   const many = new Set(actions.map((a) => a.member.id)).size > 1;
   const buttons = actions.map(({ member, action }) => (
     <Button

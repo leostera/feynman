@@ -47,7 +47,7 @@ test("a rule is on as written, and off in the variant without it", () => {
 test("rule.on reads the variant being run, for the same parts in both", () => {
   const spec = capped(({ cap }) => [cap]);
   const without = spec.withoutRules(["cap"]);
-  const when = (sp: typeof spec) => sp.actors[0].actions.count.when!({ n: 2 });
+  const when = (sp: typeof spec) => sp.actors[0].actions.count.when!({ n: 2 }, { get: () => undefined as never });
   expect(when(spec)).toBe(false);
   expect(when(without)).toBe(true);
   expect(when(spec)).toBe(false);

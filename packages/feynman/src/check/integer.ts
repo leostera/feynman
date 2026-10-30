@@ -21,12 +21,12 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, stepsTaking, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, stepsTaking, traceView, whenHolds, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
 import { startBreaks, stuck } from "./judge.ts";
-import { renamedLine, type Symmetry } from "./keys.ts";
+import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { fairness, fairStepsIn, memoryOf, rootMemory, type Resolved } from "./owner.ts";
 import { PrintMap } from "./prints.ts";
@@ -71,7 +71,8 @@ interface Renamed {
 /**
  * Where things are in a world's vector:
  * [state id per instance | faults | actions taken per (instance, action) | fresh id | rng |
- *  memory | message count | message ids | timer ids], messages and timers each oldest first.
+ *  variables | memory | message count | message ids | timer ids], messages and timers each
+ * oldest first. An instance's state id covers its own variables; `variables` is the world's.
  * The memory is what `never` properties remember of the path (owner.ts memoryOf), interned.
  *
  * Messages are a bag to the fingerprint, but kept in the order they were sent, as the classic
@@ -101,6 +102,8 @@ interface Layout {
   faults: number;
   fresh: number;
   rng: number;
+  /** The world's model variables (RFD0012), interned. */
+  variables: number;
   memory: number;
   messages: number;
 }
@@ -119,9 +122,10 @@ interface Effect {
   addsTimers: Int32Array;
   /** What a trace sees of the step's event, interned (see `TraceStep`). */
   event: number;
-  /** For steps that are not cached: the counters after them. */
+  /** For steps that are not cached: the counters and the world's variables after them. */
   fresh?: number;
   rng?: number;
+  variables?: number;
 }
 
 /** What `never` and step properties see of an event (traceView): its place goes in when a path is laid out. */
@@ -232,6 +236,13 @@ export class IntegerSearch {
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
   private stepNames = new Interner<string>();
+  private readsWorld = new Map<string, boolean>();
+  /** The world's variables, by their key; 0 is none set, so a spec without variables keeps 0. */
+  private worldVariables = (() => {
+    const interner = new Interner<Record<string, unknown>>();
+    interner.id("", () => ({}));
+    return interner;
+  })();
   /** `takers`, by pending entry and then by its receiver's state. */
   private takersOf = new Map<number, Map<number, string[]>>();
   private timerLists = new Interner<string>();
@@ -316,7 +327,7 @@ export class IntegerSearch {
     for (const instance of world.instances) for (const k of Object.keys(actorNamed(this.spec, instance.actor).actions)) acts.set(`${instance.id}.${k}`, acts.size);
     const n = world.instances.length;
     const restarts = world.instances.flatMap((i): Choice[] => (actorNamed(this.spec, i.actor).singleton ? [] : [{ kind: "restart", instance: i.id }]));
-    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), restarts, noTimers: new Int32Array(world.instances.length), cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, memory: n + 3 + acts.size, messages: n + 4 + acts.size };
+    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), restarts, noTimers: new Int32Array(world.instances.length), cache: new Map(), acts, faults: n, fresh: n + 1 + acts.size, rng: n + 2 + acts.size, variables: n + 3 + acts.size, memory: n + 4 + acts.size, messages: n + 5 + acts.size };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -513,9 +524,9 @@ export class IntegerSearch {
     this.expanded[entry.gid] = true;
   }
 
-  /** A world as properties see it: its layout, instance states, and whether anything is pending. */
+  /** A world as properties see it: its layout, instance states, the world's variables, and whether anything is pending. */
   private tupleOf(vector: Int32Array, L: Layout): number {
-    let key = `${L.index}|${vector.length > L.messages + 1 ? 1 : 0}`;
+    let key = `${L.index}|${vector.length > L.messages + 1 ? 1 : 0}|${vector[L.variables]}`;
     for (let slot = 0; slot < L.instances.length; slot++) key += `,${vector[slot]}`;
     let id = this.tuples.get(key);
     if (id === undefined) this.tuples.set(key, (id = this.tuples.size));
@@ -682,8 +693,8 @@ export class IntegerSearch {
   private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry): { print: [number, number]; plain: [number, number]; world: [number, number] } {
     const M = L.messages;
     const end = M + 1 + v[M];
-    let base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]);
-    let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]);
+    let base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]) + lane1(1, L.variables, v[L.variables]);
+    let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]) + lane2(1, L.variables, v[L.variables]);
     let extra1 = lane1(1, L.memory, v[L.memory]);
     let extra2 = lane2(1, L.memory, v[L.memory]);
     for (let i = L.faults; i < L.fresh; i++) (extra1 += lane1(1, i, v[i])), (extra2 += lane2(1, i, v[i]));
@@ -871,7 +882,7 @@ export class IntegerSearch {
     const n = L.instances.length;
     const instances = new Array<Instance>(n);
     for (let slot = 0; slot < n; slot++) instances[slot] = this.instanceStates.values[vector[slot]];
-    return { seq: 0, fresh: {}, rng: 0, instances, pending: new Array(vector.length - L.messages - 1) } as World;
+    return { seq: 0, fresh: {}, rng: 0, instances, pending: new Array(vector.length - L.messages - 1), ...this.variablesOf(vector, L) } as World;
   }
 
   private budgetOf(vector: Int32Array, L: Layout): { acts: Record<string, number>; faults: number; memory: string } {
@@ -934,7 +945,7 @@ export class IntegerSearch {
     const world = here.world();
     const step = run(this.spec, world, choice, observe);
     const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event);
-    if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0 };
+    if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0, variables: this.variablesId(step.world) };
     byArg.set(arg, effect);
     return effect;
   }
@@ -955,13 +966,16 @@ export class IntegerSearch {
    * The steps that can take pending entry `id` (interned) when its receiver is in state `state`:
    * a timer's own; for a message, the steps on it whose `when` holds there (stepsTaking).
    */
-  private takers(id: number, state: number): string[] {
+  private takers(id: number, state: number, variables: number): string[] {
+    const instance = this.instanceStates.values[state];
+    const key = this.whenReadsWorld(instance.actor) ? state + variables * 2 ** 26 : state;
     let byState = this.takersOf.get(id);
     if (!byState) this.takersOf.set(id, (byState = new Map()));
-    let steps = byState.get(state);
+    let steps = byState.get(key);
     if (!steps) {
       const pending = { ...this.pendings.values[id], id: 0 } as Pending;
-      byState.set(state, (steps = stepsTaking(this.spec, { seq: 0, fresh: {}, rng: 0, instances: [this.instanceStates.values[state]], pending: [] } as World, pending)));
+      const world = { ...NO_WORLD, instances: [instance], ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
+      byState.set(key, (steps = stepsTaking(this.spec, world, pending)));
     }
     return steps;
   }
@@ -1012,6 +1026,7 @@ export class IntegerSearch {
     if (fault) out[L.faults]++;
     if (effect.fresh !== undefined) out[L.fresh] = effect.fresh;
     if (effect.rng !== undefined) out[L.rng] = effect.rng;
+    if (effect.variables !== undefined) out[L.variables] = effect.variables;
     out[M] = messages;
     let left: number[] | undefined;
     if (rm.length > (chosen >= 0 ? 1 : 0)) {
@@ -1045,6 +1060,7 @@ export class IntegerSearch {
     for (const instance of world.instances) v[L.slots.get(instance.id)!] = this.stateId(instance);
     v[L.fresh] = this.freshId(world.fresh);
     v[L.rng] = world.rng | 0;
+    v[L.variables] = this.variablesId(world);
     v[L.memory] = memory;
     v[L.messages] = messages.length;
     v.set(messages, L.messages + 1);
@@ -1059,7 +1075,7 @@ export class IntegerSearch {
     for (let slot = 0; slot < n; slot++) instances[slot] = this.instanceStates.values[vector[slot]];
     const pending: Pending[] = [];
     for (let i = L.messages + 1; i < vector.length; i++) pending.push({ ...this.pendings.values[vector[i]], id: pending.length + 1 } as Pending);
-    return { seq: pending.length, fresh: this.freshes.values[vector[L.fresh]], rng: vector[L.rng] >>> 0, instances, pending };
+    return { seq: pending.length, fresh: this.freshes.values[vector[L.fresh]], rng: vector[L.rng] >>> 0, instances, pending, ...this.variablesOf(vector, L) };
   }
 
   private here(vector: Int32Array, L: Layout): Here {
@@ -1090,13 +1106,13 @@ export class IntegerSearch {
     const out: Choice[] = [];
     const n = L.instances.length;
     for (let slot = 0; slot < n; slot++) {
-      for (const act of this.planOf(L, vector[slot]).acts) for (const c of act.choices ?? this.exampleChoices(here, tuple, slot, act.key, act.inputs!)) out.push(c);
+      for (const act of this.planOf(L, vector[slot], vector[L.variables]).acts) for (const c of act.choices ?? this.exampleChoices(here, tuple, slot, act.key, act.inputs!)) out.push(c);
     }
-    for (let slot = 0; slot < n; slot++) for (const c of this.planOf(L, vector[slot]).guards) out.push(c);
+    for (let slot = 0; slot < n; slot++) for (const c of this.planOf(L, vector[slot], vector[L.variables]).guards) out.push(c);
     const pending = vector.length - L.messages - 1;
     for (let k = 1; k <= pending; k++) {
       const id = vector[L.messages + k];
-      for (const step of this.takers(id, vector[L.slots.get(this.pendings.values[id].to)!])) out.push(fireAt(k, step));
+      for (const step of this.takers(id, vector[L.slots.get(this.pendings.values[id].to)!], vector[L.variables])) out.push(fireAt(k, step));
     }
     if (vector[L.faults] < this.b.faults) {
       for (let k = 1; k <= vector[L.messages]; k++) if (this.canLose[vector[L.messages + k]]) out.push(loseAt(k));
@@ -1107,25 +1123,40 @@ export class IntegerSearch {
 
   /**
    * What an instance in one state can do: its actions whose `when` holds (with their inputs, if
-   * those do not come from `examples`) and its guards that hold. Both read only its state.
+   * those do not come from `examples`) and its guards that hold. Both read only its state and
+   * its own variables, unless a `when` of its actor reads the world's (`variables`, interned).
    */
-  private planOf(L: Layout, state: number): LocalPlan {
-    let plan = L.plans.get(state);
-    if (plan) return plan;
+  private planOf(L: Layout, state: number, variables: number): LocalPlan {
     const instance = this.instanceStates.values[state];
+    const key = this.whenReadsWorld(instance.actor) ? state + variables * 2 ** 26 : state;
+    let plan = L.plans.get(key);
+    if (plan) return plan;
+    const world = { ...NO_WORLD, ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
     const actor = actorNamed(this.spec, instance.actor);
     const acts: LocalPlan["acts"] = [];
     for (const info of Object.values(actor.actions)) {
-      if (info.when && !enabledIn(info.when, instance.state)) continue;
+      if (info.when && !whenHolds(this.spec, world, instance, info)) continue;
       const inputs = info.inputs as ActionInputs;
       if (Object.values(inputs).some((input) => input.examples)) acts.push({ key: info.key, inputs });
       else acts.push({ key: info.key, choices: inputCombinations(this.spec, NO_WORLD, inputs).map((combo): Choice => ({ kind: "act", instance: instance.id, key: info.key, inputs: combo })) });
     }
     const guards = Object.values(actor.transitions)
-      .filter((t) => !t.message && t.when && enabledIn(t.when, instance.state))
+      .filter((t) => !t.message && t.when && whenHolds(this.spec, world, instance, t))
       .map((t): Choice => ({ kind: "guard", instance: instance.id, key: t.key }));
-    L.plans.set(state, (plan = { acts, guards }));
+    L.plans.set(key, (plan = { acts, guards }));
     return plan;
+  }
+
+  /** Whether a `when` of this actor's steps reads a variable of the world's, not only its instance's. */
+  private whenReadsWorld(actor: string): boolean {
+    let reads = this.readsWorld.get(actor);
+    if (reads === undefined) {
+      const info = actorNamed(this.spec, actor);
+      const one = new Set(this.spec.variables.filter((v) => !v.each).map((v) => v.name));
+      reads = [...Object.values(info.actions), ...Object.values(info.transitions)].some((s) => s.when && s.uses.some((u) => one.has(u)));
+      this.readsWorld.set(actor, reads);
+    }
+    return reads;
   }
 
   /** An action's choices when its inputs come from `examples`, which read the world: kept by its tuple. */
@@ -1140,7 +1171,7 @@ export class IntegerSearch {
   /** An instance in one state, shared by every world it is in that way. */
   private stateId(instance: Instance): number {
     // The key is the instance's key line (keys.ts), which symmetric fingerprints rename.
-    return this.instanceStates.id(`${instance.id}=${sortedJson(instance.state)}`, () => instance);
+    return this.instanceStates.id(instanceLine(instance), () => instance);
   }
 
   /** As keys.ts pendingText writes it: symmetric fingerprints rename it. */
@@ -1155,6 +1186,15 @@ export class IntegerSearch {
       this.failureTo[id] = p.kind === "deliver" && calledBy(p.message) ? p.to : undefined;
     }
     return id;
+  }
+
+  /** The world's variables, interned: 0 for none set. */
+  private variablesId(world: World): number {
+    return world.variables ? this.worldVariables.id(sortedJson(world.variables), () => world.variables!) : 0;
+  }
+
+  private variablesOf(vector: Int32Array, L: Layout): { variables?: Record<string, unknown> } {
+    return vector[L.variables] ? { variables: this.worldVariables.values[vector[L.variables]] } : {};
   }
 
   private freshId(fresh: Record<string, number>): number {
@@ -1216,14 +1256,6 @@ function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
   }
 }
 
-/** Whether a step's `when` holds in a state: one that throws does not, as the engine has it. */
-function enabledIn(when: (state: never) => boolean, state: unknown): boolean {
-  try {
-    return when(state as never);
-  } catch {
-    return false;
-  }
-}
 
 function holdsSafely(f: () => boolean): boolean {
   try {
@@ -1290,6 +1322,7 @@ function childPrint(parent: Entry, step: Step): [number, number] {
   if (fault) swap(L.faults, v[L.faults] + 1);
   if (e.fresh !== undefined) swap(L.fresh, e.fresh);
   if (e.rng !== undefined) swap(L.rng, e.rng);
+  if (e.variables !== undefined) swap(L.variables, e.variables);
   swap(L.memory, step.memory);
   for (const id of e.removesMessages) (h1 -= lane1(3, id, 0)), (h2 -= lane2(3, id, 0));
   for (const id of e.addsMessages) (h1 += lane1(3, id, 0)), (h2 += lane2(3, id, 0));

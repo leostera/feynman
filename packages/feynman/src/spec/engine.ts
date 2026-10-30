@@ -7,7 +7,7 @@
 // step is done, so sharing is safe, and a handler that tries to change another
 // instance's state fails loudly instead of corrupting the past.
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
-import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
+import type { ActorInfo, Change, Event, EventKind, InstanceState, ModelView, Pending, Sent, Spec, StepInfo, VariableInfo, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
 import { mismatch } from "./schema.ts";
 
@@ -126,17 +126,16 @@ export function choices(spec: Spec, world: World) {
   for (const instance of world.instances) {
     const steps = stepsOf(spec, instance.actor);
     for (const action of steps.actions) {
-      if (!action.when || holds(action.when, instance.state)) actions.push({ instance: instance.id, key: action.key, inputs: action.inputs });
+      if (!action.step.when || whenHolds(spec, world, instance, action.step)) actions.push({ instance: instance.id, key: action.step.key, inputs: action.inputs });
     }
     for (const transition of steps.guards) {
-      if (holds(transition.when, instance.state)) guards.push({ instance: instance.id, key: transition.key });
+      if (whenHolds(spec, world, instance, transition)) guards.push({ instance: instance.id, key: transition.key });
     }
   }
   return { actions, guards, pending: pendingInOrder(world) };
 }
 
-type Guarded = { key: string; when: (state: never) => boolean };
-type Steps = { actions: { key: string; when?: (state: never) => boolean; inputs: string[] }[]; guards: Guarded[] };
+type Steps = { actions: { step: StepInfo; inputs: string[] }[]; guards: StepInfo[] };
 
 /** Each actor's actions and guarded transitions as lists, worked out once per spec. */
 const stepLists = new WeakMap<Spec, Map<string, Steps>>();
@@ -148,20 +147,57 @@ function stepsOf(spec: Spec, actorName: string): Steps {
   if (!steps) {
     const actor = actorNamed(spec, actorName);
     steps = {
-      actions: Object.values(actor.actions).map((a) => ({ key: a.key, when: a.when as Steps["actions"][number]["when"], inputs: Object.keys(a.inputs) })),
-      guards: Object.values(actor.transitions).filter((t) => !t.message && t.when).map((t) => ({ key: t.key, when: t.when as Guarded["when"] })),
+      actions: Object.values(actor.actions).map((a) => ({ step: a, inputs: Object.keys(a.inputs) })),
+      guards: Object.values(actor.transitions).filter((t) => !t.message && t.when),
     };
     lists.set(actorName, steps);
   }
   return steps;
 }
 
-function holds(when: (state: never) => boolean, state: unknown): boolean {
+/**
+ * Whether a step's `when` holds for an instance in a world: it reads the instance's state and
+ * the model variables the step uses. One that throws does not hold, except for reading a
+ * variable the step does not list in `uses`, which is a spec error.
+ */
+export function whenHolds(spec: Spec, world: World, instance: InstanceState, step: StepInfo): boolean {
+  if (!step.when) return true;
   try {
-    return when(state as never);
-  } catch {
+    return step.when(instance.state, modelView(spec, world, instance, step));
+  } catch (error) {
+    if (error instanceof UndeclaredVariable) throw new SpecError(`${instance.actor}.${step.key}: ${error.message}`);
     return false;
   }
+}
+
+class UndeclaredVariable extends Error {}
+
+/** A variable's value as the spec starts it: its initial value, or one `--set` gave it. */
+function initialOf(spec: Spec, name: string): VariableInfo {
+  const info = spec.variables.find((v) => v.name === name);
+  if (!info) throw new UndeclaredVariable(`${name} is not one of this spec's variables`);
+  return info;
+}
+
+/** A variable's value for an instance: its own for an `each` variable, else the world's; absent, its initial value. */
+export function variableIn(spec: Spec, world: World, instance: InstanceState | undefined, name: string): unknown {
+  const info = initialOf(spec, name);
+  if (info.each !== undefined) {
+    if (!instance || instance.actor !== info.each) throw new UndeclaredVariable(`${name} is one per ${info.each}, and ${instance?.actor ?? "the world"} has none`);
+    return instance.variables && name in instance.variables ? instance.variables[name] : info.initial;
+  }
+  return world.variables && name in world.variables ? world.variables[name] : info.initial;
+}
+
+/** The model as a step's `when` reads it: the variables it uses, and no others. */
+function modelView(spec: Spec, world: World, instance: InstanceState, step: StepInfo): ModelView {
+  return {
+    get(variable) {
+      const name = (variable as { name?: string })?.name;
+      if (typeof name !== "string" || !step.uses.includes(name)) throw new UndeclaredVariable(`reads ${name ?? String(variable)}, which it does not declare in uses`);
+      return variableIn(spec, world, instance, name) as never;
+    },
+  };
 }
 
 // Steps ----------------------------------------------------------------------------------------------
@@ -204,7 +240,7 @@ export function stepsTaking(spec: Spec, world: World, pending: Pending): string[
   if (!instance) return [];
   const actor = actorNamed(spec, instance.actor);
   const steps = actor.stepsOn[pending.message] ?? [];
-  return steps.length === 1 && !actor.transitions[steps[0]].when ? steps : steps.filter((s) => !actor.transitions[s].when || holds(actor.transitions[s].when!, instance.state));
+  return steps.length === 1 && !actor.transitions[steps[0]].when ? steps : steps.filter((s) => whenHolds(spec, world, instance, actor.transitions[s]));
 }
 
 /** The step a message goes to when the system is left alone: the fair one of the steps on it. */
@@ -228,7 +264,7 @@ export function fire(spec: Spec, world: World, pendingId: number, step?: string,
   const transition = name === undefined ? undefined : actor.transitions[name];
   const delivery = { message: pending.message, payload: pending.payload, from: pending.from };
   if (transition && transition.message !== pending.message) throw new SpecError(`${actor.name}.${name} is not a step on ${messageName(spec, pending.message)}`);
-  if (transition?.when && !holds(transition.when, instance.state)) throw new SpecError(`${actor.name}.${name} cannot take ${messageName(spec, pending.message)} now: its when does not hold`);
+  if (transition && !whenHolds(spec, consumed, instance, transition)) throw new SpecError(`${actor.name}.${name} cannot take ${messageName(spec, pending.message)} now: its when does not hold`);
   if (!transition) {
     return finish(spec, world, consumed, {
       kind: "deliver",
@@ -251,6 +287,7 @@ export function fire(spec: Spec, world: World, pendingId: number, step?: string,
     actor,
     step: transition,
     delivery,
+    received: pending,
     notes: pending.text ? [pending.text] : [],
     from,
     call: failed
@@ -343,6 +380,8 @@ interface Running {
   step: StepInfo;
   inputs?: Record<string, unknown>;
   delivery?: { message: string; payload: unknown; from: string };
+  /** For a delivery: the message as it was in flight, which `ctx.forward` puts back. */
+  received?: Extract<Pending, { kind: "deliver" }>;
   from?: InstanceState;
   notes?: string[];
   call: (state: unknown, ctx: unknown) => unknown;
@@ -363,7 +402,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
   const self = { ...next.instances[position] };
   next.instances[position] = self;
   const state = clone(self.state);
-  const effects = { sent: [] as Sent[], started: [] as { timer: string }[], cancelled: [] as string[], notes: [...(run.notes ?? [])] };
+  const effects: Effects = { sent: [], started: [], cancelled: [], notes: [...(run.notes ?? [])], variables: [] };
   const base = {
     kind: run.kind,
     instance: self.id,
@@ -375,7 +414,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     ...run.delivery,
   };
   try {
-    const returned = run.call(state, makeCtx(spec, next, self, run.actor, run.step, effects, run.from, how.observe, run.delivery));
+    const returned = run.call(state, makeCtx(spec, next, self, state, run, effects, how.observe));
     if (returned instanceof Promise) throw new SpecError("its run is async: a step happens at once, so it cannot await; tell others with a message and handle their reply in another step");
     // `(s) => s.n++` and `(s) => (s.list = [...])` return what they assign, harmlessly; an object
     // the state does not hold looks like a new state, which would be lost.
@@ -393,7 +432,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
   const odd = unstorable(state, "state");
   if (odd) return finish(spec, before, before, { ...base, changes: [], error: `${run.actor.name}.${run.step.key}: ${notPlain(odd)}` }, how);
   const explain = how.explain !== false;
-  const changes = explain ? diff(self.id, self.state, state) : [];
+  const changes = explain ? [...diff(self.id, self.state, state), ...effects.variables] : [];
   self.state = freeze(state);
   const text = explain ? sentence(run.step, state, run.kind === "action" ? run.inputs : run.delivery?.payload) : undefined;
   return finish(spec, before, next, { ...base, changes, sent: effects.sent, started: effects.started, cancelled: effects.cancelled, notes: effects.notes, ...(text ? { text } : {}), ...(run.step.routine ? { routine: true } : {}) }, how);
@@ -416,22 +455,42 @@ function keyOf(value: unknown): string {
   throw new SpecError(`sends ${typeof value === "string" ? JSON.stringify(value) : String(value)}: send and reply take a message from defineMessage, like ctx.send(bank, Charge, { payment })`);
 }
 
-function makeCtx(
-  spec: Spec,
-  world: World,
-  self: InstanceState,
-  actor: ActorInfo,
-  step: StepInfo,
-  effects: { sent: Sent[]; started: { timer: string }[]; cancelled: string[]; notes: string[] },
-  from?: InstanceState,
-  observe?: Observation,
-  delivery?: { message: string; payload: unknown },
-) {
+/** What a step did besides changing its state, gathered while it runs. */
+interface Effects {
+  sent: Sent[];
+  started: { timer: string }[];
+  cancelled: string[];
+  notes: string[];
+  /** Changes to model variables, as changes: `@faults` on the world (instance ""), or on its own instance. */
+  variables: Change[];
+}
+
+/** What `send` takes after the payload: the text, or the text and the request the message answers. */
+type SendOptions = string | { text?: string; answers?: { message: string; payload: unknown } };
+
+function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, run: Running, effects: Effects, observe?: Observation) {
+  const { actor, step, from, delivery, received } = run;
+  const declared = (variable: { name: string }) => {
+    const name = (variable as { name?: string })?.name;
+    if (typeof name !== "string" || !step.uses.includes(name)) throw new SpecError(`uses ${name ?? String(variable)}, which it does not declare in uses`);
+    return name;
+  };
+  const variableValue = (variable: { name: string }, quiet: boolean) => {
+    const name = declared(variable);
+    if (!quiet && observe && !spec.variables.find((v) => v.name === name)!.each) observe.shared = true;
+    try {
+      return variableIn(spec, world, self, name);
+    } catch (error) {
+      throw new SpecError(error instanceof Error ? error.message : String(error));
+    }
+  };
   // Handling a call: its reply is tagged with the call, so losing it fails the call (RFD0009).
   const answering = delivery && spec.messages[delivery.message]?.call ? { message: delivery.message, payload: delivery.payload } : undefined;
   let replied = false;
   const view = worldView(spec, world, observe ? (id) => id !== self.id && (observe.readsOthers = true) : undefined);
-  const send = (to: { id: string }, value: unknown, payload: unknown, text?: string, answers?: { message: string; payload: unknown }) => {
+  const send = (to: { id: string }, value: unknown, payload: unknown, options?: SendOptions, tagged?: { message: string; payload: unknown }) => {
+    const text = typeof options === "string" ? options : options?.text;
+    const answers = tagged ?? (typeof options === "object" ? options.answers : undefined);
     const message = keyOf(value);
     if (!step.sends.includes(message)) throw new SpecError(`sends ${message.slice("message:".length)}, which it does not declare in sends`);
     const info = spec.messages[message];
@@ -466,6 +525,54 @@ function makeCtx(
         replied = true;
       }
       send(from, value, payload, text, answering);
+    },
+    /** The message being handled: its key, sender, payload, and the request it answers, if any. */
+    delivery: received
+      ? { message: received.message, from: from ? view.instance(from) : undefined, payload: received.payload, ...(received.answers ? { answers: received.answers } : {}) }
+      : undefined,
+    /** Puts the message being handled back in flight as it was: same sender, payload, and request it answers. */
+    forward() {
+      if (!received) throw new SpecError("forward is only possible in a step on a message");
+      const id = ++world.seq;
+      world.pending.push({ ...received, id });
+      effects.sent.push({ id, to: received.to, message: received.message, payload: received.payload, text: received.text });
+    },
+    /**
+     * Starts this instance again: its state becomes its initial state, with the fields in
+     * `keeps` carried over; its timers are cancelled; replies on their way to it are dropped,
+     * since what it was waiting for went with its memory.
+     */
+    reset(options?: { keeps?: readonly string[] }) {
+      const keeps = options?.keeps ?? [];
+      const old = state as Record<string, unknown>;
+      for (const field of keeps) if (!(field in old)) throw new SpecError(`reset keeps ${field}, which its state does not have`);
+      const fresh = clone(actor.initialState({ id: self.id, label: self.label })) as Record<string, unknown>;
+      for (const field of keeps) fresh[field] = old[field];
+      for (const key of Object.keys(old)) delete old[key];
+      Object.assign(old, fresh);
+      for (const p of world.pending) if (p.kind === "timer" && p.to === self.id) effects.cancelled.push(p.timer);
+      world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !p.answers && calledBy(p.message) === undefined));
+    },
+    get(variable: { name: string }) {
+      return variableValue(variable, false);
+    },
+    set(variable: { name: string }, value: unknown) {
+      const name = declared(variable);
+      const odd = unstorable(value, "variable");
+      if (odd) throw new SpecError(notPlain(odd));
+      const info = spec.variables.find((v) => v.name === name)!;
+      if (!info.each && observe) observe.shared = true;
+      const before = variableValue(variable, true);
+      const stored = freeze(clone(value));
+      // Its initial value is the same state as never set: kept out, so one state has one key.
+      const initial = sortedJson(stored) === sortedJson(info.initial);
+      const owner = info.each ? self : world;
+      const values = { ...(owner.variables ?? {}) };
+      if (initial) delete values[name];
+      else values[name] = stored;
+      if (Object.keys(values).length) owner.variables = values;
+      else delete owner.variables;
+      effects.variables.push({ instance: info.each ? self.id : "", path: `@${name}`, before: clone(before), after: clone(stored) });
     },
     start(label: string) {
       if (!step.starts.includes(label)) throw new SpecError(`starts ${label}, which it does not declare in starts`);
@@ -552,7 +659,8 @@ export function worldView(spec: Spec, world: World, onRead?: (id: string) => voi
     const info = spec.actors.find((a) => a.name === actor?.name);
     throw new SpecError(found.length === 0 ? `there is no ${info?.name ?? "such actor"} yet` : `there are ${found.length} of ${info?.name}; use all() instead of the()`);
   };
-  return { quiet: world.pending.length === 0, all, the, instance } as WorldView & { instance: typeof instance };
+  const get = (variable: { name: string }, of?: { id: string }) => variableIn(spec, world, of ? world.instances.find((i) => i.id === of.id) : undefined, variable?.name);
+  return { quiet: world.pending.length === 0, all, the, get, instance } as WorldView & { instance: typeof instance };
 }
 
 export function violatedAlways(spec: Spec, world: World): string[] {

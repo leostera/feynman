@@ -48,14 +48,27 @@ export function pendingText(p: Pending): string {
   return text;
 }
 
+/**
+ * An instance's line: `id=state`; with its own model variables (RFD0012), `id@=[state,variables]`,
+ * which is still JSON after the `=`, as renaming needs, and never the line of a plain state.
+ */
+export function instanceLine(i: World["instances"][number]): string {
+  return i.variables ? `${i.id}@=${sortedJson([i.state, i.variables])}` : `${i.id}=${textOf(i.state)}`;
+}
+
+/** The counters, and the world's model variables when any are set. */
+function restLine(world: World): string {
+  return world.variables ? `${JSON.stringify(world.fresh)}|${world.rng}|${sortedJson(world.variables)}` : `${JSON.stringify(world.fresh)}|${world.rng}`;
+}
+
 /** The lines a world's key is made of, before renaming and sorting: timers make one line, in age order. */
 function keyParts(world: World): { instances: string[]; pending: string[]; rest: string } {
   const timers = world.pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id);
   const messages = world.pending.filter((p) => p.kind === "deliver").map(pendingText);
   return {
-    instances: world.instances.map((i) => `${i.id}=${textOf(i.state)}`),
+    instances: world.instances.map(instanceLine),
     pending: timers.length ? [...messages, `timers ${timers.map(pendingText).join(" ")}`] : messages,
-    rest: `${JSON.stringify(world.fresh)}|${world.rng}`,
+    rest: restLine(world),
   };
 }
 
@@ -256,7 +269,7 @@ function worldHash(world: World): bigint {
   words.subarray(1, 1 + n).sort();
   words.subarray(1 + n, at).sort();
   words[at++] = timers ? Bun.hash.wyhash(pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id).map(pendingText).join(" "), SEED) : 0n;
-  words[at] = Bun.hash.wyhash(`${JSON.stringify(world.fresh)}|${world.rng}`, SEED);
+  words[at] = Bun.hash.wyhash(restLine(world), SEED);
   return Bun.hash.wyhash(words, SEED);
 }
 
@@ -266,7 +279,7 @@ const lineHashes = new WeakMap<object, bigint>();
 /** An instance's line (`id=state`), hashed once per instance object: unchanged instances are shared between worlds. */
 function instanceHash(instance: World["instances"][number]): bigint {
   let h = lineHashes.get(instance);
-  if (h === undefined) lineHashes.set(instance, (h = Bun.hash.wyhash(`${instance.id}=${textOf(instance.state)}`, SEED)));
+  if (h === undefined) lineHashes.set(instance, (h = Bun.hash.wyhash(instanceLine(instance), SEED)));
   return h;
 }
 

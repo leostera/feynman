@@ -32,6 +32,7 @@ Commands:
       --workers N                threads for the classic search (FEYNMAN_ENGINE=classic; default: cores - 1, up to 7)
       --only P,Q                 check and show only these properties
       --without R,S              the design without these rules (check and run; RFD0010)
+      --set NAME=VALUE           start a model variable at another value, like a budget (check and run; RFD0012)
       --no-rules                 skip checking that each rule is needed
       --brief                    verdicts and counterexample sizes, without traces
       --json                     the whole result as JSON, for scripts and agents
@@ -62,6 +63,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       scenario: { type: "string" },
       all: { type: "boolean" },
       without: { type: "string" },
+      set: { type: "string", multiple: true },
       "no-rules": { type: "boolean" },
       depth: { type: "string" },
       faults: { type: "string" },
@@ -89,9 +91,9 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     case "list":
       return list(ctx);
     case "run":
-      return runCommand(ctx, positionals, values.scenario, values.all === true, ids(values.without));
+      return runCommand(ctx, positionals, values.scenario, values.all === true, ids(values.without), settings(values.set));
     case "check":
-      return checkCommand(ctx, positionals, { bounds: bounds(values), only: ids(values.only), output: output(values), without: ids(values.without), rules: values["no-rules"] !== true });
+      return checkCommand(ctx, positionals, { bounds: bounds(values), only: ids(values.only), output: output(values), without: ids(values.without), set: settings(values.set), rules: values["no-rules"] !== true });
     case "lock":
       return lockCommand(ctx);
     case "diff":
@@ -109,6 +111,24 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
   }
 }
 
+/** `--set faults=2 --set mode=fast`: each value as JSON when it is JSON (2, true, "x", [1]), else as text. */
+function settings(raw: string[] | undefined): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const item of raw ?? []) {
+    const at = item.indexOf("=");
+    if (at <= 0) throw new Error(`--set takes name=value, like --set faults=2: not ${item}`);
+    const text = item.slice(at + 1);
+    let value: unknown = text;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      // Not JSON: the text itself.
+    }
+    out[item.slice(0, at)] = value;
+  }
+  return out;
+}
+
 function ids(raw: string | undefined): string[] {
   return (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
@@ -119,7 +139,7 @@ function output(values: { brief?: boolean; json?: boolean; "as-scenario"?: boole
   return ({ brief: "brief", json: "json", "as-scenario": "scenario" } as const)[chosen[0]] ?? "text";
 }
 
-function bounds(values: Record<string, string | boolean | undefined>): Partial<Bounds> {
+function bounds(values: Record<string, string | string[] | boolean | undefined>): Partial<Bounds> {
   const out: Partial<Bounds> = {};
   const int = (name: string) => {
     const raw = values[name];
