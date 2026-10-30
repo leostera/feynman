@@ -2,7 +2,7 @@
 // common way a spec goes vague, one step standing for many stages of the code, and a step on a
 // message nothing sends, which never runs.
 import { parseSource } from "../code/index.ts";
-import type { Spec, StepInfo } from "../spec/index.ts";
+import { FAULT, type Spec, type StepInfo } from "../spec/index.ts";
 
 /** A step citing this many files is most likely several stages of the code. */
 export const MAX_FILES_PER_STEP = 4;
@@ -44,13 +44,19 @@ export function shapeWarnings(spec: Spec): ShapeWarning[] {
 }
 
 /** Steps with no sources: designed but not built yet, or not anchored to their code. */
+/** Steps with no code yet. Faults are left out: a lost message or a crash is the world's doing, not code's. */
 export function unbuilt(spec: Spec): { actor: string; step: string }[] {
   return spec.actors.flatMap((actor) =>
-    [...Object.values(actor.actions), ...Object.values(actor.transitions)].filter((step) => step.sources.length === 0).map((step) => ({ actor: actor.name, step: stepName(step) })),
+    [...Object.values(actor.actions), ...Object.values(actor.transitions)].filter((step) => step.sources.length === 0 && !isFault(step)).map((step) => ({ actor: actor.name, step: stepName(step) })),
   );
 }
 
+/** The steps that could point at code: every one but the faults. */
 export function totalSteps(spec: Spec): number {
-  return spec.actors.reduce((n, a) => n + Object.keys(a.actions).length + Object.keys(a.transitions).length, 0);
+  return spec.actors.reduce((n, a) => n + [...Object.values(a.actions), ...Object.values(a.transitions)].filter((step) => !isFault(step)).length, 0);
+}
+
+function isFault(step: { tags?: readonly string[] }): boolean {
+  return step.tags?.includes(FAULT) ?? false;
 }
 
