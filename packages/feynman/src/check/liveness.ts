@@ -103,15 +103,15 @@ interface LivenessSearch {
 
 export function judgeLiveness(graph: Graph, property: LivenessProperty): LivenessVerdict {
   const search = searchFor(property, graph);
-  const { members, way, cost, open } = region(graph, search.starts, search.allowed);
-  const judged = (i: number) => members.has(i) && graph.expanded[i];
+  const { members, inRegion, way, cost, open } = region(graph, search.starts, search.allowed);
+  const judged = (i: number) => inRegion[i] === 1 && graph.expanded[i];
   // Of the bad fair parts, the one cheapest to reach, entered at its cheapest world.
   let best: { part: number[]; entry: number; cost: number } | undefined;
-  for (const component of components(graph, [...members].filter(judged), judged)) {
+  for (const component of components(graph, members.filter(judged), judged)) {
     for (const part of fairParts(graph, component)) {
       if (!search.accepts(part)) continue;
-      const entry = part.reduce((a, b) => (cost.get(b)! < cost.get(a)! ? b : a));
-      if (!best || cost.get(entry)! < best.cost) best = { part, entry, cost: cost.get(entry)! };
+      const entry = part.reduce((a, b) => (cost[b] < cost[a] ? b : a));
+      if (!best || cost[entry] < best.cost) best = { part, entry, cost: cost[entry] };
     }
   }
   const tested = search.tested === undefined ? {} : { tested: search.tested };
@@ -170,38 +170,51 @@ interface Hop {
 /**
  * Nodes reachable from `starts` through allowed nodes, with the cheapest way to each: the
  * search's path to a start, then hops through the region (`way`: the hop into each node that
- * is not a start). And whether an unexpanded node is among them.
+ * is not a start). And whether an unexpanded node is among them. Nodes are dense integers, so
+ * costs and membership are arrays.
  */
 function region(graph: Graph, starts: number[], allowed: (i: number) => boolean) {
-  const cost = new Map<number, number>();
+  const cost = new Float64Array(graph.size).fill(Infinity);
   const way = new Map<number, Hop>();
   const heap = new Heap();
   const pathCost = searchPathCosts(graph);
   for (const s of starts) {
-    if (graph.shadow[s] || !allowed(s) || cost.has(s)) continue;
-    cost.set(s, pathCost[s]);
+    if (graph.shadow[s] || !allowed(s) || cost[s] !== Infinity) continue;
+    cost[s] = pathCost[s];
     heap.push(pathCost[s], s);
   }
-  const members = new Set<number>();
+  // 1 in the region; 2 allowed but not yet reached; 3 not allowed (both asked once).
+  const inRegion = new Uint8Array(graph.size);
+  const members: number[] = [];
   let open = false;
   while (heap.size) {
-    const [c, i] = heap.pop();
-    if (members.has(i) || c > cost.get(i)!) continue;
-    members.add(i);
+    const c = heap.topCost();
+    const i = heap.pop();
+    if (inRegion[i] === 1 || c > cost[i]) continue;
+    inRegion[i] = 1;
+    members.push(i);
     if (!graph.expanded[i]) {
       open = true;
       continue;
     }
     for (const edge of graph.edges[i]) {
-      if (graph.shadow[edge.to] || !allowed(edge.to) || members.has(edge.to)) continue;
+      const to = edge.to;
+      if (inRegion[to] === 1 || inRegion[to] === 3) continue;
+      if (inRegion[to] === 0) {
+        if (graph.shadow[to] || !allowed(to)) {
+          inRegion[to] = 3;
+          continue;
+        }
+        inRegion[to] = 2;
+      }
       const next = c + costOf(edge.fault);
-      if (next >= (cost.get(edge.to) ?? Infinity)) continue;
-      cost.set(edge.to, next);
-      way.set(edge.to, { from: i, edge });
-      heap.push(next, edge.to);
+      if (next >= cost[to]) continue;
+      cost[to] = next;
+      way.set(to, { from: i, edge });
+      heap.push(next, to);
     }
   }
-  return { members, way, cost, open };
+  return { members, inRegion, way, cost, open };
 }
 
 /** What the search's path to each node costs. Parents come before their children. */
@@ -211,38 +224,52 @@ function searchPathCosts(graph: Graph): Float64Array {
   return out;
 }
 
-/** A binary min-heap of (cost, node). */
+/** A binary min-heap of (cost, node), in two parallel arrays. */
 class Heap {
-  private items: [number, number][] = [];
+  private costs: number[] = [];
+  private nodes: number[] = [];
   get size() {
-    return this.items.length;
+    return this.nodes.length;
+  }
+  topCost(): number {
+    return this.costs[0];
   }
   push(cost: number, node: number) {
-    const a = this.items;
-    a.push([cost, node]);
-    for (let i = a.length - 1; i > 0; ) {
+    const { costs, nodes } = this;
+    let i = nodes.length;
+    costs.push(cost);
+    nodes.push(node);
+    while (i > 0) {
       const up = (i - 1) >> 1;
-      if (a[up][0] <= a[i][0]) break;
-      [a[up], a[i]] = [a[i], a[up]];
+      if (costs[up] <= cost) break;
+      costs[i] = costs[up];
+      nodes[i] = nodes[up];
       i = up;
     }
+    costs[i] = cost;
+    nodes[i] = node;
   }
-  pop(): [number, number] {
-    const a = this.items;
-    const top = a[0];
-    const last = a.pop()!;
-    if (a.length) {
-      a[0] = last;
-      for (let i = 0; ; ) {
+  /** The node with the least cost, taken out. */
+  pop(): number {
+    const { costs, nodes } = this;
+    const top = nodes[0];
+    const lastCost = costs.pop()!;
+    const lastNode = nodes.pop()!;
+    const n = nodes.length;
+    if (n) {
+      let i = 0;
+      for (;;) {
         const l = 2 * i + 1;
+        if (l >= n) break;
         const r = l + 1;
-        let m = i;
-        if (l < a.length && a[l][0] < a[m][0]) m = l;
-        if (r < a.length && a[r][0] < a[m][0]) m = r;
-        if (m === i) break;
-        [a[m], a[i]] = [a[i], a[m]];
+        const m = r < n && costs[r] < costs[l] ? r : l;
+        if (costs[m] >= lastCost) break;
+        costs[i] = costs[m];
+        nodes[i] = nodes[m];
         i = m;
       }
+      costs[i] = lastCost;
+      nodes[i] = lastNode;
     }
     return top;
   }
@@ -252,47 +279,53 @@ class Heap {
 
 /** Strongly connected components of the subgraph of `nodes` (Tarjan, iterative). */
 function components(graph: Graph, nodes: number[], inside: (i: number) => boolean): number[][] {
-  const index = new Map<number, number>();
-  const low = new Map<number, number>();
-  const onStack = new Set<number>();
+  // Nodes are dense integers: -1 not visited yet.
+  const index = new Int32Array(graph.size).fill(-1);
+  const low = new Int32Array(graph.size);
+  const onStack = new Uint8Array(graph.size);
   const stack: number[] = [];
   const out: number[][] = [];
   let counter = 0;
   const visit = (node: number) => {
-    index.set(node, counter);
-    low.set(node, counter++);
+    index[node] = low[node] = counter++;
     stack.push(node);
-    onStack.add(node);
+    onStack[node] = 1;
   };
+  const workNodes: number[] = [];
+  const workEdges: number[] = [];
   for (const root of nodes) {
-    if (index.has(root)) continue;
-    const work: { node: number; edge: number }[] = [{ node: root, edge: 0 }];
+    if (index[root] >= 0) continue;
     visit(root);
-    while (work.length) {
-      const frame = work[work.length - 1];
-      const edges = graph.edges[frame.node];
-      if (frame.edge < edges.length) {
-        const to = edges[frame.edge++].to;
+    workNodes.push(root);
+    workEdges.push(0);
+    while (workNodes.length) {
+      const top = workNodes.length - 1;
+      const node = workNodes[top];
+      const edges = graph.edges[node];
+      if (workEdges[top] < edges.length) {
+        const to = edges[workEdges[top]++].to;
         if (!inside(to)) continue;
-        if (!index.has(to)) {
+        if (index[to] < 0) {
           visit(to);
-          work.push({ node: to, edge: 0 });
-        } else if (onStack.has(to)) low.set(frame.node, Math.min(low.get(frame.node)!, index.get(to)!));
+          workNodes.push(to);
+          workEdges.push(0);
+        } else if (onStack[to] && index[to] < low[node]) low[node] = index[to];
         continue;
       }
-      work.pop();
-      if (work.length) {
-        const up = work[work.length - 1].node;
-        low.set(up, Math.min(low.get(up)!, low.get(frame.node)!));
+      workNodes.pop();
+      workEdges.pop();
+      if (workNodes.length) {
+        const up = workNodes[workNodes.length - 1];
+        if (low[node] < low[up]) low[up] = low[node];
       }
-      if (low.get(frame.node) !== index.get(frame.node)) continue;
+      if (low[node] !== index[node]) continue;
       const component: number[] = [];
-      let top: number;
+      let popped: number;
       do {
-        top = stack.pop()!;
-        onStack.delete(top);
-        component.push(top);
-      } while (top !== frame.node);
+        popped = stack.pop()!;
+        onStack[popped] = 0;
+        component.push(popped);
+      } while (popped !== node);
       out.push(component);
     }
   }
@@ -308,6 +341,7 @@ function takenWithin(graph: Graph, members: Set<number>): Set<FairId> {
 
 /** The fair parts of a component (Emerson-Lei): itself if fair; none if a weak step is owed; else the fair parts of what is left without the worlds owing a strong step. */
 function fairParts(graph: Graph, component: number[]): number[][] {
+  if (component.length === 1) return singleFair(graph, component[0]) ? [component] : [];
   const members = new Set(component);
   const taken = takenWithin(graph, members);
   // A weak step possible in every world of the component, never taken in it: no part of it is fair.
@@ -321,6 +355,23 @@ function fairParts(graph: Graph, component: number[]): number[][] {
   const keep = component.filter((i) => ![...owedStrong].some((id) => graph.enabled[i].has(id)));
   const kept = new Set(keep);
   return components(graph, keep, (i) => kept.has(i)).flatMap((part) => fairParts(graph, part));
+}
+
+/**
+ * Whether a component of one world is fair: every fair step possible there is taken by a loop
+ * back to it. Most components are one world, so this is fairParts without its sets. (A strong
+ * step owed here leaves nothing when its world is removed.)
+ */
+function singleFair(graph: Graph, node: number): boolean {
+  const enabled = graph.enabled[node];
+  if (!enabled.size) return true;
+  const edges = graph.edges[node];
+  for (const id of enabled.keys()) {
+    let taken = false;
+    for (let k = 0; k < edges.length && !taken; k++) taken = edges[k].to === node && edges[k].fair === id;
+    if (!taken) return false;
+  }
+  return true;
 }
 
 // The counterexample ------------------------------------------------------------------------
