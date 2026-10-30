@@ -1,0 +1,15 @@
+$ bunx feynman check retried-call
+Retried call: explored 11 states in 23ms
+  ✓ chargedOnce  The customer is never charged twice.
+  ✓ paymentsEnd  A payment in progress ends paid.
+  rules
+    ✓ idempotencyKey  needed: without it, chargedOnce breaks (5 events)
+
+$ bunx feynman check retried-call --without idempotencyKey
+  ✗ chargedOnce  The customer is never charged twice.
+    shortest counterexample, 5 event(s), needs 1 fault(s):
+       1  Client  pay
+       2  Bank    charge         → Client: charged
+       3  Client  charged is lost on the way: Client's charge fails.
+       4  Client  charge failed  → Bank: charge
+       5  Bank    charge         ✗ breaks chargedOnce
