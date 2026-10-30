@@ -11,7 +11,8 @@ import { build, describe as describeSpec } from "../fuzz/spec.ts";
 const PLAIN = { walks: 0, maxStates: 2_000_000, timeLimit: 120_000, reduce: false, symmetry: false, workers: 0 } as const;
 
 /** A report without the clock. */
-const comparable = (r: Report) => ({ ...r, durationMs: 0 });
+// What a stopped search's states differ in is the integer engine's diagnostic only.
+const comparable = ({ variety: _v, mostInFlight: _m, ...r }: Report) => ({ ...r, durationMs: 0 });
 
 async function bothAgree(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[] = []): Promise<Report> {
   const integer = await check(spec, { ...PLAIN, ...bounds }, seeds, { engine: "integer" });
