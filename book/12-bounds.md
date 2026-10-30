@@ -29,7 +29,7 @@ in the spec which ones matter.
 | faults | per budget | `budget("faults", 1)`, `--set faults=2` | how many faults on one path |
 | states | 300,000 | `--max-states` | how many distinct worlds before stopping |
 | time | 20 s | `--time-limit` | how long before stopping |
-| memory | 24 GB | `--memory-limit` | how much memory before stopping |
+| memory | half the machine's | `--memory-limit` | how much memory before stopping |
 | random runs | 2,000, 120 deep | `--walks`, `--walk-depth` | runs past the search, to find deeper bugs |
 
 The first line of check's output always says which bounds it used:
