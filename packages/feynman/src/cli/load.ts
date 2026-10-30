@@ -1,7 +1,7 @@
 // Loading spec files from any repository: `@leostera/feynman` and its subpaths resolve to
 // this installation, so a repository needs nothing installed to have specs. Each file is
 // bundled by Bun, the runtime that runs it, to a temporary module and imported from there,
-// which also sees every edit. Playground files (`<name>.play.tsx`) load the same way. For the
+// which also sees every edit; Feynman itself stays outside the bundle, imported from here. Playground files (`<name>.play.tsx`) load the same way. For the
 // browser, Vite builds them (bundle-browser.ts) with the same import names, and leaves React,
 // Kumo and the kit to the page, which hands its own copies over on a global (`sharedShim`).
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -53,7 +53,8 @@ async function bundle(path: string): Promise<string> {
       {
         name: "feynman-aliases",
         setup(build) {
-          build.onResolve({ filter: exactly(Object.keys(ALIASES)) }, (args) => ({ path: ALIASES[args.path] }));
+          // External: the spec imports the very modules the CLI runs, not a copy of its own.
+          build.onResolve({ filter: exactly(Object.keys(ALIASES)) }, (args) => ({ path: ALIASES[args.path], external: true }));
         },
       },
     ],

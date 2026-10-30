@@ -466,7 +466,9 @@ interface ActorDef<S, A, O, Sn> {
   transitions?: { [K in keyof O]: StepDef<NoInfer<S>, O[K], Sn[K & keyof Sn] & AnyMessage> } & { [K in keyof Sn]: { sends?: readonly Sn[K][] } };
 }
 
-const ACTOR = Symbol("actor");
+// Global, so an actor reads the same from every copy of this module: a spec bundled with its
+// own copy still runs in the engine's.
+const ACTOR = Symbol.for("feynman.actor");
 type RawDef = ActorDef<unknown, Record<string, unknown>, Record<string, unknown>, Record<string, unknown>>;
 
 /** An actor: a kind of process, with its state and its steps. */

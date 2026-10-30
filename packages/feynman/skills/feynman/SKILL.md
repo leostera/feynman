@@ -62,7 +62,7 @@ able to point at every actor, message and step and say where it is.
   labels, not ids, in `status`, rows and `say` (ids in them are shown as labels anyway).
   When one machine runs two processes that are separate actors (an app and its daemon),
   give each a distinct label with a common prefix ("Studio app", "Studio daemon") and
-  show them as one Mac with `spec.defineGroup` (below).
+  show them as one Mac with `defineGroup` (below).
 - **Use the system's own words** for actors, messages, steps, statuses, files and tables:
   `READY`, `analysis.json`, "Pending folder". Don't invent generic roles such as
   "processor", "pipeline" or "store" unless the code uses them. Keep names short; put the
@@ -121,7 +121,7 @@ Before you finish, go through the spec once more. For each actor, message and st
    property: check still reports it, but no longer fails on it.
 
    When a fix or a safeguard is the reason a property holds, make it a **rule**: name it
-   with `spec.defineRule`, read `rule.on` where it applies, and put `needs: [rule]` on the
+   with `defineRule`, read `rule.on` where it applies, and put `needs: [rule]` on the
    properties it protects. Check then also checks the design without the rule and expects
    each of them to break (`✓ rule  needed: without it, P breaks (5 events)`). A `✗` means the
    rule does nothing, or the property is too weak to see what it prevents: both are worth
@@ -137,205 +137,224 @@ Before you finish, go through the spec once more. For each actor, message and st
 
 ## The DSL
 
-```ts
-import { defineSpec, message } from "@leostera/feynman";
+A spec is made of parts, each a value: messages, zones, actors, rules, properties and
+scenarios. Define each at the top level of the file, then put them together with
+`defineSpec`. Parts refer to each other by value, never by a string, so the editor and the
+checker follow every reference.
 
-export default defineSpec(
-  "Remote access",
-  {
-    description: "How a Mac gets linked to an account with a one-time pairing code.",
-    // Every message, declared first. Payload types are what the checker and editor see.
-    messages: {
-      NewCode: message<{ account: string }>({ name: "new pairing code", over: "https" }),
-      Code: message<{ code: string }>({ name: "pairing code", over: "https", tone: "reply" }),
-      Redeem: message<{ code: string; host: string }>({ name: "redeem", over: "https" }),
-      Redeemed: message<{ account: string }>({ name: "redeemed", tone: "reply" }),
-      Refused: message<{ status: 404 }>({ name: "refused", tone: "refused" }),
+```ts
+import { defineActor, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, input, oneOf } from "@leostera/feynman";
+
+// Messages: an id (a word, as the code names it) and the schema of the payload. The payload's
+// type comes from the schema, and every payload sent is checked against it.
+// Schemas: String, Number, Boolean, nested objects, oneOf("a", "b"), listOf(S), setOf(S),
+// recordOf(S), nullable(S), and type<T>() for a type the checker does not look inside.
+const NewCode = defineMessage("NewCode", { account: String }, { name: "new pairing code", over: "https" });
+const Code = defineMessage("Code", { code: String }, { name: "pairing code", over: "https", tone: "reply" });
+const Redeem = defineMessage("Redeem", { code: String, host: String }, { over: "https" });
+const Redeemed = defineMessage("Redeemed", { account: String }, { tone: "reply" });
+const Refused = defineMessage("Refused", { status: oneOf(404) }, { tone: "refused" });
+
+const devices = defineZone({ name: "People's devices", description: "signed in with Access" });
+const cloud = defineZone({ name: "Cloudflare" });
+
+// A number the code names. Specs have no clock: this documents the system, it does not run.
+const codeLifetime = defineLimit({ name: "Pairing code lifetime", value: 10, unit: "minutes", sources: ["packages/api/src/pairing.ts#CODE_TTL"] });
+
+// A rule of the design: a part that exists to keep properties true (RFD0010). Read
+// singleUseCodes.on where it applies; properties that need it say needs: [singleUseCodes],
+// and check expects them to break without it.
+const singleUseCodes = defineRule("singleUseCodes", { description: "A code is marked used when it is redeemed." });
+
+const Relay = defineActor({
+  name: "Relay",
+  description: "The Worker that issues and redeems pairing codes.",
+  zone: cloud,
+  singleton: true, // exactly one, present from the start
+  initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean }> }),
+  durable: ["codes"], // survives a restart (it lives in a database)
+  // How it is drawn in the playground: an icon, a status, and its state as rows.
+  display: {
+    icon: "cloud",
+    status: (s) => `${Object.values(s.codes).filter((c) => !c.used).length} code(s) waiting`,
+    // `owner` names the person a row belongs to, so the account box wears their colour.
+    rows: (s) => Object.values(s.codes).map((c) => ({ group: `${c.account}'s account`, owner: c.account.replace(/^acct-/, ""), label: "pairing code", detail: c.used ? "used" : "unused", mood: c.used ? "off" : "info" })),
+  },
+  // Steps, by name. A step `on` a message runs when it is delivered: msg is that message's payload.
+  transitions: {
+    newCode: {
+      on: NewCode,
+      description: "Issues a one-time code for the account.",
+      sources: ["packages/api/src/routes/pairing.ts#createPairing"],
+      sends: [Code],
+      // The timeline's sentence for this event, from the state after it.
+      say: (_s, msg) => `Made a code for ${msg.account}, valid 10 minutes; only its hash is kept`,
+      run(state, msg, ctx) {
+        const code = ctx.fresh("code");
+        state.codes[ctx.hash(code)] = { account: msg.account, used: false };
+        ctx.reply(Code, { code });
+      },
+    },
+    redeem: {
+      on: Redeem,
+      description: "Checks the code and, if valid, links the Mac.",
+      sources: ["packages/api/src/routes/pairing.ts#redeemPairing", "packages/api/src/pairing.ts:31-58"],
+      sends: [Redeemed, Refused],
+      run(state, msg, ctx) {
+        const entry = state.codes[ctx.hash(msg.code)];
+        if (!entry || entry.used) return ctx.reply(Refused, { status: 404 }, "Unknown or used.");
+        if (singleUseCodes.on) entry.used = true;
+        ctx.reply(Redeemed, { account: entry.account });
+      },
     },
   },
-  (spec) => {
-    const { NewCode, Code, Redeem, Redeemed, Refused } = spec.messages;
+});
 
-    const devices = spec.defineZone({ name: "People's devices", description: "signed in with Access" });
-    const cloud = spec.defineZone({ name: "Cloudflare" });
-
-    // A number the code names. Specs have no clock: this documents the system, it does not run.
-    spec.defineLimit({
-      name: "Pairing code lifetime",
-      value: 10,
-      unit: "minutes",
-      sources: ["packages/api/src/pairing.ts#CODE_TTL"],
-    });
-
-    // A rule of the design: a part that exists to keep properties true (RFD0010). Read
-    // singleUseCodes.on where it applies (if (singleUseCodes.on) delete state.codes[hash]);
-    // properties that need it say needs: [singleUseCodes], and check expects them to break without it.
-    const singleUseCodes = spec.defineRule({ name: "singleUseCodes", description: "A code is deleted when it is redeemed." });
-
-    const Relay = spec.defineActor({
-      name: "Relay",
-      description: "The Worker that issues and redeems pairing codes.",
-      zone: cloud,
-      singleton: true, // exactly one, present from the start
-      initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean }> }),
-      durable: ["codes"], // survives a restart (it lives in a database)
-      // How it is drawn in the playground: an icon, a status, and its state as rows.
-      display: {
-        icon: "cloud",
-        status: (s) => `${Object.values(s.codes).filter((c) => !c.used).length} code(s) waiting`,
-        // `owner` names the person a row belongs to, so the account box wears their colour.
-        rows: (s) => Object.values(s.codes).map((c) => ({ group: `${c.account}'s account`, owner: c.account.replace(/^acct-/, ""), label: "pairing code", detail: c.used ? "used" : "unused", mood: c.used ? "off" : "info" })),
-      },
-      transitions: {
-        // Keyed by message: runs when the message is delivered.
-        [NewCode]: {
-          description: "Issues a one-time code for the account.",
-          sources: ["packages/api/src/routes/pairing.ts#createPairing"],
-          sends: [Code],
-          // The timeline's sentence for this event, from the state after it.
-          say: (_s, msg) => `Made a code for ${msg.account}, valid 10 minutes; only its hash is kept`,
-          run(state, msg, ctx) {
-            const code = ctx.fresh("code");
-            state.codes[ctx.hash(code)] = { account: msg.account, used: false };
-            ctx.reply(Code, { code });
-          },
-        },
-        [Redeem]: {
-          description: "Checks the code and, if valid, links the Mac.",
-          sources: ["packages/api/src/routes/pairing.ts#redeemPairing", "packages/api/src/pairing.ts:31-58"],
-          sends: [Redeemed, Refused],
-          run(state, msg, ctx) {
-            const entry = state.codes[ctx.hash(msg.code)];
-            if (!entry || entry.used) return ctx.reply(Refused, { status: 404 }, "Unknown or used.");
-            entry.used = true;
-            ctx.reply(Redeemed, { account: entry.account });
-          },
-        },
-      },
-    });
-
-    const Person = spec.defineActor({
-      name: "Person",
-      zone: devices,
-      initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
-      display: {
-        icon: "phone",
-        names: ["Alice", "Bob"], // labels for people added in the playground
-        status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in"),
-        // The code on screen, to drag onto a Mac (see `accepts` on the Mac's `link` input).
-        tokens: (s) => s.codes.slice(-1).map((code) => ({ kind: "pairing code", value: code })),
-      },
-      // Actions: what a person (or the outside world) can do. They are buttons in the playground,
-      // and the checker tries them in every order.
-      actions: {
-        pair: {
-          label: "Pair a Mac",
-          description: "Asks the relay for a code to type on a Mac.",
-          sources: ["apps/web/src/pair.tsx#createCode"],
-          sends: [NewCode],
-          run: (state, _inputs, ctx) => ctx.send(ctx.the(Relay), NewCode, { account: state.account }),
-        },
-      },
-      transitions: {
-        [Code]: { description: "Shows the code.", sources: ["apps/web/src/pair.tsx#showCode"], run: (s, msg) => void s.codes.push(msg.code) },
-      },
-    });
-
-    const Mac = spec.defineActor({
-      name: "Mac",
-      zone: devices,
-      initialState: () => ({ account: null as string | null, pending: null as string | null }),
-      display: {
-        icon: "laptop",
-        status: (s) => (s.account ? "linked" : s.pending ? "linking" : "not linked"),
-        mood: (s) => (s.account ? "ok" : s.pending ? "busy" : "off"),
-        // Whose Mac this is, once linked: it wears that person's colour.
-        owner: (s) => s.account?.replace(/^acct-/, "") ?? null,
-      },
-      // The live connections it holds, drawn as lines; `to` is an instance id or label, or a singleton's name.
-      links: (s) => (s.pending ? [{ to: "Relay", kind: "https", style: "dotted" }] : []),
-      actions: {
-        link: {
-          label: "Paste a pairing code",
-          description: "Links this Mac to the account that issued the code.",
-          // Inputs have a type; examples are what the playground offers and the checker tries.
-          // Examples are what the playground offers and the checker tries: a list, or a function of the world.
-          // Give such functions a return type when they name another actor (see "Types" below).
-          inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"], accepts: "pairing code" }) },
-          when: (s) => s.account === null, // offered only while this holds
-          sources: ["apps/macos/RemoteAccess.swift#RemoteAccess.link"],
-          sends: [Redeem],
-          starts: ["redeemTimeout"],
-          run(state, { code }, ctx) {
-            state.pending = code;
-            ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id });
-            ctx.start("redeemTimeout"); // may fire at any moment from now on
-          },
-        },
-      },
-      transitions: {
-        [Redeemed]: {
-          description: "The Mac is linked.",
-          sources: ["crates/axod/src/pairing.rs#finish"],
-          run(state, msg, ctx) {
-            state.account = msg.account;
-            state.pending = null;
-            ctx.cancel("redeemTimeout");
-          },
-        },
-        [Refused]: { description: "Stays unlinked.", sources: ["crates/axod/src/pairing.rs#refused"], run: (s, _m, ctx) => ((s.pending = null), ctx.cancel("redeemTimeout")) },
-        // Keyed by a label: an internal transition, run as a timer (ctx.start) or whenever `when` holds.
-        redeemTimeout: {
-          description: "No answer in time; gives up.",
-          after: "5 seconds", // when the code fires it, for readers; it may fire at any moment
-          sources: ["crates/axod/src/pairing.rs#timeout"],
-          run: (s) => void (s.pending = null),
-        },
-      },
-    });
-
-    spec.defineProperties({
-      // always: holds in every state.
-      codesAreHashed: { description: "The relay stores only hashes of codes.", always: (w) => Object.keys(w.the(Relay).state.codes).every((k) => k.startsWith("hash:")) },
-      // everyStep: holds of every step (the worlds before and after it, and the event).
-      codesOnlyShrink: { description: "No step adds a code without the person asking.", everyStep: (before, after, e) => e.is(Person, "pair") || Object.keys(after.the(Relay).state.codes).length <= Object.keys(before.the(Relay).state.codes).length },
-      // leadsTo: whenever the first holds, the second holds then or later, in every fair behaviour.
-      pendingResolves: { description: "A Mac waiting for an answer gets one.", leadsTo: { whenever: (w) => w.all(Mac).some((m) => m.state.pending !== null), then: (w) => w.all(Mac).every((m) => m.state.pending === null) } },
-      // Also: eventually (holds at some point), infinitelyOften, eventuallyAlways (holds from some point on).
-      // never: no trace has this shape.
-      redeemedOnce: { description: "A code is never redeemed twice.", never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")) },
-      // needs: the rules of the design this property depends on (spec.defineRule); check expects it to break without each.
-      // codesSingleUse: { description: "…", always: (w) => …, needs: [singleUseCodes] },
-      // known: a bug found and not fixed yet. Check reports it without failing, and fails once it holds.
-      // codesExpire: { description: "…", always: (w) => …, known: "RELAY-12: expiry is not enforced yet" },
-    });
-
-    // Scenarios: the flows a reader should see, scripted. Each becomes a flow and a playground start.
-    spec.defineScenario({
-      name: "Link a Mac",
-      description: "The happy path: a person pairs, the Mac redeems the code.",
-      run(s) {
-        const alice = s.spawn(Person, "Alice");
-        const studio = s.spawn(Mac, "Studio");
-        s.act(alice, "pair");
-        s.settle(); // left alone: messages in send order, then, when none is in flight, timers
-        s.act(studio, "link", { code: alice.state.codes[0] });
-        s.settle();
-        // s.the(Actor) reaches singletons; s.world reads the whole world.
-        if (!s.the(Relay).state.codes) throw new Error("unreachable");
-        // One step at a time, in any order: s.deliver(relay, "Redeem") delivers a message in
-        // flight now, s.drop(relay, "Redeem") loses it, s.fire(studio, "retry") fires a timer,
-        // s.step(who, "transition") runs a guarded transition, s.restart(who) restarts.
-        // s.settle({ until: (w) => … }) runs left alone only until the world gets there, to
-        // step in at that moment (a restart, a drop) without delivering each message by hand.
-      },
-    });
-
-    // Every actor, so a playground file can name them: spec.handles.Person.
-    return { Relay, Person, Mac };
+const Person = defineActor({
+  name: "Person",
+  zone: devices,
+  initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
+  display: {
+    icon: "phone",
+    names: ["Alice", "Bob"], // labels for people added in the playground
+    status: (s) => (s.codes.length ? `code ${s.codes.at(-1)}` : "signed in"),
+    // The code on screen, to drag onto a Mac (see `accepts` on the Mac's `link` input).
+    tokens: (s) => s.codes.slice(-1).map((code) => ({ kind: "pairing code", value: code })),
   },
-);
+  // Actions: what a person (or the outside world) can do. They are buttons in the playground,
+  // and the checker tries them in every order.
+  actions: {
+    pair: {
+      label: "Pair a Mac",
+      description: "Asks the relay for a code to type on a Mac.",
+      sources: ["apps/web/src/pair.tsx#createCode"],
+      sends: [NewCode],
+      run: (state, _inputs, ctx) => ctx.send(ctx.the(Relay), NewCode, { account: state.account }),
+    },
+  },
+  transitions: {
+    code: { on: Code, description: "Shows the code.", sources: ["apps/web/src/pair.tsx#showCode"], run: (s, msg) => void s.codes.push(msg.code) },
+  },
+});
+
+const Mac = defineActor({
+  name: "Mac",
+  zone: devices,
+  initialState: () => ({ account: null as string | null, pending: null as string | null }),
+  display: {
+    icon: "laptop",
+    status: (s) => (s.account ? "linked" : s.pending ? "linking" : "not linked"),
+    mood: (s) => (s.account ? "ok" : s.pending ? "busy" : "off"),
+    // Whose Mac this is, once linked: it wears that person's colour.
+    owner: (s) => s.account?.replace(/^acct-/, "") ?? null,
+  },
+  // The live connections it holds, drawn as lines; `to` is an instance id or label, or a singleton's name.
+  links: (s) => (s.pending ? [{ to: "Relay", kind: "https", style: "dotted" }] : []),
+  actions: {
+    link: {
+      label: "Paste a pairing code",
+      description: "Links this Mac to the account that issued the code.",
+      // Inputs have a type; examples are what the playground offers and the checker tries:
+      // a list, or a function of the world. Give such functions a return type when they
+      // name another actor (see "Types" below).
+      inputs: { code: input(String, { examples: (w): string[] => [...w.all(Person).flatMap((p) => p.state.codes), "never-issued"], accepts: "pairing code" }) },
+      when: (s) => s.account === null, // offered only while this holds
+      sources: ["apps/macos/RemoteAccess.swift#RemoteAccess.link"],
+      sends: [Redeem],
+      starts: ["redeemTimeout"],
+      run(state, { code }, ctx) {
+        state.pending = code;
+        ctx.send(ctx.the(Relay), Redeem, { code, host: ctx.id });
+        ctx.start("redeemTimeout"); // may fire at any moment from now on
+      },
+    },
+  },
+  transitions: {
+    redeemed: {
+      on: Redeemed,
+      description: "The Mac is linked.",
+      sources: ["crates/axod/src/pairing.rs#finish"],
+      run(state, msg, ctx) {
+        state.account = msg.account;
+        state.pending = null;
+        ctx.cancel("redeemTimeout");
+      },
+    },
+    refused: { on: Refused, description: "Stays unlinked.", sources: ["crates/axod/src/pairing.rs#refused"], run: (s, _msg, ctx) => ((s.pending = null), ctx.cancel("redeemTimeout")) },
+    // A step on no message: a timer (`after`, set with ctx.start) or a guarded step (`when`,
+    // runs whenever it holds). It receives nothing: its run is (state, _, ctx).
+    redeemTimeout: {
+      description: "No answer in time; gives up.",
+      after: "5 seconds", // when the code fires it, for readers; it may fire at any moment
+      sources: ["crates/axod/src/pairing.rs#timeout"],
+      run: (s) => void (s.pending = null),
+    },
+  },
+});
+
+// always: holds in every state.
+const codesAreHashed = defineProperty("codesAreHashed", { description: "The relay stores only hashes of codes.", always: (w) => Object.keys(w.the(Relay).state.codes).every((k) => k.startsWith("hash:")) });
+// everyStep: holds of every step (the worlds before and after it, and the event).
+const codesOnlyShrink = defineProperty("codesOnlyShrink", {
+  description: "Only issuing a code adds one.",
+  everyStep: (before, after, e) => e.is(Relay, "newCode") || Object.keys(after.the(Relay).state.codes).length <= Object.keys(before.the(Relay).state.codes).length,
+});
+// leadsTo: whenever the first holds, the second holds then or later, in every fair behaviour.
+// Also: eventually (holds at some point), infinitelyOften, eventuallyAlways (holds from some point on).
+const pendingResolves = defineProperty("pendingResolves", {
+  description: "A Mac waiting for an answer gets one.",
+  leadsTo: { whenever: (w) => w.all(Mac).some((m) => m.state.pending !== null), then: (w) => w.all(Mac).every((m) => m.state.pending === null) },
+});
+// never: no trace has this shape. needs: the rules this property depends on; check expects
+// it to break without each.
+const redeemedOnce = defineProperty("redeemedOnce", {
+  description: "A code is never redeemed twice.",
+  never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")),
+  needs: [singleUseCodes],
+});
+// known: "RELAY-12: expiry is not enforced yet" marks a bug found and not fixed yet. Check
+// reports it without failing, and fails once it holds.
+
+// Scenarios: the flows a reader should see, scripted. Each becomes a flow and a playground start.
+const linkAMac = defineScenario("Link a Mac", {
+  description: "The happy path: a person pairs, the Mac redeems the code.",
+  run(s) {
+    const alice = s.spawn(Person, "Alice");
+    const studio = s.spawn(Mac, "Studio");
+    s.act(alice, "pair");
+    s.settle(); // left alone: messages in send order, then, when none is in flight, timers
+    s.act(studio, "link", { code: alice.state.codes[0] });
+    s.settle();
+    // One step at a time, in any order: s.deliver(relay, Redeem) delivers a message in
+    // flight now, s.drop(relay, Redeem) loses it, s.fire(studio, "redeemTimeout") fires a
+    // timer, s.step(who, "step") runs a guarded step, s.restart(who) restarts.
+    // s.settle({ until: (w) => … }) runs left alone only until the world gets there, to
+    // step in at that moment (a restart, a drop) without delivering each message by hand.
+    // s.the(Actor) reaches singletons; s.world reads the whole world.
+  },
+});
+
+// The spec: its parts, put together. Messages, zones and rules are found from the actors and
+// properties that use them.
+export default defineSpec({
+  name: "Remote access",
+  description: "How a Mac gets linked to an account with a one-time pairing code.",
+  actors: [Relay, Person, Mac],
+  limits: [codeLifetime],
+  properties: [codesAreHashed, codesOnlyShrink, pendingResolves, redeemedOnce],
+  scenarios: [linkAMac],
+});
 ```
+
+`defineSpec` says when the parts do not fit, before anything runs: two parts with one id, a
+message sent that no actor has a step `on`, an actor with two steps on one message, a call
+whose sender has no step on `failed(Call)`, an actor named in a group or link that is not in
+`actors`. A message some actor receives but none sends is a warning.
+
+Several specs from one file (a buggy and a fixed variant) are a function of the variant
+that defines the parts inside and returns `defineSpec(…)`, as in `examples/`. A helper used
+by several steps takes `(state: State, ctx: Ctx)`, typed: `type State = ReturnType<…>` or
+a named type for `initialState`.
 
 ### Rules the engine enforces
 
@@ -350,7 +369,8 @@ export default defineSpec(
   A `run` that returns a new state object, or is `async`, is a spec error.
 - **Declare effects.** Every message a step sends must be listed in its `sends`, and every
   timer it starts in its `starts`. The types check most of this. An undeclared send at
-  runtime is a spec error, and the step's effects are discarded.
+  runtime is a spec error, and the step's effects are discarded. So is a payload its
+  message's schema does not allow, such as `{ socket: "1" }` for `{ socket: Number }`.
 - **Every message needs a handler.** A delivered message with no transition on the
   receiver is a spec error.
 - **Write descriptions in everyday words**, one sentence, about what happens and not how
@@ -386,7 +406,7 @@ actor, add:
 - **`display.tokens`** for things a person would carry from one node to another: a pairing
   code shown on a phone, a link to share, a file to upload. Each is `{ kind, value, label? }`,
   and it floats beside the node. Give the receiving action's input `accepts: kind`, as in
-  `spec.defineInput(String, { examples, accepts: "pairing code" })`. Dragging the token onto
+  `input(String, { examples, accepts: "pairing code" })`. Dragging the token onto
   that node then runs the action with it. This is the most memorable way to show a
   hand-off between actors. Without any declared tokens, the playground infers them: a
   value an action's input examples read from another instance's state can be dragged
@@ -419,9 +439,10 @@ actor, add:
   own actor, as the checker needs, then say which read as one thing:
   ```ts
   // One relay for people, as the product presents it.
-  spec.defineGroup({ name: "Axo relay", actors: [Worker, Manager, Index], icon: "cloud" });
+  const relay = defineGroup({ name: "Axo relay", actors: [Worker, Manager, Index], icon: "cloud" });
   // One Mac: "Studio app" and "Studio daemon" are one "Studio"; + adds both.
-  spec.defineGroup({ name: "Mac", actors: { app: App, daemon: Axod }, icon: "laptop", names: ["Studio", "iMac"] });
+  const mac = defineGroup({ name: "Mac", actors: { app: App, daemon: Axod }, icon: "laptop", names: ["Studio", "iMac"] });
+  // and in defineSpec: groups: [relay, mac]
   ```
   A list of singletons is one node. A record groups other actors' instances by label
   suffix. A closed group is one node: messages between its members don't fly across the
@@ -442,8 +463,8 @@ actor, add:
 These functions take only the actor's own state. Keep them cheap and total: a throw
 shows nothing rather than an error.
 
-Make the body of `defineSpec` end with `return { Person, Relay, … }`, every actor. Other
-files (a playground file, a helper) then reach them, typed, as `spec.handles.Person`.
+Export the actors other files need (`export const Person = defineActor(…)`): a playground
+file or a helper then imports them, typed, like any value.
 
 ### Playground files
 
@@ -455,9 +476,7 @@ flows and diffs never load this file, and removing it leaves a working playgroun
 
 ```tsx
 import { definePlayground, Terminal } from "@leostera/feynman/play";
-import spec from "./remote-access.ts";
-
-const { Person, Manager, Axod } = spec.handles;
+import spec, { Axod, Manager, Person } from "./remote-access.ts";
 
 export default definePlayground(spec, (play) => {
   // A group's status while closed, from its members' state.
@@ -510,12 +529,12 @@ export default definePlayground(spec, (play) => {
 
 ### Types
 
-- `import { defineSpec, message } from "@leostera/feynman"` is all a spec needs.
-  For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
+- Everything a spec needs comes from `"@leostera/feynman"`: the `define*` functions,
+  `failed`, `input`, and the schemas. For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **The source is the reference.** Feynman ships as TypeScript, so it is in
   `node_modules/@leostera/feynman/src`; read it when this page does not answer.
-  `spec/dsl.ts` has the whole API with its doc comments (`SpecBuilder`, `ActorDef`,
+  `spec/dsl.ts` has the whole API with its doc comments (`SpecParts`, `ActorDef`, `StepDef`,
   `Script` for scenarios, `PropertyDef`, `ZonePlace`); `spec/engine.ts` and `spec/run.ts`
   say what a step and a scenario do; `examples/` has complete specs with their bugs.
 - **Let inference work; don't annotate actors.** If tsc says an actor "implicitly has type
@@ -566,9 +585,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   default). State listed in `durable` survives a restart. A message is lost silently: the
   sender hears nothing, as with a queue, a datagram or a stream. A **call** is a message
   whose failure reaches the caller, as an RPC, a `fetch` or a Durable Object stub throws:
-  declare it with `call<P>({ name })` instead of `message`. Losing it, or the reply its
+  define it with `defineCall` instead of `defineMessage`. Losing it, or the reply its
   handler sends with `ctx.reply`, delivers its failure to the caller, handled by a
-  transition keyed by `spec.failed(Call)`: `run(state, failure, ctx)`, with
+  step `on: failed(Call)`: `run(state, failure, ctx)`, with
   `failure.payload` and `failure.to`. The caller cannot tell which was lost, as the code
   cannot: a retry after a lost reply runs the call twice, so that is where to look for
   duplicates. Every actor that sends a call handles its failure (retry, give up, or record
@@ -590,8 +609,7 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   after pushes) sets that world up rather than replaying it:
 
   ```ts
-  spec.defineScenario({
-    name: "Second push",
+  const secondPush = defineScenario("Second push", {
     description: "Alice pushes again to a repository that has her first commit.",
     setup(w) {
       w.set(Ledger, { refs: { main: "c1" }, published: ["c1"] }); // a singleton: these fields over its initialState
@@ -637,7 +655,7 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   feynman.config.ts for every run, until the verdict is ✓ or ✗.
 - **Stuck.** A world where nothing can happen (no action, guard, message or timer, ignoring
   `--repeats`) is reported as stuck: a deadlock, or a wait nothing will end. A system that
-  is meant to finish says where with `spec.defineFinalState({ description, when: (w) => … })`;
+  is meant to finish says where with `finalState: { description, when: (w) => … }` in `defineSpec`;
   stopping there is fine. Say what finished means (`w.quiet && no call is waiting`): a final
   state of `w.quiet` alone calls every deadlock finished, including a caller waiting forever.
 - **Order.** Any message may overtake any other, as on separate connections. Messages on one
@@ -666,19 +684,37 @@ read worse. To update one:
    shown on one device and typed on another.
 6. Add `place` only where the computed map misreads: a gate on the edge of a region
    (`edge`), zones in the wrong order (`column`), or a busy zone (`arrange`).
-7. Group what a newcomer would see as one thing (`spec.defineGroup`): the service whose
+7. Group what a newcomer would see as one thing (`defineGroup`): the service whose
    parts are separate actors, and each machine that runs two of them. Add `display.names`
-   for people and `expires` on tokens that expire. End the body with
-   `return { …every actor }`.
+   for people and `expires` on tokens that expire, and list the groups in `defineSpec`'s
+   `groups`.
 8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a
    playground file.
 9. Turn every safeguard switched by hand into a rule: a `const SOME_RULE = true` flipped to
    see a property break, a `buggy`/`fixed` branch, or a copy of the spec without a guard.
-   `spec.defineRule`, `rule.on` where it applies, `needs: [rule]` on what it protects.
-10. If it fails with "s.wait is gone", "settle takes no duration" or a type error on
+   `defineRule`, `rule.on` where it applies, `needs: [rule]` on what it protects.
+10. If it is written `defineSpec(name, { messages }, (spec) => { … })`, it predates 0.14,
+    where a spec became its parts. Move each part to the top level of the file:
+    - each `message<P>({ name, … })` becomes `defineMessage("Id", schema, { name, … })`,
+      with the payload's type as a schema (`{ text: String }`), and `call<P>` becomes
+      `defineCall`;
+    - `spec.defineX({ … })` becomes `defineX(…)`; rules, properties and scenarios take
+      their name or id first: `defineRule("cap", { description })`,
+      `defineProperty("oneHolder", { … })`, `defineScenario("A payment", { … })`, and
+      `spec.defineInput` becomes `input`;
+    - a transition keyed `[Charge]` becomes a named step with `on: Charge`, and one keyed
+      `[spec.failed(Charge)]` a step with `on: failed(Charge)`;
+    - a timer's or guard's `run(state, ctx)` becomes `run(state, _, ctx)`;
+    - scenarios and `e.sent`/`e.replied` name messages by value: `s.deliver(bank, Charge)`,
+      not `"Charge"`; `e.is(Actor, "step")` names a step by its new name;
+    - `defineFinalState` moves into `defineSpec({ finalState })`, and
+      `return { …actors }` with `spec.handles` becomes exported actors.
+
+    Then `export default defineSpec({ name, actors, groups, properties, scenarios })`.
+11. If it fails with "s.wait is gone", "settle takes no duration" or a type error on
     `ctx.now`: it predates time being the order of events. Each deadline becomes a timer
     that may fire at any point, and each wait in a scenario an `s.fire(instance, "timer")`.
-11. Run `feynman check` again: the same properties must hold, with the same
+12. Run `feynman check` again: the same properties must hold, with the same
     counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands
@@ -722,7 +758,7 @@ Read check's output with its own flags, not with grep:
 - `--only P`: check and show only property P, with its counterexample.
 - `--json`: everything, structured: verdicts, counterexamples with their events, scenario
   failures, sources. For scripts, and for reading many results at once.
-- `--only P --as-scenario`: P's counterexample as `spec.defineScenario` code that replays
+- `--only P --as-scenario`: P's counterexample as `defineScenario` code that replays
   it step by step. Paste it into the spec to keep the bug as a flow, and use it as the
   outline of a regression test in the system's own test suite.
 

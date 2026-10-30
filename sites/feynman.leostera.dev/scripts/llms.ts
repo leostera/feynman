@@ -35,7 +35,7 @@ silently (\`message\`), or be calls whose failure reaches the caller (\`call\`),
 \`fetch\` throws.
 
 Rules: a spec can name the parts of its design that keep properties true
-(\`spec.defineRule\`, read as \`rule.on\`, claimed with \`needs: [rule]\` on properties).
+(\`defineRule\`, read as \`rule.on\`, claimed with \`needs: [rule]\` on properties).
 \`feynman check\` also checks the design without each rule and fails if a property that needs it
 still holds; \`--without RULE\` shows the design without it.
 

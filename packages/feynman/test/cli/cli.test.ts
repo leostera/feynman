@@ -302,3 +302,18 @@ test("type errors are said again at the end, so the end of the output shows them
   expect(check.out).toContain("specs/echo.ts:");
   expect(check.out.trimEnd().split("\n").at(-1)).toBe("✗ 1 type error(s) in specs/echo.ts, listed at the top: the results above may come from code that does not compile");
 }, 60_000);
+
+test("a loaded spec's steps are found by name: the spec and the engine share one Feynman", async () => {
+  const { root } = repo();
+  writeFileSync(
+    join(root, "specs/echo.ts"),
+    SPEC(false)
+      .replace(
+        "const sayNothing =",
+        `const onlySayHears = defineProperty("onlySayHears", { description: "Only the server's say step hears.", everyStep: (before, after, e) => e.is(Server, "say") || after.the(Server).state.heard.length === before.the(Server).state.heard.length });\n\nconst sayNothing =`,
+      )
+      .replace("properties: [serverHearsEverything]", "properties: [onlySayHears]"),
+  );
+  const { out } = await capture(["check", "--brief", "--depth", "4", "--walks", "0"], root);
+  expect(out).toContain("✓ onlySayHears");
+}, 60_000);
