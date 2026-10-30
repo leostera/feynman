@@ -1,6 +1,7 @@
-// Chapter 4: people buy seats online, with messages.
+// Chapter 4, step 4: two people, and a race for the same seat.
 //
-// Expected: no properties yet. Two people, one of each by default, more from the scenario.
+// Expected: no properties yet; the scenario sets up two people, and the checker explores
+// from its end as well as from the start, with one person.
 import { atMost, defineActor, defineMessage, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
 
 const SEATS = ["A1", "A2"] as const;
@@ -57,7 +58,7 @@ const Person = defineActor({
   },
   actions: {
     buy: {
-      with: [atMost(1)],
+      with: [atMost(2)],
       label: "Buy a seat",
       description: "Asks the box office for a seat.",
       inputs: { seat },
@@ -87,7 +88,7 @@ const Person = defineActor({
 });
 
 const bothWantA1 = defineScenario("Both want A1", {
-  description: "Alice and Bob ask for A1 at once; Bob's request arrives first, so he gets it and Alice hears it is sold out.",
+  description: "Alice and Bob ask for A1 at once; Alice's request arrives first, so she gets it and Bob hears it is sold out.",
   run(s) {
     const alice = s.spawn(Person, "Alice");
     const bob = s.spawn(Person, "Bob");
@@ -102,6 +103,6 @@ export default defineSpec({
   name: "Box office",
   description: "Selling seats for one show, online.",
   actors: [BoxOffice, Person],
-  finalState: { description: "Everyone who asked has an answer.", when: (w) => w.quiet },
+  finalState: { description: "Everyone who asked has an answer.", when: (w) => w.quiet && w.all(Person).every((p) => !p.state.waiting) },
   scenarios: [bothWantA1],
 });

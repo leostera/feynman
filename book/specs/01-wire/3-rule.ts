@@ -1,13 +1,7 @@
-// Chapter 1: wire transfers, the first spec of the book.
+// Chapter 1, step 3: the fix, kept as a rule of the design.
 //
-// A bank moves money between two accounts. A transfer is handled by a worker that reads the
-// balance, checks it covers the amount, then debits one account and credits the other. Two
-// workers can handle two transfers at once.
-//
-// Expected: `noOverdrafts` and `moneyIsKept` hold, and the `atomicDebit` rule is needed:
-// without it (`--without atomicDebit`), two workers both read 5 and both debit 3, and
-// `noOverdrafts` breaks in 8 events with no faults. The scenario "Two at once" sets up the
-// two workers.
+// Expected: both properties hold, and `atomicDebit` is needed: without it, `noOverdrafts`
+// breaks in 8 events with no faults, from the setup of "Two at once".
 import { atMost, defineActor, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
 
 const ACCOUNTS = ["alice", "bob"] as const;
