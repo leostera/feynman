@@ -2,7 +2,7 @@
 // outcome is gathered first (SpecCheck), then shown as text, briefly, as JSON, or as the
 // scenario replaying one counterexample.
 import { join } from "node:path";
-import { check, checkRules, DEFAULT_BOUNDS, faultsIn, Pool, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type RuleVerdict, type SpecSource } from "../check/index.ts";
+import { check, checkRules, faultsIn, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type RuleVerdict } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
@@ -87,28 +87,21 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   }
 
   const results: SpecCheck[] = [];
-  // One pool of worker threads for every spec, and every check at fewer faults.
-  const pool = new Pool(options.bounds.workers ?? ctx.config.check?.workers ?? DEFAULT_BOUNDS.workers);
-  try {
-    for (const selection of selected) {
-      const { path } = selection;
-      const set = Object.keys(options.set).length ? selection.spec.setting(options.set) : selection.spec;
-      const spec = options.without.length ? set.withoutRules(options.without) : set;
-      const source = { ...selection.source, ...(options.without.length ? { without: options.without } : {}), ...(Object.keys(options.set).length ? { set: options.set } : {}) };
-      const focused = focus(spec, options.only);
-      if (!focused) continue;
-      const result = await checkSpec(ctx, path, focused, options.bounds, { source: options.only.length ? { ...source, properties: options.only } : source, pool }, options.rules);
-      results.push(result);
-      if (fails(result, options.only.length > 0)) status = 1;
-      if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
-      if (options.output === "scenario") {
-        const property = result.report.properties[0];
-        if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
-        else out(scenarioCode(spec, property));
-      }
+  for (const selection of selected) {
+    const { path } = selection;
+    const set = Object.keys(options.set).length ? selection.spec.setting(options.set) : selection.spec;
+    const spec = options.without.length ? set.withoutRules(options.without) : set;
+    const focused = focus(spec, options.only);
+    if (!focused) continue;
+    const result = await checkSpec(ctx, path, focused, options.bounds, options.rules);
+    results.push(result);
+    if (fails(result, options.only.length > 0)) status = 1;
+    if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
+    if (options.output === "scenario") {
+      const property = result.report.properties[0];
+      if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
+      else out(scenarioCode(spec, property));
     }
-  } finally {
-    pool.close();
   }
   // Type errors print first; said again last, so the end of the output (a `tail`) still shows them.
   if (typeErrors.length) {
@@ -138,7 +131,7 @@ function counterexampleJson(p: PropertyBroken) {
   };
 }
 
-async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>, threads: { source: SpecSource; pool: Pool }, rules: boolean): Promise<SpecCheck> {
+async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>, rules: boolean): Promise<SpecCheck> {
   const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
   const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
   const runs = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
@@ -156,9 +149,9 @@ async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial
     return { name: scenario.name, broken, known: violated.every((id) => known.has(id)) };
   });
   const seeds = scenarioSeeds(spec, runs);
-  const report = await withFewestFaults(spec, await check(spec, merged, seeds, threads), seeds, threads);
+  const report = await withFewestFaults(spec, await check(spec, merged, seeds), seeds);
   return {
-    rules: rules ? await checkRules(spec, merged, threads) : [],
+    rules: rules ? await checkRules(spec, merged) : [],
     path,
     spec,
     scenarios,

@@ -29,7 +29,6 @@ Commands:
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
       --symmetry-checks N        merged twins to test a symmetry claim on (2000; 0 trusts it)
-      --workers N                threads for the classic search (FEYNMAN_ENGINE=classic; default: cores - 1, up to 7)
       --only P,Q                 check and show only these properties
       --without R,S              the design without these rules (check and run; RFD0010)
       --set NAME=VALUE           start a model variable at another value: --set faults=2 raises a budget (check and run)
@@ -73,7 +72,6 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       "walk-depth": { type: "string" },
       "no-symmetry": { type: "boolean" },
       "symmetry-checks": { type: "string" },
-      workers: { type: "string" },
       instances: { type: "string" },
       base: { type: "string" },
       port: { type: "string" },
@@ -158,7 +156,6 @@ function bounds(values: Record<string, string | string[] | boolean | undefined>)
   if (int("walk-depth") !== undefined) out.walkDepth = int("walk-depth");
   if (values["no-symmetry"]) out.symmetry = false;
   if (int("symmetry-checks") !== undefined) out.symmetryChecks = int("symmetry-checks");
-  if (int("workers") !== undefined) out.workers = int("workers");
   if (typeof values.instances === "string") {
     out.instances = Object.fromEntries(
       values.instances.split(",").map((pair) => {

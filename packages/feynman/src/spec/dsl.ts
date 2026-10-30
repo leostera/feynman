@@ -794,8 +794,6 @@ export interface SpecParts {
  * properties that use them.
  */
 export function defineSpec(parts: SpecParts): Spec {
-  if (typeof parts === "string")
-    throw new Error(`defineSpec(${JSON.stringify(parts)}, { messages }, (spec) => …) is gone: a spec is made of parts since 0.14 (RFD0011). Define each part at the top level, then defineSpec({ name: ${JSON.stringify(parts)}, actors, properties, scenarios }); the changelog's Migrating section has the steps`);
   if (typeof parts !== "object" || parts === null || typeof parts.name !== "string")
     throw new Error("defineSpec takes its parts: defineSpec({ name, actors, properties, scenarios })");
   return assemble(parts, [], {});
@@ -1047,8 +1045,8 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     const on = step.on;
     if (on !== undefined && on?.kind !== "message") throw new Error(`${where}: on is a message from defineMessage, not ${describe(on)}`);
     if (on && step.after !== undefined) throw new Error(`${where}: a step on a message is not a timer: leave out after`);
-    // A timer or a guard receives nothing: its run is (state, _, ctx), like every step's. The
-    // 0.13 form, (state, ctx), would take ctx's place and fail when it first runs.
+    // A timer or a guard receives nothing: its run is (state, _, ctx), like every step's;
+    // written (state, ctx), ctx would get the nothing, and fail when it first runs.
     if (!on && step.run.length === 2) throw new Error(`${where}: a timer or a guard receives nothing, and its run is (state, _, ctx), not (state, ctx)`);
     // Events, coverage, e.is and s.step name a step by its name alone, so an action does not share it.
     if (actions[name]) throw new Error(`${raw.name}: an action and a step are both named ${name}; give them different names`);

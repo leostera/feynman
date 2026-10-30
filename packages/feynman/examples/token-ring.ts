@@ -12,12 +12,10 @@
 // Expected, with three nodes: buggy breaks `oneToken` in 6 steps without faults (A passes
 // the token, the resend fires, B takes the first copy and passes it on, B takes the second,
 // C takes the first); fixed holds, with a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Token = defineMessage("Token", { count: Number });
 const Ack = defineMessage("Ack", { count: Number }, { tone: "reply" });
@@ -37,7 +35,7 @@ export function tokenRing(variant: "buggy" | "fixed") {
     },
     actions: {
       pass: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Pass the token",
         description: "Hands the token to the next node, and resends it until acknowledged.",
         when: (state) => state.holds,

@@ -13,12 +13,10 @@
 // Expected: buggy holds without faults, and breaks `chargedOnce` in 5 steps with one (the bank
 // charges, its answer is lost, the call fails, the client retries, the bank charges again);
 // fixed holds, with faults too. Every payment ends, in both: the retry is fair.
-import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineVariable, defineZone, failed, lose } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, failed, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const PAYMENT = "pay-1";
 
@@ -44,7 +42,7 @@ export function retriedCall(variant: "buggy" | "fixed") {
     },
     actions: {
       pay: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Pay",
         description: "Charges the customer for the order, through the bank.",
         when: (s) => !s.paying && !s.paid,

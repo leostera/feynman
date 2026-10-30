@@ -61,7 +61,7 @@ self.onmessage = async (event: MessageEvent<EnrichRequest>) => {
     const specs: { path: string; spec: Spec }[] = [];
     for (const path of ctx.found) {
       try {
-        specs.push({ path, spec: (await loadSpec(join(root, path))).spec });
+        specs.push({ path, spec: await loadSpec(join(root, path)) });
       } catch {
         // The server's own pass shows a spec that does not load; there is nothing to check.
       }

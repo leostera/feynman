@@ -9,12 +9,10 @@
 // Expected, with two doctors: buggy breaks `covered` in 8 steps without faults (both ask,
 // both checks answer two, both are told so, both leave); fixed holds, with a fault too, but
 // gets stuck if an answer is lost: the doctor waits for it forever (5 steps).
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Check = defineMessage("Check");
 const Count = defineMessage("Count", { onCall: Number }, { tone: "reply" });
@@ -65,7 +63,7 @@ export function writeSkew(variant: "buggy" | "fixed") {
     },
     actions: {
       goOff: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Go off call",
         description: "Asks to go off call.",
         when: (state) => state.phase === "on",

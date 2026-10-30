@@ -1,9 +1,8 @@
 // The integer core: the checker's breadth-first search, on worlds as integers (research note
 // personal/feynman/checker-performance; RFD0008).
 //
-// The classic search (search.ts, owner.ts) copies, freezes, writes out and hashes whole worlds
-// of JS objects on every step, though nearly every handler call repeats a local step it has
-// made before. Here:
+// Copying, freezing, writing out and hashing whole worlds of JS objects on every step is slow,
+// and nearly every handler call repeats a local step made before. So:
 //
 // - every instance state, message and timer is interned once and named by an integer, so a
 //   world is a short Int32Array (see Layout);
@@ -17,21 +16,20 @@
 //
 // Steps that read other instances, or hand out fresh ids or random numbers, depend on more
 // than the key says: they run through the engine every time (the engine's Observation says
-// which). It explores exactly what the classic search does without its reductions: states,
-// every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
-// symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
-// reference explorer, and the TLA+ and P oracles to TLC and P.
+// which). It judges every kind of property (liveness on the graph it keeps), errors, stuck
+// worlds, coverage and symmetry. The tests and the fuzzer hold it to the reference explorer
+// (test/check/reference.ts), and the TLA+ and P oracles to TLC and P.
 import { act, actorNamed, FAULT, fire, guard, holdsIn, isLiveness, observation, stepsTaking, traceView, whenHolds, worldView, type Delivery, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { deliveryIn } from "../spec/engine.ts";
 import { sortedJson } from "../spec/json.ts";
-import type { Bounds, StopReason, Watch } from "./explore.ts";
+import type { Bounds, Root, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
 import { startBreaks, stuck } from "./judge.ts";
 import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
-import { fairness, fairStepsIn, memoryOf, rootMemory, type Resolved } from "./owner.ts";
+import { fairness, fairStepsIn } from "./fairness.ts";
+import { memoryOf, rootMemory } from "./nevers.ts";
 import { PrintMap } from "./prints.ts";
-import type { Root } from "./search.ts";
 import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
 
 type Instance = World["instances"][number];
@@ -74,11 +72,11 @@ interface Renamed {
  * [state id per instance | fresh id | rng | variables | memory | message count | message ids |
  *  timer ids], messages and timers each
  * oldest first. An instance's state id covers its own variables; `variables` is the world's.
- * The memory is what `never` properties remember of the path (owner.ts memoryOf), interned.
+ * The memory is what `never` properties remember of the path (nevers.ts memoryOf), interned.
  *
- * Messages are a bag to the fingerprint, but kept in the order they were sent, as the classic
- * search's worlds are: so the choices from a vector come in the same order (pendingInOrder),
- * and the first counterexample found is the same one.
+ * Messages are a bag to the fingerprint, but kept in the order they were sent, as the engine's
+ * worlds are: so the choices from a vector come in the order `branches` gives them
+ * (pendingInOrder), and the first counterexample found is the one the reference explorer finds.
  */
 interface Layout {
   /** Which layout, in the fingerprint: worlds with other instances are other states. */
@@ -107,6 +105,12 @@ interface Layout {
   variables: number;
   memory: number;
   messages: number;
+}
+
+/** A step of a lasso, replayed: its choice, and the world it was taken in, when asked for. */
+export interface Resolved {
+  choice: Choice;
+  world?: World;
 }
 
 /** A cached effect: one, or one for each value of the world's variables when the step uses them. */
@@ -211,7 +215,7 @@ interface Step {
   memory: number;
 }
 
-/** The search, with what `reportOf` reads of one (see search.ts). */
+/** The search, with what `reportOf` (explore.ts) reads of it. */
 export class IntegerSearch {
   readonly failures = new Map<string, number>();
   readonly errors = new Map<string, number>();
@@ -229,14 +233,13 @@ export class IntegerSearch {
   untilBroken = false;
   /** Whether it stopped because every property had broken. */
   allBroken = false;
-  readonly ownerCount = 1;
   readonly root: number[] = [];
   private parent: number[] = [];
   /** How each node was reached from its parent: a `ChoiceName` id, found again in any world. */
   private named: number[] = [];
   private faults: number[] = [];
   private depth: number[] = [];
-  /** Each node's last event, as a `TraceStep` id: a path's events go up its parents, as classic trails do. */
+  /** Each node's last event, as a `TraceStep` id: a path's events go up its parents, oldest last. */
   private eventOf: number[] = [];
   private readonly broken = new Set<string>();
 
@@ -323,12 +326,12 @@ export class IntegerSearch {
   }
 
   /** Steps that ran, as `actor.key`. */
-  get stats(): { reached: Set<string>; orders: number; inputs: number } {
-    return { reached: new Set(this.stepKeys.values.filter((_, i) => this.reachedSteps[i])), orders: 0, inputs: 0 };
+  get stats(): { reached: Set<string> } {
+    return { reached: new Set(this.stepKeys.values.filter((_, i) => this.reachedSteps[i])) };
   }
 
   /**
-   * The layout for a root's instances. The classic key sorts instances, so a set of them is one
+   * The layout for a root's instances. World keys sort instances (keys.ts), so a set of them is one
    * layout, in the order of the first root that has it (which the choices follow).
    */
   private layoutOf(world: World): Layout {
@@ -400,13 +403,13 @@ export class IntegerSearch {
     else if (this.keepsEdges) open.push(entry);
   }
 
-  /** Every step from a frontier entry, in the classic order. False when the search must stop. */
+  /** Every step from a frontier entry, in the order `branches` gives them. False when the search must stop. */
   private expand(parent: Entry, depth: number, next: Entry[], open: Entry[]): boolean {
     const here = this.here(parent.vector, parent.layout);
     const from: Expanding = { parent, depth, here, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.trailOf(parent.gid) : undefined };
     const options = this.choicesOf(here, parent.tuple);
     if (this.keepsEdges) {
-      // Expanded once it is begun, as in the classic search, even if the search stops partway.
+      // Expanded once it is begun, even if the search stops partway.
       this.expanded[parent.gid] = true;
       this.edges[parent.gid] = [];
       this.enabled[parent.gid] = fairStepsIn(this.spec, here.world(), options);
@@ -432,7 +435,7 @@ export class IntegerSearch {
       return true;
     }
     if (!symmetry.classes.length) return true;
-    // Its world is the one before, with the budget spent: as in the classic search, it may land
+    // Its world is the one before, with the budget spent: it may land
     // on a renamed twin, whose claim is tested all the same.
     const unchanged = this.applied(parent.vector, { ...step, at: -1, effect: { ...step.effect, state: parent.vector[step.slot], removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE } });
     const folded = this.symmetricPrint(unchanged, parent.layout, symmetry);
@@ -653,7 +656,7 @@ export class IntegerSearch {
   /**
    * Whether a world that landed on a known state up to symmetry behaves as that state's world
    * does: the same next worlds, up to symmetry. Tested on the first `symmetryChecks` renamed
-   * twins met (not on the very same world), in the order met, as the classic search does.
+   * twins met (not on the very same world), in the order met.
    */
   private sameAsTwin(existing: number, vector: Int32Array, L: Layout, plain: [number, number], symmetry: Symmetry): boolean {
     const known = this.plains.get(existing)!;
@@ -666,8 +669,7 @@ export class IntegerSearch {
   }
 
   /**
-   * The worlds one step away, each up to symmetry: renamed twins must agree on them (owner.ts
-   * successorsPrint).
+   * The worlds one step away, each up to symmetry: renamed twins must agree on them.
    */
   private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
     const here = this.here(vector, L);
@@ -695,7 +697,7 @@ export class IntegerSearch {
   /**
    * A fingerprint up to symmetry: the least, over the renamings, of the renamed world's
    * (instances and pending entries as renamed key lines, keys.ts), with the budget and memory
-   * as they are, as the classic key has them. Renamed twins have the same set of renamed
+   * as they are, as world keys have them (keys.ts). Renamed twins have the same set of renamed
    * worlds, so the same least one. Also the world's own fingerprint (no renaming, no budget),
    * and its least without the budget, for twin checks.
    */
@@ -960,7 +962,7 @@ export class IntegerSearch {
     if (!byArg) L.cache.set(local, (byArg = new Map()));
     const cached = cachedIn(byArg, arg, variables) ?? cachedIn(apart, arg, variables);
     if (cached) return cached;
-    const observe = observation(true);
+    const observe = observation();
     const world = here.world();
     const step = run(this.spec, world, choice, observe);
     // A reset's drops are worked out for each vector (withDrops), so they are not in the effect.
@@ -1226,7 +1228,7 @@ export class IntegerSearch {
   }
 
   private freshId(fresh: Record<string, number>): number {
-    // As the classic key writes it (keys.ts): in the order the counters were made.
+    // As world keys write it (keys.ts): in the order the counters were made.
     return this.freshes.id(JSON.stringify(fresh), () => fresh);
   }
 }

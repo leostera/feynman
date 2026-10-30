@@ -18,12 +18,10 @@
 // Expected, with two replicas: buggy breaks `convergesOnceQuiet` in 4 steps without faults (A
 // adds and removes, and B hears of the remove first); fixed holds without faults, and both
 // break in 2 steps with one (an add, and its message lost).
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, setOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose, setOf } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Add = defineMessage("Add", { tag: String });
 const Remove = defineMessage("Remove", { tags: setOf(String) }, { tone: "refused" });
@@ -46,7 +44,7 @@ export function orSet(variant: "buggy" | "fixed") {
     },
     actions: {
       add: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Add x",
         description: variant === "buggy" ? "Adds x and tells the other replica." : "Adds x with a new tag and tells the other replica.",
         sends: [Add],
@@ -59,7 +57,7 @@ export function orSet(variant: "buggy" | "fixed") {
         },
       },
       remove: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Remove x",
         description: variant === "buggy" ? "Removes x and tells the other replica." : "Removes the tags it has seen and tells the other replica which.",
         when: (state) => contains(state),

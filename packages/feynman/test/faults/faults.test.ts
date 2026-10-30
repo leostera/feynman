@@ -1,30 +1,23 @@
-// The faults library (RFD0012): faults and bounds as ordinary steps and parts, which both
-// engines and the reference explorer explore alike. That they reach exactly what the built-in
+// The faults library (RFD0012): faults and bounds as ordinary steps and parts, which the
+// checker and the reference explorer explore alike. That they reach exactly what the built-in
 // faults did is checked against TLC and P on every example (test/examples).
 import { expect, test } from "bun:test";
-import { check, type Bounds, type Engine, type Report } from "../../src/check/index.ts";
+import { check, type Bounds, type Report } from "../../src/check/index.ts";
 import { defineActor, defineMessage, defineProperty, defineSpec, defineZone, type Spec } from "../../src/spec/index.ts";
 import * as faults from "../../src/faults/index.ts";
-import { explore } from "../check/reference.ts";
+import { agreesWithReference } from "../check/agree.ts";
 
 const zone = defineZone({ name: "z" });
 
-const lengthOf = (p: Report["properties"][number]) => ("counterexample" in p ? p.counterexample?.events.length : undefined);
-
-async function run(spec: Spec, bounds: Partial<Bounds>, engine: Engine): Promise<Report> {
-  return check(spec, { walks: 0, reduce: false, symmetry: false, workers: 0, ...bounds }, [], { engine });
+async function run(spec: Spec, bounds: Partial<Bounds>): Promise<Report> {
+  return check(spec, { walks: 0, symmetry: false, ...bounds });
 }
 
-/** Both engines reach what the reference explorer does, with the same verdicts. */
+/** The check reaches what the reference explorer does, with the same verdicts, and no errors. */
 async function agree(spec: Spec, depth: number, instances: Record<string, number> = {}) {
-  const theirs = explore(spec, { depth, instances });
-  const reports = await Promise.all((["integer", "classic"] as Engine[]).map((engine) => run(spec, { depth, instances }, engine)));
-  for (const r of reports) {
-    expect(r.errors).toEqual([]);
-    expect(r.states).toBe(theirs.worlds.size);
-  }
-  expect(reports[0].properties.map((p) => [p.id, p.holds, lengthOf(p)])).toEqual(reports[1].properties.map((p) => [p.id, p.holds, lengthOf(p)]));
-  return reports[0];
+  const report = await agreesWithReference(spec, { depth, instances });
+  expect(report.errors).toEqual([]);
+  return report;
 }
 
 const Hello = defineMessage("Hello", { n: Number });
@@ -61,16 +54,16 @@ function greeting(): Spec {
   return defineSpec({ name: "Greeting", actors: [Worker, Hub], properties: [bounded] });
 }
 
-test("lose, crash and atMost: more budget, more states, and the engines and the reference agree", async () => {
+test("lose, crash and atMost: more budget, more states, and the reference agrees", async () => {
   let before = 0;
   for (const n of [0, 1, 2]) {
     const report = await agree(greeting().setting({ faults: n }), 10, { Worker: 1 });
     expect(report.states).toBeGreaterThan(before);
     before = report.states;
   }
-  // Two workers, symmetric or not: their counters go with them.
-  const plain = await run(greeting(), { depth: 8, instances: { Worker: 2 } }, "integer");
-  expect((await run(greeting(), { depth: 8, instances: { Worker: 2 } }, "classic")).states).toBe(plain.states);
+  // Two workers: each has counters of its own.
+  await agree(greeting(), 8, { Worker: 2 });
+  for (const n of [0, 1]) await agree(greeting().setting({ faults: n }), 10, { Worker: 2 });
 });
 
 test("duplicate delivers a message twice, which the built-in faults cannot", async () => {
@@ -85,12 +78,12 @@ test("duplicate delivers a message twice, which the built-in faults cannot", asy
   });
   const once = defineProperty("countedOnce", { description: "Counted once.", always: (w) => w.the(Counter).state.n <= 1 });
   const spec = defineSpec({ name: "Twice", actors: [Counter], properties: [once] });
-  const report = await run(spec, { depth: 6 }, "integer");
+  const report = await run(spec, { depth: 6 });
   expect(report.properties[0].holds).toBe(false);
   const broken = report.properties[0];
   if (!("counterexample" in broken) || !broken.counterexample) throw new Error("expected a counterexample");
   expect(broken.counterexample.events.map((e) => e.key)).toEqual(["count", "twice", "counted", "counted"]);
-  expect((await run(spec.setting({ faults: 0 }), { depth: 6 }, "integer")).properties[0].holds).toBe(true);
+  expect((await run(spec.setting({ faults: 0 }), { depth: 6 })).properties[0].holds).toBe(true);
 });
 
 test("a fault is an ordinary step: tagged fault, unfair, named by its key", () => {

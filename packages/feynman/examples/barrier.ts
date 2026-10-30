@@ -9,12 +9,10 @@
 // arrives and is counted, A restarts and arrives again, and is counted again: the barrier
 // opens); fixed holds, with a fault too. Both get stuck in 4 steps when an arrival is lost:
 // nothing resends it, so the barrier never opens.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Arrived = defineMessage("Arrived");
 const Go = defineMessage("Go");
@@ -65,7 +63,7 @@ export function barrier(variant: "buggy" | "fixed") {
     },
     actions: {
       arrive: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Reach the barrier",
         description: "Tells the coordinator it is here.",
         when: (state) => !state.arrived,

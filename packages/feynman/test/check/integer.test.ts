@@ -1,50 +1,27 @@
-// The integer core (integer.ts) explores exactly what the classic search does without its
-// reductions: the same report, to the counterexample and the loop, on every example and on
-// generated specs, with and without symmetry, and from scenario seeds.
+// The search's own guarantees, besides agreeing with the reference explorer on the corpus
+// (reference.test.ts) and keeping its verdicts under symmetry (examples.test.ts): scenario
+// seeds explore what the reference explores from the same worlds, a step cached in one world
+// is not replayed in a world with other instances, and a search cut short keeps what it found.
 import { expect, test } from "bun:test";
-import { check, type Bounds, type Report, type Seed } from "../../src/check/index.ts";
+import { check, type PropertyResult } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineZone, type Spec } from "../../src/spec/index.ts";
-import { caseName, corpus } from "../examples/corpus.ts";
-import { build, describe as describeSpec } from "../fuzz/spec.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineZone } from "../../src/spec/index.ts";
+import { caseName, configured, corpus } from "../examples/corpus.ts";
+import { agreesWithReference } from "./agree.ts";
 
-const PLAIN = { walks: 0, maxStates: 2_000_000, timeLimit: 120_000, reduce: false, symmetry: false, workers: 0 } as const;
+const PLAIN = { walks: 0, maxStates: 2_000_000, timeLimit: 120_000, symmetry: false } as const;
 
-/** A report without the clock. */
-// What a stopped search's states differ in is the integer engine's diagnostic only.
-const comparable = ({ variety: _v, mostInFlight: _m, ...r }: Report) => ({ ...r, durationMs: 0 });
-
-async function bothAgree(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[] = []): Promise<Report> {
-  const integer = await check(spec, { ...PLAIN, ...bounds }, seeds, { engine: "integer" });
-  const classic = await check(spec, { ...PLAIN, ...bounds }, seeds, { engine: "classic" });
-  expect(comparable(integer)).toEqual(comparable(classic));
-  return integer;
-}
+/** What a verdict says, without the path: held, or broken in so many events. */
+const said = (p: PropertyResult) => [p.id, p.holds ? (p.unfinished ? "unfinished" : "holds") : p.counterexample.events.length + (p.loop?.events.length ?? 0)];
 
 for (const example of corpus) for (const c of example.cases) {
-  const spec = example.spec(c.variant);
-  test(`${caseName(example, c)}: the same report from the integer core as from the classic search`, async () => {
-    await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {} });
-  }, 120_000);
-  test(`${caseName(example, c)}, with symmetry: the same report from both`, async () => {
-    await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {}, symmetry: true });
-  }, 120_000);
+  const { spec } = configured(example.spec(c.variant), { faults: c.bounds.faults ?? 0 });
+  const bounds = { depth: c.bounds.depth ?? 60, instances: example.instances ?? {} };
   if (spec.scenarios.length)
-    test(`${caseName(example, c)}, from its scenarios too: the same report from both`, async () => {
-      await bothAgree(spec, { ...c.bounds, instances: example.instances ?? {}, symmetry: true }, scenarioSeeds(spec));
-    }, 120_000);
+    test(`${caseName(example, c)}, from its scenarios too: what the reference explores from the same worlds`, async () => {
+      await agreesWithReference(spec, bounds, scenarioSeeds(spec));
+    }, 300_000);
 }
-
-test("generated specs: the same report from both", async () => {
-  let compared = 0;
-  for (let seed = 1; seed <= 80; seed++) {
-    const desc = describeSpec(seed);
-    const spec = build(desc);
-    const report = await bothAgree(spec, { ...desc.bounds, symmetry: seed % 2 === 0 });
-    if (report.exhaustive) compared++;
-  }
-  expect(compared).toBeGreaterThan(40);
-}, 300_000);
 
 test("a step that lists instances is not replayed from a world with other instances", async () => {
   const { defineSpec } = await import("../../src/spec/index.ts");
@@ -88,19 +65,21 @@ test("a step that lists instances is not replayed from a world with other instan
       scenarios: [aThirdReplica],
     });
   })();
-  const report = await bothAgree(spec, { depth: 8, instances: { Replica: 2 } }, scenarioSeeds(spec));
+  const report = await agreesWithReference(spec, { depth: 8, instances: { Replica: 2 } }, scenarioSeeds(spec));
   expect(report.seeds.length).toBe(1);
 });
 
-test("cut off by maxStates: both stop at the same state, with the same verdicts so far", async () => {
+test("cut off by maxStates: it stops there, and what it found broken is broken as in the full search", async () => {
   for (const name of ["two-phase commit", "read repair", "leader election", "job queue", "quorum"]) {
     const example = corpus.find((e) => e.name === name)!;
     for (const c of example.cases) {
-      const spec = example.spec(c.variant);
-      const bounds = { ...c.bounds, instances: example.instances ?? {} };
-      const full = await check(spec, { ...PLAIN, ...bounds });
-      const cut = await bothAgree(spec, { ...bounds, maxStates: Math.max(1, Math.floor(full.states / 3)) });
+      const { spec } = configured(example.spec(c.variant), { faults: c.bounds.faults ?? 0 });
+      const bounds = { ...PLAIN, depth: c.bounds.depth ?? 60, instances: example.instances ?? {} };
+      const full = await check(spec, bounds);
+      const cut = await check(spec, { ...bounds, maxStates: Math.max(1, Math.floor(full.states / 3)) });
       expect(cut.stoppedBy).toBe("maxStates");
+      // Breadth first: a break found before the cut is the full search's shortest one.
+      for (const p of cut.properties.filter((q) => !q.holds && !q.loop)) expect(said(full.properties.find((q) => q.id === p.id)!)).toEqual(said(p));
     }
   }
 }, 300_000);

@@ -32,8 +32,7 @@ export async function checkRules(spec: Spec, bounds: Partial<Bounds>, options: C
     const variant = spec.withoutRules([rule.name]);
     const needing = { ...variant, properties: variant.properties.filter((p) => ids.includes(p.id)) };
     // The variant's own scenarios: one that relied on the rule ends broken, and is no seed.
-    const source = options.source ? { ...options.source, without: [...spec.without, rule.name], properties: ids } : undefined;
-    const report = await check(needing, { ...bounds, walks: 0 }, scenarioSeeds(variant), { ...options, source, watch: undefined, untilBroken: true });
+    const report = await check(needing, { ...bounds, walks: 0 }, scenarioSeeds(variant), { ...options, watch: undefined, untilBroken: true });
     verdicts.push({
       name: rule.name,
       description: rule.description,

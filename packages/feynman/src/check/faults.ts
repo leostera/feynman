@@ -41,8 +41,7 @@ export async function withFewestFaults(spec: Spec, report: Report, seeds: Seed[]
     const open = new Set(properties.filter((p) => faultsOf(p) > faults && !settled.has(p.id)).map((p) => p.id));
     if (!open.size) break;
     const lowered = Object.fromEntries(budgets.map((b) => [b.name, Math.min(b.initial, faults)]));
-    const source = options.source ? { ...options.source, set: { ...options.source.set, ...lowered } } : undefined;
-    const again = await check(spec.setting(lowered), report.bounds, seeds, { ...options, ...(source ? { source } : {}) });
+    const again = await check(spec.setting(lowered), report.bounds, seeds, options);
     properties = properties.map((p) => {
       const found = open.has(p.id) ? again.properties.find((q): q is PropertyBroken => q.id === p.id && !q.holds) : undefined;
       if (!found || p.holds) return p;

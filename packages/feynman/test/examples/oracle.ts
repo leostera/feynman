@@ -3,8 +3,7 @@
 // Each oracle in ../oracles is an independent TLA+ model of a spec in ../specs, following
 // Feynman's semantics: the network is a bag, any message in it may go next, a fault (a step
 // the spec declares, RFD0012) loses one or restarts an instance, and each instance takes each
-// action at most `repeats` times. TLC
-// then gives the reachable states, which invariants break, and the shortest way there.
+// action at most twice (atMost(2)). TLC then gives the reachable states, which invariants break, and the shortest way there.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -95,7 +94,7 @@ function projection(world: World, memory: string): string {
 /** The checker's exhaustive search, plain, and the distinct states it reached as TLA+ sees them. */
 export async function feynman(spec: Spec, bounds: Partial<Bounds>): Promise<{ report: Report; distinct: number }> {
   const seen = new Set<string>();
-  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, reduce: false, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
+  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
   return { report, distinct: seen.size };
 }
 

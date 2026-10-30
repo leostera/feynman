@@ -317,12 +317,3 @@ test("a loaded spec's steps are found by name: the spec and the engine share one
   const { out } = await capture(["check", "--brief", "--depth", "4", "--walks", "0"], root);
   expect(out).toContain("✓ onlySayHears");
 }, 60_000);
-
-test("a spec written for 0.13 says what replaced message and the closure", async () => {
-  const { root } = repo();
-  writeFileSync(
-    join(root, "specs/old.ts"),
-    `import { defineSpec, message } from "@leostera/feynman";\nexport default defineSpec("Old", { messages: { Ping: message<{}>({ name: "ping" }) } }, () => ({}));\n`,
-  );
-  await expect(main(["check", "old"], root)).rejects.toThrow("message and call are gone since 0.14: a spec is made of parts (RFD0011)");
-}, 60_000);
