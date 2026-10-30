@@ -47,6 +47,7 @@ Commands:
 const ARGS = {
   allowPositionals: true,
   options: {
+    help: { type: "boolean", short: "h" },
     scenario: { type: "string" },
     all: { type: "boolean" },
     without: { type: "string" },
@@ -94,6 +95,10 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     return 0;
   }
   const { values, positionals } = parsed(rest);
+  if (values.help) {
+    console.log(USAGE);
+    return 0;
+  }
   const ctx = await context(cwd);
 
   switch (command) {

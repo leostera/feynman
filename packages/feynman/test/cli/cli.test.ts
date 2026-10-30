@@ -325,3 +325,10 @@ test("a loaded spec's steps are found by name: the spec and the engine share one
   const { out } = await capture(["check", "--brief", "--depth", "4", "--walks", "0"], root);
   expect(out).toContain("✓ onlySayHears");
 }, 60_000);
+
+test("--help after a command prints the usage", async () => {
+  const { root } = repo();
+  const help = await capture(["build", "--help"], root);
+  expect(help.status).toBe(0);
+  expect(help.out).toContain("Usage: feynman <command>");
+});
