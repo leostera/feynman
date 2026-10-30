@@ -30,8 +30,3 @@ export function fairness(spec: Spec, world: World, choice: Choice): { id: FairId
   if (fair === false) return undefined;
   return { id: nameHash(name), kind: fair ?? "weak" };
 }
-
-/** The fair steps possible in a world, among its options, by identity. */
-export function fairStepsIn(spec: Spec, world: World, options: Choice[]): Map<FairId, Fairness> {
-  return new Map(options.flatMap((c) => fairness(spec, world, c) ?? []).map((f) => [f.id, f.kind]));
-}

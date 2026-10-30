@@ -27,7 +27,7 @@ import { MEMORY_EVERY, overMemory } from "./memory.ts";
 import { startBreaks, stuck } from "./judge.ts";
 import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
-import { fairness, fairStepsIn } from "./fairness.ts";
+import { fairness } from "./fairness.ts";
 import { memoryOf, rootMemory } from "./nevers.ts";
 import { PrintMap } from "./prints.ts";
 import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
@@ -84,8 +84,9 @@ interface Layout {
   instances: Instance[];
   /** Each instance's slot, by id. */
   slots: Map<string, number>;
-  /** What each instance state can do, by state id. */
-  plans: Map<number, LocalPlan>;
+  /** What each instance state can do, by state id; with the world's variables, when its actor's `when`s read them. */
+  plans: LocalPlan[];
+  plansWithVariables: Map<number, LocalPlan>;
   /** `timersOf` for a vector without timers: shared, never written. */
   noTimers: Int32Array;
   /**
@@ -94,7 +95,7 @@ interface Layout {
    * without reading their states, so its effect holds only among the same instances. A step
    * that uses the world's variables is cached by their value as well (cachedIn).
    */
-  cache: Map<number, Map<number, Cached>>;
+  cache: Map<number, Cached>[][];
   /** The effects of steps that leave their own instance alone (a lost message), by slot and then as `cache`: whatever the instance's state. */
   apart: Map<number, Cached>[];
   /** By interned message or timer: the slot of the instance it is for. */
@@ -187,7 +188,8 @@ interface LocalPlan {
   acts: { key: string; choices?: Choice[]; inputs?: ActionInputs }[];
   guards: Choice[];
   /** By interned message or timer: the steps that can take it (`stepIndex`), worked out when first met (takers). */
-  takers: Map<number, number[]>;
+  /** By interned message or timer. */
+  takers: number[][];
 }
 
 type ActionInputs = Parameters<typeof inputCombinations>[2];
@@ -198,8 +200,8 @@ interface Expanding {
   depth: number;
   here: Here;
   symmetry: Symmetry;
-  /** For `never` properties: the trace steps on the way to the parent. */
-  trail: TraceStep[] | undefined;
+  /** For `never` properties: the trace steps on the way to the parent, worked out when first asked for. */
+  trail: (() => TraceStep[]) | undefined;
 }
 
 /** A step, as what it changes in the vector. */
@@ -264,6 +266,12 @@ export class IntegerSearch {
   private runsApart: boolean[] = [];
   private timerLists = new Interner<string>();
   private names = new Interner<ChoiceName>();
+  /** What a step adds to `never` properties' memory (remember), by memory and then by trace step. */
+  private memorySteps: { memory: number; nevers: string[] }[][] = [];
+  /** Fires' fairness (fairOf), by step index and then by interned message or timer; null for none. */
+  private fairFires: ({ id: FairId; kind: Fairness } | null)[][] = [];
+  /** Fires' names (nameIn), by step index and then by interned message or timer. */
+  private fireNames: number[][] = [];
   private stepKeys = new Interner<string>();
   private traceSteps = new Interner<TraceStep>();
   private memories = new Interner<string>();
@@ -280,7 +288,6 @@ export class IntegerSearch {
    * For choices that do not name a pending entry (actions, guards), which are shared objects
    * (`planOf`): the step cache's argument, and the choice's name, worked out once.
    */
-  private facts = new WeakMap<Choice, { arg: number; named: number }>();
   /** Choices of actions whose inputs come from `examples`, by (tuple, instance, action). */
   private examples = new Map<string, Choice[]>();
   /** While twin checks remain: each state's vector, so a twin's world need not be replayed. */
@@ -295,6 +302,8 @@ export class IntegerSearch {
    * properties: most states differ from others only in what is in flight.
    */
   private tuples = new Map<string, number>();
+  /** By parent tuple: its children's tuples (childTuple). */
+  private tupleSteps: Map<number, number>[] = [];
   /** By tuple: the `always` properties that fail there, and which liveness predicates hold. */
   private alwaysFailing: string[][] = [];
   private truthsByTuple: Uint8Array[] = [];
@@ -340,7 +349,7 @@ export class IntegerSearch {
     if (layout) return layout;
     const slots = new Map(world.instances.map((instance, slot) => [instance.id, slot]));
     const n = world.instances.length;
-    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), noTimers: new Int32Array(n), cache: new Map(), apart: [], slotOf: [], fresh: n, rng: n + 1, variables: n + 2, memory: n + 3, messages: n + 4 };
+    layout = { index: this.layouts.size, instances: world.instances, slots, plans: [], plansWithVariables: new Map(), noTimers: new Int32Array(n), cache: [], apart: [], slotOf: [], fresh: n, rng: n + 1, variables: n + 2, memory: n + 3, messages: n + 4 };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -406,13 +415,13 @@ export class IntegerSearch {
   /** Every step from a frontier entry, in the order `branches` gives them. False when the search must stop. */
   private expand(parent: Entry, depth: number, next: Entry[], open: Entry[]): boolean {
     const here = this.here(parent.vector, parent.layout);
-    const from: Expanding = { parent, depth, here, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.trailOf(parent.gid) : undefined };
+    const from: Expanding = { parent, depth, here, symmetry: this.roots[this.root[parent.gid]].symmetry, trail: this.nevers.length ? this.lazyTrail(parent.gid) : undefined };
     const options = this.choicesOf(here, parent.tuple);
     if (this.keepsEdges) {
       // Expanded once it is begun, even if the search stops partway.
       this.expanded[parent.gid] = true;
       this.edges[parent.gid] = [];
-      this.enabled[parent.gid] = fairStepsIn(this.spec, here.world(), options);
+      this.enabled[parent.gid] = this.fairStepsIn(here, options);
     }
     for (let option = 0; option < options.length; option++) {
       const step = this.step(here, options[option]);
@@ -452,23 +461,25 @@ export class IntegerSearch {
     const { parent, here, symmetry, depth } = from;
     const L = parent.layout;
     const { effect } = step;
-    const nevers = from.trail ? this.remember(from.trail, effect.event, step) : NO_IDS;
+    const nevers = from.trail ? this.remember(parent.vector[L.memory], from.trail, effect.event, step) : NO_IDS;
     let child: Int32Array | undefined;
     let folded: ReturnType<IntegerSearch["symmetricPrint"]> | undefined;
     if (symmetry.classes.length) {
       child = this.applied(parent.vector, step);
       folded = this.symmetricPrint(child, L, symmetry);
     }
-    const [h1, h2] = folded ? folded.print : childPrint(parent, step);
+    const print = folded ? folded.print : childPrint(parent, step);
+    const h1 = print[0];
+    const h2 = print[1];
     const existing = this.seen.get(h1, h2);
-    const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, fairness(this.spec, here.world(), choice)?.id));
+    const edgeTo = (to: number) => this.keepsEdges && this.edges[parent.gid].push(edgeOf(to, option, step.fault, this.fairOf(here, choice)?.id));
     if (existing !== undefined) edgeTo(existing);
     // A step property is judged on every step, so one broken on the way to a known state counts too.
     let breaks = NO_IDS;
     let tuple: number | undefined;
     if (this.everySteps.some((p) => !this.broken.has(p.id))) {
       const after = (child ??= this.applied(parent.vector, step));
-      tuple = this.tupleOf(after, L);
+      tuple = this.childTuple(parent, step, after);
       breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf(after, L));
     }
     if (existing !== undefined) {
@@ -494,7 +505,7 @@ export class IntegerSearch {
     if (child[L.messages] > this.mostInFlight) this.mostInFlight = child[L.messages];
     if (this.watch.state) this.watch.state(this.materialize(child, L), this.memoryText(child, L));
     const state = child;
-    tuple ??= this.tupleOf(state, L);
+    tuple ??= this.childTuple(parent, step, state);
     if (this.always.length) this.judge(tuple, state, gid, L);
     for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
     this.judgeStuck(state, gid, L);
@@ -519,20 +530,20 @@ export class IntegerSearch {
     const { vector, layout: L } = entry;
     const here = this.here(vector, L);
     const symmetry = this.roots[this.root[entry.gid]].symmetry;
-    const trail = this.nevers.length ? this.trailOf(entry.gid) : undefined;
+    const trail = this.nevers.length ? this.lazyTrail(entry.gid) : undefined;
     const options = this.choicesOf(here, entry.tuple);
     const out: Edge[] = [];
     for (let option = 0; option < options.length; option++) {
       const step = this.step(here, options[option]);
       if (step.effect.error) continue;
-      if (trail) this.remember(trail, step.effect.event, step);
-      const [h1, h2] = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
-      const to = this.seen.get(h1, h2);
+      if (trail) this.remember(vector[L.memory], trail, step.effect.event, step);
+      const print = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
+      const to = this.seen.get(print[0], print[1]);
       if (to === undefined) return;
-      out.push(edgeOf(to, option, step.fault, fairness(this.spec, here.world(), options[option])?.id));
+      out.push(edgeOf(to, option, step.fault, this.fairOf(here, options[option])?.id));
     }
     this.edges[entry.gid] = out;
-    this.enabled[entry.gid] = fairStepsIn(this.spec, here.world(), options);
+    this.enabled[entry.gid] = this.fairStepsIn(here, options);
     this.expanded[entry.gid] = true;
   }
 
@@ -543,6 +554,20 @@ export class IntegerSearch {
     let id = this.tuples.get(key);
     if (id === undefined) this.tuples.set(key, (id = this.tuples.size));
     return id;
+  }
+
+  /**
+   * A child's tuple: its parent's, but for the stepping instance's state and whether anything
+   * is pending, kept by those for each parent tuple; worked out afresh when the variables change.
+   */
+  private childTuple(parent: Entry, step: Step, child: Int32Array): number {
+    const L = step.layout;
+    if (child[L.variables] !== parent.vector[L.variables]) return this.tupleOf(child, L);
+    const key = (child[step.slot] * L.instances.length + step.slot) * 2 + (child.length > L.messages + 1 ? 1 : 0);
+    const byKey = (this.tupleSteps[parent.tuple] ??= new Map());
+    let tuple = byKey.get(key);
+    if (tuple === undefined) byKey.set(key, (tuple = this.tupleOf(child, L)));
+    return tuple;
   }
 
   /** Which liveness predicates hold in a new state: worked out once per tuple. */
@@ -768,12 +793,54 @@ export class IntegerSearch {
     return out.reverse();
   }
 
-  /** What `never` properties remember after a step on a trail: into the step, and which of them the path breaks. */
-  private remember(trail: TraceStep[], event: number, step: Step): string[] {
-    const events = [...trail, this.traceSteps.values[event]].map((e, index) => ({ ...e, index }) as Event);
-    const { memory, nevers } = memoryOf(this.nevers, events);
-    step.memory = this.memories.id(memory, () => memory);
-    return nevers;
+  private lazyTrail(gid: number): () => TraceStep[] {
+    let trail: TraceStep[] | undefined;
+    return () => (trail ??= this.trailOf(gid));
+  }
+
+  /**
+   * What `never` properties remember after a step: into the step, and which of them the path
+   * breaks. Paths that remember the same are one state, so what a step adds depends only on the
+   * memory before it and the step: worked out on the trail once for each, then kept.
+   */
+  private remember(before: number, trail: () => TraceStep[], event: number, step: Step): string[] {
+    const byEvent = (this.memorySteps[before] ??= []);
+    let known = byEvent[event];
+    if (!known) {
+      const events = [...trail(), this.traceSteps.values[event]].map((e, index) => ({ ...e, index }) as Event);
+      const { memory, nevers } = memoryOf(this.nevers, events);
+      byEvent[event] = known = { memory: this.memories.id(memory, () => memory), nevers };
+    }
+    step.memory = known.memory;
+    return known.nevers;
+  }
+
+  /**
+   * A choice's fairness (fairness.ts), kept: a fire's depends only on its step and what it takes
+   * (interned), a guard's on the choice, which plans share.
+   */
+  private fairOf(here: Here, choice: Choice): { id: FairId; kind: Fairness } | undefined {
+    if (choice.kind === "act") return undefined;
+    if (choice.kind === "guard") {
+      const shared = choice as Choice & { fair?: { id: FairId; kind: Fairness } | null };
+      if (shared.fair === undefined) shared.fair = fairness(this.spec, here.world(), choice) ?? null;
+      return shared.fair ?? undefined;
+    }
+    const id = here.vector[here.layout.messages + choice.pending];
+    const byPending = (this.fairFires[(choice as Fire).index ?? this.stepIndex(choice.step)] ??= []);
+    let fair = byPending[id];
+    if (fair === undefined) byPending[id] = fair = fairness(this.spec, here.world(), choice) ?? null;
+    return fair ?? undefined;
+  }
+
+  /** The fair steps possible in a world, among its options, by identity (fairness.ts fairStepsIn). */
+  private fairStepsIn(here: Here, options: Choice[]): Map<FairId, Fairness> {
+    const out = new Map<FairId, Fairness>();
+    for (const choice of options) {
+      const fair = this.fairOf(here, choice);
+      if (fair) out.set(fair.id, fair.kind);
+    }
+    return out;
   }
 
   /** A trace step as an event at a place in its path. Only the order of places is promised (TraceEvent.index). */
@@ -817,7 +884,10 @@ export class IntegerSearch {
 
   /** A choice's name: worked out once for shared choices, by its pending entry for the others. */
   private nameIn(choice: Choice, vector: Int32Array, L: Layout): number {
-    return choice.kind === "fire" ? this.nameOf(choice, vector, L) : this.factsOf(L, choice).named;
+    if (choice.kind !== "fire") return this.factsOf(L, choice).named;
+    // A fire's name is its step and the message or timer it takes, by intern ids.
+    const byPending = (this.fireNames[(choice as Fire).index ?? this.stepIndex(choice.step)] ??= []);
+    return (byPending[vector[L.messages + choice.pending]] ??= this.nameOf(choice, vector, L));
   }
 
   private nameOf(choice: Choice, vector: Int32Array, L: Layout): number {
@@ -894,11 +964,12 @@ export class IntegerSearch {
   }
 
   private factsOf(L: Layout, choice: Choice): { arg: number; named: number } {
-    let facts = this.facts.get(choice);
+    // Kept on the choice, which plans share: an action's or a guard's.
+    const shared = choice as Choice & { facts?: { arg: number; named: number } };
+    let facts = shared.facts;
     if (!facts) {
       if (choice.kind === "fire") throw new Error("a choice on a pending entry has no facts of its own");
-      // Shared choices only: an action's or a guard's.
-      this.facts.set(choice, (facts = { arg: this.argOf(choice), named: this.nameOf(choice, NONE, L) }));
+      shared.facts = facts = { arg: this.argOf(choice), named: this.nameOf(choice, NONE, L) };
     }
     return facts;
   }
@@ -955,11 +1026,8 @@ export class IntegerSearch {
       const known = cachedIn(apart, arg, variables);
       if (known) return known;
     }
-    // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
-    if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
-    const local = vector[slot] * 1_048_576 + timers;
-    let byArg = L.cache.get(local);
-    if (!byArg) L.cache.set(local, (byArg = new Map()));
+    const byTimers = (L.cache[vector[slot]] ??= []);
+    const byArg = (byTimers[timers] ??= new Map());
     const cached = cachedIn(byArg, arg, variables) ?? cachedIn(apart, arg, variables);
     if (cached) return cached;
     const observe = observation();
@@ -992,12 +1060,12 @@ export class IntegerSearch {
    * for a message, the steps on it whose `when` holds there (stepsTaking).
    */
   private takers(plan: LocalPlan, id: number, state: number, variables: number): number[] {
-    let steps = plan.takers.get(id);
+    let steps = plan.takers[id];
     if (!steps) {
       const instance = this.instanceStates.values[state];
       const pending = { ...this.pendings.values[id], id: 0 } as Pending;
       const world = { ...NO_WORLD, instances: [instance], ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
-      plan.takers.set(id, (steps = stepsTaking(this.spec, world, pending).map((step) => this.stepIndex(step))));
+      plan.takers[id] = steps = stepsTaking(this.spec, world, pending).map((step) => this.stepIndex(step));
     }
     return steps;
   }
@@ -1151,8 +1219,9 @@ export class IntegerSearch {
    * its own variables, unless a `when` of its actor reads the world's (`variables`, interned).
    */
   private planOf(L: Layout, state: number, variables: number): LocalPlan {
-    const key = this.readsWorldAt(state) ? state + variables * 2 ** 26 : state;
-    let plan = L.plans.get(key);
+    const withVariables = this.readsWorldAt(state);
+    const key = state + variables * 2 ** 26;
+    let plan = withVariables ? L.plansWithVariables.get(key) : L.plans[state];
     if (plan) return plan;
     const instance = this.instanceStates.values[state];
     const world = { ...NO_WORLD, ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
@@ -1167,7 +1236,9 @@ export class IntegerSearch {
     const guards = Object.values(actor.transitions)
       .filter((t) => !t.message && t.when && whenHolds(this.spec, world, instance, t))
       .map((t): Choice => ({ kind: "guard", instance: instance.id, key: t.key }));
-    L.plans.set(key, (plan = { acts, guards, takers: new Map() }));
+    plan = { acts, guards, takers: [] };
+    if (withVariables) L.plansWithVariables.set(key, plan);
+    else L.plans[state] = plan;
     return plan;
   }
 
@@ -1333,33 +1404,37 @@ function printOf(v: Int32Array, L: Layout): [number, number] {
   return [(h1 + lane1(4, t, 0)) >>> 0, (h2 + lane2(4, t, 0)) >>> 0];
 }
 
-/** A child's fingerprint: the parent's, with the parts the step changes taken out and put back. */
-function childPrint(parent: Entry, step: Step): [number, number] {
+/**
+ * A child's fingerprint: the parent's, with the parts the step changes taken out and put back.
+ * Written to CHILD (hi, lo) rather than returned, as it runs for every step.
+ */
+function childPrint(parent: Entry, step: Step): Uint32Array {
   const { layout: L, slot, effect: e } = step;
   const v = parent.vector;
   let h1 = parent.h1;
   let h2 = parent.h2;
-  const swap = (i: number, to: number) => {
-    if (v[i] === to) return;
-    h1 += lane1(1, i, to) - lane1(1, i, v[i]);
-    h2 += lane2(1, i, to) - lane2(1, i, v[i]);
-  };
-  if (!e.apart) swap(slot, e.state);
-  if (e.fresh !== undefined) swap(L.fresh, e.fresh);
-  if (e.rng !== undefined) swap(L.rng, e.rng);
-  if (e.variables !== undefined) swap(L.variables, e.variables);
-  swap(L.memory, step.memory);
-  for (const id of e.removesMessages) (h1 -= lane1(3, id, 0)), (h2 -= lane2(3, id, 0));
-  for (const id of e.addsMessages) (h1 += lane1(3, id, 0)), (h2 += lane2(3, id, 0));
+  // Each header position the step may change, with its new value.
+  if (!e.apart && v[slot] !== e.state) (h1 += lane1(1, slot, e.state) - lane1(1, slot, v[slot])), (h2 += lane2(1, slot, e.state) - lane2(1, slot, v[slot]));
+  if (e.fresh !== undefined && v[L.fresh] !== e.fresh) (h1 += lane1(1, L.fresh, e.fresh) - lane1(1, L.fresh, v[L.fresh])), (h2 += lane2(1, L.fresh, e.fresh) - lane2(1, L.fresh, v[L.fresh]));
+  if (e.rng !== undefined && v[L.rng] !== e.rng) (h1 += lane1(1, L.rng, e.rng) - lane1(1, L.rng, v[L.rng])), (h2 += lane2(1, L.rng, e.rng) - lane2(1, L.rng, v[L.rng]));
+  if (e.variables !== undefined && v[L.variables] !== e.variables) (h1 += lane1(1, L.variables, e.variables) - lane1(1, L.variables, v[L.variables])), (h2 += lane2(1, L.variables, e.variables) - lane2(1, L.variables, v[L.variables]));
+  if (v[L.memory] !== step.memory) (h1 += lane1(1, L.memory, step.memory) - lane1(1, L.memory, v[L.memory])), (h2 += lane2(1, L.memory, step.memory) - lane2(1, L.memory, v[L.memory]));
+  const rm = e.removesMessages;
+  for (let k = 0; k < rm.length; k++) (h1 -= lane1(3, rm[k], 0)), (h2 -= lane2(3, rm[k], 0));
+  const am = e.addsMessages;
+  for (let k = 0; k < am.length; k++) (h1 += lane1(3, am[k], 0)), (h2 += lane2(3, am[k], 0));
   if (e.removesTimers.length || e.addsTimers.length) {
     const end = L.messages + 1 + v[L.messages];
     const after: number[] = [];
     for (let i = end; i < v.length; i++) if (!e.removesTimers.includes(v[i])) after.push(v[i]);
-    after.push(...e.addsTimers);
+    for (let k = 0; k < e.addsTimers.length; k++) after.push(e.addsTimers[k]);
     const t = timersHash(after, 0);
     const before = timersHash(v, end);
     h1 += lane1(4, t, 0) - lane1(4, before, 0);
     h2 += lane2(4, t, 0) - lane2(4, before, 0);
   }
-  return [h1 >>> 0, h2 >>> 0];
+  CHILD[0] = h1 >>> 0;
+  CHILD[1] = h2 >>> 0;
+  return CHILD;
 }
+const CHILD = new Uint32Array(2);
