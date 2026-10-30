@@ -16,8 +16,13 @@ export function seconds(ms: number): string {
   return ms < 1000 ? `${ms}ms` : ms < 60_000 ? `${(ms / 1000).toFixed(ms % 1000 ? 2 : 0)}s` : `${(ms / 60_000).toFixed(1)}min`;
 }
 
+/** JSON, but a Set reads as the list of its members and a Map as an object of its entries. */
+function json(v: unknown): string | undefined {
+  return JSON.stringify(v, (_key, x) => (x instanceof Set ? [...x] : x instanceof Map ? Object.fromEntries(x) : x));
+}
+
 function value(v: unknown): string {
-  const text = JSON.stringify(v);
+  const text = json(v);
   return text === undefined ? "—" : text.length > 80 ? `${text.slice(0, 77)}…` : text;
 }
 
@@ -250,7 +255,7 @@ export function formatDiff(spec: Spec, scenario: string, diff: RunDiff | "added"
     lines.push(`  ${mark}${step.status === "same" ? dim(text) : text}`);
     if (step.status === "changed" && step.base && step.head) {
       const before = new Map(step.base.changes.map((c) => [c.path, c.after]));
-      for (const c of step.head.changes) if (JSON.stringify(before.get(c.path)) !== JSON.stringify(c.after)) lines.push(`      ${c.path}: was ${value(before.get(c.path))}, now ${value(c.after)}`);
+      for (const c of step.head.changes) if (json(before.get(c.path)) !== json(c.after)) lines.push(`      ${c.path}: was ${value(before.get(c.path))}, now ${value(c.after)}`);
       const sentBefore = step.base.sent.map((s) => s.message).join(", ") || "nothing";
       const sentNow = step.head.sent.map((s) => s.message).join(", ") || "nothing";
       if (sentBefore !== sentNow) lines.push(`      sent: was ${sentBefore}, now ${sentNow}`);
