@@ -108,6 +108,8 @@ export class Search {
   stuckAt: number | undefined;
   states = 0;
   depthReached = 0;
+  /** Every path of up to this many events, from each root, was explored; the rest only if not stopped. */
+  completeDepth = 0;
   stoppedBy: Report["stoppedBy"];
   refuted = false;
   stats: Stats = { reached: [], orders: 0, inputs: 0 };
@@ -153,6 +155,8 @@ export class Search {
       const imports = await this.prepare(round);
       if (this.stoppedBy || !round.next.length) break;
       round = this.merge(await this.expand(round, imports));
+      // A whole round expanded: every world one event further is found and judged.
+      if (!this.stoppedBy) this.completeDepth++;
       if (!this.stoppedBy && (round.revisits.length || round.twins.length)) await this.query(round);
       if (this.refuted) return;
     }

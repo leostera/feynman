@@ -196,6 +196,8 @@ export class IntegerSearch {
   /** A symmetry claim turned out false: the search stopped, to be run again without it. */
   refuted = false;
   depthReached = 0;
+  /** Every path of up to this many events, from each root, was explored; the rest only if not stopped. */
+  completeDepth = 0;
   readonly ownerCount = 1;
   readonly root: number[] = [];
   private parent: number[] = [];
@@ -310,6 +312,8 @@ export class IntegerSearch {
     for (let depth = 0; frontier.length && depth < this.b.depth; depth++) {
       const next: Entry[] = [];
       for (let f = 0; f < frontier.length; f++) {
+        // Every world within `depth` events has been found and judged: those past it, not all.
+        this.completeDepth = depth;
         if ((f & 255) === 0 && Date.now() > deadline) {
           this.stoppedBy = "timeLimit";
           return;

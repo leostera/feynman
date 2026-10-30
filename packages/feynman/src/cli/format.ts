@@ -118,7 +118,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
       continue;
     }
     if (v === "unfinished") {
-      lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  ${unfinishedWhy(report)}`));
+      lines.push(yellow(`  ~ ${p.id}`) + dim(`  ${p.description}  ${unfinishedWhy(report, p)}`));
       continue;
     }
     if (v === "holds") {
@@ -156,7 +156,9 @@ function seedsText(seeds: Report["seeds"]): string[] {
 }
 
 /** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
-function unfinishedWhy(report: Report): string {
+function unfinishedWhy(report: Report, p: Report["properties"][number]): string {
+  const limit = report.stoppedBy === "maxStates" ? "state" : "time";
+  if (report.stoppedBy && p.holds && p.upTo !== undefined) return `held on every path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
   if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${report.stoppedBy === "maxStates" ? "state" : "time"} limit, not all of them`;
   return `held to depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may break further on`;
 }

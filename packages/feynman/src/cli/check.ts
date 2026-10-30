@@ -195,6 +195,7 @@ function toJson(result: SpecCheck) {
       description: p.description,
       verdict: verdictOf(p, result),
       ...(p.known !== undefined ? { known: p.known } : {}),
+      ...(p.holds && p.upTo !== undefined ? { heldUpTo: p.upTo } : {}),
       ...(result.brokenBy.has(p.id) ? { brokenByScenario: result.brokenBy.get(p.id) } : {}),
       ...(p.holds ? {} : { counterexample: counterexampleJson(p) }),
     })),
