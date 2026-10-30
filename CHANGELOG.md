@@ -14,6 +14,11 @@ The site and the explorer are deployed, not released, so entries are dated.
 
 ### Site
 
+- "Say how your system fails": faults are steps a spec declares (Feynman 0.15, RFD0012),
+  shown on the retried call, with and without a fault budget.
+- The payments snippet declares its faults and bounds its action with `atMost`; the hero and
+  "One model" copy name failures alongside orderings.
+- `llms.txt` and `SKILL.md` describe the faults library.
 - "The bugs designs hide": eight kinds of design bug (a retry that does it twice, a restart
   that forgets, a late message that wins, check-then-act, reads that go back in time,
   replicas that never agree, two of the one thing, waiting forever), each linking to the
@@ -26,6 +31,10 @@ The site and the explorer are deployed, not released, so entries are dated.
 - The payments snippet used `defineInvariants`, gone since properties were renamed; it is
   `defineProperties`, and its output says the counterexample needs no faults.
 - `llms.txt` describes the bugs Feynman finds, calls, and rules.
+
+### Explorer
+
+- Built with Feynman 0.15.0.
 
 ## 2026-10-28
 

@@ -3,6 +3,8 @@ import { ArrowRightIcon, CheckIcon, CircleHalfIcon, CopyIcon, RobotIcon } from "
 import { useState, type ReactNode } from "react";
 import payments from "../snippets/payments.ts?highlight";
 import paymentsCheck from "../snippets/payments-check.txt?highlight";
+import faultsSnippet from "../snippets/faults.ts?highlight";
+import faultsCheck from "../snippets/faults-check.txt?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
 import rules from "../snippets/rules.ts?highlight";
 import rulesCheck from "../snippets/rules-check.txt?highlight";
@@ -170,7 +172,7 @@ export function App() {
             Find design bugs before your code does.
           </h1>
           <p className="mt-5 max-w-2xl text-lg text-kumo-subtle">
-            Model how your system behaves once. Explore it in a playground, and check it for the orderings that break it.
+            Model how your system behaves once. Explore it in a playground, and check it for the orderings and failures that break it.
           </p>
           <div className="mt-8">
             <LinkButton href="#agents" variant="primary" size="lg" icon={RobotIcon} className="px-5">
@@ -213,12 +215,26 @@ export function App() {
           </div>
         </Section>
 
-        <Section id="model" title="One model. Explore it and check it." lead="A spec is a TypeScript file: actors, messages, and the properties that must hold. The same file runs the playground and the checker.">
+        <Section id="model" title="One model. Explore it and check it." lead="A spec is a TypeScript file: actors, messages, the faults they meet, and the properties that must hold. The same file runs the playground and the checker.">
           <div className="grid items-start gap-4 lg:grid-cols-[1.25fr_1fr]">
             <CodeBlock snippet={payments} label="specs/payments.ts" />
             <div className="space-y-3 lg:sticky lg:top-6">
               <CodeBlock snippet={paymentsCheck} label="bunx feynman check" />
               <p className="text-kumo-subtle">The checker finds the shortest order of events in which a retry charges twice.</p>
+            </div>
+          </div>
+        </Section>
+
+        <Section
+          id="faults"
+          title="Say how your system fails"
+          lead="Faults are steps the spec declares, where they happen: a message lost on the way, delivered twice, a process that crashes and keeps only what is on disk, a call that throws. A budget bounds how many happen on one path. Declare the failures your system really meets, and nothing else; a fault the library lacks is a step you write."
+        >
+          <div className="grid items-start gap-4 lg:grid-cols-[1.15fr_1fr]">
+            <CodeBlock snippet={faultsSnippet} label="specs/retried-call.ts" />
+            <div className="space-y-3 lg:sticky lg:top-6">
+              <CodeBlock snippet={faultsCheck} label="bunx feynman check" />
+              <p className="text-kumo-subtle">Every counterexample says how many faults it needs. With none, the retry holds; one lost answer, and it charges twice.</p>
             </div>
           </div>
         </Section>
