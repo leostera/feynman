@@ -75,7 +75,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
               <Section title="Stuck">
                 <div className="rounded-lg px-4 py-3 ring-1 ring-kumo-danger/40">
                   <div className="flex items-start gap-2">
-                    <p className="flex-1 text-sm text-kumo-danger">Nothing can happen here, and the spec does not call this world final (defineFinalState).</p>
+                    <p className="flex-1 text-sm text-kumo-danger">Nothing can happen here, and the spec does not call this world final (finalState in defineSpec).</p>
                     <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(report.stuck!.counterexample, "Stuck")}>
                       Open in playground
                     </Button>

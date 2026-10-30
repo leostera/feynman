@@ -139,7 +139,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
     if (!options.brief) lines.push(indent(formatEvents(spec, e.counterexample.events, e.counterexample.worlds), 4));
   }
   if (report.stuck) {
-    lines.push(red(`  ✗ stuck: nothing can happen, and the spec does not call this world final (defineFinalState)`));
+    lines.push(red(`  ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)`));
     if (!options.brief) lines.push(indent(formatEvents(spec, report.stuck.counterexample.events, report.stuck.counterexample.worlds), 4));
     const lost = lostHint(spec, report.stuck.counterexample);
     if (lost) lines.push(yellow(`    ${lost}`));
