@@ -3,8 +3,8 @@
 //
 // From a world with the configured instances, each state branches on: every action on
 // every instance (with inputs from its schema), every guarded transition that holds,
-// every pending delivery (networks reorder), every timer set, and, within the fault
-// budget, losing a delivery or restarting an instance. States are deduplicated by a
+// every pending delivery taken by each step on it (networks reorder; a fault is one more
+// step, RFD0012), and every timer set. States are deduplicated by a
 // fingerprint of a canonical key (keys.ts), so breadth-first order finds the shortest
 // counterexample. The search is split among threads (search.ts, owner.ts; RFD0007), with
 // the same result however many there are.
@@ -37,16 +37,12 @@ export interface Bounds {
   instances: Record<string, number>;
   /** Longest path explored, in events. */
   depth: number;
-  /** Faults (lost deliveries, restarts) allowed on one path. */
-  faults: number;
   /** Stop after this many distinct states. */
   maxStates: number;
   /** Stop after this long, in milliseconds. */
   timeLimit: number;
   /** Stop when the process holds more than this many megabytes (50% of the machine's by default). */
   memoryLimit: number;
-  /** Times one instance may take the same action on one path. */
-  repeats: number;
   /** Random runs to try before the search; they take at most a quarter of the time limit. */
   walks: number;
   /** Longest random run, in events. */
@@ -75,11 +71,9 @@ export type StopReason = "maxStates" | "timeLimit" | "memoryLimit";
 export const DEFAULT_BOUNDS: Bounds = {
   instances: {},
   depth: 14,
-  faults: 1,
   maxStates: 300_000,
   timeLimit: 20_000,
   memoryLimit: defaultMemoryLimit(),
-  repeats: 2,
   walks: 2_000,
   walkDepth: 120,
   symmetry: true,
@@ -191,7 +185,7 @@ export interface Seed extends ScenarioPlace {
 
 /** Callbacks for tools that compare the checker with another: every distinct state, as the search first meets it. */
 export interface Watch {
-  state?(world: World, budget: { acts: Record<string, number>; faults: number; memory: string }): void;
+  state?(world: World, memory: string): void;
 }
 
 

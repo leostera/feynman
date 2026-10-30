@@ -12,7 +12,12 @@
 // Expected: buggy holds without faults, and breaks `chargedOnce` in 5 steps with one (the job
 // is charged, the timer fires, the consumer restarts, the copy arrives); fixed holds, with a
 // fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const JOBS = ["job-1"];
 
@@ -35,6 +40,7 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
     },
     actions: {
       publish: {
+        with: [atMost(repeats)],
         label: "Publish",
         description: "Hands the next job to the consumer, and keeps it until the consumer says it is done.",
         when: (state) => state.published < JOBS.length,
@@ -71,6 +77,7 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
           ctx.start("redeliver");
         },
       },
+      doneLost: lose(Done, { spend: faults }),
     },
   });
 
@@ -79,7 +86,6 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
     zone: billing,
     // What it charged is the bank's record, which a restart does not touch; what it
     // processed is its own memory, durable only when fixed.
-    durable: variant === "buggy" ? ["charged"] : ["charged", "processed"],
     initialState: () => ({ processed: new Set<string>(), charged: {} as Record<string, number> }),
     display: {
       icon: "card",
@@ -101,6 +107,8 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
           ctx.reply(Done, { job: msg.job });
         },
       },
+      jobLost: lose(Job, { spend: faults }),
+      crash: crash({ keeps: variant === "buggy" ? ["charged"] : ["charged", "processed"], spend: faults }),
     },
   });
 
@@ -129,7 +137,7 @@ export function idempotentConsumer(variant: "buggy" | "fixed") {
       s.act(broker, "publish");
       s.deliver(consumer, Job);
       s.fire(broker, "redeliver");
-      s.restart(consumer);
+      s.step(consumer, "crash");
       s.deliver(consumer, Job);
       s.settle();
     },

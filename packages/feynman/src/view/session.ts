@@ -1,7 +1,7 @@
 // A playground session: the world at the start, the steps taken since, and the operations
 // that produced them, so a session survives reloads by replaying its operations against
 // the (possibly edited) spec.
-import { act, scenarioStart, fire, guard, lose, pendingInOrder, restart, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
+import { act, scenarioStart, fire, guard, pendingInOrder, spawn, startWorld, emptyWorld, choices, type Event, type Run, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 
 /** What a person did in the playground. */
@@ -10,9 +10,7 @@ export type Op =
   | { op: "act"; instance: string; key: string; inputs: Record<string, unknown> }
   /** A pending entry taken: by `step`, one of the steps on a message; without, the one left alone. */
   | { op: "fire"; pending: number; step?: string }
-  | { op: "lose"; pending: number }
-  | { op: "guard"; instance: string; key: string }
-  | { op: "restart"; instance: string };
+  | { op: "guard"; instance: string; key: string };
 
 /** Parse JSON from a shared URL into operations the session runner understands. */
 export function parseOps(value: unknown): Op[] | null {
@@ -29,20 +27,15 @@ export function parseOps(value: unknown): Op[] | null {
         if (typeof candidate.instance !== "string" || typeof candidate.key !== "string" || !isRecord(candidate.inputs) || !isJsonValue(candidate.inputs)) return null;
         parsed.push({ op: "act", instance: candidate.instance, key: candidate.key, inputs: candidate.inputs });
         break;
-      case "fire":
-      case "lose": {
+      case "fire": {
         if (typeof candidate.pending !== "number" || !Number.isSafeInteger(candidate.pending) || candidate.pending < 0) return null;
         if (candidate.step !== undefined && typeof candidate.step !== "string") return null;
-        parsed.push(candidate.op === "fire" ? { op: "fire", pending: candidate.pending, ...(typeof candidate.step === "string" ? { step: candidate.step } : {}) } : { op: "lose", pending: candidate.pending });
+        parsed.push({ op: "fire", pending: candidate.pending, ...(typeof candidate.step === "string" ? { step: candidate.step } : {}) });
         break;
       }
       case "guard":
-      case "restart":
-        if (typeof candidate.instance !== "string") return null;
-        if (candidate.op === "guard") {
-          if (typeof candidate.key !== "string") return null;
-          parsed.push({ op: "guard", instance: candidate.instance, key: candidate.key });
-        } else parsed.push({ op: "restart", instance: candidate.instance });
+        if (typeof candidate.instance !== "string" || typeof candidate.key !== "string") return null;
+        parsed.push({ op: "guard", instance: candidate.instance, key: candidate.key });
         break;
       default:
         return null;
@@ -103,13 +96,9 @@ function operationsFromRun(run: Pick<Run, "initial" | "events" | "worlds">): Op[
       case "guard":
         operation = { op: "guard", instance: event.instance, key: event.key };
         break;
-      case "restart":
-        operation = { op: "restart", instance: event.instance };
-        break;
-      case "deliver":
-      case "lose": {
+      case "deliver": {
         const pending = before.pending.find((item) => item.kind === "deliver" && item.to === event.instance && item.message === event.message && item.from === event.from && sortedJson(item.payload) === sortedJson(event.payload));
-        if (pending) operation = event.kind === "lose" ? { op: "lose", pending: pending.id } : { op: "fire", pending: pending.id, step: event.key };
+        if (pending) operation = { op: "fire", pending: pending.id, step: event.key };
         break;
       }
       case "timer": {
@@ -146,16 +135,10 @@ export function scenarioDump(spec: Spec, session: Session): unknown {
         operations.push({ operation: "guard", actor: instance?.actor, instance: instance?.label ?? op.instance, transition: op.key });
         break;
       }
-      case "restart": {
-        const instance = actorFor(op.instance);
-        operations.push({ operation: "restart", actor: instance?.actor, instance: instance?.label ?? op.instance });
-        break;
-      }
-      case "fire":
-      case "lose": {
+      case "fire": {
         const pending = before.pending.find((item) => item.id === op.pending);
         if (pending?.kind === "deliver") {
-          operations.push({ operation: op.op, from: actorFor(pending.from)?.label ?? pending.from, to: actorFor(pending.to)?.label ?? pending.to, message: pending.message, ...(op.op === "fire" && op.step ? { step: op.step } : {}), payload: pending.payload });
+          operations.push({ operation: op.op, from: actorFor(pending.from)?.label ?? pending.from, to: actorFor(pending.to)?.label ?? pending.to, message: pending.message, ...(op.step ? { step: op.step } : {}), payload: pending.payload });
         } else if (pending?.kind === "timer") {
           operations.push({ operation: op.op, instance: actorFor(pending.to)?.label ?? pending.to, timer: pending.timer });
         } else operations.push({ operation: op.op, pending: op.pending });
@@ -195,12 +178,8 @@ function run(spec: Spec, world: World, op: Op): Step {
       return act(spec, world, op.instance, op.key, op.inputs);
     case "fire":
       return fire(spec, world, op.pending, op.step);
-    case "lose":
-      return lose(spec, world, op.pending);
     case "guard":
       return guard(spec, world, op.instance, op.key);
-    case "restart":
-      return restart(spec, world, op.instance);
   }
 }
 

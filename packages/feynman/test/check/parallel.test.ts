@@ -15,20 +15,22 @@ afterAll(() => pool.close());
 /** A report without what depends on the threads or the clock. */
 const comparable = (r: Report) => ({ ...r, durationMs: 0, threads: 0, bounds: { ...r.bounds, workers: 0 } });
 
-const cases: { name: string; spec: Spec; module: string; export?: string; bounds: Partial<Bounds> }[] = [
-  { name: "lost update, buggy, 1 fault: a broken property and a stuck world", spec: lostUpdate("buggy"), module: "lost-update", bounds: { faults: 1, depth: 60, instances: { Teller: 2 }, reduce: false, symmetry: false } },
-  { name: "or-set, fixed, with every reduction on", spec: orSet("fixed"), module: "or-set", export: "fixed", bounds: { faults: 0, depth: 9, instances: { Replica: 2 } } },
-  { name: "two-phase commit, fixed, 1 fault: liveness broken, with a loop", spec: twoPhaseCommit("fixed"), module: "two-phase-commit", export: "fixed", bounds: { faults: 1, depth: 16, instances: { Participant: 3 } } },
-  { name: "leader election, buggy: liveness broken", spec: leaderElection("buggy"), module: "leader-election", bounds: { faults: 0, depth: 16, instances: { Node: 4 } } },
-  { name: "or-set, fixed, 1 fault, plain", spec: orSet("fixed"), module: "or-set", export: "fixed", bounds: { faults: 1, depth: 8, instances: { Replica: 2 }, reduce: false, symmetry: false } },
+const cases: { name: string; spec: Spec; module: string; export?: string; faults: number; bounds: Partial<Bounds> }[] = [
+  { name: "lost update, buggy, 1 fault: a broken property and a stuck world", spec: lostUpdate("buggy"), module: "lost-update", faults: 1, bounds: { depth: 60, instances: { Teller: 2 }, reduce: false, symmetry: false } },
+  { name: "or-set, fixed, with every reduction on", spec: orSet("fixed"), module: "or-set", export: "fixed", faults: 0, bounds: { depth: 9, instances: { Replica: 2 } } },
+  { name: "two-phase commit, fixed, 1 fault: liveness broken, with a loop", spec: twoPhaseCommit("fixed"), module: "two-phase-commit", export: "fixed", faults: 1, bounds: { depth: 16, instances: { Participant: 3 } } },
+  { name: "leader election, buggy: liveness broken", spec: leaderElection("buggy"), module: "leader-election", faults: 0, bounds: { depth: 16, instances: { Node: 4 } } },
+  { name: "or-set, fixed, 1 fault, plain", spec: orSet("fixed"), module: "or-set", export: "fixed", faults: 1, bounds: { depth: 8, instances: { Replica: 2 }, reduce: false, symmetry: false } },
 ];
 
 for (const c of cases) {
   test(`${c.name}: the same report on one thread and on four`, async () => {
     const bounds = { walks: 0, timeLimit: 120_000, ...c.bounds };
-    const alone = await check(c.spec, { ...bounds, workers: 0 }, [], { engine: "classic" });
-    const source = { module: `${import.meta.dir}/../../examples/${c.module}.ts`, ...(c.export ? { export: c.export } : {}) };
-    const shared = await check(c.spec, { ...bounds, workers: 3 }, [], { source, pool, engine: "classic" });
+    // The workers load the spec from its module, with the same budget set.
+    const spec = c.spec.setting({ faults: c.faults });
+    const alone = await check(spec, { ...bounds, workers: 0 }, [], { engine: "classic" });
+    const source = { module: `${import.meta.dir}/../../examples/${c.module}.ts`, ...(c.export ? { export: c.export } : {}), set: { faults: c.faults } };
+    const shared = await check(spec, { ...bounds, workers: 3 }, [], { source, pool, engine: "classic" });
     expect(alone.threads).toBe(1);
     expect(shared.threads).toBe(4);
     expect(comparable(shared)).toEqual(comparable(alone));
@@ -36,6 +38,6 @@ for (const c of cases) {
 }
 
 test("a spec too small to share stays on the main thread", async () => {
-  const report = await check(orSet("buggy"), { walks: 0, faults: 0, depth: 4, workers: 3, instances: { Replica: 2 } }, [], { source: { module: `${import.meta.dir}/../../examples/or-set.ts` }, pool });
+  const report = await check(orSet("buggy").setting({ faults: 0 }), { walks: 0, depth: 4, workers: 3, instances: { Replica: 2 } }, [], { source: { module: `${import.meta.dir}/../../examples/or-set.ts`, set: { faults: 0 } }, pool });
   expect(report.threads).toBe(1);
 });

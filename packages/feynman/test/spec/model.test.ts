@@ -7,11 +7,11 @@ import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec,
 import { explore } from "../check/reference.ts";
 
 const zone = defineZone({ name: "z" });
-const PLAIN = { depth: 10, faults: 0, repeats: 2, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
+const PLAIN = { depth: 10, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
 
 /** Both engines and the reference explorer: the same number of worlds, and the same verdicts. */
 async function agree(spec: Spec, depth: number = PLAIN.depth) {
-  const theirs = explore(spec, { depth, faults: 0, repeats: 2, instances: {} });
+  const theirs = explore(spec, { depth, instances: {} });
   const reports = await Promise.all((["integer", "classic"] as Engine[]).map((engine) => check(spec, { ...PLAIN, depth }, [], { engine })));
   for (const r of reports) {
     expect(r.exhaustive).toBe(true);
@@ -86,8 +86,8 @@ test("a variable for each instance bounds what each one does", async () => {
     return defineSpec({ name: "Counted", actors: [Pinger], properties: [defineProperty("atMostTwo", { description: "Each pings twice at most.", always: (w) => w.all(Pinger).every((p) => w.get(pings, p) <= 2) })] });
   };
   const spec = counted(false);
-  const theirs = explore(spec, { depth: 10, faults: 0, repeats: 10, instances: { Pinger: 2 } });
-  const ours = await check(spec, { ...PLAIN, repeats: 10, instances: { Pinger: 2 } }, [], { engine: "integer" });
+  const theirs = explore(spec, { depth: 10, instances: { Pinger: 2 } });
+  const ours = await check(spec, { ...PLAIN, instances: { Pinger: 2 } }, [], { engine: "integer" });
   // Two pingers, each at 0, 1 or 2.
   expect(ours.states).toBe(9);
   expect(theirs.worlds.size).toBe(9);

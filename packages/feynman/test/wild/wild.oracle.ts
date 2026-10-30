@@ -9,7 +9,7 @@ describe.skipIf(!TLA_JAR)("TLC on specs from the wild", () => {
     test(w.name, async () => {
       const { module, dir, constants, specification, properties } = w.tla;
       expect(tlc(module, constants, [], { dir, temporal: { specification, properties: [] } }).distinct).toBe(w.states);
-      expect((await feynman(w.spec(), { faults: 0 })).distinct).toBe(w.states);
+      expect((await feynman(w.spec(), {})).distinct).toBe(w.states);
       const theirs = Object.fromEntries(Object.entries(properties).map(([id, name]) => [id, tlc(module, constants, [], { dir, temporal: { specification, properties: [name] } }).temporal ? "broken" : "holds"]));
       expect(theirs).toEqual(w.expect);
     }, 300_000);

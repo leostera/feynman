@@ -144,8 +144,6 @@ export interface Message<Id extends string = string, P = unknown> {
   /** The protocol it travels over: "https", "websocket", "unix socket". */
   readonly over?: string;
   readonly tone: Tone;
-  /** A call (RFD0009): its loss, or its reply's, reaches the caller as its failure. */
-  readonly call: boolean;
   /** A reply to it carries the request it answers (`ctx.delivery.answers`); see `MessageOptions`. */
   readonly correlate: boolean;
   readonly schema: Fields;
@@ -154,23 +152,7 @@ export interface Message<Id extends string = string, P = unknown> {
   readonly __payload?: P;
 }
 
-/** A call: a message whose failure reaches its caller. */
-export interface Call<Id extends string = string, P = unknown> extends Message<Id, P> {
-  readonly call: true;
-}
-
-/** A call's failure, as a value: what the caller's step is `on`, and what scenarios deliver. */
-export interface Failed<Id extends string = string, P = unknown> {
-  readonly kind: "failure";
-  /** The engine's key: `failed:message:Charge`. */
-  readonly key: `failed:message:${Id}`;
-  readonly call: Call<Id, P>;
-  /** Phantom: the call's payload type. */
-  readonly __failure?: P;
-}
-
 export type AnyMessage = Message<string, any>;
-type AnyFailed = Failed<string, any>;
 
 /** A message's payload type. */
 export type PayloadOf<M> = M extends Message<string, infer P> ? P : never;
@@ -189,7 +171,7 @@ interface MessageOptions {
   correlate?: boolean;
 }
 
-function makeMessage(id: string, schema: unknown, options: MessageOptions | undefined, call: boolean, what: string): Message<string, unknown> {
+function makeMessage(id: string, schema: unknown, options: MessageOptions | undefined, what: string): Message<string, unknown> {
   if (typeof id !== "string" || !/^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/.test(id)) throw new Error(`${what}'s first argument is its id, a word like "Charge" (or words joined by dots, like "Charge.failed"): not ${JSON.stringify(id)}`);
   const fields = schema ?? {};
   if (typeof fields !== "object" || fields === null || Array.isArray(fields) || !isSchema(fields))
@@ -201,7 +183,6 @@ function makeMessage(id: string, schema: unknown, options: MessageOptions | unde
     name: options?.name ?? words(id),
     over: options?.over,
     tone: options?.tone ?? "request",
-    call,
     correlate: options?.correlate === true,
     schema: fields as Fields,
     seq: ++defined,
@@ -215,25 +196,9 @@ function words(id: string): string {
 
 /** A message, with its payload's schema: `defineMessage("Charged", { payment: String }, { tone: "reply" })`. */
 export function defineMessage<const Id extends string, F extends Fields = {}>(id: Id, schema?: F, options?: MessageOptions): Message<Id, TypeOf<F>> {
-  return makeMessage(id, schema, options, false, "defineMessage") as Message<Id, TypeOf<F>>;
+  return makeMessage(id, schema, options, "defineMessage") as Message<Id, TypeOf<F>>;
 }
 
-/**
- * A call (RFD0009): a message whose failure reaches its caller, as an RPC or a `fetch` throws.
- * Losing it, or the reply its handler sends with `ctx.reply`, delivers the call's failure to the
- * caller, which handles it with a step `on: failed(Call)`. The caller can't tell which of the two
- * was lost. Every actor that sends a call handles its failure.
- */
-export function defineCall<const Id extends string, F extends Fields = {}>(id: Id, schema?: F, options?: MessageOptions): Call<Id, TypeOf<F>> {
-  return makeMessage(id, schema, options, true, "defineCall") as Call<Id, TypeOf<F>>;
-}
-
-/** A call's failure: `on: failed(Charge)` in the caller, `s.deliver(client, failed(Charge))` in a scenario. */
-export function failed<Id extends string, P>(call: Call<Id, P>): Failed<Id, P> {
-  if (!call || call.kind !== "message") throw new Error("failed takes a call from defineCall, like failed(Charge)");
-  if (!call.call) throw new Error(`failed(${call.id}): ${call.name} is a message, not a call; define it with defineCall for its failure to reach the caller`);
-  return { kind: "failure", key: `failed:${call.key}`, call } as Failed<Id, P>;
-}
 
 // Actors, instances, and the world ------------------------------------------------------------
 
@@ -344,25 +309,19 @@ export interface ReplyCtx<Sends extends AnyMessage = AnyMessage> extends Ctx<Sen
   forward<M extends Sends>(as?: { message: M; payload: PayloadOf<M> }): void;
 }
 
-/** What a call's failure carries: the payload of the call that failed, and whom it was to. */
-export interface Failure<P> {
-  readonly payload: P;
-  readonly to: Instance<any, any>;
-}
-
 // Steps -------------------------------------------------------------------------------------------
 
-/** What a step receives: a message's payload, a failure, or nothing for a timer or a guard. */
-type Received<On> = On extends Message<string, infer P> ? P : On extends Failed<string, infer P> ? Failure<P> : undefined;
+/** What a step receives: a message's payload, or nothing for a timer or a guard. */
+type Received<On> = On extends Message<string, infer P> ? P : undefined;
 type CtxOn<On, Sends extends AnyMessage> = On extends AnyMessage ? ReplyCtx<Sends> : Ctx<Sends>;
 
 /**
  * A step of an actor, named by its key in `transitions`. It is one of three kinds: `on` a
- * message or a call's failure; a timer of the same name, started with `ctx.start` (say when the
+ * message; a timer of the same name, started with `ctx.start` (say when the
  * code fires it with `after`); or a guarded step, possible whenever `when` holds.
  */
 export interface StepDef<S, On, Sends extends AnyMessage> {
-  /** The message, or the call's failure (`failed(Call)`), this step reacts to. */
+  /** The message this step reacts to. */
   on?: On;
   /**
    * For a guarded step: it can run whenever this holds. For a step on a message: it can take
@@ -373,6 +332,8 @@ export interface StepDef<S, On, Sends extends AnyMessage> {
   uses?: readonly Variable<any>[];
   /** Strings the core keeps and never reads, for libraries and reports: a fault is tagged `fault`. */
   tags?: readonly string[];
+  /** Parts that bound it, from a library: `with: [atMost(repeats)]`. See `Part`. */
+  with?: readonly Part[];
   /**
    * For a timer, when the code fires it, in words: "10 minutes", "after three missed
    * heartbeats". Shown to readers; it has no effect on when it can fire.
@@ -442,11 +403,47 @@ export interface ActionDef<S, I> {
   uses?: readonly Variable<any>[];
   /** Strings the core keeps and never reads, for libraries and reports. */
   tags?: readonly string[];
+  /** Parts that bound it, from a library: `with: [atMost(repeats)]`. See `Part`. */
+  with?: readonly Part[];
   run(state: S, inputs: InputsOf<I>, ctx: Ctx): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>, inputs: InputsOf<I>) => string;
   /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
   routine?: boolean;
+}
+
+// Parts of steps --------------------------------------------------------------------------------
+
+/**
+ * What a library adds to a step without knowing its state (RFD0012): the variables it uses, a
+ * condition on them, and what it does to them first. A step `with: [atMost(repeats)]` is
+ * possible only while every part's `when` and its own hold, and runs every part's `run`, in
+ * order, before its own.
+ */
+export interface Part {
+  uses?: readonly Variable<any>[];
+  tags?: readonly string[];
+  when?: (model: ModelView) => boolean;
+  run?: (ctx: Ctx) => void;
+}
+
+/** A step with its parts folded in: their variables, tags, conditions and runs. */
+function withParts<D extends { with?: readonly Part[]; uses?: readonly Variable<any>[]; tags?: readonly string[]; when?: (state: any, model: ModelView) => boolean; run(state: any, received: any, ctx: any): void }>(def: D, where: string): D {
+  const parts = def.with;
+  if (parts === undefined) return def;
+  if (!Array.isArray(parts) || parts.some((p) => typeof p !== "object" || p === null)) throw new Error(`${where}: with lists parts from a library, like with: [atMost(repeats)]`);
+  const { with: _, run, ...rest } = def;
+  const conditions = parts.flatMap((p) => (p.when ? [p.when] : []));
+  return {
+    ...rest,
+    uses: [...(def.uses ?? []), ...parts.flatMap((p) => p.uses ?? [])],
+    tags: [...(def.tags ?? []), ...parts.flatMap((p) => p.tags ?? [])],
+    ...(conditions.length ? { bound: (model: ModelView) => conditions.every((c) => c(model)) } : {}),
+    run(state: unknown, received: unknown, ctx: Ctx) {
+      for (const p of parts) p.run?.(ctx);
+      run(state, received, ctx);
+    },
+  } as unknown as D;
 }
 
 // Model variables -------------------------------------------------------------------------------
@@ -568,8 +565,6 @@ interface ActorDef<S, A, O, Sn> {
   /** Where its instances sit within the zone, on the playground's map. */
   place?: ActorPlace;
   initialState: (ctx: { id: string; label: string }) => S;
-  /** State that survives a restart; everything else returns to its initial value. */
-  durable?: (keyof S & string)[];
   /**
    * Instances are interchangeable: the spec only compares their ids and labels for equality,
    * never orders them or computes with them. The checker then treats "Alice, then Bob" and
@@ -594,7 +589,9 @@ export function defineActor<S, A = {}, O = {}, Sn = {}>(def: ActorDef<S, A, O, S
   if (!def?.name) throw new Error("defineActor takes a name, like defineActor({ name: \"Bank\", … })");
   if (!def.zone?.name) throw new Error(`${def.name}: say where it runs, with zone: a zone from defineZone`);
   if (typeof def.initialState !== "function") throw new Error(`${def.name}: initialState is a function returning its state, like initialState: () => ({ count: 0 })`);
-  return Object.freeze({ name: def.name, [ACTOR]: def as unknown as RawDef }) as Actor<S, A>;
+  const steps = (defs: Record<string, any> | undefined) => (defs ? Object.fromEntries(Object.entries(defs).map(([key, step]) => [key, withParts(step, `${def.name}.${key}`)])) : defs);
+  const raw = { ...def, actions: steps(def.actions as Record<string, any>), transitions: steps(def.transitions as Record<string, any>) };
+  return Object.freeze({ name: def.name, [ACTOR]: raw as unknown as RawDef }) as Actor<S, A>;
 }
 
 function definitionOf(actor: Actor<any, any>): RawDef {
@@ -735,24 +732,17 @@ export interface Script {
    * Leave the system alone until nothing is pending: every message in flight arrives, in the
    * order it was sent, and when none is, the timer set first fires. With `until`, stop as soon
    * as it holds (before anything happens, if it holds already), to step in at that moment:
-   * `s.settle({ until: (w) => w.the(Store).state.saved })`, then `s.restart(worker)`. It is an
+   * `s.settle({ until: (w) => w.the(Store).state.saved })`, then `s.step(worker, "crash")`. It is an
    * error if the system settles, or runs SETTLE_LIMIT events, without getting there.
    */
   settle(options?: { until: (world: World) => boolean }): void;
   /** Fire one of an instance's timers now, ahead of what is in flight. */
   fire(who: Instance<any, any>, timer: string): void;
-  /** Lose the next delivery of `message`, as a network would. */
-  lose(message: AnyMessage | AnyFailed): void;
-  /** Restart an instance: its state returns to its initial value, except durable fields. */
-  restart(who: Instance<any, any>): void;
   /**
    * Deliver a message in flight to `who` now, ahead of the rest: the oldest of `message`, or
-   * the oldest carrying `payload` when given. Any message may overtake another. A call's failure
-   * is `failed(Call)`: `s.deliver(client, failed(Charge))`.
+   * the oldest carrying `payload` when given, to its fair step. Any message may overtake another.
    */
-  deliver<M extends AnyMessage | AnyFailed>(who: Instance<any, any>, message: M, payload?: M extends AnyMessage ? PayloadOf<M> : unknown): void;
-  /** Lose a message in flight to `who` now, picked as `deliver` picks it. A fault. */
-  drop<M extends AnyMessage | AnyFailed>(who: Instance<any, any>, message: M, payload?: M extends AnyMessage ? PayloadOf<M> : unknown): void;
+  deliver<M extends AnyMessage>(who: Instance<any, any>, message: M, payload?: PayloadOf<M>): void;
   /**
    * Take one of `who`'s steps by name: a guarded step whose `when` holds now, or a step on a
    * message, which takes the oldest such message in flight to `who` (the oldest carrying
@@ -824,7 +814,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
   // Messages and zones, from the actors that use them, in the order the file defines them.
   const messages = new Map<string, Message<string, unknown>>();
   const addMessage = (m: unknown, where: string) => {
-    const message = (m as AnyFailed)?.kind === "failure" ? (m as AnyFailed).call : (m as Message<string, unknown>);
+    const message = m as Message<string, unknown>;
     if (message?.kind !== "message") throw new Error(`${where}: ${describe(m)} is not a message from defineMessage or defineCall`);
     const known = messages.get(message.id);
     if (known && known !== message) throw new Error(`${parts.name}: two different messages have the id "${message.id}"`);
@@ -838,7 +828,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
     for (const [key, action] of Object.entries(def.actions ?? {}) as [string, ActionDef<unknown, unknown>][]) for (const m of action.sends ?? []) addMessage(m, `${def.name}.${key}`);
     for (const [key, step] of Object.entries(def.transitions ?? {}) as [string, RawStep][]) {
       if (step.on !== undefined) {
-        if (step.on?.kind !== "message" && step.on?.kind !== "failure") throw new Error(`${def.name}.${key}: on is a message from defineMessage, or failed(Call), not ${describe(step.on)}`);
+        if (step.on?.kind !== "message") throw new Error(`${def.name}.${key}: on is a message from defineMessage, not ${describe(step.on)}`);
         addMessage(step.on, `${def.name}.${key}`);
       }
       for (const m of step.sends ?? []) addMessage(m, `${def.name}.${key}`);
@@ -890,7 +880,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
     name,
     description: parts.description,
     messages: Object.fromEntries(
-      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, call: m.call, ...(m.correlate ? { correlate: true } : {}), schema: m.schema }]),
+      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, ...(m.correlate ? { correlate: true } : {}), schema: m.schema }]),
     ),
     zones: [...zones.values()].sort(bySeq).map((z) => ({ name: z.name, description: (z as unknown as ZoneInfo).description, place: (z as unknown as ZoneInfo).place })),
     limits: (parts.limits ?? []).map((l) => l as unknown as LimitInfo),
@@ -964,7 +954,7 @@ function scopeProperty(p: PropertyInfo, scope: Scope): PropertyInfo {
 
 /**
  * Who talks to whom, checked before anything runs: every message sent is received by an actor
- * of the spec, and an actor that sends a call handles its failure (RFD0009).
+ * of the spec.
  */
 function checkTalk(spec: Spec): void {
   const received = new Set(spec.actors.flatMap((a) => Object.values(a.transitions).flatMap((t) => (t.message ? [t.message] : []))));
@@ -973,8 +963,6 @@ function checkTalk(spec: Spec): void {
       for (const key of step.sends) {
         const info = spec.messages[key]!;
         if (!received.has(key)) throw new Error(`${actor.name}.${step.key}: sends ${info.name}, but no actor of ${spec.name} has a step on ${info.id}`);
-        if (info.call && !actor.stepsOn[`failed:${key}`])
-          throw new Error(`${actor.name}: sends ${info.name}, a call: handle its failure with a step on failed(${info.id})`);
       }
     }
   }
@@ -992,7 +980,7 @@ function groupInfo(spec: Spec, def: GroupDef): GroupInfo {
 // From declarations to the spec the engine runs ---------------------------------------------------------
 
 interface RawStep {
-  on?: AnyMessage | AnyFailed;
+  on?: AnyMessage;
   uses?: readonly Variable<unknown>[];
   tags?: readonly string[];
   description: string;
@@ -1000,6 +988,8 @@ interface RawStep {
   sends?: AnyMessage[];
   starts?: string[];
   when?: (state: unknown) => boolean;
+  /** Its parts' conditions, folded in by defineActor (withParts). */
+  bound?: (model: ModelView) => boolean;
   after?: string;
   fair?: Fairness | false;
   run: (...args: never[]) => void;
@@ -1028,10 +1018,9 @@ function keysOf(sends: readonly unknown[] | undefined, where: string): string[] 
 }
 
 function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
-  if (raw.durable !== undefined && !Array.isArray(raw.durable)) throw new Error(`${raw.name}: durable lists state fields, like durable: ["codes"]`);
   const display = Object.fromEntries(Object.entries(raw.display ?? {}).map(([k, v]) => [k, scope(v)])) as ActorInfo["display"];
   const actions: Record<string, ActionInfo> = {};
-  for (const [key, step] of Object.entries(raw.actions ?? {}) as [string, ActionDef<unknown, Record<string, unknown>> & { fair?: unknown }][]) {
+  for (const [key, step] of Object.entries(raw.actions ?? {}) as [string, ActionDef<unknown, Record<string, unknown>> & { fair?: unknown; bound?: RawStep["bound"] }][]) {
     if (step.fair !== undefined) throw new Error(`${raw.name}.${key}: actions are never fair (a person may stop); fair is for transitions`);
     actions[key] = {
       key,
@@ -1043,6 +1032,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
       uses: namesOf(step.uses, `${raw.name}.${key}`),
       tags: tagsOf(step.tags, `${raw.name}.${key}`),
       when: scope(step.when) as StepInfo["when"],
+      ...(step.bound ? { bound: step.bound } : {}),
       say: scope(step.say) as StepInfo["say"],
       routine: step.routine ?? false,
       inputs: Object.fromEntries(Object.entries(step.inputs ?? {}).map(([name, value]) => [name, inputInfo(`${raw.name}.${key}`, name, value)])),
@@ -1055,7 +1045,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     const where = `${raw.name}.${name}`;
     if (typeof step?.run !== "function") throw new Error(`${where}: a step has a run, like run(state, msg, ctx) { … }`);
     const on = step.on;
-    if (on !== undefined && on?.kind !== "message" && on?.kind !== "failure") throw new Error(`${where}: on is a message from defineMessage, or failed(Call), not ${describe(on)}`);
+    if (on !== undefined && on?.kind !== "message") throw new Error(`${where}: on is a message from defineMessage, not ${describe(on)}`);
     if (on && step.after !== undefined) throw new Error(`${where}: a step on a message is not a timer: leave out after`);
     // A timer or a guard receives nothing: its run is (state, _, ctx), like every step's. The
     // 0.13 form, (state, ctx), would take ctx's place and fail when it first runs.
@@ -1066,7 +1056,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
       const fair = (stepsOn[on.key] ??= []).find((other) => transitions[other]!.fair !== false);
       // Several steps may take one message (RFD0012); left alone, it goes to the fair one, so there is one.
       if (fair && step.fair !== false) {
-        const what = on.kind === "failure" ? `failed(${on.call.id})` : on.id;
+        const what = on.id;
         throw new Error(`${raw.name}: ${fair} and ${name} are both fair steps on ${what}; one message has at most one fair step, and the others say fair: false`);
       }
       stepsOn[on.key]!.push(name);
@@ -1081,6 +1071,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
       uses: namesOf(step.uses, where),
       tags: tagsOf(step.tags, where),
       when: scope(step.when),
+      ...(step.bound ? { bound: step.bound } : {}),
       after: step.after,
       ...fairnessOf(where, step.fair),
       say: scope(step.say),
@@ -1099,7 +1090,6 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     zone: raw.zone.name,
     singleton: raw.singleton ?? false,
     initialState: scope(raw.initialState) as ActorInfo["initialState"],
-    durable: (raw.durable as string[] | undefined) ?? [],
     symmetric: raw.symmetric === true,
     display,
     place: raw.place ?? {},

@@ -30,14 +30,12 @@ export function short(value: unknown, max = 48): string {
 }
 
 export function messageName(spec: Spec, key: string): string {
-  // A call's failure (RFD0009) is named for the call: "charge failed".
-  if (key.startsWith("failed:")) return `${messageName(spec, key.slice("failed:".length))} failed`;
   return spec.messages[key]?.name ?? key.replace(/^message:/, "");
 }
 
 /** How a message reads on screen; a call's failure reads as refused. */
 export function messageTone(spec: Spec, key: string): Spec["messages"][string]["tone"] | undefined {
-  return key.startsWith("failed:") ? "refused" : spec.messages[key]?.tone;
+  return spec.messages[key]?.tone;
 }
 
 export function labelOf(world: World | undefined, id: string): string {
@@ -49,10 +47,6 @@ export function stepTitle(spec: Spec, event: Event): string {
   switch (event.kind) {
     case "spawn":
       return "joins";
-    case "restart":
-      return "restarts";
-    case "lose":
-      return `${messageName(spec, event.message ?? event.key)} is lost`;
     case "action":
       return spec.actors.find((a) => a.name === event.actor)?.actions[event.key]?.label ?? event.key;
     case "deliver":
@@ -63,7 +57,18 @@ export function stepTitle(spec: Spec, event: Event): string {
 }
 
 export function kindLabel(event: Event): string {
-  return { spawn: "joins", action: "action", deliver: "receives", timer: "timer", guard: "when", lose: "fault", restart: "fault" }[event.kind];
+  if (isFault(event)) return "fault";
+  return { spawn: "joins", action: "action", deliver: "receives", timer: "timer", guard: "when" }[event.kind];
+}
+
+/** A step tagged `fault` (RFD0012): views mark it. */
+export function isFault(event: Pick<Event, "tags">): boolean {
+  return event.tags?.includes("fault") === true;
+}
+
+/** A fault that took a message and sent nothing on: the message was lost. */
+export function isLoss(event: Event): boolean {
+  return event.kind === "deliver" && isFault(event) && event.sent.length === 0;
 }
 
 /** The repository file link for a source, from the code host's file URL. */

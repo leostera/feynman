@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import type { Counterexample, PropertyBroken, PropertyResult, RuleVerdict } from "../check/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
-import { labelOf, ordinal, stepTitle, time } from "./format";
+import { isFault, labelOf, ordinal, stepTitle, time } from "./format";
 import { Section, Sources, useExplorer } from "./ui";
 
 type Open = (ce: Counterexample, origin: string) => void;
@@ -44,7 +44,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
             <div>
               <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, { report, brokenBy: scenarios })), report.errors.length, report.exhaustive)}</h1>
               <p className="text-sm text-kumo-subtle">
-                Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events up to {report.bounds.depth} steps deep, with up to {report.bounds.faults} fault(s)
+                Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events up to {report.bounds.depth} steps deep
                 {Object.keys(report.bounds.instances).length ? `, and ${Object.entries(report.bounds.instances).map(([a, n]) => `${n} ${a}`).join(", ")}` : ""}.
                 {!report.exhaustive && (
                   <span className="text-kumo-warning">
@@ -205,7 +205,7 @@ function VerdictIcon({ verdict }: { verdict: Verdict }) {
 }
 
 function HowFound({ p }: { p: PropertyBroken }) {
-  const faults = p.counterexample.events.filter((e) => e.kind === "lose" || e.kind === "restart").length;
+  const faults = p.counterexample.events.filter(isFault).length;
   return (
     <>
       <span className="font-sans"> · {faults ? `needs ${faults} fault(s)` : "needs no faults"}</span>

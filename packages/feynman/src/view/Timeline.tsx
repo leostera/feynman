@@ -9,7 +9,7 @@ import { CaretRightIcon, CornersInIcon, HeartbeatIcon } from "@phosphor-icons/re
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Event, Spec, World } from "../spec/index.ts";
 import { CodeTrace } from "./CodeTrace";
-import { kindLabel, labelOf, ordinal, stepTitle } from "./format";
+import { isFault, isLoss, kindLabel, labelOf, ordinal, stepTitle } from "./format";
 import { bubbleText } from "./playground/Stage";
 import type { Session } from "./session";
 import { EventDetail, useExplorer } from "./ui";
@@ -87,7 +87,7 @@ export function Timeline({
       time={ordinal(index + 1)}
       title={timelineText(spec, event, world)}
       who={`${labelOf(world, event.instance)} · ${stepTitle(spec, event)}`}
-      flag={event.error || event.violations.length ? "broken" : event.kind === "lose" || event.kind === "restart" ? kindLabel(event) : null}
+      flag={event.error || event.violations.length ? "broken" : isFault(event) ? kindLabel(event) : null}
     />
   );
   return (
@@ -159,7 +159,7 @@ export function Timeline({
 function timelineText(spec: Spec, event: Event, world: World): string {
   const text = bubbleText(spec, event, world);
   const label = labelOf(world, event.instance);
-  return event.kind === "lose" || text.startsWith(`${label}:`) ? text : `${label}: ${text}`;
+  return isLoss(event) || text.startsWith(`${label}:`) ? text : `${label}: ${text}`;
 }
 
 function Row({

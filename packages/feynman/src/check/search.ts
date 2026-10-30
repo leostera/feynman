@@ -22,7 +22,7 @@ import { isLiveness } from "../spec/index.ts";
 import { startBreaks } from "./judge.ts";
 import { statePrint, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
-import { budgetText, FAILED, FAULT, rootMemory, SLEEPY, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
+import { FAILED, FAULT, rootMemory, SLEEPY, type Answer, type Entry, type Expansion, type Moved, type Note, type Prepared, type Query, type Ref, type Resolved, type Stats } from "./owner.ts";
 import type { Driver, InlineDriver } from "./pool.ts";
 import { PrintMap } from "./prints.ts";
 import type { Choice, ScenarioPlace } from "./steps.ts";
@@ -215,7 +215,7 @@ export class Search {
     const round = emptyRound(1);
     const memory = rootMemory(this.spec);
     for (const [r, { world, symmetry }] of this.roots.entries()) {
-      const { print, plain } = statePrint(world, symmetry, budgetText({ acts: {}, faults: 0 }, memory));
+      const { print, plain } = statePrint(world, symmetry, memory);
       const [hi, lo] = print;
       if (this.seen.get(hi, lo) !== undefined) continue;
       const gid = this.node({ parent: -1, root: r, option: -1, fault: false, holder: 0, shadow: false, sleepy: false, plain: symmetry.classes.length ? plain : undefined });
@@ -223,7 +223,7 @@ export class Search {
       this.states++;
       round.keep[0].push(-(r + 1), gid);
       if (this.b.depth > 0) round.next.push({ gid });
-      this.watch.state?.(world, { acts: {}, faults: 0, memory });
+      this.watch.state?.(world, memory);
       for (const id of startBreaks(this.spec, world).filter((id) => !this.broken.has(id))) this.breaks(id, gid);
     }
     return round;
@@ -350,7 +350,7 @@ export class Search {
       if (this.depth[gid] < this.b.depth) round.next.push({ gid });
       if (this.watch.state) {
         const c = (this.owners[0] as InlineDriver).owner.candidate(k);
-        this.watch.state(c.world, { acts: c.acts, faults: c.faults, memory: c.memory });
+        this.watch.state(c.world, c.memory);
       }
     }
     const findings = (note?.findings ?? []).filter((id) => !this.broken.has(id));

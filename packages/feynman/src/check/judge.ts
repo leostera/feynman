@@ -1,7 +1,7 @@
 // Judging what the search or a random run meets: which properties a world, a step, or a path
 // breaks, and whether the system is stuck. Shared, so both ways of exploring judge alike.
 // Liveness is judged after exploring, on the whole graph (liveness.ts).
-import { choices, holdsIn, traceView, violatedAlways, worldView, type Event, type Spec, type TraceEvent, type World, type WorldView } from "../spec/index.ts";
+import { actorNamed, holdsIn, whenHolds, traceView, violatedAlways, worldView, type Event, type Spec, type TraceEvent, type World, type WorldView } from "../spec/index.ts";
 
 /** What the exploring so far knows: which properties broke, which errors were met, which steps ran. */
 export interface Verdicts {
@@ -60,12 +60,18 @@ export function stepBreaks(spec: Spec, before: World, after: World, event: Event
 }
 
 /**
- * Whether nothing can happen in a world, and the spec does not call it final: no action whose
- * `when` holds (whatever the checker's repeats bound says), no guard, nothing pending.
+ * Whether nothing can happen in a world, and the spec does not call it final: nothing pending,
+ * no action whose `when` holds, and no fair guard whose `when` holds. A bound of the model (a
+ * step's parts, such as atMost or a budget) does not count: running out of repeats is not the
+ * system getting stuck, and neither is a fault left to happen (RFD0012).
  */
 export function stuck(spec: Spec, world: World): boolean {
-  const { actions, guards, pending } = choices(spec, world);
-  if (actions.length || guards.length || pending.length) return false;
+  if (world.pending.length) return false;
+  for (const instance of world.instances) {
+    const actor = actorNamed(spec, instance.actor);
+    if (Object.values(actor.actions).some((a) => whenHolds(spec, world, instance, a, true))) return false;
+    if (Object.values(actor.transitions).some((t) => !t.message && t.when && t.fair !== false && whenHolds(spec, world, instance, t, true))) return false;
+  }
   return !(spec.finalState && holdsIn(spec, world, spec.finalState.when));
 }
 

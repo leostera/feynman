@@ -84,23 +84,20 @@ function line(spec: Spec, event: Event, before: World, choice: Counterexample["c
   switch (event.kind) {
     case "action":
       return `s.act(${who}, ${json(event.key)}${event.inputs && Object.keys(event.inputs).length ? `, ${json(event.inputs)}` : ""});`;
-    case "deliver":
-    case "lose": {
+    case "deliver": {
       const from = event.from ? ` // from ${names.of(event.from, before)}` : "";
       const payload = needsPayload(before, choice, event) ? `, ${json(event.payload)}` : "";
       // A step other than the one left alone takes it: named, like s.step(bank, "chargeLost").
-      if (event.kind === "deliver" && !tookLeftAlone(spec, event)) return `s.step(${who}, ${json(event.key)}${payload});${from}`;
-      // The message by value: Charge, or failed(Charge) for a call's failure.
-      const id = event.message!.replace(/^(failed:)?message:/, "");
-      const message = event.message!.startsWith("failed:") ? `failed(${id})` : id;
-      return `s.${event.kind === "deliver" ? "deliver" : "drop"}(${who}, ${message}${payload});${from}`;
+      if (!tookLeftAlone(spec, event)) return `s.step(${who}, ${json(event.key)}${payload});${from}`;
+      // The message by value: Charge, or failed(Charge) for a call's failure (the faults library's Charge.failed).
+      const id = event.message!.replace(/^message:/, "");
+      const message = id.endsWith(".failed") ? `failed(${id.slice(0, -".failed".length)})` : id;
+      return `s.deliver(${who}, ${message}${payload});${from}`;
     }
     case "timer":
       return `s.fire(${who}, ${json(event.key)});`;
     case "guard":
       return `s.step(${who}, ${json(event.key)});`;
-    case "restart":
-      return `s.restart(${who});`;
     case "spawn":
       return `// ${event.description}`;
   }
@@ -108,7 +105,7 @@ function line(spec: Spec, event: Event, before: World, choice: Counterexample["c
 
 /** Whether naming the message picks another one in flight than the one taken: then its payload picks it. */
 function needsPayload(before: World, choice: Counterexample["choices"][number], event: Event): boolean {
-  if (choice.kind !== "fire" && choice.kind !== "lose") return false;
+  if (choice.kind !== "fire") return false;
   const oldest = before.pending.filter((p) => p.kind === "deliver" && p.to === event.instance && p.message === event.message).sort((a, b) => a.id - b.id)[0];
   return oldest?.id !== choice.pending;
 }

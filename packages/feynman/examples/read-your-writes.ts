@@ -14,7 +14,12 @@
 // Expected: buggy breaks `readsOwnWrites` in 6 steps without faults (write, the leader
 // numbers it, the client is told, read, the follower answers from before, the answer
 // arrives); fixed holds, with a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Written = defineMessage("Written", { version: Number }, { tone: "reply" });
@@ -38,8 +43,9 @@ export function readYourWrites(variant: "buggy" | "fixed") {
       mood: (s) => (s.stale ? "bad" : "ok"),
     },
     actions: {
-      write: { label: "Write", description: "Writes, through the leader.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Leader), Write, {}) },
+      write: { with: [atMost(repeats)], label: "Write", description: "Writes, through the leader.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Leader), Write, {}) },
       read: {
+        with: [atMost(repeats)],
         label: "Read",
         description: "Reads from the follower, saying which write it must see.",
         sends: [Read],
@@ -49,6 +55,8 @@ export function readYourWrites(variant: "buggy" | "fixed") {
     transitions: {
       written: { on: Written, description: "Is told its write succeeded, and its number.", run: (state, msg) => void (state.wrote = Math.max(state.wrote, msg.version)) },
       value: { on: Value, description: "Gets the value it read.", run: (state, msg) => void (state.stale ||= msg.version < msg.atLeast) },
+      writtenLost: lose(Written, { spend: faults }),
+      valueLost: lose(Value, { spend: faults }),
     },
   });
 
@@ -56,7 +64,6 @@ export function readYourWrites(variant: "buggy" | "fixed") {
     name: "Leader",
     zone,
     place: { order: 0 },
-    durable: ["version"],
     initialState: () => ({ version: 0 }),
     display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
     transitions: {
@@ -71,6 +78,8 @@ export function readYourWrites(variant: "buggy" | "fixed") {
           ctx.send(ctx.the(Follower), Replicate, { version: state.version });
         },
       },
+      writeLost: lose(Write, { spend: faults }),
+      crash: crash({ keeps: ["version"], spend: faults }),
     },
   });
 
@@ -79,7 +88,6 @@ export function readYourWrites(variant: "buggy" | "fixed") {
     zone,
     place: { order: 1 },
     // What it has replicated is on disk; the reads it holds (sorted) are not.
-    durable: ["version"],
     initialState: () => ({ version: 0, holding: [] as number[] }),
     display: {
       icon: "database",
@@ -110,6 +118,9 @@ export function readYourWrites(variant: "buggy" | "fixed") {
           ctx.reply(Value, { version: state.version, atLeast: msg.atLeast });
         },
       },
+      replicateLost: lose(Replicate, { spend: faults }),
+      readLost: lose(Read, { spend: faults }),
+      crash: crash({ keeps: ["version"], spend: faults }),
     },
   });
 

@@ -1,13 +1,11 @@
 // Steps the checker can take from a world, and replaying them.
-import { act, actorNamed, choices, fire, guard, losable, lose, restart, stepsTaking, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
+import { act, actorNamed, choices, fire, guard, stepsTaking, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
 
 export type Choice =
   | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }
   /** A pending entry taken by one of the steps that can take it: a timer's own, or one of the steps on a message. */
   | { kind: "fire"; pending: number; step: string }
-  | { kind: "guard"; instance: string; key: string }
-  | { kind: "lose"; pending: number }
-  | { kind: "restart"; instance: string };
+  | { kind: "guard"; instance: string; key: string };
 
 /** A path from the initial world, replayed with every world along it. */
 /** Where in a scenario the checker started a search: the world its setup sets, or where it ends. */
@@ -30,7 +28,7 @@ export interface Counterexample {
   worlds: World[];
 }
 
-export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[] {
+export function branches(spec: Spec, world: World): Choice[] {
   const { actions, guards, pending } = choices(spec, world);
   const out: Choice[] = [];
   for (const action of actions) {
@@ -41,10 +39,6 @@ export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[
   for (const g of guards) out.push({ kind: "guard", instance: g.instance, key: g.key });
   // Anything pending may happen next: any message may overtake any other, and a timer may fire at any moment (RFD0004).
   for (const p of pending) for (const step of stepsTaking(spec, world, p)) out.push({ kind: "fire", pending: p.id, step });
-  if (faultsLeft) {
-    for (const p of pending) if (losable(p)) out.push({ kind: "lose", pending: p.id });
-    for (const instance of world.instances) if (!actorNamed(spec, instance.actor).singleton) out.push({ kind: "restart", instance: instance.id });
-  }
   return out;
 }
 
@@ -59,10 +53,6 @@ export function apply(spec: Spec, world: World, choice: Choice, how?: StepOption
       return fire(spec, world, choice.pending, choice.step, how);
     case "guard":
       return guard(spec, world, choice.instance, choice.key, how);
-    case "lose":
-      return lose(spec, world, choice.pending, how);
-    case "restart":
-      return restart(spec, world, choice.instance, how);
   }
 }
 

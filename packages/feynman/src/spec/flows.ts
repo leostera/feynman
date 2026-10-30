@@ -1,7 +1,7 @@
 // The flows of a run: what each thing someone did set off.
 //
 // A flow starts where someone acts (an action), where instances appear (a run of spawns), or
-// where a fault restarts one. Every other event joins the flow that caused it: a delivery or
+// where a fault on nothing, such as a crash, happens. Every other event joins the flow that caused it: a delivery or
 // a timer the flow of the event that created it (sent the message, set the timer); a lost
 // message the flow of the message; a guarded step the flow that last touched its instance.
 // So "Pair a Mac and reach it" reads as: they appear, Alice signs in, Alice pairs, the Mac
@@ -9,9 +9,9 @@
 import type { Event, Run, World } from "./spec.ts";
 
 export interface Flow {
-  /** The event that started it: an action, the first of a run of spawns, or a restart. */
+  /** The event that started it: an action, the first of a run of spawns, or a fault on nothing (a crash). */
   start: number;
-  kind: "action" | "spawn" | "restart";
+  kind: "action" | "spawn" | "fault";
   /** Every event of the flow, by index into the run's events, in order. */
   events: number[];
 }
@@ -31,7 +31,8 @@ export function flowsOf(run: Run): Flow[] {
   };
   const flowOf = (i: number, event: Event): number => {
     if (event.kind === "action") return start(i, "action");
-    if (event.kind === "restart") return start(i, "restart");
+    // A fault on nothing, such as a crash, starts a flow of its own (RFD0012: views read the fault tag).
+    if (event.kind === "guard" && event.tags?.includes("fault")) return start(i, "fault");
     if (event.kind === "spawn") {
       const last = flows.at(-1);
       // Instances that appear one after another appear together.

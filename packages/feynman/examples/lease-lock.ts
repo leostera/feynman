@@ -13,7 +13,12 @@
 // Expected, with two clients: buggy breaks `fenced` in 10 steps (A is granted the lock and
 // stalls; once the lease is over B is granted it, stalls, and writes; then A's write lands);
 // fixed holds.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Acquire = defineMessage("Acquire");
 const Granted = defineMessage("Granted", { token: Number }, { tone: "reply" });
@@ -54,6 +59,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
           state.holder = null;
         },
       },
+      acquireLost: lose(Acquire, { spend: faults }),
     },
   });
 
@@ -80,6 +86,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
           state.accepted.push(msg.token);
         },
       },
+      writeLost: lose(Write, { spend: faults }),
     },
   });
 
@@ -95,6 +102,7 @@ export function leaseLock(variant: "buggy" | "fixed") {
     },
     actions: {
       acquire: {
+        with: [atMost(repeats)],
         label: "Take the lock",
         description: "Asks the lock server for the lock.",
         when: (state) => state.token === null && !state.asking,
@@ -127,6 +135,9 @@ export function leaseLock(variant: "buggy" | "fixed") {
           state.token = null;
         },
       },
+      grantedLost: lose(Granted, { spend: faults }),
+      deniedLost: lose(Denied, { spend: faults }),
+      crash: crash({ spend: faults }),
     },
   });
 

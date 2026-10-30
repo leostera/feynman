@@ -13,7 +13,12 @@
 // Expected: buggy holds without faults, and breaks `chargedOnce` in 5 steps with one (the bank
 // charges, its answer is lost, the call fails, the client retries, the bank charges again);
 // fixed holds, with faults too. Every payment ends, in both: the retry is fair.
-import { defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, failed } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineVariable, defineZone, failed, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const PAYMENT = "pay-1";
 
@@ -39,6 +44,7 @@ export function retriedCall(variant: "buggy" | "fixed") {
     },
     actions: {
       pay: {
+        with: [atMost(repeats)],
         label: "Pay",
         description: "Charges the customer for the order, through the bank.",
         when: (s) => !s.paying && !s.paid,
@@ -67,6 +73,8 @@ export function retriedCall(variant: "buggy" | "fixed") {
           ctx.send(failure.to, Charge, failure.payload);
         },
       },
+      // Losing the answer fails the call: the bank did the work, and the client cannot tell.
+      chargedLost: lose(Charged, { fails: Charge, spend: faults }),
     },
   });
 
@@ -98,6 +106,7 @@ export function retriedCall(variant: "buggy" | "fixed") {
           ctx.reply(Charged, { payment: msg.payment });
         },
       },
+      chargeLost: lose(Charge, { spend: faults }),
     },
   });
 
@@ -124,7 +133,7 @@ export function retriedCall(variant: "buggy" | "fixed") {
     run(s) {
       s.act(s.the(Client), "pay");
       s.deliver(s.the(Bank), Charge);
-      s.drop(s.the(Client), Charged);
+      s.step(s.the(Client), "chargedLost");
       s.settle();
     },
   });

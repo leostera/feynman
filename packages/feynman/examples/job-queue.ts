@@ -12,7 +12,12 @@
 // before the first delivery lands, both deliveries land, both are worked); fixed holds.
 // `jobsFinish` is unfinished: every redelivery adds a copy in flight, so the worlds never
 // run out, and a loop that never acknowledges could lie past any depth.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Job = defineMessage("Job", { id: String });
 const Ack = defineMessage("Ack", { id: String });
@@ -28,7 +33,10 @@ export function jobQueue(variant: "buggy" | "fixed") {
     initialState: () => ({ effects: 0 }),
     place: { order: 2 },
     display: { icon: "mail", status: (s) => `${s.effects} email(s) sent`, mood: (s) => (s.effects ? "info" : "off") },
-    transitions: { effect: { on: Effect, description: "Something happens out there: an email, a charge.", run: (state) => void (state.effects += 1) } },
+    transitions: {
+      effect: { on: Effect, description: "Something happens out there: an email, a charge.", run: (state) => void (state.effects += 1) },
+      effectLost: lose(Effect, { spend: faults }),
+    },
   });
 
   const Worker = defineActor({
@@ -59,6 +67,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
           ctx.send(ctx.the(Broker), Ack, { id: job.id });
         },
       },
+      jobLost: lose(Job, { spend: faults }),
     },
   });
 
@@ -71,6 +80,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
     display: { icon: "queue", status: (s) => (s.pending ? `${s.pending} out, not acknowledged` : `${s.enqueued} job(s) enqueued`), mood: (s) => (s.pending ? "busy" : "ok") },
     actions: {
       enqueue: {
+        with: [atMost(repeats)],
         label: "Enqueue",
         description: "Hands a new job to the worker.",
         when: (state) => state.pending === null,
@@ -105,6 +115,7 @@ export function jobQueue(variant: "buggy" | "fixed") {
           ctx.start("redeliver");
         },
       },
+      ackLost: lose(Ack, { spend: faults }),
     },
   });
 

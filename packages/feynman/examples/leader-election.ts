@@ -12,7 +12,12 @@
 // Fixed holds. Declaring the nodes symmetric is wrong for the fixed one, which orders ids,
 // and the checker must notice and say so; the buggy one never compares ids, so for it the
 // claim is true.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Elect = defineMessage("Elect", { id: String });
 
@@ -32,6 +37,7 @@ export function leaderElection(variant: "buggy" | "fixed") {
     },
     actions: {
       announce: {
+        with: [atMost(repeats)],
         label: "Announce",
         description: "Tells every other node about itself.",
         when: (state) => !state.announced,
@@ -51,6 +57,8 @@ export function leaderElection(variant: "buggy" | "fixed") {
           if (variant === "buggy" || msg.id > state.leader) state.leader = msg.id;
         },
       },
+      electLost: lose(Elect, { spend: faults }),
+      crash: crash({ spend: faults }),
     },
   });
 

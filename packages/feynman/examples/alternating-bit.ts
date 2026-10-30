@@ -12,7 +12,12 @@
 // Expected: buggy breaks `inOrder` in 6 steps without faults (send "x", it lands, the retry
 // sends it again, the acknowledgement moves the sender to "y", "y" lands, the stale "x"
 // lands and is kept); fixed holds, with a message lost too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const ITEMS = ["x", "y"];
 
@@ -46,6 +51,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
           ctx.reply(Ack, { tag: msg.tag });
         },
       },
+      dataLost: lose(Data, { spend: faults }),
     },
   });
 
@@ -62,6 +68,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
     },
     actions: {
       send: {
+        with: [atMost(repeats)],
         label: "Send",
         description: "Starts sending the items.",
         when: (state) => !state.started,
@@ -99,6 +106,7 @@ export function alternatingBit(variant: "buggy" | "fixed") {
           ctx.start("retry");
         },
       },
+      ackLost: lose(Ack, { spend: faults }),
     },
   });
 

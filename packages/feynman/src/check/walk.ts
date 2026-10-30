@@ -25,8 +25,8 @@ export interface WalkResult {
   stuck?: { root: number; choices: Choice[] };
 }
 
-/** How often a run picks each kind of step, when it can: mostly the system, some people, rare faults. */
-const WEIGHTS = { system: 0.6, people: 0.32, faults: 0.08 };
+/** How often a run picks each kind of step, when it can: mostly the system's fair steps, some people, rarely an unfair step (a fault). */
+const WEIGHTS = { system: 0.6, people: 0.32, unfair: 0.08 };
 
 /** Where runs start. */
 export interface WalkRoot {
@@ -47,16 +47,11 @@ export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, unti
     const root = run % roots.length;
     const random = seeded(run + 1);
     let world = roots[root].world;
-    let faults = 0;
-    const acts: Record<string, number> = {};
     const path: Choice[] = [];
     const events: Event[] = [];
     for (let depth = 0; depth < b.walkDepth; depth++) {
-      const options = branches(spec, world, faults < b.faults).filter((c) => c.kind !== "act" || (acts[`${c.instance}.${c.key}`] ?? 0) < b.repeats * 2);
-      const choice = pick(options, random);
+      const choice = pick(spec, world, branches(spec, world), random);
       if (!choice) break;
-      if (choice.kind === "act") acts[`${choice.instance}.${choice.key}`] = (acts[`${choice.instance}.${choice.key}`] ?? 0) + 1;
-      if (choice.kind === "lose" || choice.kind === "restart") faults++;
       const step = apply(spec, world, choice, QUIET);
       path.push(choice);
       events.push(step.event);
@@ -81,11 +76,12 @@ export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, unti
   return out;
 }
 
-function pick(options: Choice[], random: () => number): Choice | undefined {
+function pick(spec: Spec, world: World, options: Choice[], random: () => number): Choice | undefined {
+  const unfair = (c: Choice) => c.kind !== "act" && stepOf(spec, world, c).fair === false;
   const groups = {
-    system: options.filter((c) => c.kind === "fire" || c.kind === "guard"),
+    system: options.filter((c) => c.kind !== "act" && !unfair(c)),
     people: options.filter((c) => c.kind === "act"),
-    faults: options.filter((c) => c.kind === "lose" || c.kind === "restart"),
+    unfair: options.filter(unfair),
   };
   const kinds = (Object.keys(groups) as (keyof typeof groups)[]).filter((k) => groups[k].length);
   if (!kinds.length) return undefined;
@@ -94,6 +90,13 @@ function pick(options: Choice[], random: () => number): Choice | undefined {
   const kind = kinds.find((k) => (roll -= WEIGHTS[k]) < 0) ?? kinds.at(-1)!;
   const group = groups[kind];
   return group[Math.floor(random() * group.length)];
+}
+
+/** The step a delivery, timer or guard runs. */
+function stepOf(spec: Spec, world: World, choice: Exclude<Choice, { kind: "act" }>) {
+  if (choice.kind === "guard") return actorNamed(spec, world.instances.find((i) => i.id === choice.instance)!.actor).transitions[choice.key]!;
+  const to = world.pending.find((p) => p.id === choice.pending)!.to;
+  return actorNamed(spec, world.instances.find((i) => i.id === to)!.actor).transitions[choice.step]!;
 }
 
 /** mulberry32: small, fast, and the same everywhere. */
@@ -134,13 +137,12 @@ function replayLoosely(spec: Spec, initial: World, original: Counterexample, kee
 
 /** The same choice in another world: the pending event that carries the same thing, if any. */
 export function rebind(spec: Spec, was: World, world: World, choice: Choice): Choice | null {
-  if (choice.kind === "fire" || choice.kind === "lose") {
+  if (choice.kind === "fire") {
     const pending = was.pending.find((p) => p.id === choice.pending);
     const same = pending && world.pending.find((p) => pendingText(p) === pendingText(pending));
-    if (!same || (choice.kind === "fire" && !stepsTaking(spec, world, same).includes(choice.step))) return null;
+    if (!same || !stepsTaking(spec, world, same).includes(choice.step)) return null;
     return { ...choice, pending: same.id };
   }
-  if (choice.kind === "restart") return world.instances.some((i) => i.id === choice.instance) ? choice : null;
   const now = enabled(spec, world);
   if (choice.kind === "guard") return now.guards.some((g) => g.instance === choice.instance && g.key === choice.key) ? choice : null;
   const instance = world.instances.find((i) => i.id === choice.instance);

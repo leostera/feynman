@@ -11,13 +11,11 @@
 // properties are left to the checker.
 import { initialWorld } from "../../src/check/explore.ts";
 import { inputCombinations } from "../../src/check/steps.ts";
-import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, losable, lose, restart, stepsTaking, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
+import { act, actorNamed, choices, FAULT, fire, guard, holdsIn, isLiveness, stepsTaking, whenHolds, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
 import { sortedJson } from "../../src/spec/json.ts";
 
 export interface ReferenceBounds {
   depth: number;
-  faults: number;
-  repeats: number;
   instances: Record<string, number>;
 }
 
@@ -35,10 +33,10 @@ export interface ReferenceResult {
 }
 
 /** A world in the graph: its successors (by index; -1 for a world past the depth bound) and the fair steps possible in it. */
-type GraphNode = { world: World; acts: Record<string, number>; faults: number; depth: number; edges: { to: number; fair?: string }[]; enabled: Map<string, "weak" | "strong">; closed: boolean };
+type GraphNode = { world: World; faults: number; depth: number; edges: { to: number; fair?: string }[]; enabled: Map<string, "weak" | "strong">; closed: boolean };
 
-/** What a world is, for this explorer: states, messages in flight as a bag, which timers are set, and the counters the bounds read. */
-export function worldKey(world: World, acts: Record<string, number>, faults: number): string {
+/** What a world is, for this explorer: states and variables, messages in flight as a bag, which timers are set. */
+export function worldKey(world: World): string {
   return sortedJson({
     instances: world.instances.map((i) => (i.variables ? [i.id, i.state, i.variables] : [i.id, i.state])),
     variables: world.variables ?? {},
@@ -46,8 +44,6 @@ export function worldKey(world: World, acts: Record<string, number>, faults: num
     timers: world.pending.filter((p) => p.kind === "timer").map((p) => `${p.to}|${p.timer}`).sort(),
     fresh: world.fresh,
     rng: world.rng,
-    acts,
-    faults,
   });
 }
 
@@ -57,38 +53,41 @@ export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
   const graph: GraphNode[] = [];
   const index = new Map<string, number>();
   const add = (node: Node, depth: number) => {
-    const key = worldKey(node.world, node.acts, node.faults);
+    const key = worldKey(node.world);
     index.set(key, graph.length);
     graph.push({ ...node, depth, edges: [], enabled: enabledIn(spec, node.world), closed: false });
     return graph.length - 1;
   };
 
-  type Node = { world: World; acts: Record<string, number>; faults: number };
+  /** A world, and the fewest faults on a shortest path to it. */
+  type Node = { world: World; faults: number };
   const judge = (node: Node, depth: number) => {
     for (const p of always) if (!result.broken.has(p.id) && !holdsIn(spec, node.world, p.always)) result.broken.set(p.id, depth);
   };
 
-  const start: Node = { world: initialWorld(spec, bounds), acts: {}, faults: 0 };
-  result.worlds.add(worldKey(start.world, start.acts, start.faults));
+  const start: Node = { world: initialWorld(spec, bounds), faults: 0 };
+  result.worlds.add(worldKey(start.world));
   judge(start, 0);
   let level = [add(start, 0)];
 
   for (let depth = 1; depth <= bounds.depth && level.length; depth++) {
     const next: number[] = [];
     for (const at of level) {
-      for (const { step, acts, faults, fair } of successors(spec, graph[at], bounds)) {
-        // Coverage is of the spec's steps; a lost message or a restart is not one.
-        if (step.event.kind !== "lose" && step.event.kind !== "restart") result.reached.add(`${step.event.actor}.${step.event.key}`);
+      for (const { step, fair } of successors(spec, graph[at].world)) {
+        result.reached.add(`${step.event.actor}.${step.event.key}`);
         if (step.event.error) {
           result.errors.add(step.event.error);
           continue;
         }
-        const child = { world: step.world, acts, faults };
-        const key = worldKey(child.world, acts, faults);
+        const child = { world: step.world, faults: graph[at].faults + (step.event.tags?.includes(FAULT) ? 1 : 0) };
+        const key = worldKey(child.world);
         if (!result.worlds.has(key)) {
           result.worlds.add(key);
           judge(child, depth);
           next.push(add(child, depth));
+        } else {
+          const known = graph[index.get(key)!];
+          if (known.depth === depth) known.faults = Math.min(known.faults, child.faults);
         }
         graph[at].edges.push({ to: index.get(key)!, ...(fair ? { fair } : {}) });
       }
@@ -100,9 +99,9 @@ export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
   for (const at of level) {
     const edges: GraphNode["edges"] = [];
     let closed = true;
-    for (const { step, acts, faults, fair } of successors(spec, graph[at], bounds)) {
+    for (const { step, fair } of successors(spec, graph[at].world)) {
       if (step.event.error) continue;
-      const to = index.get(worldKey(step.world, acts, faults));
+      const to = index.get(worldKey(step.world));
       if (to === undefined) closed = false;
       else edges.push({ to, ...(fair ? { fair } : {}) });
     }
@@ -110,9 +109,14 @@ export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
   }
 
   for (const node of graph) {
-    const { actions, guards, pending } = choices(spec, node.world);
+    // Stuck: nothing pending, and no action or fair guard the system waits on (a bound of the
+    // model, such as atMost or a budget, does not count; nor does a fault).
+    const waiting = node.world.instances.some((i) => {
+      const actor = actorNamed(spec, i.actor);
+      return Object.values(actor.actions).some((a) => whenHolds(spec, node.world, i, a, true)) || Object.values(actor.transitions).some((t) => !t.message && t.when && t.fair !== false && whenHolds(spec, node.world, i, t, true));
+    });
     const final = spec.finalState && holdsIn(spec, node.world, spec.finalState.when);
-    if (actions.length || guards.length || pending.length || final) continue;
+    if (node.world.pending.length || waiting || final) continue;
     const best = result.stuck;
     if (!best || node.faults < best.faults || (node.faults === best.faults && node.depth < best.events)) result.stuck = { events: node.depth, faults: node.faults };
   }
@@ -216,23 +220,16 @@ function reach(graph: GraphNode[], from: number[], inside: (i: number) => boolea
   return seen;
 }
 
-/** Every step from a world the bounds allow, with the counters after it. */
-function successors(spec: Spec, node: { world: World; acts: Record<string, number>; faults: number }, bounds: ReferenceBounds): { step: Step; acts: Record<string, number>; faults: number; fair?: string }[] {
-  const { world, acts, faults } = node;
-  const out: { step: Step; acts: Record<string, number>; faults: number; fair?: string }[] = [];
+/** Every step from a world, with the fair step it is, if it is one. */
+function successors(spec: Spec, world: World): { step: Step; fair?: string }[] {
+  const out: { step: Step; fair?: string }[] = [];
   const { actions, guards, pending } = choices(spec, world);
   for (const a of actions) {
-    const id = `${a.instance}.${a.key}`;
-    if ((acts[id] ?? 0) >= bounds.repeats) continue;
     const instance = world.instances.find((i) => i.id === a.instance)!;
     const info = actorNamed(spec, instance.actor).actions[a.key];
-    for (const inputs of inputCombinations(spec, world, info.inputs)) out.push({ step: act(spec, world, a.instance, a.key, inputs), acts: { ...acts, [id]: (acts[id] ?? 0) + 1 }, faults });
+    for (const inputs of inputCombinations(spec, world, info.inputs)) out.push({ step: act(spec, world, a.instance, a.key, inputs) });
   }
-  for (const g of guards) out.push({ step: guard(spec, world, g.instance, g.key), acts, faults, fair: fairOf(spec, world, g.instance, g.key, `g|${g.instance}|${g.key}`)?.id });
-  for (const p of pending) for (const step of stepsTaking(spec, world, p)) out.push({ step: fire(spec, world, p.id, step), acts, faults, fair: fairOf(spec, world, p.to, step, idOf(p, step))?.id });
-  if (faults < bounds.faults) {
-    for (const p of pending) if (losable(p)) out.push({ step: lose(spec, world, p.id), acts, faults: faults + 1 });
-    for (const i of world.instances) if (!actorNamed(spec, i.actor).singleton) out.push({ step: restart(spec, world, i.id), acts, faults: faults + 1 });
-  }
+  for (const g of guards) out.push({ step: guard(spec, world, g.instance, g.key), fair: fairOf(spec, world, g.instance, g.key, `g|${g.instance}|${g.key}`)?.id });
+  for (const p of pending) for (const step of stepsTaking(spec, world, p)) out.push({ step: fire(spec, world, p.id, step), fair: fairOf(spec, world, p.to, step, idOf(p, step))?.id });
   return out;
 }

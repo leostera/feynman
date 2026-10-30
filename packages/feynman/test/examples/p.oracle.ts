@@ -9,7 +9,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { check } from "../../src/check/index.ts";
-import { corpus, P_CASES } from "./corpus.ts";
+import { configured, corpus, P_CASES } from "./corpus.ts";
 
 const DOTNET = process.env.DOTNET_ROOT ?? join(homedir(), ".dotnet");
 const ENV = { ...process.env, DOTNET_ROOT: DOTNET, DOTNET_CLI_TELEMETRY_OPTOUT: "1", PATH: `${DOTNET}:${join(DOTNET, "tools")}:${process.env.HOME}/.dotnet/tools:${process.env.PATH}` };
@@ -48,7 +48,8 @@ describe.skipIf(!HAS_P)("P oracles", () => {
       }, 300_000);
       for (const c of o.cases ?? P_CASES) {
         test(`${c.variant}, ${c.faults} fault(s): P and the checker agree`, async () => {
-          const ours = await check(example.spec(c.variant), { depth: o.depth, faults: c.faults, instances: example.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
+          const { spec, bounds } = configured(example.spec(c.variant), { depth: o.depth, faults: c.faults, instances: example.instances ?? {}, maxStates: 2_000_000, timeLimit: 120_000, walks: 0 });
+          const ours = await check(spec, bounds);
           const p = ours.properties.find((x) => x.id === o.property);
           if (!p) throw new Error(`${example.name} has no property ${o.property}`);
           const theirs = pCheck(o.project, c.testCase, SCHEDULES[p.holds ? "holds" : "broken"]);

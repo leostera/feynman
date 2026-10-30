@@ -7,7 +7,7 @@ import { cn } from "@cloudflare/kumo";
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { declaresLinks, labelled, worldView, type Actor, type Event, type InstanceState, type Pending, type Spec, type Token, type World } from "../../spec/index.ts";
 import { identityColors, moodColor, Node, PlayProvider, Rows, telling, Ticket, toneColor, type GroupProps, type NodeProps, type Playground } from "../../play/index.ts";
-import { labelOf, messageName, messageTone, short } from "../format";
+import { isLoss, labelOf, messageName, messageTone, short } from "../format";
 import { layout, layoutKey, nodeLinks, type Anchor, type Box, type Layout, type Layouts, type Sizes, type View, type ZoneBox } from "../layout";
 import { nodeDisplay, sceneLinks, shownAs, type NodeDisplay, type Scene, type SceneNode } from "../scene";
 import { useExplorer } from "../ui";
@@ -608,7 +608,7 @@ function Packet({ pending, scene, graph, world, progress, next, live, onClick }:
       }}
       className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
       style={{ left: at.x, top: at.y }}
-      title={`${name} ${short(pending.payload, 80)}. Click to deliver it now or lose it.`}
+      title={`${name} ${short(pending.payload, 80)}. Click to deliver it now, or take it another way.`}
     >
       <span className={cn("block size-3 rounded-full", next && live && "feynman-pulse")} style={{ background: color, boxShadow: `0 0 10px ${color}` }} />
       <span className="absolute bottom-full left-1/2 mb-1 max-w-[200px] -translate-x-1/2 truncate whitespace-nowrap rounded-full px-2 py-px text-[11px] font-semibold text-kumo-inverse" style={{ background: color }}>
@@ -648,7 +648,7 @@ export function bubbleText(spec: Spec, event: Event, world: World | undefined): 
   const say = (text: string) => (world ? labelled(world, text) : text);
   if (event.text) return say(event.text);
   if (event.notes.length) return say(event.notes[0]);
-  if (event.kind === "lose") return say(event.description);
+  if (isLoss(event)) return say(event.description);
   return `${labelOf(world, event.instance)}: ${say(event.description.replace(/\.$/, ""))}`;
 }
 

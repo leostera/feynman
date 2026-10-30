@@ -9,7 +9,7 @@ import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
 for (const engine of ["integer", "classic"] as const) {
   test(`${engine}: a stopped search held its properties on every path up to its complete depth`, async () => {
     const spec = twoPhaseCommit("fixed");
-    const bounds = { depth: 30, faults: 1, repeats: 2, walks: 0, reduce: false, symmetry: false, workers: 0, instances: { Participant: 2 } };
+    const bounds = { depth: 30, walks: 0, reduce: false, symmetry: false, workers: 0, instances: { Participant: 2 } };
     const stopped = await check(spec, { ...bounds, maxStates: 120 }, [], { engine });
     expect(stopped.stoppedBy).toBe("maxStates");
     const held = stopped.properties.find((p) => p.id === "atomic")!;
@@ -46,7 +46,7 @@ for (const engine of ["integer", "classic"] as const) {
         properties: [small],
       });
     })();
-    const report = await check(spec, { depth: 400, repeats: 1000, walks: 0, reduce: false, symmetry: false, workers: 0, memoryLimit: 1 }, [], { engine });
+    const report = await check(spec, { depth: 400, walks: 0, reduce: false, symmetry: false, workers: 0, memoryLimit: 1 }, [], { engine });
     expect(report.stoppedBy).toBe("memoryLimit");
     expect(report.states).toBeLessThan(10_000);
     expect(report.properties[0]).toMatchObject({ id: "small", holds: true });

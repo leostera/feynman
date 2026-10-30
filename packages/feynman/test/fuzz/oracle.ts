@@ -3,10 +3,11 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { check, Pool, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
+import { check, faultsIn, Pool, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
 import { stepBreaks } from "../../src/check/judge.ts";
 import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, type Spec, type World } from "../../src/spec/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
+import { whenHolds } from "../../src/spec/engine.ts";
 import { explore, worldKey } from "../check/reference.ts";
 import { build, describe, type Size, type SpecDesc } from "./spec.ts";
 
@@ -40,11 +41,13 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
     find("build", String(error));
     return { findings, states: 0 };
   }
-  const bounds: Partial<Bounds> = { ...desc.bounds, ...SEARCH };
+  // The budgets are the spec's variables (build): the search takes the rest.
+  const { faults: _faults, repeats: _repeats, ...searched } = desc.bounds;
+  const bounds: Partial<Bounds> = { ...searched, ...SEARCH };
   try {
     // The search (the integer core), and the worlds it reaches.
     const worlds = new Set<string>();
-    const plain = await check(spec, { ...bounds, symmetry: false, workers: 0 }, [], { watch: { state: (w, b) => worlds.add(worldKey(w, b.acts, b.faults)) } });
+    const plain = await check(spec, { ...bounds, symmetry: false, workers: 0 }, [], { watch: { state: (w) => worlds.add(worldKey(w)) } });
     if (!plain.exhaustive) return { findings, states: plain.states, skipped: "too big" };
 
     againstReference(spec, desc, plain, worlds, find);
@@ -163,19 +166,25 @@ async function walksAgree(spec: Spec, desc: SpecDesc, plain: Report, find: (chec
   }
 }
 
-/** A stuck world: nothing can happen there, and the spec does not call it final. */
+/** A stuck world: nothing pending, no action and no fair guard (past the model's bounds, such as atMost), and the spec does not call it final. */
 function stuckHolds(spec: Spec, ce: Counterexample, find: (check: string, detail: string) => void): void {
   const world = ce.worlds.at(-1) ?? ce.initial;
-  const { actions, guards, pending } = choices(spec, world);
-  if (actions.length || guards.length || pending.length) find("stuck", "something can happen in the stuck world");
+  const waiting = world.instances.some((i) => {
+    const actor = actorNamed(spec, i.actor);
+    return Object.values(actor.actions).some((a) => whenHolds(spec, world, i, a, true)) || Object.values(actor.transitions).some((t) => !t.message && t.when && t.fair !== false && whenHolds(spec, world, i, t, true));
+  });
+  if (waiting || world.pending.length) find("stuck", "something can happen in the stuck world");
   if (spec.finalState && holdsIn(spec, world, spec.finalState.when)) find("stuck", "the stuck world is final");
 }
 
 /** Nothing fair can happen: every guard that holds and everything pending is a step marked `fair: false`. */
 function stays(spec: Spec, world: World): boolean {
   const { guards, pending } = choices(spec, world);
-  const fair = (instance: string, key: string) => actorNamed(spec, world.instances.find((i) => i.id === instance)!.actor).transitions[key]?.fair !== false;
-  return !guards.some((g) => fair(g.instance, g.key)) && !pending.some((p) => fair(p.to, p.kind === "deliver" ? p.message : p.timer));
+  const actorOf = (instance: string) => actorNamed(spec, world.instances.find((i) => i.id === instance)!.actor);
+  const fair = (instance: string, step: string) => actorOf(instance).transitions[step]?.fair !== false;
+  // A message is taken fairly when one of the steps on it is fair.
+  const fairlyTaken = (instance: string, message: string) => (actorOf(instance).stepsOn[message] ?? []).some((step) => fair(instance, step));
+  return !guards.some((g) => fair(g.instance, g.key)) && !pending.some((p) => (p.kind === "deliver" ? fairlyTaken(p.to, p.message) : fair(p.to, p.timer)));
 }
 
 /** The report with workers forced to join, against the main thread alone: the same in every way. */
@@ -204,11 +213,11 @@ function verdictOf(p: PropertyResult): "holds" | "broken" | "unfinished" {
 }
 
 function shape(ce: Counterexample) {
-  return { events: ce.events.length, faults: ce.events.filter((e) => e.kind === "lose" || e.kind === "restart").length };
+  return { events: ce.events.length, faults: faultsIn(ce.events) };
 }
 
 function worldOnly(w: World): string {
-  return worldKey(w, {}, 0);
+  return worldKey(w);
 }
 
 function same(check: string, actual: unknown, expected: unknown, find: (check: string, detail: string) => void): void {

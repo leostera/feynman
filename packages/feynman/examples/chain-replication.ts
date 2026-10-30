@@ -12,7 +12,12 @@
 // Expected: buggy breaks `monotonicReads` in 8 steps without faults (write, the head stores
 // it and passes it on, read from the head, the head answers, the answer arrives, read from
 // the tail, the tail answers from before, the answer arrives); fixed holds, with a fault too.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Update = defineMessage("Update", { version: Number });
@@ -35,8 +40,9 @@ export function chainReplication(variant: "buggy" | "fixed") {
       mood: (s) => (s.regressed ? "bad" : s.reading ? "busy" : "ok"),
     },
     actions: {
-      write: { label: "Write", description: "Writes, at the head.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Head), Write, {}) },
+      write: { with: [atMost(repeats)], label: "Write", description: "Writes, at the head.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Head), Write, {}) },
       read: {
+        with: [atMost(repeats)],
         label: "Read",
         description: variant === "buggy" ? "Reads from either replica, one read at a time." : "Reads from the tail, one read at a time.",
         when: (state) => !state.reading,
@@ -58,6 +64,7 @@ export function chainReplication(variant: "buggy" | "fixed") {
           state.seen = Math.max(state.seen, msg.version);
         },
       },
+      valueLost: lose(Value, { spend: faults }),
     },
   });
 
@@ -65,7 +72,6 @@ export function chainReplication(variant: "buggy" | "fixed") {
     name: "Head",
     zone,
     place: { order: 0 },
-    durable: ["version"],
     initialState: () => ({ version: 0 }),
     display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "info" },
     transitions: {
@@ -79,6 +85,9 @@ export function chainReplication(variant: "buggy" | "fixed") {
         },
       },
       read: { on: Read, description: "Answers with what it has.", sends: [Value], run: (state, _msg, ctx) => ctx.reply(Value, { version: state.version }) },
+      writeLost: lose(Write, { spend: faults }),
+      readLost: lose(Read, { spend: faults }),
+      crash: crash({ keeps: ["version"], spend: faults }),
     },
   });
 
@@ -86,12 +95,14 @@ export function chainReplication(variant: "buggy" | "fixed") {
     name: "Tail",
     zone,
     place: { order: 1 },
-    durable: ["version"],
     initialState: () => ({ version: 0 }),
     display: { icon: "database", status: (s) => `at version ${s.version}`, mood: () => "ok" },
     transitions: {
       update: { on: Update, description: "Stores the write.", run: (state, msg) => void (state.version = Math.max(state.version, msg.version)) },
       read: { on: Read, description: "Answers with what it has.", sends: [Value], run: (state, _msg, ctx) => ctx.reply(Value, { version: state.version }) },
+      updateLost: lose(Update, { spend: faults }),
+      readLost: lose(Read, { spend: faults }),
+      crash: crash({ keeps: ["version"], spend: faults }),
     },
   });
 

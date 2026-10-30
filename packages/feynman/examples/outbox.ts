@@ -13,7 +13,12 @@
 // Expected: buggy breaks `announcedOnceQuiet` in 3 steps with one fault (order, the shop
 // stores it, the shop restarts); fixed holds through a restart, and breaks in 4 when the
 // announcement is lost (order, store, announce, lost).
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const PlaceOrder = defineMessage("PlaceOrder");
 const OrderPlaced = defineMessage("OrderPlaced");
@@ -29,14 +34,16 @@ export function outbox(variant: "buggy" | "fixed") {
     initialState: () => ({ announced: 0 }),
     place: { order: 1 },
     display: { icon: "mail", status: (s) => `${s.announced} email(s) sent`, mood: (s) => (s.announced ? "ok" : "off") },
-    transitions: { orderPlaced: { on: OrderPlaced, description: "Emails the customer.", run: (state) => void (state.announced += 1) } },
+    transitions: {
+      orderPlaced: { on: OrderPlaced, description: "Emails the customer.", run: (state) => void (state.announced += 1) },
+      orderPlacedLost: lose(OrderPlaced, { spend: faults }),
+    },
   });
 
   const Shop = defineActor({
     name: "Shop",
     zone,
     // Orders are in the database either way; fixed, so is the outbox.
-    durable: variant === "fixed" ? ["orders", "outbox"] : ["orders"],
     initialState: () => ({ orders: 0, outbox: 0 }),
     place: { order: 0 },
     display: {
@@ -66,6 +73,8 @@ export function outbox(variant: "buggy" | "fixed") {
           ctx.send(ctx.the(Mailer), OrderPlaced, {});
         },
       },
+      placeOrderLost: lose(PlaceOrder, { spend: faults }),
+      crash: crash({ keeps: variant === "fixed" ? ["orders", "outbox"] : ["orders"], spend: faults }),
     },
   });
 
@@ -76,7 +85,7 @@ export function outbox(variant: "buggy" | "fixed") {
     initialState: () => ({}),
     display: { icon: "person", status: () => "shopping" },
     actions: {
-      order: { label: "Order", description: "Places an order.", sends: [PlaceOrder], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Shop), PlaceOrder, {}) },
+      order: { with: [atMost(repeats)], label: "Order", description: "Places an order.", sends: [PlaceOrder], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Shop), PlaceOrder, {}) },
     },
   });
 
@@ -103,7 +112,7 @@ export function outbox(variant: "buggy" | "fixed") {
       const shop = s.spawn(Shop, "Shop");
       s.act(s.the(Customer), "order");
       s.deliver(shop, PlaceOrder);
-      s.restart(shop);
+      s.step(shop, "crash");
       s.settle();
     },
   });

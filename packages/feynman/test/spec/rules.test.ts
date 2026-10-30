@@ -5,7 +5,7 @@ import { check, checkRules } from "../../src/check/index.ts";
 import { defineActor, defineProperty, defineRule, defineSpec, defineZone, type Rule } from "../../src/spec/index.ts";
 import { retriedCall } from "../../examples/retried-call.ts";
 
-const PLAIN = { depth: 12, repeats: 6, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
+const PLAIN = { depth: 12, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
 
 /** A counter that must stay below 3: `cap` keeps it there; `decoy` is read nowhere. */
 function capped(claims: (rules: { cap: Rule; decoy: Rule }) => Rule[]) {
@@ -65,7 +65,7 @@ for (const engine of ["integer", "classic"] as const) {
 }
 
 test("the retried call's idempotency key is needed: without it, a lost answer charges twice", async () => {
-  const [rule] = await checkRules(retriedCall("fixed"), { ...PLAIN, faults: 1 });
+  const [rule] = await checkRules(retriedCall("fixed"), PLAIN);
   expect(rule).toMatchObject({ name: "idempotencyKey", neededBy: [{ property: "chargedOnce", verdict: "breaks", events: 5 }] });
 });
 

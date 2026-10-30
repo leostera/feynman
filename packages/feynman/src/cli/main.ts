@@ -23,7 +23,7 @@ Commands:
   check [spec]             Explore every interleaving within bounds; check properties
                            (safety and liveness), that nothing gets stuck, scenarios,
                            and that every source still resolves.
-      --depth N --faults N --repeats N --max-states N --time-limit SECONDS
+      --depth N --max-states N --time-limit SECONDS
       --memory-limit GB          stop, keeping the verdicts so far, past this much memory (50% of the machine's)
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
@@ -32,7 +32,7 @@ Commands:
       --workers N                threads for the classic search (FEYNMAN_ENGINE=classic; default: cores - 1, up to 7)
       --only P,Q                 check and show only these properties
       --without R,S              the design without these rules (check and run; RFD0010)
-      --set NAME=VALUE           start a model variable at another value, like a budget (check and run; RFD0012)
+      --set NAME=VALUE           start a model variable at another value: --set faults=2 raises a budget (check and run)
       --no-rules                 skip checking that each rule is needed
       --brief                    verdicts and counterexample sizes, without traces
       --json                     the whole result as JSON, for scripts and agents
@@ -66,8 +66,6 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       set: { type: "string", multiple: true },
       "no-rules": { type: "boolean" },
       depth: { type: "string" },
-      faults: { type: "string" },
-      repeats: { type: "string" },
       "max-states": { type: "string" },
       "memory-limit": { type: "string" },
       "time-limit": { type: "string" },
@@ -149,8 +147,6 @@ function bounds(values: Record<string, string | string[] | boolean | undefined>)
     return n;
   };
   if (int("depth") !== undefined) out.depth = int("depth");
-  if (int("faults") !== undefined) out.faults = int("faults");
-  if (int("repeats") !== undefined) out.repeats = int("repeats");
   if (int("max-states") !== undefined) out.maxStates = int("max-states");
   if (int("time-limit") !== undefined) out.timeLimit = int("time-limit")! * 1000;
   if (values["memory-limit"] !== undefined) {

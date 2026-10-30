@@ -3,9 +3,9 @@
 // whichever way it explores: with or without its reductions, with or without symmetry, and
 // by random runs alone.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { check, replay, type CheckOptions, type Counterexample, type Report } from "../../src/check/index.ts";
+import { check, faultsIn, replay, type CheckOptions, type Counterexample, type Report } from "../../src/check/index.ts";
 import { isLiveness } from "../../src/spec/index.ts";
-import { caseName, corpus, type Expected } from "./corpus.ts";
+import { caseName, configured, corpus, type Expected } from "./corpus.ts";
 
 const EXHAUSTIVE = { maxStates: 2_000_000, timeLimit: 120_000, walks: 0 };
 
@@ -22,15 +22,15 @@ function verdicts(report: Report, expected: Record<string, Expected>): Record<st
 
 /** A counterexample's length and faults. For liveness, the way to the loop. */
 function shape(ce: Counterexample): Expected {
-  return { events: ce.events.length, faults: ce.events.filter((e) => e.kind === "lose" || e.kind === "restart").length };
+  return { events: ce.events.length, faults: faultsIn(ce.events) };
 }
 
 /** Where the report says the system gets stuck, in the terms of `Expected`. */
 const stuckOf = (report: Report) => (report.stuck ? shape(report.stuck.counterexample) : undefined);
 
 for (const example of corpus) for (const c of example.cases) {
-  const spec = example.spec(c.variant);
-  const bounds = { ...c.bounds, instances: example.instances ?? {} };
+  const { spec, bounds: given } = configured(example.spec(c.variant), c.bounds);
+  const bounds = { ...given, instances: example.instances ?? {} };
   describe(caseName(example, c), () => {
     const run = (extra: Partial<typeof bounds> = {}, options: CheckOptions = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra }, [], options);
     let plain: Report;

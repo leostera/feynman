@@ -1,6 +1,6 @@
+export { atMost, budget, crash, defineCall, duplicate, failed, FAULT, lose, spend, type Budget, type Call, type Failed, type Failure } from "../faults/index.ts";
 export {
   defineActor,
-  defineCall,
   defineGroup,
   defineLimit,
   defineMessage,
@@ -10,7 +10,6 @@ export {
   defineSpec,
   defineVariable,
   defineZone,
-  failed,
   input,
 } from "./dsl.ts";
 export { listOf, nullable, oneOf, recordOf, setOf, type, describeSchema, mismatch, type Fields, type Schema, type Shaped, type TypeOf } from "./schema.ts";
@@ -18,11 +17,8 @@ export type {
   Actor,
   ActorLink,
   AnyMessage,
-  Call,
   Ctx,
   Delivery,
-  Failed,
-  Failure,
   InputDef,
   InputType,
   Instance,
@@ -60,6 +56,7 @@ export type {
   Group,
   GroupDef,
   ModelView,
+  Part,
   SendOptions,
   Variable,
 } from "./dsl.ts";

@@ -18,7 +18,12 @@
 // Expected, with two replicas: buggy breaks `convergesOnceQuiet` in 4 steps without faults (A
 // adds and removes, and B hears of the remove first); fixed holds without faults, and both
 // break in 2 steps with one (an add, and its message lost).
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, setOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, setOf } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const Add = defineMessage("Add", { tag: String });
 const Remove = defineMessage("Remove", { tags: setOf(String) }, { tone: "refused" });
@@ -30,7 +35,6 @@ export function orSet(variant: "buggy" | "fixed") {
     name: "Replica",
     zone,
     symmetric: true,
-    durable: ["has", "tags", "removed", "added"],
     // `has`: buggy's set. `tags`: fixed's, x is in while any is, and `removed`, its
     // tombstones. `added`: adds made here, to name tags.
     initialState: () => ({ has: false, tags: new Set<string>(), removed: new Set<string>(), added: 0 }),
@@ -42,6 +46,7 @@ export function orSet(variant: "buggy" | "fixed") {
     },
     actions: {
       add: {
+        with: [atMost(repeats)],
         label: "Add x",
         description: variant === "buggy" ? "Adds x and tells the other replica." : "Adds x with a new tag and tells the other replica.",
         sends: [Add],
@@ -54,6 +59,7 @@ export function orSet(variant: "buggy" | "fixed") {
         },
       },
       remove: {
+        with: [atMost(repeats)],
         label: "Remove x",
         description: variant === "buggy" ? "Removes x and tells the other replica." : "Removes the tags it has seen and tells the other replica which.",
         when: (state) => contains(state),
@@ -90,6 +96,9 @@ export function orSet(variant: "buggy" | "fixed") {
           }
         },
       },
+      addLost: lose(Add, { spend: faults }),
+      removeLost: lose(Remove, { spend: faults }),
+      crash: crash({ keeps: ["has", "tags", "removed", "added"], spend: faults }),
     },
   });
 

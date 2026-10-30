@@ -103,7 +103,7 @@ export function inferredTokens(spec: Spec, world: World): Map<string, Token[]> {
     const actor = spec.actors.find((a) => a.name === target.actor);
     if (!actor) continue;
     for (const action of Object.values(actor.actions)) {
-      if (action.when && !attempt(() => whenHolds(spec, world, target, action), false)) continue;
+      if (!attempt(() => whenHolds(spec, world, target, action), false)) continue;
       for (const [name, input] of Object.entries(action.inputs)) {
         if (input.type !== "string" && input.type !== "number") continue;
         const read = new Set<string>();
@@ -144,7 +144,7 @@ export function dropsFor(spec: Spec, world: World, id: string, token: Token): Dr
   for (const action of Object.values(actor.actions)) {
     const slot = Object.entries(action.inputs).find(([name, input]) => input.accepts === token.kind || token.kind === inferredKind(actor.name, action.key, name));
     if (!slot) continue;
-    if (action.when && !attempt(() => whenHolds(spec, world, instance, action), false)) continue;
+    if (!attempt(() => whenHolds(spec, world, instance, action), false)) continue;
     const inputs: Record<string, unknown> = {};
     let complete = true;
     for (const [name, input] of Object.entries(action.inputs)) {

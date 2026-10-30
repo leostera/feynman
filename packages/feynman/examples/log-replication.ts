@@ -12,7 +12,12 @@
 // Expected: buggy breaks `followerIsPrefix` in 3 steps without faults (the leader appends x,
 // then y, and y arrives first); fixed holds, with a fault too, but a lost entry is never sent
 // again: stuck in 4 steps, the follower short of the leader.
-import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+
+/** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
+const faults = budget("faults", 1);
+/** Times one instance takes each action on one path. */
+const repeats = defineVariable("repeats", 2);
 
 const ENTRIES = ["x", "y"];
 
@@ -36,6 +41,7 @@ export function logReplication(variant: "buggy" | "fixed") {
     },
     actions: {
       append: {
+        with: [atMost(repeats)],
         label: "Append",
         description: "Appends the next entry to its log and sends it to the follower.",
         when: (state) => state.log.length < ENTRIES.length,
@@ -57,6 +63,7 @@ export function logReplication(variant: "buggy" | "fixed") {
           if (msg.length < state.log.length) ctx.send(ctx.the(Follower), Append, { index: msg.length, entry: state.log[msg.length] });
         },
       },
+      behindLost: lose(Behind, { spend: faults }),
     },
   });
 
@@ -84,6 +91,7 @@ export function logReplication(variant: "buggy" | "fixed") {
           ctx.reply(Behind, { length: state.log.length });
         },
       },
+      appendLost: lose(Append, { spend: faults }),
     },
   });
 
