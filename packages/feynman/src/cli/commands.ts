@@ -5,7 +5,7 @@ import { checkSources, git, repositoryAt, withWorktree, writeLock, type Reposito
 import { diffRuns, runScenario, type RunDiff, type Spec } from "../spec/index.ts";
 import type { Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
-import { bold, dim, formatDiff, formatEvents, formatSources, red } from "./format.ts";
+import { bold, dim, formatDiff, formatEvents, formatSources, green, red } from "./format.ts";
 import { loadSpec, readConfig, type LoadedSpec } from "./load.ts";
 
 export interface Context {
@@ -56,13 +56,25 @@ export async function list(ctx: Context): Promise<number> {
   return status;
 }
 
-export async function runCommand(ctx: Context, named: string[], scenarioName?: string): Promise<number> {
+export async function runCommand(ctx: Context, named: string[], scenarioName?: string, all = false): Promise<number> {
   let status = 0;
-  for (const { path, spec } of await loadSelected(ctx, named)) {
+  const selected = await loadSelected(ctx, named);
+  // Every trace of every scenario runs to tens of kilobytes: several scenarios get a line each.
+  const traces = all || scenarioName !== undefined || selected.reduce((n, { spec }) => n + spec.scenarios.length, 0) <= 1;
+  for (const { path, spec } of selected) {
     const scenarios = scenarioName ? spec.scenarios.filter((s) => s.name === scenarioName) : spec.scenarios;
     if (!scenarios.length) {
       console.log(red(`${path}: no scenario ${scenarioName ? `named "${scenarioName}"` : "defined"}; scenarios: ${spec.scenarios.map((s) => s.name).join(", ") || "none"}`));
       status = 1;
+    }
+    if (!traces && scenarios.length) {
+      console.log(dim(path));
+      for (const scenario of scenarios) {
+        const run = runScenario(spec, scenario);
+        if (run.error) status = 1;
+        console.log(run.error ? red(`  ✗ ${scenario.name}  stopped after ${run.events.length} event(s): ${run.error}`) : `  ${green("✓")} ${scenario.name}  ${dim(`${run.events.length} event(s)`)}`);
+      }
+      continue;
     }
     for (const scenario of scenarios) {
       const run = runScenario(spec, scenario);
@@ -75,6 +87,7 @@ export async function runCommand(ctx: Context, named: string[], scenarioName?: s
       console.log();
     }
   }
+  if (!traces) console.log(dim(`feynman run <spec> --scenario NAME prints one trace; --all prints every one.`));
   return status;
 }
 
