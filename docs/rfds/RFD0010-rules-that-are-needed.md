@@ -10,20 +10,22 @@
 
 ## Summary
 
-A spec can name the rules of its design, the parts that exist to keep a property true, and
-say which properties each one is needed for:
+A spec can name the rules of its design: the parts that exist to keep a property true. A
+property then says which rules it needs, by reference:
 
 ```ts
-rules: {
-  pendingRule: { description: "A read waits behind a push it has not seen confirmed.", needed: ["ackedPushesAreVisible", "readsNeverGoBack"] },
-},
+const pendingRule = spec.defineRule({ name: "pendingRule", description: "A read waits behind a push it has not seen confirmed." });
+// where the rule applies:
+if (pendingRule.on && state.pending.length) return void state.waiting.push(msg);
+// and in the properties:
+ackedPushesAreVisible: { description: "…", always: (w) => …, needs: [pendingRule] },
 ```
 
-The spec reads `spec.rules.pendingRule` where the rule applies. `feynman check` then also
-checks the design without each rule, and expects every property the rule is needed for to
-break. When one doesn't, the check fails: either the rule does nothing, or the property is
-too weak to notice. `feynman check --without pendingRule` checks the design without the rule,
-with its counterexamples, the way a reader would ask "what goes wrong if we drop this?".
+`feynman check` then also checks the design without each rule, and expects every property
+that needs it to break. When one doesn't, the check fails: either the rule does nothing, or
+the property is too weak to notice. `feynman check --without pendingRule` checks the design
+without the rule, with its counterexamples, the way a reader would ask "what goes wrong if
+we drop this?".
 
 ## Motivation
 
@@ -55,12 +57,13 @@ author, who knows which parts of the design are load-bearing.
 
 ## Goals
 
-- A spec names its rules. Each has a description and, optionally, the properties it is needed
-  for.
+- A spec names its rules. Each is a typed value the spec holds, with a name and a
+  description, not a string: a property that needs it says so by reference, and the type
+  checker catches a misspelt or deleted rule.
 - A rule is on by default. Turning it off is a variant of the design, built from the same
   spec, with no copy.
-- `feynman check` checks each rule's claim: without the rule, each property it is needed for
-  breaks. A claim that doesn't hold fails the check, as a broken property does.
+- `feynman check` checks each claim: without the rule, each property that needs it breaks. A
+  claim that doesn't hold fails the check, as a broken property does.
 - `feynman check --without RULE` checks the design without one or more rules, with full
   counterexamples and `--as-scenario`.
 - Both engines, `--json`, and the explorer show the rules and their verdicts.
@@ -78,40 +81,40 @@ author, who knows which parts of the design are load-bearing.
 
 ### Naming a rule
 
-Rules are declared next to the messages, and read in the builder:
+A rule is defined in the builder, before the actors that read it, like a zone:
 
 ```ts
-export default defineSpec(
-  "Ref view",
-  {
-    messages: { ... },
-    rules: {
-      pendingRule: {
-        description: "A read waits behind a push the shard has not confirmed to every copy.",
-        needed: ["ackedPushesAreVisible", "readsNeverGoBack"],
-      },
-    },
-  },
-  (spec) => {
-    const Copy = spec.defineActor({
-      ...
-      transitions: {
-        [Read]: {
-          description: "Answers a read, unless a push is pending.",
-          run(state, msg, ctx) {
-            if (spec.rules.pendingRule && state.pending.length) return void state.waiting.push(msg);
-            ctx.reply(Answer, { version: state.version });
-          },
+export default defineSpec("Ref view", { messages: { ... } }, (spec) => {
+  const pendingRule = spec.defineRule({
+    name: "pendingRule",
+    description: "A read waits behind a push the shard has not confirmed to every copy.",
+  });
+
+  const Copy = spec.defineActor({
+    ...
+    transitions: {
+      [Read]: {
+        description: "Answers a read, unless a push is pending.",
+        run(state, msg, ctx) {
+          if (pendingRule.on && state.pending.length) return void state.waiting.push(msg);
+          ctx.reply(Answer, { version: state.version });
         },
       },
-    });
-  },
-);
+    },
+  });
+
+  spec.defineProperties({
+    ackedPushesAreVisible: { description: "A read after an acknowledged push sees it.", always: (w) => …, needs: [pendingRule] },
+    readsNeverGoBack: { description: "A read sees at least what an earlier one saw.", always: (w) => …, needs: [pendingRule] },
+  });
+});
 ```
 
-`spec.rules.pendingRule` is `true` in the spec as written, and `false` in the variant
-without it. The type of `spec.rules` comes from the declaration, so a misspelt rule is a type
-error, and `needed` only accepts property names once they are declared.
+`pendingRule.on` is `true` in the spec as written, and `false` in the variant without it.
+The claim lives on the property, next to what it says, as a reference to the rule. There is
+no string to misspell, and deleting a rule that a property needs is a type error. The rule's
+`name` is how the CLI and the reports refer to it (`--without pendingRule`). Two rules with
+one name are a definition error.
 
 ### What `feynman check` does
 
@@ -120,18 +123,18 @@ After the spec's own verdicts, the check lists its rules:
 ```
   rules
     ✓ pendingRule  needed: without it, ackedPushesAreVisible breaks (5 events), readsNeverGoBack breaks (6 events)
-    ✗ barrier      not needed for readsNeverGoBack: it held without the rule, in every state
-    ~ quorum       needed for onlyCommittedIsShown? it held without the rule in the 300,000 states explored, not all of them
+    ✗ barrier      not needed by readsNeverGoBack: it held without the rule, in every state
+    ~ quorum       needed by onlyCommittedIsShown? it held without the rule in the 300,000 states explored, not all of them
 ```
 
-- **✓** Each property the rule is needed for broke without it. The event counts are the
+- **✓** Each property that needs the rule broke without it. The event counts are the
   shortest counterexamples.
 - **✗** A property held without the rule, exhaustively. The check fails: the rule is dead, or
   the property is too weak.
 - **~** A property held without the rule, but the search stopped early. It's not a failure,
   as with any unfinished verdict.
 
-A rule without `needed` isn't checked; it can still be turned off with `--without`.
+A rule that no property needs isn't checked. It can still be turned off with `--without`.
 
 ### Looking at the design without a rule
 
@@ -149,52 +152,52 @@ design without the rule.
 
 ### Data model
 
-- `SpecOptions` gains `rules?: Record<string, RuleDef<PropertyIds>>`, with
-  `RuleDef = { description: string; needed?: PropertyId[] }`.
-- `SpecBuilder` gains `rules: Readonly<Record<RuleName, boolean>>`.
-- `Spec` gains `rules: RuleInfo[]` (`{ name, description, needed }`) and
-  `without(names: string[]): Spec`.
+- `SpecBuilder` gains `defineRule(def: { name: string; description: string }): Rule`, with
+  `Rule = { readonly name: string; readonly description: string; readonly on: boolean }`.
+- `PropertyDef` gains `needs?: readonly Rule[]`.
+- `Spec` gains `rules: RuleInfo[]`, each `{ name, description, neededBy: string[] }` (the
+  ids of the properties that need it), and `without(names: string[]): Spec`.
 - `without` re-runs the builder with those rules off. `defineSpec` keeps the builder for this.
   The variant's `name` is `"Ref view without pendingRule"`. Its `rules` say which are off.
-- `Report` gains `rules?: RuleVerdict[]`, each `{ name, needed: { property, verdict:
+- `Report` gains `rules?: RuleVerdict[]`, each `{ name, neededBy: { property, verdict:
   "breaks" | "holds" | "unfinished", events? }[] }`.
 
 ### Semantics
 
 - A rule's claim is checked by checking `spec.without([rule])` with the same bounds, seeds
-  and instances as the spec, restricted to the properties in `needed`.
-- That search stops as soon as every property in `needed` has broken. Searches for a broken
-  property already stop being useful at that point. This makes a ✓ cost about as much as
-  finding the shortest counterexample, not a full search.
+  and instances as the spec, restricted to the properties that need it.
+- That search stops as soon as every one of them has broken. A search that has found every
+  property broken has nothing left to learn, so a ✓ costs about as much as finding the
+  shortest counterexamples, not a full search.
 - The verdict per property is the variant's: broken (✓ for the claim), held exhaustively
   (✗), held unfinished (~).
-- `needed` naming a property the spec doesn't have is a definition error, like an unknown
-  message.
+- A property that `needs` a rule defined by another spec is a definition error. Rules are
+  matched across a rebuild by name.
 - Scenarios run in the variant too, as seeds. A scenario that fails in the variant (it relied
   on the rule) is dropped as a seed for that variant, and noted, rather than failing the check.
 
 ### Invariants
 
-- The spec as written is unchanged by rules: `spec.rules[x]` is `true` everywhere, so its
-  states and verdicts are the same as before.
+- The spec as written is unchanged by rules: every `rule.on` is `true`, so its states and
+  verdicts are the same as before.
 - `spec.without([])` builds a spec equal to the original.
 - A variant is a spec like any other: every check, view and command works on it.
 
 ### Compatibility and migration
 
-- Specs without `rules` are unchanged.
-- The `sed` copies and `PENDING_RULE` constants agents write today become one declaration and
-  a `spec.rules.x` read.
+- Specs without rules are unchanged.
+- The `sed` copies and `PENDING_RULE` constants agents write today become one `defineRule`,
+  a `rule.on` read, and `needs` on the properties.
 
 ### Rollout and validation
 
-1. DSL: `rules` in the options, `spec.rules` in the builder, `Spec.rules` and `without`, and
-   the definition-time checks.
-2. Check: the rule verdicts, the early stop when every needed property broke, and `--json`.
-   Tested on both engines.
+1. DSL: `defineRule`, `needs` on properties, `Spec.rules` and `without`, and the
+   definition-time checks.
+2. Check: the rule verdicts, the early stop once every property that needs the rule broke,
+   and `--json`. Tested on both engines.
 3. CLI: the rules section, `--without` on `check`, `run` and `dev`, and `--as-scenario`.
 4. Explorer: rules in the Checks panel, with each verdict.
-5. One example (retried call) declares its idempotency key as a rule, alongside the existing
+5. One example (retried call) defines its idempotency key as a rule, alongside the existing
    factory, and the skill teaches rules.
 
 ## Drawbacks
@@ -202,18 +205,39 @@ design without the rule.
 - Every claimed rule costs another search on every check. The early stop keeps a ✓ cheap, but a
   ✗ or a ~ costs a full search. `--no-rules` skips them when iterating.
 - Rules are read inside handlers, so the spec has branches that the code doesn't. That's
-  already true of the `buggy`/`fixed` examples, and the branch is named and described.
-- It is easy to declare a rule and forget `needed`. Then it's only a switch. That's fine, but
-  the claim is the valuable part, so the skill should push for it.
+  already true of the `buggy`/`fixed` examples, and here the branch is named and described.
+- It is easy to define a rule that no property needs. Then it's only a switch. That's fine,
+  but the claim is the valuable part, so the skill should push for it.
 
 ## Rationale and alternatives
 
 ### Proposed design
 
 Rules put the "what if we drop this?" question into the spec, where the check keeps
-answering it. The rule is named by the author, read where it applies, and claimed by
-property. That's the smallest thing that replaces the `sed` copies and makes the claim
-durable.
+answering it. A rule is a value the author defines, reads where it applies, and points to
+from the properties that need it. That's the smallest thing that replaces the `sed` copies
+and makes the claim durable, with the type checker following every reference.
+
+### A composite property
+
+`readWaitsBehindPush: (w) => ackedPushesAreVisible(w) && readsNeverGoBack(w)` groups two
+properties, but it's still a statement about the design as written: it holds, as both of its
+parts do. A rule's claim is about a different design, the one without the rule: it says that
+there, the property breaks. No property of one design can say that, however it's combined,
+because the design without the rule never runs. That needs a second model, and that's what
+`without` builds. TLA+ users do the same with a `Buggy` constant, as Feynman's own oracles
+do.
+
+Composite properties still help: a property that groups others can need a rule like any
+other, and the claim then reads "without the pending rule, read consistency breaks".
+
+### Property names as strings
+
+A first draft declared rules in the spec's options, with `needed: ["ackedPushesAreVisible"]`.
+The type checker could follow that only through string-literal types threaded from
+`defineProperties` back to the options, and renaming a property would leave the claim behind
+until the check ran. A reference from the property to the rule is checked as soon as it's
+written. It also reads in the direction a reader asks: "what does this property depend on?".
 
 ### Simpler or narrower approach
 
@@ -221,7 +245,7 @@ durable.
   with `--export NAME`. It's simple, and covers the examples, but it doesn't say what the
   variant is for. A user would have to compare two reports by eye to see that a property
   broke, and nothing fails when it stops breaking.
-- **Only `--without`, no `needed`.** It gets rid of the copies, but not the reason they are
+- **Only `--without`, no `needs`.** It gets rid of the copies, but not the reason they are
   made: the claim would still live in a transcript.
 
 ### Other alternatives considered
@@ -229,9 +253,8 @@ durable.
 - **Generic options** (`options: { pageSize: 2 }`). They're more general, but a check can't
   say what "needed" means for a number, and bounds and instances already vary the sizes.
 - **Automatic mutation testing.** Drop each guard or transition in turn and see which
-  properties notice. It needs no annotation, but most mutations are meaningless (a spec that
-  no longer type-checks its own story), and it can't tell an intended weak point from a dead
-  rule. It could build on rules later.
+  properties notice. It needs no annotation, but most mutations are meaningless, and it can't
+  tell an intended weak point from a dead rule. It could build on rules later.
 
 ### Do nothing
 
