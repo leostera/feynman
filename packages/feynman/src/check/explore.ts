@@ -113,6 +113,11 @@ export interface PropertyHeld extends PropertyVerdict {
    * may lie.
    */
   unfinished?: boolean;
+  /**
+   * When the search stopped early: the length of the paths it had explored in full. A safety
+   * property held on every path of up to this many events, from each world it started from.
+   */
+  upTo?: number;
 }
 
 export interface PropertyBroken extends PropertyVerdict {
@@ -327,7 +332,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: S
     if (found !== undefined) return { ...base, holds: false, counterexample: fromSearch(found), foundBy: "search" };
     const walkedTo = fromWalk(property.id);
     if (walkedTo) return { ...base, holds: false, counterexample: walkedTo, foundBy: "walk" };
-    return { ...base, holds: true };
+    return { ...base, holds: true, ...(search.stoppedBy ? { upTo: search.completeDepth } : {}) };
   });
   const stuckFound =
     search.stuckAt !== undefined ? { counterexample: fromSearch(search.stuckAt), foundBy: "search" as const } : walked.stuck ? { counterexample: fromRoot(walked.stuck.root, walked.stuck.choices), foundBy: "walk" as const } : undefined;
