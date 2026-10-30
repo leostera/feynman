@@ -1,5 +1,6 @@
 // Mechanical hints that a spec is hiding the system it models. They catch the most
-// common way a spec goes vague: one step standing for many stages of the code.
+// common way a spec goes vague, one step standing for many stages of the code, and a step on a
+// message nothing sends, which never runs.
 import { parseSource } from "../code/index.ts";
 import type { Spec, StepInfo } from "../spec/index.ts";
 
@@ -22,7 +23,13 @@ function stepName(step: StepInfo): string {
 
 export function shapeWarnings(spec: Spec): ShapeWarning[] {
   const warnings: ShapeWarning[] = [];
+  const sent = new Set(spec.actors.flatMap((a) => [...Object.values(a.actions), ...Object.values(a.transitions)].flatMap((step) => step.sends)));
   for (const actor of spec.actors) {
+    for (const step of Object.values(actor.transitions)) {
+      // A call's failure is sent by the call failing; only messages are sent by steps.
+      if (!step.key.startsWith("message:") || sent.has(step.key)) continue;
+      warnings.push({ actor: actor.name, step: step.name, message: `is on ${spec.messages[step.key]?.id ?? step.key}, which no step sends: it never runs` });
+    }
     for (const step of [...Object.values(actor.actions), ...Object.values(actor.transitions)]) {
       const files = filesOf(step);
       if (files.length < MAX_FILES_PER_STEP) continue;

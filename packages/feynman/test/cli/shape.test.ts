@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { defineActor, defineSpec, defineZone } from "../../src/spec/index.ts";
+import { defineActor, defineMessage, defineSpec, defineZone } from "../../src/spec/index.ts";
 import { shapeWarnings, unbuilt } from "../../src/cli/shape.ts";
 
 const spec = (() => {
@@ -32,4 +32,22 @@ test("a step citing many files is flagged; a short trail is not", () => {
 
 test("steps without sources are designs, not errors", () => {
   expect(unbuilt(spec)).toEqual([{ actor: "Worker", step: "archive" }]);
+});
+
+test("a step on a message no step sends is flagged: it never runs", () => {
+  const Ping = defineMessage("Ping");
+  const Pong = defineMessage("Pong");
+  const zone = defineZone({ name: "z" });
+  const A = defineActor({
+    name: "A",
+    zone,
+    singleton: true,
+    initialState: () => ({}),
+    actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (_s, _i, ctx) => ctx.send(ctx.self, Ping, {}) } },
+    transitions: {
+      ping: { on: Ping, description: "Is pinged.", run: () => {} },
+      pong: { on: Pong, description: "Nothing sends it.", run: () => {} },
+    },
+  });
+  expect(shapeWarnings(defineSpec({ name: "Talk", actors: [A] }))).toEqual([{ actor: "A", step: "pong", message: "is on Pong, which no step sends: it never runs" }]);
 });

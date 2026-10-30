@@ -107,7 +107,7 @@ export default defineSpec({
 Every part is a value: messages with the schema of their payload, checked when sent; actors
 whose steps say what they are `on`; properties and scenarios. `defineSpec` puts them
 together, and says when they do not fit: a message no one receives, a call whose failure no
-one handles, an actor that is not in the spec.
+one handles, two steps on one message.
 
 [`examples/`](examples/) has 28 well-known systems (two-phase commit, Raft's vote, chain
 replication, CRDTs, dining philosophers and more), each with a real bug for the checker to
