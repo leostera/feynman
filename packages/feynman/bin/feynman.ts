@@ -15,7 +15,8 @@ try {
  * says nothing useful, so the report adds where it happened and where to send it.
  */
 function crashed(error: unknown): boolean {
-  if (!(error instanceof Error) || error.constructor === Error) return false;
+  const own = [TypeError, RangeError, ReferenceError, SyntaxError];
+  if (!(error instanceof Error) || !own.some((type) => error instanceof type)) return false;
   // The first frame in a file: JSON.parse and friends leave native frames above it.
   const first = error.stack?.split("\n").find((line) => line.trim().startsWith("at ") && line.includes("/"));
   return first?.includes(dirname(import.meta.dir)) ?? false;

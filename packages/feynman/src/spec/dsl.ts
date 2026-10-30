@@ -688,6 +688,8 @@ export interface SpecParts {
  * properties that use them.
  */
 export function defineSpec(parts: SpecParts): Spec {
+  if (typeof parts === "string")
+    throw new Error(`defineSpec(${JSON.stringify(parts)}, { messages }, (spec) => …) is gone: a spec is made of parts since 0.14 (RFD0011). Define each part at the top level, then defineSpec({ name: ${JSON.stringify(parts)}, actors, properties, scenarios }); the changelog's Migrating section has the steps`);
   if (typeof parts !== "object" || parts === null || typeof parts.name !== "string")
     throw new Error("defineSpec takes its parts: defineSpec({ name, actors, properties, scenarios })");
   return assemble(parts, []);

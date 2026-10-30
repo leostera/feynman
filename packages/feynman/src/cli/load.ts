@@ -59,8 +59,14 @@ async function bundle(path: string): Promise<string> {
       },
     ],
   });
-  if (!result.success) throw new Error(result.logs.map(describeLog).join("\n") || "the spec could not be bundled");
+  if (!result.success) throw new Error([...result.logs.map(describeLog), ...upgradeHint(result.logs.map((log) => log.message))].join("\n") || "the spec could not be bundled");
   return result.outputs[0].text();
+}
+
+/** What to do about imports of APIs a spec written for an older Feynman uses. */
+function upgradeHint(errors: string[]): string[] {
+  const gone = errors.some((error) => /No matching export .* for import "(message|call)"|Export named '(message|call)' not found/.test(error));
+  return gone ? ["message and call are gone since 0.14: a spec is made of parts (RFD0011). Messages are defineMessage(\"Id\", schema) and calls defineCall; the changelog's Migrating section has the steps."] : [];
 }
 
 /** A build message with where it happened: "specs/x.ts:12:4 Expected "}" but found ")"". */
@@ -116,7 +122,8 @@ export async function loadSpec(path: string): Promise<LoadedSpec> {
     module = loaded.module as { default?: unknown };
     bundled = loaded.bundled;
   } catch (error) {
-    throw new SpecLoadError(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new SpecLoadError([`${path}: ${message}`, ...upgradeHint([message])].join("\n"));
   }
   const spec = module.default as Spec | undefined;
   if (!spec || typeof spec !== "object" || !Array.isArray((spec as Spec).actors)) {

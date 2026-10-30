@@ -348,8 +348,8 @@ export default defineSpec({
 
 `defineSpec` says when the parts do not fit, before anything runs: two parts with one id, a
 message sent that no actor has a step `on`, an actor with two steps on one message, a call
-whose sender has no step on `failed(Call)`, an actor named in a group or link that is not in
-`actors`. A message some actor receives but none sends is a warning.
+whose sender has no step on `failed(Call)`, an actor named in a group that is not in
+`actors`. `feynman check` also warns of a step on a message no step sends: it never runs.
 
 Several specs from one file (a buggy and a fixed variant) are a function of the variant
 that defines the parts inside and returns `defineSpec(…)`, as in `examples/`. A helper used

@@ -4,6 +4,105 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## 0.14.0
+
+A spec is made of parts (RFD0011). Messages, calls, zones, actors, rules, properties and
+scenarios are values defined at the top level of the file, and `defineSpec` puts them
+together. Parts name each other by value, never by a string, so the editor and the checker
+follow every reference, and a spec reads top to bottom with no closure around it.
+
+### Migrating
+
+Every spec changes. `feynman check` on a 0.13 spec says what replaced what it uses. Rewrite
+it in this order; the state counts and verdicts stay the same.
+
+1. **Messages** move out of `defineSpec` and get a schema, the payload's type as a value:
+
+   ```ts
+   // Before
+   messages: { Charge: call<{ payment: string }>({ name: "charge", over: "rpc" }), Charged: message<{ payment: string }>({ name: "charged", tone: "reply" }) }
+   // After
+   const Charge = defineCall("Charge", { payment: String }, { over: "rpc" });
+   const Charged = defineMessage("Charged", { payment: String }, { tone: "reply" });
+   ```
+
+   The id is the first argument, and the name defaults to it in words ("Charge" is
+   "charge"); keep `name` only where it says more. Schemas: `String`, `Number`, `Boolean`,
+   nested objects, `oneOf(…)`, `listOf(S)`, `setOf(S)`, `recordOf(S)`, `nullable(S)`, and
+   `type<T>()` for a type the checker does not look inside. Every payload sent is checked
+   against its schema.
+2. **`spec.defineX` becomes `defineX`**, at the top level. Rules, properties and scenarios
+   take their name or id first, and properties are one each:
+
+   ```ts
+   // Before
+   const cap = spec.defineRule({ name: "cap", description: "…" });
+   spec.defineProperties({ belowThree: { description: "…", always: (w) => …, needs: [cap] } });
+   spec.defineScenario({ name: "A payment", run(s) { … } });
+   // After
+   const cap = defineRule("cap", { description: "…" });
+   const belowThree = defineProperty("belowThree", { description: "…", always: (w) => …, needs: [cap] });
+   const aPayment = defineScenario("A payment", { run(s) { … } });
+   ```
+
+   `spec.defineInput` is `input`, and `spec.defineZone`, `defineLimit` and `defineGroup`
+   take what they took.
+3. **Steps are named, and say what they are on**:
+
+   ```ts
+   // Before
+   transitions: { [Charge]: { description: "…", run(state, msg, ctx) { … } }, [spec.failed(Charge)]: { … } }
+   // After
+   transitions: { charge: { on: Charge, description: "…", run(state, msg, ctx) { … } }, chargeFailed: { on: failed(Charge), … } }
+   ```
+
+   An actor has one step per message. A timer's or a guard's `run(state, ctx)` becomes
+   `run(state, _, ctx)`: every step's run takes the same three arguments.
+4. **Scenarios and traces name messages by value**: `s.deliver(bank, Charge)`,
+   `s.drop(client, Charged)`, `s.deliver(client, failed(Charge))`, `e.sent(Charge)`;
+   `e.is(Actor, "step")` takes the step's new name.
+5. **`defineSpec` takes the parts**, and the closure's `return { …actors }` goes:
+
+   ```ts
+   export default defineSpec({
+     name: "Retried call",
+     actors: [Client, Bank],
+     properties: [chargedOnce, paymentsEnd],
+     finalState: { description: "The order is paid.", when: (w) => w.the(Client).state.paid }, // was spec.defineFinalState
+     scenarios: [aPayment, theAnswerIsLost],
+   });
+   ```
+
+   Messages, zones and rules are found from the actors and properties that use them;
+   `groups`, `limits`, and `rules` no property needs yet, are listed.
+6. **Playground files** import the actors they name from the spec, which exports them:
+   `import spec, { Person } from "./remote-access.ts"` in place of `spec.handles.Person`.
+7. **Agents and scripts:** `--json`'s `step` is the step's name (`charge`), not its key
+   (`message:Charge`); `--as-scenario` writes `defineScenario("…", { … })` with messages by
+   value.
+
+The skill's "Bringing an older spec up to date" has the same steps for an agent.
+
+### Specs from parts
+
+- `defineSpec` says when the parts do not fit, before anything runs: two parts with one
+  id, a message sent that no actor has a step on, two steps on one message, a call whose
+  sender has no step on `failed(Call)`, an actor named in a group that is not in `actors`.
+- `feynman check` warns of a step on a message no step sends: it never runs.
+- A payload that does not match its schema fails the step that sends it, saying what is
+  wrong: `socket: "1", but its schema says number`.
+- `rule.on` reads which rules are off in the spec running, so `--without` no longer builds
+  the spec again.
+- Typed helpers take `(state: State, ctx: Ctx)`, and `SetupWorld` types a setup shared by
+  scenarios.
+
+### Fixes
+
+- A spec loaded by the CLI imports the Feynman the CLI runs, rather than a copy bundled
+  into it: smaller bundles, and one DSL for the spec and the engine.
+- An error loading a spec (a missing export, a syntax error) is reported as such, not as a
+  crash in Feynman to report upstream.
+
 ## 0.13.0
 
 ### Migrating
