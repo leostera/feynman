@@ -982,9 +982,9 @@ export class IntegerSearch {
     let slot: number;
     let at = -1;
     if (choice.kind === "fire") {
-      const chosen = this.pendings.values[vector[L.messages + choice.pending]];
-      slot = L.slots.get(chosen.to)!;
-      if (chosen.kind === "deliver") at = L.messages + choice.pending;
+      const id = vector[L.messages + choice.pending];
+      slot = this.slotIn(L, id);
+      if (this.pendings.values[id].kind === "deliver") at = L.messages + choice.pending;
     } else slot = L.slots.get(choice.instance)!;
     const effect = this.effectOf(here, slot, choice);
     return { layout: L, slot, at, effect: effect.drops ? this.withDrops(here, slot, at, effect) : effect, fault: effect.fault, memory: vector[L.memory] };
@@ -997,7 +997,7 @@ export class IntegerSearch {
     let dropped: number[] | undefined;
     for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) {
       const id = vector[i];
-      if (i === chosen || (L.slotOf[id] ??= L.slots.get(this.pendings.values[id].to)!) !== slot) continue;
+      if (i === chosen || this.slotIn(L, id) !== slot) continue;
       // By message: 0 not asked yet, 1 kept, 2 dropped.
       let answer = answers[id];
       if (!answer) {
@@ -1115,7 +1115,7 @@ export class IntegerSearch {
     const { removesMessages: rm, removesTimers: rt, addsMessages: am, addsTimers: at } = effect;
     const messages = count - rm.length + am.length;
     const out = new Int32Array(M + 1 + messages + (vector.length - M - 1 - count) - rt.length + at.length);
-    out.set(vector.subarray(0, M));
+    for (let i = 0; i < M; i++) out[i] = vector[i];
     if (!effect.apart) out[slot] = effect.state;
     out[L.memory] = memory;
     if (effect.fresh !== undefined) out[L.fresh] = effect.fresh;
@@ -1177,6 +1177,11 @@ export class IntegerSearch {
     return { vector, layout: L, timersOf: this.timersOf(vector, L), world: () => (world ??= this.materialize(vector, L)) };
   }
 
+  /** The slot of the instance an interned message or timer is for. */
+  private slotIn(L: Layout, id: number): number {
+    return (L.slotOf[id] ??= L.slots.get(this.pendings.values[id].to)!);
+  }
+
   /** Each instance's own timers, oldest first, as a list id (from 1; 0 for none). */
   private timersOf(vector: Int32Array, L: Layout): Int32Array {
     const n = L.instances.length;
@@ -1184,7 +1189,7 @@ export class IntegerSearch {
     if (end === vector.length) return L.noTimers;
     const out = new Int32Array(n);
     const own = new Array<string>(n).fill("");
-    for (let i = end; i < vector.length; i++) own[L.slots.get(this.pendings.values[vector[i]].to)!] += `${vector[i]},`;
+    for (let i = end; i < vector.length; i++) own[this.slotIn(L, vector[i])] += `${vector[i]},`;
     for (let slot = 0; slot < n; slot++) if (own[slot]) out[slot] = 1 + this.timerLists.id(own[slot], () => own[slot]);
     return out;
   }
@@ -1209,7 +1214,7 @@ export class IntegerSearch {
     const pending = vector.length - L.messages - 1;
     for (let k = 1; k <= pending; k++) {
       const id = vector[L.messages + k];
-      const slot = (L.slotOf[id] ??= L.slots.get(this.pendings.values[id].to)!);
+      const slot = this.slotIn(L, id);
       for (const step of this.takers(plans[slot], id, vector[slot], variables)) out.push(this.fireAt(k, step));
     }
     return out;

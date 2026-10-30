@@ -3,7 +3,6 @@ import { parseArgs } from "node:util";
 import type { Bounds } from "../check/index.ts";
 import { checkCommand, type CheckOptions } from "./check.ts";
 import { context, diffCommand, list, lockCommand, runCommand } from "./commands.ts";
-import { buildCommand, devCommand } from "./serve.ts";
 import { red } from "./format.ts";
 import manifest from "../../package.json" with { type: "json" };
 
@@ -95,11 +94,11 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     case "diff":
       return diffCommand(ctx, positionals, values.base ?? "main");
     case "dev":
-      return devCommand(ctx, { port: Number(values.port ?? 4321), base: values.base });
+      return (await serve()).devCommand(ctx, { port: Number(values.port ?? 4321), base: values.base });
     case "build":
-      return buildCommand(ctx, { out: values.out, base: values.base });
+      return (await serve()).buildCommand(ctx, { out: values.out, base: values.base });
     case "open":
-      return buildCommand(ctx, { out: values.out, base: values.base, open: true });
+      return (await serve()).buildCommand(ctx, { out: values.out, base: values.base, open: true });
     default:
       console.error(red(`Unknown command ${command}.`));
       console.error(USAGE);
@@ -167,3 +166,6 @@ function bounds(values: Record<string, string | string[] | boolean | undefined>)
   }
   return out;
 }
+
+/** The explorer's commands, loaded when one runs: they bring Vite, compression and a file watcher, which check and run do without. */
+const serve = () => import("./serve.ts");
