@@ -672,8 +672,14 @@ read worse. To update one:
    `return { …every actor }`.
 8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a
    playground file.
-9. Run `feynman check` again: the same properties must hold, with the same
-   counterexamples, unless you fixed a modelling mistake. Say which.
+9. Turn every safeguard switched by hand into a rule: a `const SOME_RULE = true` flipped to
+   see a property break, a `buggy`/`fixed` branch, or a copy of the spec without a guard.
+   `spec.defineRule`, `rule.on` where it applies, `needs: [rule]` on what it protects.
+10. If it fails with "s.wait is gone", "settle takes no duration" or a type error on
+    `ctx.now`: it predates time being the order of events. Each deadline becomes a timer
+    that may fire at any point, and each wait in a scenario an `s.fire(instance, "timer")`.
+11. Run `feynman check` again: the same properties must hold, with the same
+    counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands
 

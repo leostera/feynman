@@ -6,6 +6,41 @@ after.
 
 ## 0.13.0
 
+### Migrating
+
+Specs need no change: everything here is new, or the checker reporting more. A few things
+behave differently around them:
+
+- **`feynman run` with several scenarios prints one line each**, not every trace. A script
+  or an agent that read the traces from it needs `--all`, or `--scenario NAME` for one.
+- **A search may stop at the memory limit**, 50% of the machine's memory by default, where it
+  used to run on (and was often killed). Raise it with `--memory-limit GB`, or
+  `check.memoryLimit` (in megabytes) in `feynman.config.ts`. `--json`'s `stoppedBy` can now
+  be `"memoryLimit"`, and the line under an unfinished verdict reads differently: match on
+  `--json`, not on that text.
+- **Code that builds a `Spec` by hand** (not with `defineSpec`) must add `rules: []`,
+  `without: []` and `withoutRules`. Spreading a spec (`{ ...spec, properties }`) keeps them.
+- **Types come from `dist/types`.** A project that type-checks its specs now checks them
+  against declaration files, not Feynman's source, and needs no `allowImportingTsExtensions`
+  for it. Nothing to change, unless a `paths` entry pointed `@leostera/feynman` at its `src/`.
+- **Adopting rules:** a constant flipped by hand to see a property break (`const
+  PENDING_RULE = true`), or a copy of the spec without a safeguard, becomes a rule:
+
+  ```ts
+  // Before
+  const PENDING_RULE = true;
+  if (PENDING_RULE && state.pending.length) return void state.waiting.push(msg);
+
+  // After
+  const pendingRule = spec.defineRule({ name: "pendingRule", description: "A read waits behind an unconfirmed push." });
+  if (pendingRule.on && state.pending.length) return void state.waiting.push(msg);
+  // and on the properties it protects:
+  ackedPushesAreVisible: { description: "…", always: (w) => …, needs: [pendingRule] },
+  ```
+
+  Then `feynman check` proves the rule is needed, and `--without pendingRule` replaces the
+  copy.
+
 ### Rules that are needed
 
 - A spec can name the rules of its design, the parts that exist to keep a property true
