@@ -17,7 +17,9 @@ feynman.config.ts). Name them by path or by file name; by default all of them.
 Commands:
   version                  The version of feynman (also --version, -v).
   list                     The specs in this repository.
-  run [spec] [--scenario]  Run scenarios and print their traces.
+  run [spec] [--scenario NAME | --all]
+                           Run scenarios: one prints its trace; several, how each ended
+                           (--all prints every trace).
   check [spec]             Explore every interleaving within bounds; check properties
                            (safety and liveness), that nothing gets stuck, scenarios,
                            and that every source still resolves.
@@ -56,6 +58,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     allowPositionals: true,
     options: {
       scenario: { type: "string" },
+      all: { type: "boolean" },
       depth: { type: "string" },
       faults: { type: "string" },
       repeats: { type: "string" },
@@ -82,7 +85,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     case "list":
       return list(ctx);
     case "run":
-      return runCommand(ctx, positionals, values.scenario);
+      return runCommand(ctx, positionals, values.scenario, values.all === true);
     case "check":
       return checkCommand(ctx, positionals, { bounds: bounds(values), only: ids(values.only), output: output(values) });
     case "lock":

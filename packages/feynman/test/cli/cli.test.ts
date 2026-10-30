@@ -111,6 +111,20 @@ test("list, run, check, lock: a spec in specs/ next to package.json", async () =
   expect(broken.out).toContain("✗ source src/client.ts#hear hear is not defined in src/client.ts");
 }, 60_000);
 
+test("run: one scenario prints its trace; several, a line each unless --all", async () => {
+  const { root, commit } = repo();
+  const two = SPEC(false).replace("  spec.defineScenario({\n    name: \"Say nothing\",", "  spec.defineScenario({ name: \"Do nothing\", run: () => {} });\n  spec.defineScenario({\n    name: \"Say nothing\",");
+  writeFileSync(join(root, "specs/echo.ts"), two);
+  commit("echo");
+  const summary = await capture(["run", "echo"], root);
+  expect(summary.status).toBe(0);
+  expect(summary.out).toContain("✓ Do nothing  0 event(s)");
+  expect(summary.out).toMatch(/✓ Say nothing {2}\d+ event\(s\)/);
+  expect(summary.out).not.toContain("Ann (Client)  say");
+  expect((await capture(["run", "echo", "--all"], root)).out).toContain("Ann (Client)  say");
+  expect((await capture(["run", "echo", "--scenario", "Say nothing"], root)).out).toContain("Ann (Client)  say");
+}, 60_000);
+
 test("lock records sources; check then reports a changed one as stale", async () => {
   const { root, commit } = repo();
   writeFileSync(join(root, "specs/echo.ts"), SPEC(false).replace('"src/client.ts:1-3"', '"src/client.ts:1-2"'));
