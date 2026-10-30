@@ -159,7 +159,7 @@ async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial
     return { name: scenario.name, broken, known: violated.every((id) => known.has(id)) };
   });
   const seeds = scenarioSeeds(spec, runs);
-  const report = await withFewestFaults(spec, await check(spec, merged, seeds), seeds);
+  const report = ranInScenarios(await withFewestFaults(spec, await check(spec, merged, seeds), seeds), runs);
   return {
     rules: rules ? await checkRules(spec, merged) : [],
     path,
@@ -172,6 +172,15 @@ async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial
     unbuilt: unbuilt(spec),
     steps: totalSteps(spec),
   };
+}
+
+/** A step a scenario took has run, even when no explored path takes it: "never ran" means neither did. */
+function ranInScenarios(report: Report, runs: { run: { events: readonly Event[] } }[]): Report {
+  const ran = new Set(runs.flatMap(({ run }) => run.events.filter((e) => e.kind !== "spawn" && !e.error).map((e) => `${e.actor}.${e.key}`)));
+  const missed = report.coverage.missed.filter((step) => !ran.has(step));
+  if (missed.length === report.coverage.missed.length) return report;
+  const reached = [...report.coverage.reached, ...report.coverage.missed.filter((step) => ran.has(step))];
+  return { ...report, coverage: { reached, missed } };
 }
 
 function formatCheck(result: SpecCheck, how: { brief: boolean; focused: boolean }): string {
