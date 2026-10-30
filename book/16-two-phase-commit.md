@@ -426,7 +426,7 @@ this. To see it, model a coordinator that can stop for good. Exercise 3 does.
 
 Avoiding the block takes more machinery: a coordinator replicated by consensus, or
 three-phase commit's extra round. And outside databases, the usual answer is not to need
-atomic commit at all. Chapter 18's outbox is one way.
+atomic commit at all. Chapter 17's outbox is one way.
 
 ## What we left out
 
