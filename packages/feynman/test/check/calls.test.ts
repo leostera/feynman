@@ -213,3 +213,35 @@ test("a scenario delivers a call's failure by the call's name, and --as-scenario
   if (broken.holds) throw new Error("chargedOnce should break");
   expect(scenarioCode(spec, broken)).toContain('s.deliver(client, "failed:Charge"); // from bank');
 });
+
+test("symmetric callers: a reply to a call is renamed like any message (0.12.0 crashed here)", async () => {
+  const spec = defineSpec("Symmetric callers", { messages: { Ask: call<{ from: string }>({ name: "ask" }), Told: message<{ to: string }>({ name: "told", tone: "reply" }) } }, (spec) => {
+    const { Ask, Told } = spec.messages;
+    const zone = spec.defineZone({ name: "z" });
+    const Server = spec.defineActor({
+      name: "Server",
+      zone,
+      singleton: true,
+      initialState: () => ({ asked: 0 }),
+      transitions: { [Ask]: { description: "Answers.", sends: [Told], run: (s, m, ctx) => void (s.asked++, ctx.reply(Told, { to: m.from })) } },
+    });
+    spec.defineActor({
+      name: "Agent",
+      zone,
+      symmetric: true,
+      initialState: () => ({ told: false }),
+      actions: { ask: { label: "Ask", description: "Asks the server.", sends: [Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), Ask, { from: ctx.self.id }) } },
+      transitions: {
+        [Told]: { description: "Told.", run: (s) => void (s.told = true) },
+        [spec.failed(Ask)]: { description: "Gives up.", run: () => {} },
+      },
+    });
+  });
+  for (const engine of ["integer", "classic"] as const) {
+    const symmetric = await check(spec, { ...PLAIN, faults: 1, instances: { Agent: 2 }, symmetry: true }, [], { engine });
+    const plain = await check(spec, { ...PLAIN, faults: 1, instances: { Agent: 2 } }, [], { engine });
+    expect(symmetric.errors).toEqual([]);
+    expect(symmetric.exhaustive).toBe(true);
+    expect(symmetric.states).toBeLessThan(plain.states);
+  }
+});

@@ -1058,7 +1058,7 @@ export class IntegerSearch {
 
   /** As keys.ts pendingText writes it: symmetric fingerprints rename it. */
   private pendingId(p: Pending): number {
-    const key = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}${p.answers ? `|a|${p.answers.message}|${sortedJson(p.answers.payload)}` : ""}` : `t|${p.to}|${p.timer}`;
+    const key = p.kind === "deliver" ? (p.answers ? `r|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}`) : `t|${p.to}|${p.timer}`;
     const id = this.pendings.id(key, () => {
       const { id: _, ...template } = p;
       return template;

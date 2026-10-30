@@ -26,8 +26,9 @@ export function textOf(value: unknown): string {
 /** A key line after renaming: names that were object keys may now be out of order, so sort them again. */
 function resorted(line: string, renamedLine: string): string {
   if (line === renamedLine) return line;
-  // Instance lines are `id=json`; message lines `d|to|from|message|json`; timer lines hold no JSON.
-  const at = renamedLine.startsWith("d|") ? nthIndex(renamedLine, "|", 4) : renamedLine.startsWith("timers ") || renamedLine.startsWith("t|") ? -1 : renamedLine.indexOf("=");
+  // Instance lines are `id=json`; message lines `d|to|from|message|json`, and replies to a call
+  // `r|to|from|message|json` (the JSON holding the call too); timer lines hold no JSON.
+  const at = renamedLine.startsWith("d|") || renamedLine.startsWith("r|") ? nthIndex(renamedLine, "|", 4) : renamedLine.startsWith("timers ") || renamedLine.startsWith("t|") ? -1 : renamedLine.indexOf("=");
   if (at < 0) return renamedLine;
   return renamedLine.slice(0, at + 1) + sortedJson(JSON.parse(renamedLine.slice(at + 1)));
 }
@@ -43,7 +44,7 @@ const pendingTexts = new WeakMap<object, string>();
 
 export function pendingText(p: Pending): string {
   let text = pendingTexts.get(p);
-  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}${p.answers ? `|a|${p.answers.message}|${textOf(p.answers.payload)}` : ""}` : `t|${p.to}|${p.timer}`));
+  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? (p.answers ? `r|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `d|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}`) : `t|${p.to}|${p.timer}`));
   return text;
 }
 

@@ -4,6 +4,16 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+### Fixes
+
+- A spec with `symmetric: true` actors that answers a call crashed the check with "JSON Parse
+  error: Unrecognized token '|'" (new in 0.12.0): a reply to a call is now keyed so symmetry
+  can rename it.
+- When Feynman itself crashes (a JavaScript error thrown from its own source), it says so,
+  shows where, and asks for a report, instead of printing the bare message.
+
 ## 0.12.0
 
 ### Calls that fail
