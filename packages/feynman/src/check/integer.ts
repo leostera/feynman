@@ -21,7 +21,8 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, FAULT, fire, guard, holdsIn, isLiveness, observation, stepsTaking, traceView, whenHolds, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, FAULT, fire, guard, holdsIn, isLiveness, observation, stepsTaking, traceView, whenHolds, worldView, type Delivery, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { deliveryIn } from "../spec/engine.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
@@ -92,9 +93,14 @@ interface Layout {
   /**
    * The step cache, by (state id, own timers list) and then by step and argument. One per
    * layout: a step sees which instances there are (`ctx.all`, `ctx.the`, sending to one)
-   * without reading their states, so its effect holds only among the same instances.
+   * without reading their states, so its effect holds only among the same instances. A step
+   * that uses the world's variables is cached by their value as well (cachedIn).
    */
-  cache: Map<number, Map<number, Effect>>;
+  cache: Map<number, Map<number, Cached>>;
+  /** The effects of steps that leave their own instance alone (a lost message), by slot and then as `cache`: whatever the instance's state. */
+  apart: Map<number, Cached>[];
+  /** By interned message or timer: the slot of the instance it is for. */
+  slotOf: number[];
   fresh: number;
   rng: number;
   /** The world's model variables (RFD0012), interned. */
@@ -102,6 +108,9 @@ interface Layout {
   memory: number;
   messages: number;
 }
+
+/** A cached effect: one, or one for each value of the world's variables when the step uses them. */
+type Cached = Effect | Map<number, Effect>;
 
 /** What a local step does, as integers. */
 interface Effect {
@@ -117,10 +126,17 @@ interface Effect {
   addsTimers: Int32Array;
   /** What a trace sees of the step's event, interned (see `TraceStep`). */
   event: number;
-  /** For steps that are not cached: the counters and the world's variables after them. */
+  /** Whether the step is tagged `fault`. */
+  fault: boolean;
+  /** It leaves its instance's state as it was, and did not read it: `state` is unused. */
+  apart?: boolean;
+  /** For steps that are not cached: the counters after them. */
   fresh?: number;
   rng?: number;
+  /** The world's variables after it, for a step that uses them. */
   variables?: number;
+  /** A reset's choice of the messages on their way to the instance to drop, with its answer for each interned message, worked out once. */
+  drops?: { pick: (delivery: Delivery) => boolean; answers: number[] };
 }
 
 /** What `never` and step properties see of an event (traceView): its place goes in when a path is laid out. */
@@ -166,6 +182,8 @@ interface LocalPlan {
   /** Actions whose `when` holds: their choices, or their inputs when those come from `examples`, which read the world. */
   acts: { key: string; choices?: Choice[]; inputs?: ActionInputs }[];
   guards: Choice[];
+  /** By interned message or timer: the steps that can take it (`stepIndex`), worked out when first met (takers). */
+  takers: Map<number, number[]>;
 }
 
 type ActionInputs = Parameters<typeof inputCombinations>[2];
@@ -225,7 +243,6 @@ export class IntegerSearch {
   private instanceStates = new Interner<Instance>();
   private pendings = new Interner<PendingTemplate>();
   /** By `actor.step`: whether the step is tagged `fault`. */
-  private faultSteps = new Map<string, boolean>();
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
   private stepNames = new Interner<string>();
@@ -237,7 +254,11 @@ export class IntegerSearch {
     return interner;
   })();
   /** `takers`, by pending entry and then by its receiver's state. */
-  private takersOf = new Map<number, Map<number, string[]>>();
+  /** By instance state id: whether a `when` of its actor reads the world's variables (whenReadsWorld). */
+  private readsWorldIn: boolean[] = [];
+  private fires: Fire[][] = [];
+  /** By step index: a step that has run apart from its instance's state (Effect.apart). */
+  private runsApart: boolean[] = [];
   private timerLists = new Interner<string>();
   private names = new Interner<ChoiceName>();
   private stepKeys = new Interner<string>();
@@ -316,7 +337,7 @@ export class IntegerSearch {
     if (layout) return layout;
     const slots = new Map(world.instances.map((instance, slot) => [instance.id, slot]));
     const n = world.instances.length;
-    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), noTimers: new Int32Array(n), cache: new Map(), fresh: n, rng: n + 1, variables: n + 2, memory: n + 3, messages: n + 4 };
+    layout = { index: this.layouts.size, instances: world.instances, slots, plans: new Map(), noTimers: new Int32Array(n), cache: new Map(), apart: [], slotOf: [], fresh: n, rng: n + 1, variables: n + 2, memory: n + 3, messages: n + 4 };
     this.layouts.set(key, layout);
     return layout;
   }
@@ -885,28 +906,35 @@ export class IntegerSearch {
     const { vector, layout: L } = here;
     let slot: number;
     let at = -1;
-    let name: string;
     if (choice.kind === "fire") {
       const chosen = this.pendings.values[vector[L.messages + choice.pending]];
       slot = L.slots.get(chosen.to)!;
       if (chosen.kind === "deliver") at = L.messages + choice.pending;
-      name = choice.step;
-    } else {
-      slot = L.slots.get(choice.instance)!;
-      name = choice.key;
-    }
-    return { layout: L, slot, at, effect: this.effectOf(here, slot, choice), fault: this.isFault(L.instances[slot].actor, name), memory: vector[L.memory] };
+    } else slot = L.slots.get(choice.instance)!;
+    const effect = this.effectOf(here, slot, choice);
+    return { layout: L, slot, at, effect: effect.drops ? this.withDrops(here, slot, at, effect) : effect, fault: effect.fault, memory: vector[L.memory] };
   }
 
-  /** Whether an actor's step is tagged `fault`, worked out once per step. */
-  private isFault(actor: string, step: string): boolean {
-    const key = `${actor}.${step}`;
-    let fault = this.faultSteps.get(key);
-    if (fault === undefined) {
-      const info = actorNamed(this.spec, actor);
-      this.faultSteps.set(key, (fault = (info.transitions[step] ?? info.actions[step])?.tags.includes(FAULT) === true));
+  /** A reset's effect in this vector: the messages in flight to the instance that its `drops` picks, removed as well. */
+  private withDrops(here: Here, slot: number, chosen: number, effect: Effect): Effect {
+    const { vector, layout: L } = here;
+    const { pick, answers } = effect.drops!;
+    let dropped: number[] | undefined;
+    for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) {
+      const id = vector[i];
+      if (i === chosen || (L.slotOf[id] ??= L.slots.get(this.pendings.values[id].to)!) !== slot) continue;
+      // By message: 0 not asked yet, 1 kept, 2 dropped.
+      let answer = answers[id];
+      if (!answer) {
+        // An answer that read the sender's state holds for this world only.
+        let readsSender = false;
+        const pending = { ...this.pendings.values[id], id: 0 } as Extract<Pending, { kind: "deliver" }>;
+        answer = pick(deliveryIn(this.spec, here.world(), pending, () => (readsSender = true))) === true ? 2 : 1;
+        if (!readsSender) answers[id] = answer;
+      }
+      if (answer === 2) (dropped ??= []).push(id);
     }
-    return fault;
+    return dropped ? { ...effect, removesMessages: Int32Array.from([...effect.removesMessages, ...dropped]) } : effect;
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
@@ -916,20 +944,36 @@ export class IntegerSearch {
     // The key: the instance's state, its own timers (start, cancel and reset read them), and
     // the step with its argument: a message or timer by its intern id, which says who sent
     // what; anything else by an interned name.
-    const arg = choice.kind === "fire" ? (vector[L.messages + choice.pending] * STEPS + this.stepIndex(choice.step)) * 2 : this.factsOf(L, choice).arg * 2 + 1;
+    const index = choice.kind === "fire" ? ((choice as Fire).index ?? this.stepIndex(choice.step)) : -1;
+    const arg = choice.kind === "fire" ? (vector[L.messages + choice.pending] * STEPS + index) * 2 : this.factsOf(L, choice).arg * 2 + 1;
+    const variables = vector[L.variables];
+    const apart = (L.apart[slot] ??= new Map());
+    // Steps that have run apart from their instance are looked for there first.
+    if (index >= 0 && this.runsApart[index]) {
+      const known = cachedIn(apart, arg, variables);
+      if (known) return known;
+    }
     // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
     if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
     const local = vector[slot] * 1_048_576 + timers;
     let byArg = L.cache.get(local);
     if (!byArg) L.cache.set(local, (byArg = new Map()));
-    const cached = byArg.get(arg);
+    const cached = cachedIn(byArg, arg, variables) ?? cachedIn(apart, arg, variables);
     if (cached) return cached;
-    const observe = observation();
+    const observe = observation(true);
     const world = here.world();
     const step = run(this.spec, world, choice, observe);
-    const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event);
-    if (observe.readsOthers || observe.shared) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0, variables: this.variablesId(step.world) };
-    byArg.set(arg, effect);
+    // A reset's drops are worked out for each vector (withDrops), so they are not in the effect.
+    const chosen = observe.drops && choice.kind === "fire" ? choice.pending : -1;
+    const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event, observe.drops ? chosen : undefined);
+    if (observe.others || observe.counters) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0, variables: this.variablesId(step.world) };
+    if (observe.drops) effect.drops = { pick: observe.drops, answers: [] };
+    if (observe.variables) effect.variables = this.variablesId(step.world);
+    // A step that did not touch its own instance runs the same way in any state of it: up to its
+    // first use of its own instance, it ran without it, and it never got there.
+    if (!observe.own) effect.apart = true;
+    if (!observe.own && index >= 0) this.runsApart[index] = true;
+    cacheIn(observe.own ? byArg : apart, arg, observe.variables ? variables : undefined, effect);
     return effect;
   }
 
@@ -941,19 +985,17 @@ export class IntegerSearch {
   }
 
   /**
-   * The steps that can take pending entry `id` (interned) when its receiver is in state `state`:
-   * a timer's own; for a message, the steps on it whose `when` holds there (stepsTaking).
+   * The steps that can take pending entry `id` (interned) when its receiver is in state `state`
+   * (and the world's variables, when its `when`s read them; the plan is for both): a timer's own;
+   * for a message, the steps on it whose `when` holds there (stepsTaking).
    */
-  private takers(id: number, state: number, variables: number): string[] {
-    const instance = this.instanceStates.values[state];
-    const key = this.whenReadsWorld(instance.actor) ? state + variables * 2 ** 26 : state;
-    let byState = this.takersOf.get(id);
-    if (!byState) this.takersOf.set(id, (byState = new Map()));
-    let steps = byState.get(key);
+  private takers(plan: LocalPlan, id: number, state: number, variables: number): number[] {
+    let steps = plan.takers.get(id);
     if (!steps) {
+      const instance = this.instanceStates.values[state];
       const pending = { ...this.pendings.values[id], id: 0 } as Pending;
       const world = { ...NO_WORLD, instances: [instance], ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
-      byState.set(key, (steps = stepsTaking(this.spec, world, pending)));
+      plan.takers.set(id, (steps = stepsTaking(this.spec, world, pending).map((step) => this.stepIndex(step))));
     }
     return steps;
   }
@@ -964,20 +1006,24 @@ export class IntegerSearch {
   }
 
   /** The integers a step changed, from the worlds before and after it. */
-  private effectFrom(before: World, pendingAt: (k: number) => number, slot: number, after: World, e: Event): Effect {
+  private effectFrom(before: World, pendingAt: (k: number) => number, slot: number, after: World, e: Event, resetKeeping?: number): Effect {
     const stepKey = `${e.actor}.${e.key}`;
     const reached = this.stepKeys.id(stepKey, () => stepKey);
     const sent = e.sent.map((s) => ({ message: s.message }));
     const traced: TraceStep = { actor: e.actor, key: e.key, sent: sent as Event["sent"], ...(e.error ? { error: e.error } : {}) };
     const event = this.traceSteps.id(`${stepKey}|${e.error ?? ""}|${sent.map((s) => s.message).join(",")}`, () => traced);
+    const fault = e.tags?.includes(FAULT) === true;
     const error = e.error;
-    if (error) return { error, reached, event, state: 0, removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE };
+    if (error) return { error, reached, event, fault, state: 0, removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE };
     const kept = new Set(after.pending.map((p) => p.id));
-    const removed = before.pending.filter((p) => !kept.has(p.id));
+    // After a reset that drops (resetKeeping, the message taken or -1), only that message and timers count as removed.
+    const self = after.instances[slot].id;
+    const removed = before.pending.filter((p) => !kept.has(p.id) && (resetKeeping === undefined || p.kind === "timer" || p.to !== self || p.id === resetKeeping));
     const added = after.pending.filter((p) => p.id > before.seq).sort((a, b) => a.id - b.id);
     return {
       reached,
       event,
+      fault,
       state: this.stateId(after.instances[slot]),
       removesMessages: Int32Array.from(removed.filter((p) => p.kind === "deliver").map((p) => pendingAt(p.id))),
       removesTimers: Int32Array.from(removed.filter((p) => p.kind === "timer").map((p) => pendingAt(p.id))),
@@ -998,7 +1044,7 @@ export class IntegerSearch {
     const messages = count - rm.length + am.length;
     const out = new Int32Array(M + 1 + messages + (vector.length - M - 1 - count) - rt.length + at.length);
     out.set(vector.subarray(0, M));
-    out[slot] = effect.state;
+    if (!effect.apart) out[slot] = effect.state;
     out[L.memory] = memory;
     if (effect.fresh !== undefined) out[L.fresh] = effect.fresh;
     if (effect.rng !== undefined) out[L.rng] = effect.rng;
@@ -1081,14 +1127,18 @@ export class IntegerSearch {
     const { vector, layout: L } = here;
     const out: Choice[] = [];
     const n = L.instances.length;
+    const variables = vector[L.variables];
+    const plans = new Array<LocalPlan>(n);
     for (let slot = 0; slot < n; slot++) {
-      for (const act of this.planOf(L, vector[slot], vector[L.variables]).acts) for (const c of act.choices ?? this.exampleChoices(here, tuple, slot, act.key, act.inputs!)) out.push(c);
+      plans[slot] = this.planOf(L, vector[slot], variables);
+      for (const act of plans[slot].acts) for (const c of act.choices ?? this.exampleChoices(here, tuple, slot, act.key, act.inputs!)) out.push(c);
     }
-    for (let slot = 0; slot < n; slot++) for (const c of this.planOf(L, vector[slot], vector[L.variables]).guards) out.push(c);
+    for (let slot = 0; slot < n; slot++) for (const c of plans[slot].guards) out.push(c);
     const pending = vector.length - L.messages - 1;
     for (let k = 1; k <= pending; k++) {
       const id = vector[L.messages + k];
-      for (const step of this.takers(id, vector[L.slots.get(this.pendings.values[id].to)!], vector[L.variables])) out.push(fireAt(k, step));
+      const slot = (L.slotOf[id] ??= L.slots.get(this.pendings.values[id].to)!);
+      for (const step of this.takers(plans[slot], id, vector[slot], variables)) out.push(this.fireAt(k, step));
     }
     return out;
   }
@@ -1099,10 +1149,10 @@ export class IntegerSearch {
    * its own variables, unless a `when` of its actor reads the world's (`variables`, interned).
    */
   private planOf(L: Layout, state: number, variables: number): LocalPlan {
-    const instance = this.instanceStates.values[state];
-    const key = this.whenReadsWorld(instance.actor) ? state + variables * 2 ** 26 : state;
+    const key = this.readsWorldAt(state) ? state + variables * 2 ** 26 : state;
     let plan = L.plans.get(key);
     if (plan) return plan;
+    const instance = this.instanceStates.values[state];
     const world = { ...NO_WORLD, ...(variables ? { variables: this.worldVariables.values[variables] } : {}) } as World;
     const actor = actorNamed(this.spec, instance.actor);
     const acts: LocalPlan["acts"] = [];
@@ -1115,8 +1165,18 @@ export class IntegerSearch {
     const guards = Object.values(actor.transitions)
       .filter((t) => !t.message && t.when && whenHolds(this.spec, world, instance, t))
       .map((t): Choice => ({ kind: "guard", instance: instance.id, key: t.key }));
-    L.plans.set(key, (plan = { acts, guards }));
+    L.plans.set(key, (plan = { acts, guards, takers: new Map() }));
     return plan;
+  }
+
+  private readsWorldAt(state: number): boolean {
+    return (this.readsWorldIn[state] ??= this.whenReadsWorld(this.instanceStates.values[state].actor));
+  }
+
+  /** Choices on pending entry `k`, shared: they name it by its place, and the step that takes it (`stepIndex`). */
+  private fireAt(k: number, index: number): Fire {
+    const byStep = (this.fires[k] ??= []);
+    return (byStep[index] ??= { kind: "fire", pending: k, step: this.stepNames.values[index], index });
   }
 
   /** Whether a `when` of this actor's steps reads a variable of the world's, not only its instance's. */
@@ -1175,14 +1235,8 @@ const NONE = new Int32Array(0);
 /** A world with nothing in it, for input combinations that do not read the world. */
 const NO_WORLD = { seq: 0, fresh: {}, rng: 0, instances: [], pending: [] } as World;
 
-/** Choices on pending entry `k`, shared: they name it by its place, and the step that takes it. */
-const fires: Map<string, Choice>[] = [];
-function fireAt(k: number, step: string): Choice {
-  const byStep = (fires[k] ??= new Map());
-  let choice = byStep.get(step);
-  if (!choice) byStep.set(step, (choice = { kind: "fire", pending: k, step }));
-  return choice;
-}
+/** A choice on a message or timer, with its step as a small number (stepIndex), for the step cache. */
+type Fire = Extract<Choice, { kind: "fire" }> & { index: number };
 /** Distinct step names the step cache tells apart in a key. */
 const STEPS = 4096;
 /** A step property's answer, as kept: not known yet, holds, breaks. */
@@ -1198,6 +1252,22 @@ function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undef
   return { to, option, fault, ...(fair === undefined ? {} : { fair }) };
 }
 const NO_IDS: string[] = [];
+
+/**
+ * A step's cached effect for an argument: up to its first use of the world's variables, a step
+ * runs the same way, so one that uses them always does, and is cached by their value as well.
+ */
+function cachedIn(byArg: Map<number, Cached>, arg: number, variables: number): Effect | undefined {
+  const entry = byArg.get(arg);
+  return entry instanceof Map ? entry.get(variables) : entry;
+}
+
+function cacheIn(byArg: Map<number, Cached>, arg: number, variables: number | undefined, effect: Effect): void {
+  if (variables === undefined) return void byArg.set(arg, effect);
+  let byVariables = byArg.get(arg);
+  if (!(byVariables instanceof Map)) byArg.set(arg, (byVariables = new Map()));
+  byVariables.set(variables, effect);
+}
 
 function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
   const how = { explain: false, observe };
@@ -1272,7 +1342,7 @@ function childPrint(parent: Entry, step: Step): [number, number] {
     h1 += lane1(1, i, to) - lane1(1, i, v[i]);
     h2 += lane2(1, i, to) - lane2(1, i, v[i]);
   };
-  swap(slot, e.state);
+  if (!e.apart) swap(slot, e.state);
   if (e.fresh !== undefined) swap(L.fresh, e.fresh);
   if (e.rng !== undefined) swap(L.rng, e.rng);
   if (e.variables !== undefined) swap(L.variables, e.variables);

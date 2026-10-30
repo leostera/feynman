@@ -8,7 +8,7 @@ import { modelNamed } from "./models.ts";
 const [name, workersArg] = process.argv.slice(2);
 const model = modelNamed(name);
 const workers = Number(workersArg ?? 0);
-const source = { module: join(import.meta.dir, "..", "examples", `${model.file}.ts`), ...(model.export ? { export: model.export } : {}) };
+const source = { module: join(import.meta.dir, "..", "examples", `${model.file}.ts`), ...(model.export ? { export: model.export } : {}), set: model.set };
 const spec = await loadSource(source);
 const pool = new Pool(workers);
 const started = performance.now();
