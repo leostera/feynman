@@ -9,15 +9,15 @@
   "engines": { "bun": ">=1.3" },
   "bin": { "feynman": "bin/feynman.ts" },
   "exports": {
-    ".": "./src/spec/index.ts",
-    "./play": "./src/play/index.ts",
-    "./config": "./src/cli/index.ts"
+    ".": { "types": "./dist/types/spec/index.d.ts", "default": "./src/spec/index.ts" },
+    "./play": { "types": "./dist/types/play/index.d.ts", "default": "./src/play/index.ts" },
+    "./config": { "types": "./dist/types/cli/index.d.ts", "default": "./src/cli/index.ts" }
   },
-  "files": ["bin", "src", "!src/view", "src/view/data.ts", "dist/view", "examples", "!examples/oracles", "skills", "README.md"],
+  "files": ["bin", "src", "!src/view", "src/view/data.ts", "dist/view", "dist/types", "examples", "!examples/oracles", "skills", "README.md"],
   "pi": { "skills": ["./skills"] },
   "scripts": {
     "feynman": "bun bin/feynman.ts",
-    "build": "vite build --config src/view/vite.config.ts",
+    "build": "vite build --config src/view/vite.config.ts && rm -rf dist/types && tsc -p tsconfig.types.json",
     "test": "bun test --timeout 60000",
     "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/p.oracle.ts ./test/wild/wild.oracle.ts",
     "bench": "bun bench/suite.ts",
