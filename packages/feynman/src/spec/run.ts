@@ -176,6 +176,9 @@ function laid(spec: Spec, instance: World["instances"][number], fields: unknown)
   return freeze(clone(next));
 }
 
+/** Why there is no waiting, and no clock, in a spec. */
+const NO_CLOCK = "there is no clock, time is the order of events (RFD0004): a timer may fire at any point, or not, as a slow or fast clock would let it.";
+
 function scriptFor(runner: Runner): Script {
   const live = (id: string) => ({
     id,
@@ -187,7 +190,7 @@ function scriptFor(runner: Runner): Script {
     },
   });
   const view = () => worldView(runner.spec, runner.world);
-  return {
+  const script: Script = {
     the(actor) {
       return live(view().the(actor).id) as never;
     },
@@ -204,6 +207,7 @@ function scriptFor(runner: Runner): Script {
     },
     settle(options) {
       if (!options) return runner.settle();
+      if (typeof options === "number") throw new SpecError(`settle takes no duration: ${NO_CLOCK} s.settle() runs until nothing more can happen; s.settle({ until: (w) => … }) until the world gets somewhere.`);
       if (typeof options.until !== "function") throw new SpecError("settle: `until` is a predicate on the world, like (w) => w.the(Store).state.saved");
       runner.settleUntil((world) => options.until(worldView(runner.spec, world)));
     },
@@ -230,4 +234,11 @@ function scriptFor(runner: Runner): Script {
       return worldView(runner.spec, runner.world);
     },
   } as Script;
+  // Gone since time became the order of events (RFD0004, 0.2): say so, rather than "is not a function".
+  Object.assign(script, {
+    wait() {
+      throw new SpecError(`s.wait is gone: ${NO_CLOCK} Fire the timer the scenario waits for: s.fire(instance, "timer").`);
+    },
+  });
+  return script;
 }
