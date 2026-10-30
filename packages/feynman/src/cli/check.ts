@@ -22,6 +22,8 @@ export interface CheckOptions {
   output: "text" | "brief" | "json" | "scenario";
   /** Rules to turn off: check the design without them (RFD0010). */
   without: string[];
+  /** Model variables to start at other values (`--set name=value`, RFD0012). */
+  set: Record<string, unknown>;
   /** Check that each rule is needed (RFD0010); off with --no-rules. */
   rules: boolean;
 }
@@ -90,8 +92,9 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   try {
     for (const selection of selected) {
       const { path } = selection;
-      const spec = options.without.length ? selection.spec.withoutRules(options.without) : selection.spec;
-      const source = options.without.length ? { ...selection.source, without: options.without } : selection.source;
+      const set = Object.keys(options.set).length ? selection.spec.setting(options.set) : selection.spec;
+      const spec = options.without.length ? set.withoutRules(options.without) : set;
+      const source = { ...selection.source, ...(options.without.length ? { without: options.without } : {}), ...(Object.keys(options.set).length ? { set: options.set } : {}) };
       const focused = focus(spec, options.only);
       if (!focused) continue;
       const result = await checkSpec(ctx, path, focused, options.bounds, { source: options.only.length ? { ...source, properties: options.only } : source, pool }, options.rules);

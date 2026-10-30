@@ -8,6 +8,7 @@ export {
   defineRule,
   defineScenario,
   defineSpec,
+  defineVariable,
   defineZone,
   failed,
   input,
@@ -19,6 +20,7 @@ export type {
   AnyMessage,
   Call,
   Ctx,
+  Delivery,
   Failed,
   Failure,
   InputDef,
@@ -57,6 +59,9 @@ export type {
   InputsOf,
   Group,
   GroupDef,
+  ModelView,
+  SendOptions,
+  Variable,
 } from "./dsl.ts";
 export { appearance, declaresLinks, declaresTokens, dropsFor, inferredTokens, labelled, liveLinks, type Appearance, type Drop, type LiveLink } from "./display.ts";
 export * from "./engine.ts";

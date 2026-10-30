@@ -328,7 +328,7 @@ export function Playground({ session, setSession, scenarios, specs, initialSpeed
             onAct={(instance, key, inputs) => run({ op: "act", instance, key, inputs })}
             onPacket={(p) => setPacket(p)}
             bar={bar}
-            barStacked={!!selectedNode && !choosing && actionsOf(spec, selectedNode).length >= STACK_FROM}
+            barStacked={!!selectedNode && !choosing && actionsOf(spec, selectedNode, base).length >= STACK_FROM}
           />
         )}
         <div data-overlay className="pointer-events-none absolute inset-x-3 top-3 grid grid-cols-[1fr_auto_1fr] items-start gap-3">

@@ -1,6 +1,7 @@
 // The spec DSL: what a spec file writes (RFD0011). Each part is a value: messages, zones, actors,
 // rules, properties and scenarios; defineSpec assembles them into the Spec the engine runs.
 import { isSchema, type Fields, type Shaped, type TypeOf } from "./schema.ts";
+import { unstorable } from "./json.ts";
 import type {
   ActionInfo,
   ActorInfo,
@@ -254,6 +255,8 @@ export interface World {
   readonly quiet: boolean;
   all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
   the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
+  /** A model variable's value (RFD0012); for one defined for each instance of an actor, that instance's. */
+  get<T>(variable: Variable<T>, instance?: Instance<any, any>): T;
 }
 
 // What a step can do ------------------------------------------------------------------------------
@@ -269,8 +272,11 @@ export interface Ctx<Sends extends AnyMessage = AnyMessage> {
   readonly self: Instance<unknown, unknown>;
   the<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>;
   all<X extends Actor<any, any>>(actor: X): Instance<StateOf<X>, ActionsOf<X>>[];
-  /** Send a message; `text` says, for this event only, what it means. */
-  send<M extends Sends>(to: Instance<any, any>, message: M, payload: PayloadOf<M>, text?: string): void;
+  /**
+   * Send a message; `text` says, for this event only, what it means. `answers` marks it as
+   * answering a request, as a reply does, so a reset of its receiver drops it in flight.
+   */
+  send<M extends Sends>(to: Instance<any, any> | { id: string }, message: M, payload: PayloadOf<M>, options?: string | SendOptions): void;
   /**
    * Set one of this actor's timers: from now on it may fire at any moment, before or after
    * anything else pending. Setting it again replaces it.
@@ -285,12 +291,42 @@ export interface Ctx<Sends extends AnyMessage = AnyMessage> {
   random(): number;
   /** Explain this event when the step's description is not enough. */
   note(text: string): void;
+  /** A model variable the step lists in `uses`: the world's, or this instance's own for an `each` one. */
+  get<T>(variable: Variable<T>): T;
+  /** Change a model variable the step lists in `uses`. */
+  set<T>(variable: Variable<T>, value: T): void;
+  /**
+   * Start this instance again, as a crash and restart does: its state becomes its initial
+   * state with the fields in `keeps` carried over, its timers are cancelled, and answers on
+   * their way to it are dropped (replies to calls, and messages sent with `answers`).
+   */
+  reset(options?: { keeps?: readonly string[] }): void;
+}
+
+/** What `send` takes after the payload, besides a text: the request the message answers. */
+export interface SendOptions {
+  text?: string;
+  answers?: { message: string; payload: unknown };
+}
+
+/** The message a step on one is handling, as it was in flight. */
+export interface Delivery {
+  /** Its key: `message:Charge`. */
+  readonly message: string;
+  readonly from: Instance<any, any>;
+  readonly payload: unknown;
+  /** For a reply, or a message sent as answering one: the request it answers. */
+  readonly answers?: { message: string; payload: unknown };
 }
 
 /** In a step `on` a message, `reply` answers the sender. */
 export interface ReplyCtx<Sends extends AnyMessage = AnyMessage> extends Ctx<Sends> {
   readonly from: Instance<any, any>;
   reply<M extends Sends>(message: M, payload: PayloadOf<M>, text?: string): void;
+  /** The message being handled, as it was in flight. */
+  readonly delivery: Delivery;
+  /** Put the message being handled back in flight as it was; twice, and it is there twice. */
+  forward(): void;
 }
 
 /** What a call's failure carries: the payload of the call that failed, and whom it was to. */
@@ -317,7 +353,11 @@ export interface StepDef<S, On, Sends extends AnyMessage> {
    * For a guarded step: it can run whenever this holds. For a step on a message: it can take
    * the message only while this holds.
    */
-  when?: (state: Readonly<S>) => boolean;
+  when?: (state: Readonly<S>, model: ModelView) => boolean;
+  /** The model variables it reads or writes (its `when` too), as `sends` lists messages (RFD0012). */
+  uses?: readonly Variable<any>[];
+  /** Strings the core keeps and never reads, for libraries and reports: a fault is tagged `fault`. */
+  tags?: readonly string[];
   /**
    * For a timer, when the code fires it, in words: "10 minutes", "after three missed
    * heartbeats". Shown to readers; it has no effect on when it can fire.
@@ -382,12 +422,54 @@ export interface ActionDef<S, I> {
   /** `{ code: String, vote: oneOf("yes", "no") }`, or `input(type, { examples })` for examples. */
   inputs?: { [K in keyof I]: I[K] };
   /** When set, the action is offered only while this holds. */
-  when?: (state: Readonly<S>) => boolean;
+  when?: (state: Readonly<S>, model: ModelView) => boolean;
+  /** The model variables it reads or writes (its `when` too), as `sends` lists messages (RFD0012). */
+  uses?: readonly Variable<any>[];
+  /** Strings the core keeps and never reads, for libraries and reports. */
+  tags?: readonly string[];
   run(state: S, inputs: InputsOf<I>, ctx: Ctx): void;
   /** What happened this time, as the timeline says it, from the state after the step. */
   say?: (state: Readonly<S>, inputs: InputsOf<I>) => string;
   /** Housekeeping a reader need not watch, such as a heartbeat: views fold it away. The checker still explores it. */
   routine?: boolean;
+}
+
+// Model variables -------------------------------------------------------------------------------
+
+/** Made by `defineVariable`: state of the model rather than of an actor (RFD0012). */
+export interface Variable<T> {
+  readonly kind: "variable";
+  readonly name: string;
+  readonly initial: T;
+  /** Whether every instance of the actor that uses it has its own value. */
+  readonly each: boolean;
+}
+
+/** The model's variables as a guard reads them: `when: (state, model) => model.get(faults) > 0`. */
+export interface ModelView {
+  get<T>(variable: Variable<T>): T;
+}
+
+/**
+ * State that belongs to the model rather than to an actor, as a TLA+ variable that no process
+ * owns: a budget of faults, a bound on retries, ghost history for a property. With `each: true`,
+ * every instance of the actor whose steps use it has its own (one actor uses it, then). A step that reads or writes one lists it in `uses`, and
+ * reads it with `ctx.get` and writes it with `ctx.set`; properties read it with `w.get`. It is
+ * for the model's bookkeeping, not for actors to share what the system does not share.
+ */
+export function defineVariable<T>(name: string, initial: T, options?: { each?: boolean }): Variable<T> {
+  if (typeof name !== "string" || !/^[A-Za-z_][\w-]*$/.test(name)) throw new Error(`A variable's name is a word, like "faults", which --set names it by: not ${JSON.stringify(name)}`);
+  const odd = unstorable(initial, "initial value");
+  if (odd) throw new Error(`Variable ${name}: ${odd}: a variable holds plain data`);
+  return Object.freeze({ kind: "variable", name, initial: freezeDeep(initial), each: options?.each === true, seq: ++defined }) as Variable<T>;
+}
+
+function freezeDeep<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of value instanceof Map ? value.values() : value instanceof Set ? value.values() : Object.values(value)) freezeDeep(v);
+  }
+  return value;
 }
 
 // Zones, limits and groups ----------------------------------------------------------------------
@@ -693,14 +775,14 @@ export function defineSpec(parts: SpecParts): Spec {
     throw new Error(`defineSpec(${JSON.stringify(parts)}, { messages }, (spec) => …) is gone: a spec is made of parts since 0.14 (RFD0011). Define each part at the top level, then defineSpec({ name: ${JSON.stringify(parts)}, actors, properties, scenarios }); the changelog's Migrating section has the steps`);
   if (typeof parts !== "object" || parts === null || typeof parts.name !== "string")
     throw new Error("defineSpec takes its parts: defineSpec({ name, actors, properties, scenarios })");
-  return assemble(parts, []);
+  return assemble(parts, [], {});
 }
 
 type Ordered = { seq: number };
 const bySeq = (a: unknown, b: unknown) => (a as Ordered).seq - (b as Ordered).seq;
 
 /** The spec from its parts, with these rules off (RFD0010): the design as written has none off. */
-function assemble(parts: SpecParts, without: string[]): Spec {
+function assemble(parts: SpecParts, without: string[], values: Record<string, unknown>): Spec {
   const name = without.length ? `${parts.name} without ${without.join(", ")}` : parts.name;
   const actors = parts.actors ?? [];
   if (!Array.isArray(actors) || actors.length === 0) throw new Error(`${parts.name}: list its actors, like actors: [Client, Bank]`);
@@ -728,6 +810,30 @@ function assemble(parts: SpecParts, without: string[]): Spec {
       }
       for (const m of step.sends ?? []) addMessage(m, `${def.name}.${key}`);
     }
+  }
+
+  // Variables, from the steps that use them.
+  const variables = new Map<string, Variable<unknown> & Ordered>();
+  const eachOf = new Map<string, string>();
+  for (const def of defs) {
+    for (const [key, step] of [...Object.entries(def.actions ?? {}), ...Object.entries(def.transitions ?? {})] as [string, RawStep][]) {
+      for (const v of step.uses ?? []) {
+        if ((v as Variable<unknown>)?.kind !== "variable") throw new Error(`${def.name}.${key}: uses lists variables from defineVariable, not ${describe(v)}`);
+        const known = variables.get(v.name);
+        if (known && known !== v) throw new Error(`${parts.name}: two different variables are named "${v.name}"`);
+        if (v.each) {
+          const other = eachOf.get(v.name);
+          if (other && other !== def.name) throw new Error(`Variable ${v.name} is one for each instance, and both ${other} and ${def.name} use it; one actor uses it`);
+          eachOf.set(v.name, def.name);
+        }
+        variables.set(v.name, v as Variable<unknown> & Ordered);
+      }
+    }
+  }
+  for (const [n, value] of Object.entries(values)) {
+    if (!variables.has(n)) throw new Error(`${parts.name} has no variable named "${n}"; its variables: ${[...variables.keys()].join(", ") || "none"}`);
+    const odd = unstorable(value, "value");
+    if (odd) throw new Error(`Variable ${n}: ${odd}: a variable holds plain data`);
   }
 
   // Rules, from the properties that need them and those listed.
@@ -762,7 +868,11 @@ function assemble(parts: SpecParts, without: string[]): Spec {
     without,
     withoutRules(names) {
       for (const n of names) if (!rules.has(n)) throw new Error(`${parts.name} has no rule named "${n}"; its rules: ${[...rules.keys()].join(", ") || "none"}`);
-      return assemble(parts, [...new Set([...without, ...names])]);
+      return assemble(parts, [...new Set([...without, ...names])], values);
+    },
+    variables: [...variables.values()].sort(bySeq).map((v) => ({ name: v.name, initial: v.name in values ? values[v.name] : v.initial, ...(v.each ? { each: eachOf.get(v.name)! } : {}) })),
+    setting(more) {
+      return assemble(parts, without, { ...values, ...more });
     },
   };
 
@@ -849,6 +959,8 @@ function groupInfo(spec: Spec, def: GroupDef): GroupInfo {
 
 interface RawStep {
   on?: AnyMessage | AnyFailed;
+  uses?: readonly Variable<unknown>[];
+  tags?: readonly string[];
   description: string;
   sources?: string[];
   sends?: AnyMessage[];
@@ -859,6 +971,19 @@ interface RawStep {
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
   routine?: boolean;
+}
+
+function namesOf(uses: readonly unknown[] | undefined, where: string): string[] {
+  return (uses ?? []).map((v) => {
+    if ((v as Variable<unknown>)?.kind !== "variable") throw new Error(`${where}: uses lists variables from defineVariable, not ${describe(v)}`);
+    return (v as Variable<unknown>).name;
+  });
+}
+
+function tagsOf(tags: unknown, where: string): string[] {
+  if (tags === undefined) return [];
+  if (!Array.isArray(tags) || tags.some((t) => typeof t !== "string")) throw new Error(`${where}: tags are strings, like tags: ["fault"]`);
+  return [...tags];
 }
 
 function keysOf(sends: readonly unknown[] | undefined, where: string): string[] {
@@ -881,6 +1006,8 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
       sources: step.sources ?? [],
       sends: keysOf(step.sends, `${raw.name}.${key}`),
       starts: step.starts ?? [],
+      uses: namesOf(step.uses, `${raw.name}.${key}`),
+      tags: tagsOf(step.tags, `${raw.name}.${key}`),
       when: scope(step.when) as StepInfo["when"],
       say: scope(step.say) as StepInfo["say"],
       routine: step.routine ?? false,
@@ -917,6 +1044,8 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
       sources: step.sources ?? [],
       sends: keysOf(step.sends, where),
       starts: step.starts ?? [],
+      uses: namesOf(step.uses, where),
+      tags: tagsOf(step.tags, where),
       when: scope(step.when),
       after: step.after,
       ...fairnessOf(where, step.fair),
