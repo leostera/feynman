@@ -155,11 +155,16 @@ function seedsText(seeds: Report["seeds"]): string[] {
   return parts.length ? [`and from ${parts.join(" and ")}`] : [];
 }
 
+/** The limit that stopped a search, as a word: "state", "time", "memory". */
+export function limitName(reason: Report["stoppedBy"]): string {
+  return reason === "maxStates" ? "state" : reason === "timeLimit" ? "time" : "memory";
+}
+
 /** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
 function unfinishedWhy(report: Report, p: Report["properties"][number]): string {
-  const limit = report.stoppedBy === "maxStates" ? "state" : "time";
+  const limit = limitName(report.stoppedBy);
   if (report.stoppedBy && p.holds && p.upTo !== undefined) return `held on every path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
-  if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${report.stoppedBy === "maxStates" ? "state" : "time"} limit, not all of them`;
+  if (report.stoppedBy) return `held in the ${report.states.toLocaleString()} states explored before the ${limit} limit, not all of them`;
   return `held to depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may break further on`;
 }
 
@@ -167,6 +172,8 @@ function unfinishedWhy(report: Report, p: Report["properties"][number]): string 
 export function unfinishedHint(report: Report): string {
   if (report.stoppedBy === "maxStates") return `"~" is not a proof: raise --max-states (check.maxStates in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "timeLimit") return `"~" is not a proof: raise --time-limit (check.timeLimit in feynman.config.ts), or lower --depth, until exploration finishes.`;
+  if (report.stoppedBy === "memoryLimit")
+    return `"~" is not a proof: the search filled the memory it may use (--memory-limit GB, or check.memoryLimit in megabytes in feynman.config.ts). Lower --depth or --repeats, or make the state smaller: see what varies most above.`;
   return `"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is ${report.bounds.depth} now) until no path is cut off before it gets there or loops.`;
 }
 

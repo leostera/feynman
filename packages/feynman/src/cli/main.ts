@@ -22,6 +22,7 @@ Commands:
                            (safety and liveness), that nothing gets stuck, scenarios,
                            and that every source still resolves.
       --depth N --faults N --repeats N --max-states N --time-limit SECONDS
+      --memory-limit GB          stop, keeping the verdicts so far, past this much memory (60% of the machine's)
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
@@ -59,6 +60,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       faults: { type: "string" },
       repeats: { type: "string" },
       "max-states": { type: "string" },
+      "memory-limit": { type: "string" },
       "time-limit": { type: "string" },
       walks: { type: "string" },
       "walk-depth": { type: "string" },
@@ -124,6 +126,11 @@ function bounds(values: Record<string, string | boolean | undefined>): Partial<B
   if (int("repeats") !== undefined) out.repeats = int("repeats");
   if (int("max-states") !== undefined) out.maxStates = int("max-states");
   if (int("time-limit") !== undefined) out.timeLimit = int("time-limit")! * 1000;
+  if (values["memory-limit"] !== undefined) {
+    const gb = Number(values["memory-limit"]);
+    if (!(gb > 0)) throw new Error(`--memory-limit takes gigabytes, like --memory-limit 16: got ${values["memory-limit"]}`);
+    out.memoryLimit = Math.floor(gb * 1024);
+  }
   if (int("walks") !== undefined) out.walks = int("walks");
   if (int("walk-depth") !== undefined) out.walkDepth = int("walk-depth");
   if (values["no-symmetry"]) out.symmetry = false;

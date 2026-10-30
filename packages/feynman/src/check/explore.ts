@@ -17,6 +17,7 @@
 //   skipped is expanded again for the difference.
 // - Inputs an action did not read: other values for them would do exactly the same.
 // - Symmetry (keys.ts): interchangeable instances are renamed to one order.
+import { defaultMemoryLimit } from "./memory.ts";
 import { isLiveness, spawn, startWorld, type LivenessProperty, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { verdicts, type Verdicts } from "./judge.ts";
 import { NO_SYMMETRY, symmetryOf } from "./keys.ts";
@@ -41,6 +42,8 @@ export interface Bounds {
   maxStates: number;
   /** Stop after this long, in milliseconds. */
   timeLimit: number;
+  /** Stop when the process holds more than this many megabytes (60% of the machine's by default). */
+  memoryLimit: number;
   /** Times one instance may take the same action on one path. */
   repeats: number;
   /** Random runs to try before the search; they take at most a quarter of the time limit. */
@@ -65,12 +68,16 @@ export interface Bounds {
   workers: number;
 }
 
+/** Which limit stopped a search early. */
+export type StopReason = "maxStates" | "timeLimit" | "memoryLimit";
+
 export const DEFAULT_BOUNDS: Bounds = {
   instances: {},
   depth: 14,
   faults: 1,
   maxStates: 300_000,
   timeLimit: 20_000,
+  memoryLimit: defaultMemoryLimit(),
   repeats: 2,
   walks: 2_000,
   walkDepth: 120,
@@ -146,7 +153,7 @@ export interface Report {
   /** Whether every state within the bounds was explored. */
   exhaustive: boolean;
   /** Why the search stopped early, when it did. */
-  stoppedBy?: "maxStates" | "timeLimit";
+  stoppedBy?: StopReason;
   depthReached: number;
   durationMs: number;
   /** Threads the search ran on: the main thread, plus the workers that joined. */

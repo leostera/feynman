@@ -49,7 +49,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
                 {!report.exhaustive && (
                   <span className="text-kumo-warning">
                     {" "}
-                    It stopped at its {report.stoppedBy === "timeLimit" ? "time" : "state"} limit, so some orders were not tried: a property that held there is not proven.
+                    It stopped at its {report.stoppedBy === "timeLimit" ? "time" : report.stoppedBy === "memoryLimit" ? "memory" : "state"} limit, so some orders were not tried: a property that held there is not proven.
                   </span>
                 )}
                 {report.walks?.runs ? ` Also ${report.walks.runs.toLocaleString()} random runs up to ${report.walks.deepest} steps deep, which find bugs past that depth but prove nothing.` : ""}

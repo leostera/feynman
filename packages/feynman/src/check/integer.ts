@@ -23,7 +23,8 @@
 // reference explorer, and the TLA+ and P oracles to TLC and P.
 import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
-import type { Bounds, Watch } from "./explore.ts";
+import type { Bounds, StopReason, Watch } from "./explore.ts";
+import { MEMORY_EVERY, overMemory } from "./memory.ts";
 import { startBreaks, stuck } from "./judge.ts";
 import { renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
@@ -192,7 +193,7 @@ export class IntegerSearch {
   readonly errors = new Map<string, number>();
   stuckAt: number | undefined;
   states = 0;
-  stoppedBy: "maxStates" | "timeLimit" | undefined;
+  stoppedBy: StopReason | undefined;
   /** A symmetry claim turned out false: the search stopped, to be run again without it. */
   refuted = false;
   depthReached = 0;
@@ -435,6 +436,10 @@ export class IntegerSearch {
     }
     if (this.states >= this.b.maxStates) {
       this.stoppedBy = "maxStates";
+      return false;
+    }
+    if (this.states % MEMORY_EVERY === 0 && overMemory(this.b.memoryLimit)) {
+      this.stoppedBy = "memoryLimit";
       return false;
     }
     const gid = this.node(parent.gid, this.root[parent.gid], option, this.nameIn(choice, parent.vector, L), this.faultsAfter(parent, step), effect.event);
