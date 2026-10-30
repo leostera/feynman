@@ -5,7 +5,7 @@ import { checkSources, git, repositoryAt, withWorktree, writeLock, type Reposito
 import { diffRuns, runScenario, type RunDiff, type Spec } from "../spec/index.ts";
 import type { Config } from "./config.ts";
 import { discoverSpecs, selectSpecs } from "./discover.ts";
-import { bold, dim, formatDiff, formatEvents, formatSources, green, red } from "./format.ts";
+import { bold, dim, formatDiff, formatEvents, formatSources, green, red, yellow } from "./format.ts";
 import { loadSpec, readConfig } from "./load.ts";
 
 export interface Context {
@@ -75,8 +75,9 @@ export async function runCommand(ctx: Context, named: string[], scenarioName?: s
       console.log(dim(path));
       for (const scenario of scenarios) {
         const run = runScenario(spec, scenario);
-        if (run.error) status = 1;
-        console.log(run.error ? red(`  ✗ ${scenario.name}  stopped after ${run.events.length} event(s): ${run.error}`) : `  ${green("✓")} ${scenario.name}  ${dim(`${run.events.length} event(s)`)}`);
+        const line = scenarioLine(spec, scenario.name, run);
+        if (line.fails) status = 1;
+        console.log(line.text);
       }
       continue;
     }
@@ -140,3 +141,18 @@ export async function diffCommand(ctx: Context, named: string[], ref: string): P
   return 0;
 }
 
+/**
+ * A scenario's one line in `run`: ✗ if it stopped, a step failed, or it broke a property, as
+ * `check` judges it. Breaking only properties marked `known` does not fail the run.
+ */
+function scenarioLine(spec: Spec, name: string, run: ReturnType<typeof runScenario>): { text: string; fails: boolean } {
+  const length = dim(`${run.events.length} event(s)`);
+  const failure = run.error ?? run.events.find((e) => e.error)?.error;
+  if (failure) return { text: red(`  ✗ ${name}  stopped after ${run.events.length} event(s): ${failure}`), fails: true };
+  const broken = [...new Set(run.events.flatMap((e) => e.violations))];
+  if (!broken.length) return { text: `  ${green("✓")} ${name}  ${length}`, fails: false };
+  const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
+  const allKnown = broken.every((id) => known.has(id));
+  const text = `  ✗ ${name}  ${length}, breaks ${broken.join(", ")}${allKnown ? " (known bug)" : ""}`;
+  return { text: allKnown ? yellow(text) : red(text), fails: !allKnown };
+}
