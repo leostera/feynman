@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "dist/types",
+    "rootDir": "src"
+  },
+  "include": ["src/spec/index.ts", "src/play/index.ts", "src/cli/index.ts"]
+}
