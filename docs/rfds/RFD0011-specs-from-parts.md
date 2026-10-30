@@ -324,6 +324,36 @@ spec. `ctx.the(X)`
   Reading `rule.on` outside a step or property is an error.
 - **Reuse.** One actor may be in several specs. Each spec checks its own parts.
 
+### What the checker gets from the parts
+
+Types are erased before the checker runs: a verdict doesn't depend on whether a spec
+type-checks, and the checker already catches, on every path it explores, what the types
+catch in the editor. So this RFD keeps everything the checker can use as runtime data, and
+derives the types from it, not the other way round:
+
+| Runtime data | Types derived from it | What the checker does with it |
+| --- | --- | --- |
+| payload schemas | each message's payload type | checks every payload on every explored step |
+| `receives` | each handler's `msg`, and which handlers may exist | knows who handles what before exploring |
+| `sends`, `starts` | what `ctx.send`, `ctx.reply`, `ctx.start` accept in a step | knows who may send what before exploring |
+
+From `receives` and `sends`, `defineSpec` builds the spec's communication graph and checks,
+before anything runs:
+
+- every message sent is received by some actor of the spec ("Bank sends Audit, but no actor
+  receives it");
+- every message received is sent by some actor or scenario ("Bank receives Refund, but
+  nothing sends it"), a warning, since a scenario may deliver it;
+- every call sent is received as `failed(Call)` by the actor that sends it.
+
+And the check output gains a coverage line: the handlers, actions, timers and guards that
+never ran within the bounds ("never ran: Client failed Charge"). A property that held is
+weaker than it looks if the steps that could break it never ran, and this says so next to
+the verdict.
+
+The same graph is what partial-order reduction needs (two steps whose actors, sends and
+receivers don't overlap are independent), which is left to its own RFD.
+
 ### Invariants
 
 - A spec written either way builds the same `Spec`: the engine and the checker can't tell.
@@ -384,6 +414,33 @@ Parts as values are the simplest structure a spec can have: one definition per t
 top to bottom, at one level of nesting, and imported like any other code. Typing comes from
 values the parts already hold (messages with schemas, the actor's `receives` and initial
 state), not from a registry that every part has to sit inside.
+
+### An actor body, and handlers that return their effects
+
+```ts
+const Bank = defineActor({
+  name: "Bank",
+  initialState: () => ({ charges: 0 }),
+  run(self) {
+    self.on(Charge, (state, msg) => {
+      state.charges += 1;
+      return self.reply(Charged, { ok: true });
+    });
+  },
+});
+```
+
+Each handler is fully typed from its message, and if a handler returns what it sends (as an
+Erlang `gen_server` returns its reply, or an Elm update its commands), TypeScript infers
+each handler's outputs: `{ Charge: "Charged" }`, with no `sends` to write. Both were checked
+with `tsc`; statements alone (`self.on(…); self.on(…)`) can't build the actor's type,
+since TypeScript infers from arguments and return values, never from how a parameter is used
+in a body.
+
+It reads well and is sound, but it moves what a step sends from runtime data into a type the
+checker never sees, which is the wrong way round (see "What the checker gets from the
+parts"). Every send must also be returned, through helpers and loops, and a forgotten
+`return` drops a message.
 
 ### Handlers built by helpers
 
@@ -466,6 +523,7 @@ harder to read than the design it describes.
 
 ### During implementation
 
+- How the coverage line counts steps that ran (per handler, or per handler and outcome).
 - Whether payload checks are cached per payload object: payloads are frozen and shared
   between worlds, so one check per distinct payload is enough.
 - How schemas show in the playground (a payload's fields, or examples).
@@ -476,6 +534,9 @@ harder to read than the design it describes.
 - Discriminated unions in schemas; `type<T>()` covers them until there's a need.
 
 ## Future possibilities
+
+- **Partial-order reduction.** The communication graph tells which steps are independent, so
+  the search can skip their reorderings.
 
 - **Shared parts libraries.** Zones, actors and messages for common infrastructure (a queue,
   a Durable Object with storage, an object store) published and imported by specs.
