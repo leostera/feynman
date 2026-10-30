@@ -33,7 +33,7 @@ test("without faults, every redemption gets its answer and the property holds", 
   const report = await check(remoteAccess, { depth: 10, faults: 0, maxStates: 100_000, ...UNTIMED });
   expect(report.properties.every((p) => p.holds)).toBe(true);
   expect(report.states).toBeGreaterThan(10);
-  expect(report.coverage.reached).toContain("Axo relay.message:Redeem");
+  expect(report.coverage.reached).toContain("Axo relay.redeem");
 });
 
 test("counterexamples replay: the same choices give the same events", async () => {
@@ -385,5 +385,5 @@ test("setup: the checker explores from the world a scenario sets up, and a prope
   expect(report.seeds).toEqual([{ scenario: "Nine published", at: "start" }]);
   const ce = broken(report.properties[0]).counterexample;
   expect(ce.from).toEqual({ scenario: "Nine published", at: "start" });
-  expect(ce.events.map((e) => e.key)).toEqual(["publish", "message:Publish"]);
+  expect(ce.events.map((e) => e.key)).toEqual(["publish", "publish"]);
 });

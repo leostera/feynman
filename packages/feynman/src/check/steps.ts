@@ -1,9 +1,10 @@
 // Steps the checker can take from a world, and replaying them.
-import { act, actorNamed, choices, fire, guard, losable, lose, restart, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
+import { act, actorNamed, choices, fire, guard, losable, lose, restart, stepsTaking, worldView, type Event, type Spec, type Step, type StepOptions, type World } from "../spec/index.ts";
 
 export type Choice =
   | { kind: "act"; instance: string; key: string; inputs: Record<string, unknown> }
-  | { kind: "fire"; pending: number }
+  /** A pending entry taken by one of the steps that can take it: a timer's own, or one of the steps on a message. */
+  | { kind: "fire"; pending: number; step: string }
   | { kind: "guard"; instance: string; key: string }
   | { kind: "lose"; pending: number }
   | { kind: "restart"; instance: string };
@@ -39,7 +40,7 @@ export function branches(spec: Spec, world: World, faultsLeft: boolean): Choice[
   }
   for (const g of guards) out.push({ kind: "guard", instance: g.instance, key: g.key });
   // Anything pending may happen next: any message may overtake any other, and a timer may fire at any moment (RFD0004).
-  for (const p of pending) out.push({ kind: "fire", pending: p.id });
+  for (const p of pending) for (const step of stepsTaking(spec, world, p)) out.push({ kind: "fire", pending: p.id, step });
   if (faultsLeft) {
     for (const p of pending) if (losable(p)) out.push({ kind: "lose", pending: p.id });
     for (const instance of world.instances) if (!actorNamed(spec, instance.actor).singleton) out.push({ kind: "restart", instance: instance.id });
@@ -55,7 +56,7 @@ export function apply(spec: Spec, world: World, choice: Choice, how?: StepOption
     case "act":
       return act(spec, world, choice.instance, choice.key, choice.inputs, how);
     case "fire":
-      return fire(spec, world, choice.pending, how);
+      return fire(spec, world, choice.pending, choice.step, how);
     case "guard":
       return guard(spec, world, choice.instance, choice.key, how);
     case "lose":

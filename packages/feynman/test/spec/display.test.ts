@@ -75,7 +75,7 @@ test("display, links and say: presentation as data, evaluated against the world"
   expect(drops.map((d) => [d.action.key, d.inputs, d.complete])).toEqual([["dial", { n: 7 }, true]]);
   expect(dropsFor(spec, world, "hub", { kind: "slot", value: 7 })).toEqual([]);
   expect(liveLinks(spec, world)).toEqual([{ to: "Hub", kind: "socket", from: "peer-p", target: "hub" }]);
-  expect(run.events.find((e) => e.key === "message:Dial")?.text).toBe("Accepted peer 1; 1 now");
+  expect(run.events.find((e) => e.kind === "deliver" && e.key === "dial")?.text).toBe("Accepted peer 1; 1 now");
   // Example arrays work like example functions.
   expect(spec.actors[1].actions.dial.inputs.n.examples?.({} as never)).toEqual([1, 2]);
 });

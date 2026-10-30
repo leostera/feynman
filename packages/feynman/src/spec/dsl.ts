@@ -313,7 +313,10 @@ type CtxOn<On, Sends extends AnyMessage> = On extends AnyMessage ? ReplyCtx<Send
 export interface StepDef<S, On, Sends extends AnyMessage> {
   /** The message, or the call's failure (`failed(Call)`), this step reacts to. */
   on?: On;
-  /** For a guarded step: it can run whenever this holds. */
+  /**
+   * For a guarded step: it can run whenever this holds. For a step on a message: it can take
+   * the message only while this holds.
+   */
   when?: (state: Readonly<S>) => boolean;
   /**
    * For a timer, when the code fires it, in words: "10 minutes", "after three missed
@@ -479,12 +482,6 @@ export function defineActor<S, A = {}, O = {}, Sn = {}>(def: ActorDef<S, A, O, S
   return Object.freeze({ name: def.name, [ACTOR]: def as unknown as RawDef }) as Actor<S, A>;
 }
 
-/** What the engine keys an actor's step or action by: its message for a step on one, else its name. */
-export function stepKey(actor: Actor<any, any>, step: string): string {
-  const on = ((actor as unknown as { [ACTOR]?: RawDef })?.[ACTOR]?.transitions?.[step] as RawStep | undefined)?.on;
-  return on ? on.key : step;
-}
-
 function definitionOf(actor: Actor<any, any>): RawDef {
   const def = (actor as unknown as { [ACTOR]?: RawDef })?.[ACTOR];
   if (!def) throw new Error(`${(actor as { name?: string })?.name ?? String(actor)} is not an actor from defineActor`);
@@ -641,8 +638,12 @@ export interface Script {
   deliver<M extends AnyMessage | AnyFailed>(who: Instance<any, any>, message: M, payload?: M extends AnyMessage ? PayloadOf<M> : unknown): void;
   /** Lose a message in flight to `who` now, picked as `deliver` picks it. A fault. */
   drop<M extends AnyMessage | AnyFailed>(who: Instance<any, any>, message: M, payload?: M extends AnyMessage ? PayloadOf<M> : unknown): void;
-  /** Run one of `who`'s guarded steps, by name, whose `when` holds now. */
-  step(who: Instance<any, any>, step: string): void;
+  /**
+   * Take one of `who`'s steps by name: a guarded step whose `when` holds now, or a step on a
+   * message, which takes the oldest such message in flight to `who` (the oldest carrying
+   * `payload`, if given), as `deliver` picks it.
+   */
+  step(who: Instance<any, any>, step: string, payload?: unknown): void;
   /** The world now, to read state between steps. */
   readonly world: World;
 }
@@ -828,7 +829,7 @@ function checkTalk(spec: Spec): void {
       for (const key of step.sends) {
         const info = spec.messages[key]!;
         if (!received.has(key)) throw new Error(`${actor.name}.${step.key}: sends ${info.name}, but no actor of ${spec.name} has a step on ${info.id}`);
-        if (info.call && !actor.transitions[`failed:${key}`])
+        if (info.call && !actor.stepsOn[`failed:${key}`])
           throw new Error(`${actor.name}: sends ${info.name}, a call: handle its failure with a step on failed(${info.id})`);
       }
     }
@@ -875,7 +876,6 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     if (step.fair !== undefined) throw new Error(`${raw.name}.${key}: actions are never fair (a person may stop); fair is for transitions`);
     actions[key] = {
       key,
-      name: key,
       label: step.label,
       description: step.description,
       sources: step.sources ?? [],
@@ -889,25 +889,29 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     };
   }
   const transitions: Record<string, TransitionInfo> = {};
+  const stepsOn: Record<string, string[]> = {};
   for (const [name, step] of Object.entries(raw.transitions ?? {}) as [string, RawStep][]) {
     const where = `${raw.name}.${name}`;
     if (typeof step?.run !== "function") throw new Error(`${where}: a step has a run, like run(state, msg, ctx) { … }`);
     const on = step.on;
     if (on !== undefined && on?.kind !== "message" && on?.kind !== "failure") throw new Error(`${where}: on is a message from defineMessage, or failed(Call), not ${describe(on)}`);
-    if (on && step.when) throw new Error(`${where}: a step is on a message or guarded by when, not both`);
     if (on && step.after !== undefined) throw new Error(`${where}: a step on a message is not a timer: leave out after`);
     // A timer or a guard receives nothing: its run is (state, _, ctx), like every step's. The
     // 0.13 form, (state, ctx), would take ctx's place and fail when it first runs.
     if (!on && step.run.length === 2) throw new Error(`${where}: a timer or a guard receives nothing, and its run is (state, _, ctx), not (state, ctx)`);
-    const key = on ? on.key : name;
-    if (transitions[key]) {
-      const other = transitions[key]!;
-      throw new Error(on ? `${raw.name}: two steps are on ${on.kind === "failure" ? `failed(${on.call.id})` : on.id} (${other.name} and ${name}); an actor has one step per message` : `${raw.name}: two steps are named ${name}`);
+    // Events, coverage, e.is and s.step name a step by its name alone, so an action does not share it.
+    if (actions[name]) throw new Error(`${raw.name}: an action and a step are both named ${name}; give them different names`);
+    if (on) {
+      const fair = (stepsOn[on.key] ??= []).find((other) => transitions[other]!.fair !== false);
+      // Several steps may take one message (RFD0012); left alone, it goes to the fair one, so there is one.
+      if (fair && step.fair !== false) {
+        const what = on.kind === "failure" ? `failed(${on.call.id})` : on.id;
+        throw new Error(`${raw.name}: ${fair} and ${name} are both fair steps on ${what}; one message has at most one fair step, and the others say fair: false`);
+      }
+      stepsOn[on.key]!.push(name);
     }
-    if (!on && Object.values(transitions).some((t) => t.name === name)) throw new Error(`${raw.name}: two steps are named ${name}`);
-    transitions[key] = {
-      key,
-      name,
+    transitions[name] = {
+      key: name,
       message: on?.key,
       description: step.description,
       sources: step.sources ?? [],
@@ -939,6 +943,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     links,
     actions,
     transitions,
+    stepsOn,
   };
 }
 

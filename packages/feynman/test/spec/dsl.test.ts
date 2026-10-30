@@ -71,12 +71,15 @@ test("who talks to whom is checked when the spec is assembled", () => {
   expect(talk({ receives: Ping, sends: [defineMessage("Ping")] })).toThrow('Talk: two different messages have the id "Ping"');
 });
 
-test("a step is on one message, and an actor has one step per message", () => {
+test("several steps may be on one message, of which at most one is fair; an action and a step have different names", () => {
   const Ping = defineMessage("Ping");
-  const actor = (transitions: object) => () =>
-    defineSpec({ name: "T", actors: [defineActor({ name: "A", zone, singleton: true, initialState: () => ({}), transitions } as never)] });
-  expect(actor({ a: { on: Ping, description: "", run: () => {} }, b: { on: Ping, description: "", run: () => {} } })).toThrow("A: two steps are on Ping (a and b); an actor has one step per message");
-  expect(actor({ a: { on: Ping, when: () => true, description: "", run: () => {} } })).toThrow("A.a: a step is on a message or guarded by when, not both");
+  const actor = (transitions: object, actions: object = {}) => () =>
+    defineSpec({ name: "T", actors: [defineActor({ name: "A", zone, singleton: true, initialState: () => ({}), transitions, actions } as never)] });
+  expect(actor({ a: { on: Ping, description: "", run: () => {} }, b: { on: Ping, description: "", run: () => {} } })).toThrow(
+    "A: a and b are both fair steps on Ping; one message has at most one fair step, and the others say fair: false",
+  );
+  expect(actor({ a: { on: Ping, description: "", run: () => {} }, b: { on: Ping, fair: false, description: "", run: () => {} } })()).toMatchObject({ actors: [{ stepsOn: { "message:Ping": ["a", "b"] } }] });
+  expect(actor({ ping: { on: Ping, description: "", run: () => {} } }, { ping: { label: "Ping", description: "", run: () => {} } })).toThrow("A: an action and a step are both named ping; give them different names");
   expect(actor({ a: { on: "Ping", description: "", run: () => {} } })).toThrow('A.a: on is a message from defineMessage, or failed(Call), not "Ping"');
 });
 

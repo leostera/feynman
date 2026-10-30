@@ -21,7 +21,7 @@
 // every kind of property (liveness on the graph it keeps), errors, stuck worlds, coverage and
 // symmetry. test/check/integer.test.ts and the fuzzer hold it to the classic search, the
 // reference explorer, and the TLA+ and P oracles to TLC and P.
-import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { act, actorNamed, calledBy, fire, guard, holdsIn, isLiveness, losable, lose, observation, restart, stepsTaking, traceView, worldView, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
@@ -231,6 +231,9 @@ export class IntegerSearch {
   private failureTo: (string | undefined)[] = [];
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
+  private stepNames = new Interner<string>();
+  /** `takers`, by pending entry and then by its receiver's state. */
+  private takersOf = new Map<number, Map<number, string[]>>();
   private timerLists = new Interner<string>();
   private names = new Interner<ChoiceName>();
   private stepKeys = new Interner<string>();
@@ -789,7 +792,7 @@ export class IntegerSearch {
       case "lose": {
         const p = world.pending.find((x) => this.pendingId(x) === name.pending);
         if (!p) throw new Error("a path from the integer core does not replay: what it names is not pending");
-        return { kind: name.kind, pending: p.id };
+        return name.kind === "fire" ? { kind: "fire", pending: p.id, step: name.key! } : { kind: "lose", pending: p.id };
       }
     }
   }
@@ -807,7 +810,9 @@ export class IntegerSearch {
           ? { kind: "guard", instance: choice.instance, key: choice.key }
           : choice.kind === "restart"
             ? { kind: "restart", instance: choice.instance }
-            : { kind: choice.kind, pending: vector[L.messages + choice.pending] };
+            : choice.kind === "fire"
+              ? { kind: "fire", key: choice.step, pending: vector[L.messages + choice.pending] }
+              : { kind: "lose", pending: vector[L.messages + choice.pending] };
     return this.names.id(`${name.kind}|${name.instance ?? ""}|${name.key ?? ""}|${name.inputs ? JSON.stringify(name.inputs) : ""}|${name.pending ?? ""}`, () => name);
   }
 
@@ -911,7 +916,7 @@ export class IntegerSearch {
     // The key: the instance's state, its own timers (start, cancel and restart read them), and
     // the step with its argument: a message or timer by its intern id, which says who sent
     // what; anything else by an interned name.
-    const arg = choice.kind === "fire" ? vector[L.messages + choice.pending] * 4 : choice.kind === "lose" ? vector[L.messages + choice.pending] * 4 + 2 : this.factsOf(L, choice).arg * 4 + 1;
+    const arg = choice.kind === "fire" ? (vector[L.messages + choice.pending] * STEPS + this.stepIndex(choice.step)) * 4 : choice.kind === "lose" ? vector[L.messages + choice.pending] * 4 + 2 : this.factsOf(L, choice).arg * 4 + 1;
     // Timer lists are named from 1 (0 for none), so the pair is one number while lists stay below 2^20.
     if (timers >= 1_048_576) throw new Error("the integer core met more than 2^20 distinct lists of one instance's timers");
     const local = vector[slot] * 1_048_576 + timers;
@@ -937,6 +942,28 @@ export class IntegerSearch {
   private failuresTo(vector: Int32Array, L: Layout, instance: string): boolean {
     for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) if (this.failureTo[vector[i]] === instance) return true;
     return false;
+  }
+
+  /** A step's name as a small number, for the step cache's key. */
+  private stepIndex(step: string): number {
+    const index = this.stepNames.id(step, () => step);
+    if (index >= STEPS) throw new Error(`the integer core met more than ${STEPS} distinct step names`);
+    return index;
+  }
+
+  /**
+   * The steps that can take pending entry `id` (interned) when its receiver is in state `state`:
+   * a timer's own; for a message, the steps on it whose `when` holds there (stepsTaking).
+   */
+  private takers(id: number, state: number): string[] {
+    let byState = this.takersOf.get(id);
+    if (!byState) this.takersOf.set(id, (byState = new Map()));
+    let steps = byState.get(state);
+    if (!steps) {
+      const pending = { ...this.pendings.values[id], id: 0 } as Pending;
+      byState.set(state, (steps = stepsTaking(this.spec, { seq: 0, fresh: {}, rng: 0, instances: [this.instanceStates.values[state]], pending: [] } as World, pending)));
+    }
+    return steps;
   }
 
   private argOf(choice: Choice): number {
@@ -1067,7 +1094,10 @@ export class IntegerSearch {
     }
     for (let slot = 0; slot < n; slot++) for (const c of this.planOf(L, vector[slot]).guards) out.push(c);
     const pending = vector.length - L.messages - 1;
-    for (let k = 1; k <= pending; k++) out.push(fireAt(k));
+    for (let k = 1; k <= pending; k++) {
+      const id = vector[L.messages + k];
+      for (const step of this.takers(id, vector[L.slots.get(this.pendings.values[id].to)!])) out.push(fireAt(k, step));
+    }
     if (vector[L.faults] < this.b.faults) {
       for (let k = 1; k <= vector[L.messages]; k++) if (this.canLose[vector[L.messages + k]]) out.push(loseAt(k));
       for (const c of L.restarts) out.push(c);
@@ -1137,12 +1167,17 @@ const NONE = new Int32Array(0);
 /** A world with nothing in it, for input combinations that do not read the world. */
 const NO_WORLD = { seq: 0, fresh: {}, rng: 0, instances: [], pending: [] } as World;
 
-/** Choices on pending entry `k`, shared: they name it by its place. */
-const fires: Choice[] = [];
+/** Choices on pending entry `k`, shared: they name it by its place, and the step that takes it. */
+const fires: Map<string, Choice>[] = [];
 const loses: Choice[] = [];
-function fireAt(k: number): Choice {
-  return (fires[k] ??= { kind: "fire", pending: k });
+function fireAt(k: number, step: string): Choice {
+  const byStep = (fires[k] ??= new Map());
+  let choice = byStep.get(step);
+  if (!choice) byStep.set(step, (choice = { kind: "fire", pending: k, step }));
+  return choice;
 }
+/** Distinct step names the step cache tells apart in a key. */
+const STEPS = 4096;
 function loseAt(k: number): Choice {
   return (loses[k] ??= { kind: "lose", pending: k });
 }
@@ -1171,7 +1206,7 @@ function run(spec: Spec, world: World, choice: Choice, observe: Observation) {
     case "act":
       return act(spec, world, choice.instance, choice.key, choice.inputs, how);
     case "fire":
-      return fire(spec, world, choice.pending, how);
+      return fire(spec, world, choice.pending, choice.step, how);
     case "guard":
       return guard(spec, world, choice.instance, choice.key, how);
     case "restart":

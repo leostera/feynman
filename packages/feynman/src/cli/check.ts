@@ -4,7 +4,7 @@
 import { join } from "node:path";
 import { check, checkRules, DEFAULT_BOUNDS, faultsIn, Pool, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type RuleVerdict, type SpecSource } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
-import { runScenario, stepNameOf, type Event, type Spec, type World } from "../spec/index.ts";
+import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
 import { playgroundFor } from "./discover.ts";
 import { dim, formatReport, formatSources, green, red, unfinishedHint, yellow } from "./format.ts";
@@ -123,15 +123,15 @@ function focus(spec: Spec, only: string[]): Spec | null {
   return properties.length ? { ...spec, properties } : null;
 }
 
-function counterexampleJson(spec: Spec, p: PropertyBroken) {
+function counterexampleJson(p: PropertyBroken) {
   const { counterexample: ce, loop } = p;
   return {
     foundBy: p.foundBy,
     from: ce.from ?? null,
     faults: faultsIn(ce.events),
     ...(p.shorter ? { shorter: p.shorter } : {}),
-    events: ce.events.map((e, i) => eventJson(spec, e, ce.worlds[i])),
-    ...(loop ? { loop: loop.events.map((e, i) => eventJson(spec, e, loop.worlds[i])) } : {}),
+    events: ce.events.map((e, i) => eventJson(e, ce.worlds[i])),
+    ...(loop ? { loop: loop.events.map((e, i) => eventJson(e, loop.worlds[i])) } : {}),
   };
 }
 
@@ -232,10 +232,10 @@ function toJson(result: SpecCheck) {
       ...(p.known !== undefined ? { known: p.known } : {}),
       ...(p.holds && p.upTo !== undefined ? { heldUpTo: p.upTo } : {}),
       ...(result.brokenBy.has(p.id) ? { brokenByScenario: result.brokenBy.get(p.id) } : {}),
-      ...(p.holds ? {} : { counterexample: counterexampleJson(spec, p) }),
+      ...(p.holds ? {} : { counterexample: counterexampleJson(p) }),
     })),
-    errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(spec, ev, e.counterexample.worlds[i])) })),
-    ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(spec, ev, report.stuck!.counterexample.worlds[i])) } } : {}),
+    errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(ev, e.counterexample.worlds[i])) })),
+    ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(ev, report.stuck!.counterexample.worlds[i])) } } : {}),
     neverRan: report.coverage.missed,
     ...(spec.without.length ? { without: spec.without } : {}),
     rules: result.rules,
@@ -245,13 +245,13 @@ function toJson(result: SpecCheck) {
   };
 }
 
-function eventJson(spec: Spec, event: Event, world: World | undefined) {
+function eventJson(event: Event, world: World | undefined) {
   const label = (id: string) => world?.instances.find((i) => i.id === id)?.label ?? id;
   return {
     kind: event.kind,
     actor: event.actor,
     instance: label(event.instance),
-    step: stepNameOf(spec, event),
+    step: event.key,
     description: event.description,
     ...(event.inputs && Object.keys(event.inputs).length ? { inputs: event.inputs } : {}),
     ...(event.payload !== undefined && event.kind !== "spawn" ? { payload: event.payload } : {}),

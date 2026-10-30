@@ -18,7 +18,7 @@ function filesOf(step: StepInfo): string[] {
 }
 
 function stepName(step: StepInfo): string {
-  return step.name;
+  return step.key;
 }
 
 export function shapeWarnings(spec: Spec): ShapeWarning[] {
@@ -27,8 +27,8 @@ export function shapeWarnings(spec: Spec): ShapeWarning[] {
   for (const actor of spec.actors) {
     for (const step of Object.values(actor.transitions)) {
       // A call's failure is sent by the call failing; only messages are sent by steps.
-      if (!step.key.startsWith("message:") || sent.has(step.key)) continue;
-      warnings.push({ actor: actor.name, step: step.name, message: `is on ${spec.messages[step.key]?.id ?? step.key}, which no step sends: it never runs` });
+      if (!step.message?.startsWith("message:") || sent.has(step.message)) continue;
+      warnings.push({ actor: actor.name, step: step.key, message: `is on ${spec.messages[step.message]?.id ?? step.message}, which no step sends: it never runs` });
     }
     for (const step of [...Object.values(actor.actions), ...Object.values(actor.transitions)]) {
       const files = filesOf(step);

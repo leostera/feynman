@@ -9,7 +9,6 @@
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
 import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
-import { stepKey } from "./dsl.ts";
 import { mismatch } from "./schema.ts";
 
 export interface Step {
@@ -195,8 +194,27 @@ export function act(spec: Spec, world: World, instanceId: string, key: string, i
   return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, seen, ctx) }, how);
 }
 
-/** Deliver a pending message, or fire a pending timer. */
-export function fire(spec: Spec, world: World, pendingId: number, how: StepOptions = FULL): Step {
+/**
+ * The steps that can take a pending entry now: a timer's own step; for a message, each step on
+ * it whose `when` holds, in the order declared (RFD0012).
+ */
+export function stepsTaking(spec: Spec, world: World, pending: Pending): string[] {
+  if (pending.kind === "timer") return [pending.timer];
+  const instance = world.instances.find((i) => i.id === pending.to);
+  if (!instance) return [];
+  const actor = actorNamed(spec, instance.actor);
+  const steps = actor.stepsOn[pending.message] ?? [];
+  return steps.length === 1 && !actor.transitions[steps[0]].when ? steps : steps.filter((s) => !actor.transitions[s].when || holds(actor.transitions[s].when!, instance.state));
+}
+
+/** The step a message goes to when the system is left alone: the fair one of the steps on it. */
+export function leftAloneStep(actor: ActorInfo, message: string): string | undefined {
+  const steps = actor.stepsOn[message] ?? [];
+  return steps.find((s) => actor.transitions[s].fair !== false) ?? steps[0];
+}
+
+/** Deliver a pending message to one of the steps on it (the one left alone takes, unless named), or fire a pending timer. */
+export function fire(spec: Spec, world: World, pendingId: number, step?: string, how: StepOptions = FULL): Step {
   const pending = world.pending.find((p) => p.id === pendingId);
   if (!pending) throw new SpecError(`Nothing pending has id ${pendingId}`);
   const consumed = { ...world, pending: world.pending.filter((p) => p.id !== pendingId) };
@@ -206,8 +224,11 @@ export function fire(spec: Spec, world: World, pendingId: number, how: StepOptio
     const transition = actor.transitions[pending.timer];
     return runStep(spec, consumed, { kind: "timer", instance, actor, step: transition, call: (state, ctx) => transition.run(state, undefined, ctx) }, how);
   }
-  const transition = actor.transitions[pending.message];
+  const name = step ?? leftAloneStep(actor, pending.message);
+  const transition = name === undefined ? undefined : actor.transitions[name];
   const delivery = { message: pending.message, payload: pending.payload, from: pending.from };
+  if (transition && transition.message !== pending.message) throw new SpecError(`${actor.name}.${name} is not a step on ${messageName(spec, pending.message)}`);
+  if (transition?.when && !holds(transition.when, instance.state)) throw new SpecError(`${actor.name}.${name} cannot take ${messageName(spec, pending.message)} now: its when does not hold`);
   if (!transition) {
     return finish(spec, world, consumed, {
       kind: "deliver",
@@ -556,17 +577,12 @@ export function holdsIn(spec: Spec, world: World, predicate: (world: WorldView) 
   }
 }
 
-/** The name of the step an event took, as the spec names it: `charge` for the step on Charge. */
-export function stepNameOf(spec: Spec, event: { actor: string; key: string }): string {
-  return spec.actors.find((a) => a.name === event.actor)?.transitions[event.key]?.name ?? event.key;
-}
-
 export function traceView(events: readonly Event[]): Trace {
   const views: TraceEvent[] = events.map((e) => ({
     index: e.index,
     actor: e.actor,
     key: e.key,
-    is: (actor, step) => e.actor === actor.name && e.key === stepKey(actor, step) && !e.error,
+    is: (actor, step) => e.actor === actor.name && e.key === step && !e.error,
     replied: (message) => e.sent.some((s) => s.message === message.key),
     sent: (message) => e.sent.some((s) => s.message === message.key),
   }));
@@ -578,6 +594,18 @@ export function traceView(events: readonly Event[]): Trace {
 }
 
 // Helpers ----------------------------------------------------------------------------------------------
+
+/** Whether a delivery went to the step the message goes to left alone, rather than to another step on it. */
+export function tookLeftAlone(spec: Spec, event: Pick<Event, "actor" | "key" | "message">): boolean {
+  const actor = spec.actors.find((a) => a.name === event.actor);
+  return !actor || event.message === undefined || leftAloneStep(actor, event.message) === event.key;
+}
+
+/** A delivery in words: its message's name, and the step that took it when that is not the one left alone ("charge → chargeLost"). */
+export function deliveryName(spec: Spec, event: Pick<Event, "actor" | "key" | "message">): string {
+  const message = messageName(spec, event.message ?? event.key);
+  return tookLeftAlone(spec, event) ? message : `${message} → ${event.key}`;
+}
 
 export function messageName(spec: Spec, key: string): string {
   const call = calledBy(key);

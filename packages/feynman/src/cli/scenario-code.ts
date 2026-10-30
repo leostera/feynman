@@ -1,7 +1,7 @@
 // A counterexample as scenario code: paste it into the spec and the bug is a flow anyone can
 // replay, step through in the playground, and keep as a regression once it is fixed.
 import { placeText, type Counterexample, type PropertyBroken } from "../check/index.ts";
-import { startWorld, type Event, type Spec, type World } from "../spec/index.ts";
+import { startWorld, tookLeftAlone, type Event, type Spec, type World } from "../spec/index.ts";
 import { sortedJson } from "../spec/json.ts";
 
 /**
@@ -17,8 +17,8 @@ export function scenarioCode(spec: Spec, property: PropertyBroken): string {
   const setUp = ce.from ? setupOf(spec, ce.initial) : [];
   if (ce.from && !setUp) body.push(`// Starts from ${placeText(ce.from)}: copy its setup and steps here first.`);
   body.push(...instances(spec, ce.initial, names, ce.from !== undefined));
-  ce.events.forEach((event, i) => body.push(line(event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
-  if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
+  ce.events.forEach((event, i) => body.push(line(spec, event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
+  if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(spec, event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
   else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
   body.push(`// ${property.id} is broken here: ${property.description}`);
   return [
@@ -78,7 +78,7 @@ function code(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
 }
 
-function line(event: Event, before: World, choice: Counterexample["choices"][number], names: Names): string {
+function line(spec: Spec, event: Event, before: World, choice: Counterexample["choices"][number], names: Names): string {
   const who = names.of(event.instance, before);
   const json = (v: unknown) => JSON.stringify(v);
   switch (event.kind) {
@@ -86,11 +86,14 @@ function line(event: Event, before: World, choice: Counterexample["choices"][num
       return `s.act(${who}, ${json(event.key)}${event.inputs && Object.keys(event.inputs).length ? `, ${json(event.inputs)}` : ""});`;
     case "deliver":
     case "lose": {
+      const from = event.from ? ` // from ${names.of(event.from, before)}` : "";
+      const payload = needsPayload(before, choice, event) ? `, ${json(event.payload)}` : "";
+      // A step other than the one left alone takes it: named, like s.step(bank, "chargeLost").
+      if (event.kind === "deliver" && !tookLeftAlone(spec, event)) return `s.step(${who}, ${json(event.key)}${payload});${from}`;
       // The message by value: Charge, or failed(Charge) for a call's failure.
-      const id = event.key.replace(/^(failed:)?message:/, "");
-      const message = event.key.startsWith("failed:") ? `failed(${id})` : id;
-      const call = event.kind === "deliver" ? "deliver" : "drop";
-      return `s.${call}(${who}, ${message}${needsPayload(before, choice, event) ? `, ${json(event.payload)}` : ""});${event.from ? ` // from ${names.of(event.from, before)}` : ""}`;
+      const id = event.message!.replace(/^(failed:)?message:/, "");
+      const message = event.message!.startsWith("failed:") ? `failed(${id})` : id;
+      return `s.${event.kind === "deliver" ? "deliver" : "drop"}(${who}, ${message}${payload});${from}`;
     }
     case "timer":
       return `s.fire(${who}, ${json(event.key)});`;
@@ -106,7 +109,7 @@ function line(event: Event, before: World, choice: Counterexample["choices"][num
 /** Whether naming the message picks another one in flight than the one taken: then its payload picks it. */
 function needsPayload(before: World, choice: Counterexample["choices"][number], event: Event): boolean {
   if (choice.kind !== "fire" && choice.kind !== "lose") return false;
-  const oldest = before.pending.filter((p) => p.kind === "deliver" && p.to === event.instance && p.message === event.key).sort((a, b) => a.id - b.id)[0];
+  const oldest = before.pending.filter((p) => p.kind === "deliver" && p.to === event.instance && p.message === event.message).sort((a, b) => a.id - b.id)[0];
   return oldest?.id !== choice.pending;
 }
 

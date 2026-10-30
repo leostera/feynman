@@ -578,10 +578,10 @@ function stepName(world: World, choice: Choice): string {
     case "restart":
       return `r|${choice.instance}`;
     case "fire":
-    case "lose": {
-      // What it carries: two identical entries reach the same world either way.
-      return `${choice.kind[0]}|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
-    }
+      // What it carries, and which step takes it: two identical entries reach the same world either way.
+      return `f|${choice.step}|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
+    case "lose":
+      return `l|${pendingText(world.pending.find((x) => x.id === choice.pending)!)}`;
   }
 }
 
@@ -603,8 +603,9 @@ export function fairness(spec: Spec, world: World, choice: Choice): { id: FairId
     instance = choice.instance;
   } else {
     const pending = world.pending.find((p) => p.id === choice.pending)!;
-    name = pending.kind === "deliver" ? `d|${pendingText(pending)}` : `t|${pending.to}|${pending.timer}`;
-    key = pending.kind === "deliver" ? pending.message : pending.timer;
+    // A delivery is fair to the step that takes it: the same message to an unfair step is another step.
+    name = pending.kind === "deliver" ? `d|${choice.step}|${pendingText(pending)}` : `t|${pending.to}|${pending.timer}`;
+    key = choice.step;
     instance = pending.to;
   }
   const actor = world.instances.find((i) => i.id === instance)?.actor;

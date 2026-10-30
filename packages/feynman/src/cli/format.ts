@@ -1,7 +1,7 @@
 // Text output: what agents and people read in a terminal.
 import { faultsIn, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
-import { messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
+import { deliveryName, messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
 
 const color = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -27,7 +27,7 @@ function label(world: World | undefined, id: string): string {
 
 function stepName(spec: Spec, event: Event): string {
   if (event.kind === "spawn" || event.kind === "restart" || event.kind === "lose") return event.kind;
-  if (event.key.startsWith("message:") || event.key.startsWith("failed:")) return messageName(spec, event.key);
+  if (event.kind === "deliver") return deliveryName(spec, event);
   return event.key;
 }
 

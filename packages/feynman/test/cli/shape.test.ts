@@ -45,7 +45,7 @@ test("a step on a message no step sends is flagged: it never runs", () => {
     initialState: () => ({}),
     actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (_s, _i, ctx) => ctx.send(ctx.self, Ping, {}) } },
     transitions: {
-      ping: { on: Ping, description: "Is pinged.", run: () => {} },
+      pinged: { on: Ping, description: "Is pinged.", run: () => {} },
       pong: { on: Pong, description: "Nothing sends it.", run: () => {} },
     },
   });
