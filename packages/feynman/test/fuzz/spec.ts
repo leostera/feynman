@@ -6,7 +6,7 @@
 // message handlers, replies, timers started and cancelled, guards, reading other instances,
 // shared counters (fresh ids, random numbers), durable fields across restarts, steps that
 // throw, final states, every kind of property, and calls whose failures reach their callers.
-import { call, defineSpec, message, type Spec } from "../../src/spec/index.ts";
+import { defineActor, defineCall, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, failed, oneOf, type AnyMessage, type Call, type Property, type Spec } from "../../src/spec/index.ts";
 
 type Random = () => number;
 
@@ -164,148 +164,147 @@ export function describe(seed: number, size: Size = "small"): SpecDesc {
 /** The spec a description stands for. */
 export function build(desc: SpecDesc): Spec {
   const isCall = (m: number) => desc.calls?.messages.includes(m) ?? false;
-  const messageDefs = Object.fromEntries(Array.from({ length: desc.messages }, (_, m) => [`M${m}`, (isCall(m) ? call : message)<{ v: number }>({ name: `m${m}` })]));
-  return defineSpec(`Fuzz ${desc.seed}`, { messages: messageDefs }, (spec) => {
-    const zone = spec.defineZone({ name: "Zone" });
-    const actors: any[] = [];
-    const holds = (c: Cond, s: any) => (c.kind === "true" ? true : c.kind === "aIs" ? s.a === c.k : c.kind === "aBelow" ? s.a < c.k : s.b === c.is);
-    const messageKey = (m: number): string => (spec.messages as Record<string, string>)[`M${m}`];
-    const sendsOf = (ops: Op[]): string[] => [...new Set(ops.flatMap((o) => (o.kind === "send" || o.kind === "reply" ? [messageKey(o.message)] : o.kind === "if" ? sendsOf(o.then) : [])))];
-    const startsOf = (ops: Op[]): string[] => [...new Set(ops.flatMap((o) => (o.kind === "start" ? [`timer${o.timer}`] : o.kind === "if" ? startsOf(o.then) : [])))];
-    const runOps = (a: ActorDesc, ops: Op[], state: any, ctx: any, extra: { payload?: number; input?: number }) => {
-      for (const op of ops) {
-        switch (op.kind) {
-          case "inc":
-            state.a = (state.a + 1) % a.cap;
-            break;
-          case "set":
-            state.a = op.k;
-            break;
-          case "flip":
-            state.b = !state.b;
-            break;
-          case "fromPayload":
-            state.a = (extra.payload ?? 0) % a.cap;
-            break;
-          case "fromInput":
-            state.a = (extra.input ?? 0) % a.cap;
-            break;
-          case "send": {
-            const target = actors[op.to];
-            const v = op.value === "a" ? state.a : op.value === "input" ? (extra.input ?? 0) : op.k;
-            const to = op.all || !desc.actors[op.to].singleton ? ctx.all(target) : [ctx.the(target)];
-            for (const t of to) ctx.send(t, messageKey(op.message), { v });
-            break;
-          }
-          case "reply":
-            if (ctx.from) ctx.reply(messageKey(op.message), { v: state.a });
-            break;
-          case "start":
-            ctx.start(`timer${op.timer}`);
-            break;
-          case "cancel":
-            ctx.cancel(`timer${op.timer}`);
-            break;
-          case "readOthers":
-            state.a = Math.max(0, ...ctx.all(actors[op.actor]).map((i: any) => i.state.a)) % a.cap;
-            break;
-          case "random":
-            state.b = ctx.random() < 0.5;
-            break;
-          case "fresh":
-            state.tag = ctx.fresh("t");
-            break;
-          case "throwIf":
-            if (state.a === op.k && state.b) throw new Error(`boom at ${op.k}`);
-            break;
-          case "if":
-            if (holds(op.cond, state)) runOps(a, op.then, state, ctx, extra);
-            break;
+  const messages: AnyMessage[] = Array.from({ length: desc.messages }, (_, m) => (isCall(m) ? defineCall : defineMessage)(`M${m}`, { v: Number }, { name: `m${m}` }));
+  const zone = defineZone({ name: "Zone" });
+  const actors: any[] = [];
+  const holds = (c: Cond, s: any) => (c.kind === "true" ? true : c.kind === "aIs" ? s.a === c.k : c.kind === "aBelow" ? s.a < c.k : s.b === c.is);
+  const sendsOf = (ops: Op[]): AnyMessage[] => [...new Set(ops.flatMap((o) => (o.kind === "send" || o.kind === "reply" ? [messages[o.message]!] : o.kind === "if" ? sendsOf(o.then) : [])))];
+  const startsOf = (ops: Op[]): string[] => [...new Set(ops.flatMap((o) => (o.kind === "start" ? [`timer${o.timer}`] : o.kind === "if" ? startsOf(o.then) : [])))];
+  const runOps = (a: ActorDesc, ops: Op[], state: any, ctx: any, extra: { payload?: number; input?: number }) => {
+    for (const op of ops) {
+      switch (op.kind) {
+        case "inc":
+          state.a = (state.a + 1) % a.cap;
+          break;
+        case "set":
+          state.a = op.k;
+          break;
+        case "flip":
+          state.b = !state.b;
+          break;
+        case "fromPayload":
+          state.a = (extra.payload ?? 0) % a.cap;
+          break;
+        case "fromInput":
+          state.a = (extra.input ?? 0) % a.cap;
+          break;
+        case "send": {
+          const target = actors[op.to];
+          const v = op.value === "a" ? state.a : op.value === "input" ? (extra.input ?? 0) : op.k;
+          const to = op.all || !desc.actors[op.to].singleton ? ctx.all(target) : [ctx.the(target)];
+          for (const t of to) ctx.send(t, messages[op.message], { v });
+          break;
         }
-      }
-    };
-    desc.actors.forEach((a, index) => {
-      const transitions: Record<string, unknown> = {};
-      const fairOf = (x: { fair?: Fair }) => (x.fair === undefined ? {} : { fair: x.fair });
-      for (const h of a.handlers) transitions[messageKey(h.message)] = { description: `handles M${h.message}`, ...fairOf(h), sends: sendsOf(h.ops), starts: startsOf(h.ops), run: (state: any, msg: any, ctx: any) => runOps(a, h.ops, state, ctx, { payload: msg.v }) };
-      for (const t of a.timers) transitions[t.key] = { description: t.key, after: "1 second", ...fairOf(t), sends: sendsOf(t.ops), starts: startsOf(t.ops), run: (state: any, ctx: any) => runOps(a, t.ops, state, ctx, {}) };
-      for (const g of a.guards) transitions[g.key] = { description: g.key, ...fairOf(g), when: (s: any) => holds(g.when, s), sends: sendsOf(g.ops), starts: startsOf(g.ops), run: (state: any, ctx: any) => runOps(a, g.ops, state, ctx, {}) };
-      // Every call this actor sends, it handles the failure of, as the DSL requires.
-      const sent = new Set([...a.actions, ...a.handlers, ...a.timers, ...a.guards].flatMap((x) => sendsOf(x.ops)));
-      const failure = desc.calls?.failures[index] ?? [];
-      // A failure handler's own sends count too: a call it sends fails in turn.
-      if ([...sent].some((key) => desc.calls?.messages.some((m) => messageKey(m) === key))) for (const key of sendsOf(failure)) sent.add(key);
-      for (let m = 0; m < desc.messages; m++) {
-        if (!isCall(m) || !sent.has(messageKey(m))) continue;
-        transitions[(spec as any).failed(messageKey(m))] = { description: `M${m} failed`, sends: sendsOf(failure), starts: startsOf(failure), run: (state: any, f: any, ctx: any) => runOps(a, failure, state, ctx, { payload: f.payload.v }) };
-      }
-      const actions = Object.fromEntries(
-        a.actions.map((x) => [
-          x.key,
-          {
-            label: x.key,
-            description: x.key,
-            when: (s: any) => holds(x.when, s),
-            ...(x.input ? { inputs: { n: { type: [0, 1] as const } } } : {}),
-            sends: sendsOf(x.ops),
-            starts: startsOf(x.ops),
-            run: (state: any, inputs: any, ctx: any) => runOps(a, x.ops, state, ctx, { input: inputs?.n }),
-          },
-        ]),
-      );
-      actors.push(
-        (spec as any).defineActor({
-          name: a.name,
-          zone,
-          singleton: a.singleton,
-          symmetric: a.symmetric,
-          initialState: () => ({ a: 0, b: false, tag: "" }),
-          ...(a.durable ? { durable: ["a"] } : {}),
-          actions,
-          transitions,
-        }),
-      );
-    });
-    const worldHolds = (c: WorldCond, w: any) => {
-      if (c.quiet && !w.quiet) return false;
-      const all = w.all(actors[c.actor]);
-      return c.every ? all.every((i: any) => holds(c.cond, i.state)) : all.some((i: any) => holds(c.cond, i.state));
-    };
-    const properties: Record<string, unknown> = {};
-    desc.properties.forEach((p, n) => {
-      const id = `p${n}_${p.kind}`;
-      switch (p.kind) {
-        case "always":
-          properties[id] = { description: id, always: (w: any) => !worldHolds(p.not, w) };
+        case "reply":
+          if (ctx.from) ctx.reply(messages[op.message], { v: state.a });
           break;
-        case "never":
-          properties[id] = { description: id, never: (t: any) => t.count((e: any) => e.is(actors[p.actor], p.step)) > p.times };
+        case "start":
+          ctx.start(`timer${op.timer}`);
           break;
-        case "everyStep":
-          // The number of the actor's instances with `b` set never drops by more than one in a step.
-          properties[id] = { description: id, everyStep: (before: any, after: any) => after.all(actors[p.actor]).filter((i: any) => i.state.b).length >= before.all(actors[p.actor]).filter((i: any) => i.state.b).length - 1 };
+        case "cancel":
+          ctx.cancel(`timer${op.timer}`);
           break;
-        case "eventually":
-          properties[id] = { description: id, eventually: (w: any) => worldHolds(p.cond, w) };
+        case "readOthers":
+          state.a = Math.max(0, ...ctx.all(actors[op.actor]).map((i: any) => i.state.a)) % a.cap;
           break;
-        case "leadsTo":
-          properties[id] = { description: id, leadsTo: { whenever: (w: any) => worldHolds(p.whenever, w), then: (w: any) => worldHolds(p.then, w) } };
+        case "random":
+          state.b = ctx.random() < 0.5;
           break;
-        case "infinitelyOften":
-          properties[id] = { description: id, infinitelyOften: (w: any) => worldHolds(p.cond, w) };
+        case "fresh":
+          state.tag = ctx.fresh("t");
           break;
-        case "eventuallyAlways":
-          properties[id] = { description: id, eventuallyAlways: (w: any) => worldHolds(p.cond, w) };
+        case "throwIf":
+          if (state.a === op.k && state.b) throw new Error(`boom at ${op.k}`);
+          break;
+        case "if":
+          if (holds(op.cond, state)) runOps(a, op.then, state, ctx, extra);
           break;
       }
-    });
-    (spec as any).defineProperties(properties);
-    if (desc.final) (spec as any).defineFinalState({ description: "final", when: (w: any) => worldHolds(desc.final!, w) });
-    if (desc.scenario) {
-      const spawns = desc.scenario.spawns;
-      (spec as any).defineScenario({ name: "Spawned", setup: (w: any) => spawns.forEach((x, n) => w.spawn(actors[x.actor], `S${n}`, { a: x.a % desc.actors[x.actor].cap })), run: () => {} });
     }
-    return {};
+  };
+  desc.actors.forEach((a, index) => {
+    const transitions: Record<string, unknown> = {};
+    const fairOf = (x: { fair?: Fair }) => (x.fair === undefined ? {} : { fair: x.fair });
+    for (const h of a.handlers) transitions[`onM${h.message}`] = { on: messages[h.message], description: `handles M${h.message}`, ...fairOf(h), sends: sendsOf(h.ops), starts: startsOf(h.ops), run: (state: any, msg: any, ctx: any) => runOps(a, h.ops, state, ctx, { payload: msg.v }) };
+    for (const t of a.timers) transitions[t.key] = { description: t.key, after: "1 second", ...fairOf(t), sends: sendsOf(t.ops), starts: startsOf(t.ops), run: (state: any, _: unknown, ctx: any) => runOps(a, t.ops, state, ctx, {}) };
+    for (const g of a.guards) transitions[g.key] = { description: g.key, ...fairOf(g), when: (s: any) => holds(g.when, s), sends: sendsOf(g.ops), starts: startsOf(g.ops), run: (state: any, _: unknown, ctx: any) => runOps(a, g.ops, state, ctx, {}) };
+    // Every call this actor sends, it handles the failure of, as the DSL requires.
+    const sent = new Set([...a.actions, ...a.handlers, ...a.timers, ...a.guards].flatMap((x) => sendsOf(x.ops)));
+    const failure = desc.calls?.failures[index] ?? [];
+    // A failure handler's own sends count too: a call it sends fails in turn.
+    if ([...sent].some((message) => desc.calls?.messages.some((m) => messages[m] === message))) for (const message of sendsOf(failure)) sent.add(message);
+    for (let m = 0; m < desc.messages; m++) {
+      if (!isCall(m) || !sent.has(messages[m]!)) continue;
+      transitions[`M${m}Failed`] = { on: failed(messages[m] as Call), description: `M${m} failed`, sends: sendsOf(failure), starts: startsOf(failure), run: (state: any, f: any, ctx: any) => runOps(a, failure, state, ctx, { payload: f.payload.v }) };
+    }
+    const actions = Object.fromEntries(
+      a.actions.map((x) => [
+        x.key,
+        {
+          label: x.key,
+          description: x.key,
+          when: (s: any) => holds(x.when, s),
+          ...(x.input ? { inputs: { n: oneOf(0, 1) } } : {}),
+          sends: sendsOf(x.ops),
+          starts: startsOf(x.ops),
+          run: (state: any, inputs: any, ctx: any) => runOps(a, x.ops, state, ctx, { input: inputs?.n }),
+        },
+      ]),
+    );
+    actors.push(
+      defineActor({
+        name: a.name,
+        zone,
+        singleton: a.singleton,
+        symmetric: a.symmetric,
+        initialState: () => ({ a: 0, b: false, tag: "" }),
+        ...(a.durable ? { durable: ["a"] } : {}),
+        actions,
+        transitions,
+      } as never),
+    );
+  });
+  const worldHolds = (c: WorldCond, w: any) => {
+    if (c.quiet && !w.quiet) return false;
+    const all = w.all(actors[c.actor]);
+    return c.every ? all.every((i: any) => holds(c.cond, i.state)) : all.some((i: any) => holds(c.cond, i.state));
+  };
+  const properties: Property[] = [];
+  const define = (id: string, def: object) => properties.push(defineProperty(id, { description: id, ...def } as never));
+  desc.properties.forEach((p, n) => {
+    const id = `p${n}_${p.kind}`;
+    switch (p.kind) {
+      case "always":
+        define(id, { always: (w: any) => !worldHolds(p.not, w) });
+        break;
+      case "never":
+        define(id, { never: (t: any) => t.count((e: any) => e.is(actors[p.actor], p.step)) > p.times });
+        break;
+      case "everyStep":
+        // The number of the actor's instances with `b` set never drops by more than one in a step.
+        define(id, { everyStep: (before: any, after: any) => after.all(actors[p.actor]).filter((i: any) => i.state.b).length >= before.all(actors[p.actor]).filter((i: any) => i.state.b).length - 1 });
+        break;
+      case "eventually":
+        define(id, { eventually: (w: any) => worldHolds(p.cond, w) });
+        break;
+      case "leadsTo":
+        define(id, { leadsTo: { whenever: (w: any) => worldHolds(p.whenever, w), then: (w: any) => worldHolds(p.then, w) } });
+        break;
+      case "infinitelyOften":
+        define(id, { infinitelyOften: (w: any) => worldHolds(p.cond, w) });
+        break;
+      case "eventuallyAlways":
+        define(id, { eventuallyAlways: (w: any) => worldHolds(p.cond, w) });
+        break;
+    }
+  });
+  const spawns = desc.scenario?.spawns;
+  return defineSpec({
+    name: `Fuzz ${desc.seed}`,
+    actors,
+    properties,
+    ...(desc.final ? { finalState: { description: "final", when: (w: any) => worldHolds(desc.final!, w) } } : {}),
+    ...(spawns ? { scenarios: [defineScenario("Spawned", { setup: (w: any) => spawns.forEach((x, n) => w.spawn(actors[x.actor], `S${n}`, { a: x.a % desc.actors[x.actor].cap })), run: () => {} })] } : {}),
   });
 }
 

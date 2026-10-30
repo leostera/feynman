@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { replay, scenarioDump, sessionFromRun } from "../../src/view/session";
-import { runScenario } from "../../src/spec/index.ts";
+import { defineActor, defineScenario, defineZone, runScenario } from "../../src/spec/index.ts";
 import { parsePlaygroundUrlState, parseRoute, href, parseZoomLevel, writePlaygroundUrlState } from "../../src/view/url";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
@@ -22,11 +22,18 @@ test("scenario runs can be replayed exactly from their timeline operations", () 
 
 test("a scenario with a setup replays from the world its setup sets", async () => {
   const { defineSpec } = await import("../../src/spec/index.ts");
-  const spec = defineSpec("Counter", { messages: {} }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Counter = s.defineActor({ name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }), actions: { bump: { label: "Bump", description: "Adds one.", run: (state) => void state.n++ } } });
-    s.defineScenario({ name: "From five", setup: (w) => w.set(Counter, { n: 5 }), run: (sc) => sc.act(sc.the(Counter), "bump") });
-  });
+  const spec = (() => {
+
+    const zone = defineZone({ name: "z" });
+    const Counter = defineActor({ name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }), actions: { bump: { label: "Bump", description: "Adds one.", run: (state) => void state.n++ } } });
+
+    const fromFive = defineScenario("From five", { setup: (w) => w.set(Counter, { n: 5 }), run: (sc) => sc.act(sc.the(Counter), "bump") });
+    return defineSpec({
+      name: "Counter",
+      actors: [Counter],
+      scenarios: [fromFive],
+    });
+  })();
   const scenario = spec.scenarios[0];
   const session = sessionFromRun(runScenario(spec, scenario), scenario.name);
   const replayed = replay(spec, session.ops!, scenario.name);

@@ -126,7 +126,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
             ))}
           </Section>
         )}
-        {spec.properties.length === 0 && <p className="text-sm text-kumo-subtle">This spec declares no properties; add some with spec.defineProperties.</p>}
+        {spec.properties.length === 0 && <p className="text-sm text-kumo-subtle">This spec declares no properties; add some with defineProperty, listed in defineSpec's properties.</p>}
       </div>
     </div>
   );

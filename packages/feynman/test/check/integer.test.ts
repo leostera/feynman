@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { check, type Bounds, type Report, type Seed } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import type { Spec } from "../../src/spec/index.ts";
+import { defineActor, defineMessage, defineProperty, defineScenario, defineZone, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 import { build, describe as describeSpec } from "../fuzz/spec.ts";
 
@@ -47,18 +47,19 @@ test("generated specs: the same report from both", async () => {
 }, 300_000);
 
 test("a step that lists instances is not replayed from a world with other instances", async () => {
-  const { defineSpec, message } = await import("../../src/spec/index.ts");
+  const { defineSpec } = await import("../../src/spec/index.ts");
   // The coordinator's broadcast reads only its own state, but whom it reaches depends on the
   // replicas there are: a scenario that spawns a third must not reuse the broadcast to two.
-  const spec = defineSpec("Broadcast", { messages: { Ping: message<{}>({ name: "ping" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Replica = s.defineActor({
+  const spec = (() => {
+    const Ping = defineMessage("Ping");
+    const zone = defineZone({ name: "z" });
+    const Replica = defineActor({
       name: "Replica",
       zone,
       initialState: () => ({ pings: 0 }),
-      transitions: { [s.messages.Ping]: { description: "Counts it.", run: (state) => void state.pings++ } },
+      transitions: { ping: { on: Ping, description: "Counts it.", run: (state) => void state.pings++ } },
     });
-    s.defineActor({
+    const CoordinatorActor = defineActor({
       name: "Coordinator",
       zone,
       singleton: true,
@@ -67,17 +68,25 @@ test("a step that lists instances is not replayed from a world with other instan
         ping: {
           label: "Ping",
           description: "Pings every replica.",
-          sends: [s.messages.Ping],
+          sends: [Ping],
           run: (state, _i, ctx) => {
             state.sent++;
-            for (const r of ctx.all(Replica)) ctx.send(r, s.messages.Ping, {});
+            for (const r of ctx.all(Replica)) ctx.send(r, Ping, {});
           },
         },
       },
     });
-    s.defineProperties({ fewPings: { description: "No replica is pinged twice.", always: (w) => w.all(Replica).every((r) => r.state.pings < 2) } });
-    s.defineScenario({ name: "A third replica", setup: (w) => void w.spawn(Replica, "C"), run: () => {} });
-  });
+
+    const fewPings = defineProperty("fewPings", { description: "No replica is pinged twice.", always: (w) => w.all(Replica).every((r) => r.state.pings < 2) });
+
+    const aThirdReplica = defineScenario("A third replica", { setup: (w) => void w.spawn(Replica, "C"), run: () => {} });
+    return defineSpec({
+      name: "Broadcast",
+      actors: [Replica, CoordinatorActor],
+      properties: [fewPings],
+      scenarios: [aThirdReplica],
+    });
+  })();
   const report = await bothAgree(spec, { depth: 8, repeats: 2, instances: { Replica: 2 } }, scenarioSeeds(spec));
   expect(report.seeds.length).toBe(1);
 });

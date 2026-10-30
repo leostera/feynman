@@ -5,7 +5,8 @@ import { startWorld, type Event, type Spec, type World } from "../spec/index.ts"
 import { sortedJson } from "../spec/json.ts";
 
 /**
- * `defineScenario` source replaying the property's counterexample event by event. One that
+ * `defineScenario` source replaying the property's counterexample event by event, to list in the
+ * spec's `scenarios`. One that
  * starts from a scenario's world gets a `setup` putting every instance in the state it had
  * there, when that is all the world holds (nothing in flight, no fresh ids handed out).
  */
@@ -21,8 +22,7 @@ export function scenarioCode(spec: Spec, property: PropertyBroken): string {
   else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
   body.push(`// ${property.id} is broken here: ${property.description}`);
   return [
-    `spec.defineScenario({`,
-    `  name: ${JSON.stringify(`${property.id} is broken`)},`,
+    `const ${property.id.replace(/[^\w]/g, "_")}IsBroken = defineScenario(${JSON.stringify(`${property.id} is broken`)}, {`,
     `  description: ${JSON.stringify(property.description)},`,
     ...(setUp?.length ? [`  // ${ce.from!.at === "end" ? `The world where scenario ${JSON.stringify(ce.from!.scenario)} ends.` : `The world scenario ${JSON.stringify(ce.from!.scenario)} sets up.`}`, `  setup(w) {`, ...setUp.map((l) => `    ${l}`), `  },`] : []),
     `  run(s) {`,
@@ -86,10 +86,11 @@ function line(event: Event, before: World, choice: Counterexample["choices"][num
       return `s.act(${who}, ${json(event.key)}${event.inputs && Object.keys(event.inputs).length ? `, ${json(event.inputs)}` : ""});`;
     case "deliver":
     case "lose": {
-      // "Charge", or "failed:Charge" for a call's failure.
-      const message = event.key.replace("message:", "");
+      // The message by value: Charge, or failed(Charge) for a call's failure.
+      const id = event.key.replace(/^(failed:)?message:/, "");
+      const message = event.key.startsWith("failed:") ? `failed(${id})` : id;
       const call = event.kind === "deliver" ? "deliver" : "drop";
-      return `s.${call}(${who}, ${json(message)}${needsPayload(before, choice, event) ? `, ${json(event.payload)}` : ""});${event.from ? ` // from ${names.of(event.from, before)}` : ""}`;
+      return `s.${call}(${who}, ${message}${needsPayload(before, choice, event) ? `, ${json(event.payload)}` : ""});${event.from ? ` // from ${names.of(event.from, before)}` : ""}`;
     }
     case "timer":
       return `s.fire(${who}, ${json(event.key)});`;

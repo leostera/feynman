@@ -17,7 +17,7 @@ function filesOf(step: StepInfo): string[] {
 }
 
 function stepName(step: StepInfo): string {
-  return step.key.startsWith("message:") ? `on ${step.key.slice("message:".length)}` : step.key;
+  return step.name;
 }
 
 export function shapeWarnings(spec: Spec): ShapeWarning[] {

@@ -4,7 +4,7 @@
 // structural equality written for this test.
 import { expect, test } from "bun:test";
 import { symmetricKey, symmetryOf } from "../../src/check/index.ts";
-import { defineSpec, emptyWorld, spawn, type World } from "../../src/spec/index.ts";
+import { defineActor, defineSpec, defineZone, emptyWorld, spawn, type World } from "../../src/spec/index.ts";
 import { sortedJson, unstorable } from "../../src/spec/json.ts";
 
 /** A small seeded generator, so a failure is the same failure next time. */
@@ -132,11 +132,15 @@ function swapped(v: unknown, a: string, b: string): unknown {
 }
 
 test("two worlds that are renamings of each other have the same key under symmetry, and only those", () => {
-  const spec = defineSpec("twins", { messages: {} }, (spec) => {
-    const zone = spec.defineZone({ name: "Z" });
-    const Replica = spec.defineActor({ name: "Replica", zone, symmetric: true, initialState: () => ({ v: null as unknown }) });
-    return { Replica };
-  });
+  const spec = (() => {
+
+    const zone = defineZone({ name: "Z" });
+    const Replica = defineActor({ name: "Replica", zone, symmetric: true, initialState: () => ({ v: null as unknown }) });
+    return defineSpec({
+      name: "twins",
+      actors: [Replica],
+    });
+  })();
   let world = emptyWorld();
   for (const label of ["A", "B"]) world = spawn(spec, world, "Replica", label).world;
   const [a, b] = world.instances.map((i) => i.id);

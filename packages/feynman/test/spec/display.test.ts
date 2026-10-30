@@ -1,17 +1,19 @@
 import { expect, test } from "bun:test";
-import { appearance, defineSpec, dropsFor, liveLinks, message, runScenario } from "../../src/spec/index.ts";
+import { appearance, defineActor, defineMessage, defineScenario, defineSpec, defineZone, dropsFor, input, liveLinks, runScenario } from "../../src/spec/index.ts";
 
-const spec = defineSpec("Display", { messages: { Dial: message<{ n: number }>({ name: "dial" }), Up: message<{ n: number }>({ name: "up", tone: "reply" }) } }, (spec) => {
-  const { Dial, Up } = spec.messages;
-  const zone = spec.defineZone({ name: "z" });
-  const Hub = spec.defineActor({
+const spec = (() => {
+  const Dial = defineMessage("Dial", { n: Number });
+  const Up = defineMessage("Up", { n: Number }, { tone: "reply" });
+  const zone = defineZone({ name: "z" });
+  const Hub = defineActor({
     name: "Hub",
     zone,
     singleton: true,
     initialState: () => ({ peers: [] as string[] }),
     display: { icon: "cloud", status: (s) => `${s.peers.length} connected`, rows: (s) => s.peers.map((p) => ({ label: p, group: "peers", mood: "ok" as const })), tokens: () => [{ kind: "slot", value: 7 }] },
     transitions: {
-      [Dial]: {
+      dial: {
+        on: Dial,
         description: "Accepts a peer.",
         sources: ["hub.ts#dial"],
         sends: [Up],
@@ -23,7 +25,7 @@ const spec = defineSpec("Display", { messages: { Dial: message<{ n: number }>({ 
       },
     },
   });
-  const Peer = spec.defineActor({
+  const Peer = defineActor({
     name: "Peer",
     zone,
     initialState: () => ({ up: false, pings: 0 }),
@@ -33,17 +35,17 @@ const spec = defineSpec("Display", { messages: { Dial: message<{ n: number }>({ 
       dial: {
         label: "Dial",
         description: "Dials the hub.",
-        inputs: { n: spec.defineInput(Number, { examples: [1, 2], accepts: "slot" }) },
+        inputs: { n: input(Number, { examples: [1, 2], accepts: "slot" }) },
         sources: ["peer.ts#dial"],
         sends: [Dial],
         run: (_s, { n }, ctx) => ctx.send(ctx.the(Hub), Dial, { n }),
       },
       ping: { label: "Ping yourself", description: "Counts.", routine: true, sources: ["peer.ts#ping"], run: (s, _i, ctx) => void (s.pings += ctx.self.id ? 1 : 0) },
     },
-    transitions: { [Up]: { description: "Is up.", sources: ["peer.ts#up"], run: (s) => void (s.up = true) } },
+    transitions: { up: { on: Up, description: "Is up.", sources: ["peer.ts#up"], run: (s) => void (s.up = true) } },
   });
-  spec.defineScenario({
-    name: "Dial",
+
+  const dial = defineScenario("Dial", {
     run(s) {
       const p = s.spawn(Peer, "p");
       s.act(p, "ping", {});
@@ -53,7 +55,12 @@ const spec = defineSpec("Display", { messages: { Dial: message<{ n: number }>({ 
       if (s.the(Hub).state.peers.length !== 1) throw new Error("hub did not accept");
     },
   });
-});
+  return defineSpec({
+    name: "Display",
+    actors: [Hub, Peer],
+    scenarios: [dial],
+  });
+})();
 
 test("display, links and say: presentation as data, evaluated against the world", () => {
   const run = runScenario(spec, spec.scenarios[0]);
@@ -73,10 +80,10 @@ test("display, links and say: presentation as data, evaluated against the world"
   expect(spec.actors[1].actions.dial.inputs.n.examples?.({} as never)).toEqual([1, 2]);
 });
 
-const handOff = defineSpec("Hand-off", { messages: { Nothing: message<{}>({ name: "nothing" }) } }, (spec) => {
-  const zone = spec.defineZone({ name: "z" });
-  const Phone = spec.defineActor({ name: "Phone", zone, initialState: () => ({ codes: ["c-1"], host: "mac" }), actions: {} });
-  const Mac = spec.defineActor({
+const handOff = (() => {
+  const zone = defineZone({ name: "z" });
+  const Phone = defineActor({ name: "Phone", zone, initialState: () => ({ codes: ["c-1"], host: "mac" }), actions: {} });
+  const Mac = defineActor({
     name: "Mac",
     zone,
     initialState: () => ({ code: null as string | null }),
@@ -84,15 +91,21 @@ const handOff = defineSpec("Hand-off", { messages: { Nothing: message<{}>({ name
       link: {
         label: "Link",
         description: "Types a code.",
-        inputs: { code: spec.defineInput(String, { examples: (w): string[] => [...w.all(Phone).flatMap((p) => p.state.codes), "made-up"] }) },
+        inputs: { code: input(String, { examples: (w): string[] => [...w.all(Phone).flatMap((p) => p.state.codes), "made-up"] }) },
         run: (s, { code }) => void (s.code = code),
       },
       // Inputs naming instances are references, not things to carry.
-      ping: { label: "Ping", description: "Pings.", inputs: { to: spec.defineInput(String, { examples: (w): string[] => w.all(Phone).map((p) => p.id) }) }, run: () => {} },
+      ping: { label: "Ping", description: "Pings.", inputs: { to: input(String, { examples: (w): string[] => w.all(Phone).map((p) => p.id) }) }, run: () => {} },
     },
   });
-  spec.defineScenario({ name: "Both", run: (s) => void (s.spawn(Phone, "phone"), s.spawn(Mac, "mac")) });
-});
+
+  const both = defineScenario("Both", { run: (s) => void (s.spawn(Phone, "phone"), s.spawn(Mac, "mac")) });
+  return defineSpec({
+    name: "Hand-off",
+    actors: [Phone, Mac],
+    scenarios: [both],
+  });
+})();
 
 test("without declared tokens, values an action takes that another node holds can be carried", () => {
   const run = runScenario(handOff, handOff.scenarios[0]);

@@ -177,6 +177,13 @@ function laid(spec: Spec, instance: World["instances"][number], fields: unknown)
 }
 
 /** Why there is no waiting, and no clock, in a spec. */
+/** A message or a call's failure, as a scenario names it: by value, `Charge` or `failed(Charge)`. */
+function messageKey(message: unknown, what: string): string {
+  const key = (message as { key?: unknown })?.key;
+  if (typeof key === "string" && (key.startsWith("message:") || key.startsWith("failed:"))) return key;
+  throw new SpecError(`s.${what} takes a message, like s.${what}(bank, Charge), or a call's failure, failed(Charge): not ${JSON.stringify(message)}`);
+}
+
 const NO_CLOCK = "there is no clock, time is the order of events (RFD0004): a timer may fire at any point, or not, as a slow or fast clock would let it.";
 
 function scriptFor(runner: Runner): Script {
@@ -215,16 +222,16 @@ function scriptFor(runner: Runner): Script {
       const event = runner.fireTimer(who.id, timer);
       if (event.error) throw new SpecError(event.error);
     },
-    lose: (key) => runner.loseNext(key),
+    lose: (message) => runner.loseNext(messageKey(message, "lose")),
     restart(who) {
       runner.restart(who.id);
     },
     deliver(who, message, payload) {
-      const event = runner.deliver(who.id, message, payload);
+      const event = runner.deliver(who.id, messageKey(message, "deliver"), payload);
       if (event.error) throw new SpecError(event.error);
     },
     drop(who, message, payload) {
-      runner.drop(who.id, message, payload);
+      runner.drop(who.id, messageKey(message, "drop"), payload);
     },
     step(who, transition) {
       const event = runner.guard(who.id, transition);

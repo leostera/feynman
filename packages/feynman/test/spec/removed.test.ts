@@ -1,13 +1,20 @@
 // APIs from before time became the order of events (RFD0004) say what replaced them, rather
 // than failing with "is not a function": specs written for old versions meet them on upgrade.
 import { expect, test } from "bun:test";
-import { defineSpec, runScenario } from "../../src/spec/index.ts";
+import { defineActor, defineScenario, defineSpec, defineZone, runScenario } from "../../src/spec/index.ts";
+
+
 
 function specWith(run: (s: any) => void) {
-  return defineSpec("Old", { messages: {} }, (spec) => {
-    const zone = spec.defineZone({ name: "z" });
-    spec.defineActor({ name: "A", zone, singleton: true, initialState: () => ({}) });
-    spec.defineScenario({ name: "old", run });
+  const zone = defineZone({ name: "z" });
+  const AActor = defineActor({ name: "A", zone, singleton: true, initialState: () => ({}) });
+
+  const old = defineScenario("old", { run });
+
+  return defineSpec({
+    name: "Old",
+    actors: [AActor],
+    scenarios: [old],
   });
 }
 

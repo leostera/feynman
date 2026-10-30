@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { broken } from "../helpers.ts";
 import { check } from "../../src/check/index.ts";
-import { isLiveness } from "../../src/spec/index.ts";
+import { defineActor, defineMessage, defineProperty, defineScenario, defineZone, isLiveness, oneOf } from "../../src/spec/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
 /**
@@ -45,19 +45,27 @@ test("counterexamples replay: the same choices give the same events", async () =
 });
 
 test("seeds: exploring from where a scenario ends reaches what the depth alone does not", async () => {
-  const { defineSpec, message, runScenario } = await import("../../src/spec/index.ts");
+  const { defineSpec, runScenario } = await import("../../src/spec/index.ts");
   const { check } = await import("../../src/check/index.ts");
-  const deep = defineSpec("Deep", { messages: { Tick: message<{}>({ name: "tick" }) } }, (spec) => {
-    const zone = spec.defineZone({ name: "z" });
-    const Counter = spec.defineActor({
+  const deep = (() => {
+    const zone = defineZone({ name: "z" });
+    const Counter = defineActor({
       name: "Counter",
       zone,
       initialState: () => ({ n: 0 }),
       actions: { up: { label: "Up", description: "Counts up.", run: (s) => void (s.n += 1) } },
     });
-    spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
-    spec.defineScenario({ name: "Count to four", run: (s) => { const c = s.spawn(Counter, "c"); for (let i = 0; i < 4; i++) s.act(c, "up"); } });
-  });
+
+    const belowFive2 = defineProperty("belowFive", { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) });
+
+    const countToFour = defineScenario("Count to four", { run: (s) => { const c = s.spawn(Counter, "c"); for (let i = 0; i < 4; i++) s.act(c, "up"); } });
+    return defineSpec({
+      name: "Deep",
+      actors: [Counter],
+      properties: [belowFive2],
+      scenarios: [countToFour],
+    });
+  })();
   const bounds = { depth: 2, repeats: 9, walks: 0 };
   expect((await check(deep, bounds)).properties[0].holds).toBe(true);
   const run = runScenario(deep, deep.scenarios[0]);
@@ -68,10 +76,10 @@ test("seeds: exploring from where a scenario ends reaches what the depth alone d
 });
 
 test("random runs go deeper than the search, and their counterexample is shrunk", async () => {
-  const { defineSpec, message } = await import("../../src/spec/index.ts");
-  const deep = defineSpec("Deep", { messages: { Tick: message<{}>({ name: "tick" }) } }, (spec) => {
-    const zone = spec.defineZone({ name: "z" });
-    const Counter = spec.defineActor({
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  const deep = (() => {
+    const zone = defineZone({ name: "z" });
+    const Counter = defineActor({
       name: "Counter",
       zone,
       initialState: () => ({ n: 0, noise: 0 }),
@@ -80,8 +88,14 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
         fidget: { label: "Fidget", description: "Changes nothing that matters.", run: (s) => void (s.noise = 1 - s.noise) },
       },
     });
-    spec.defineProperties({ belowFive: { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) } });
-  });
+
+    const belowFive = defineProperty("belowFive", { description: "Never reaches five.", always: (w) => w.all(Counter).every((c) => c.state.n < 5) });
+    return defineSpec({
+      name: "Deep",
+      actors: [Counter],
+      properties: [belowFive],
+    });
+  })();
   const report = await check(deep, { depth: 2, repeats: 20, walks: 50 });
   const p = broken(report.properties[0]);
   expect(p.foundBy).toBe("walk");
@@ -94,43 +108,48 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
 const CLASSIC = { engine: "classic" } as const;
 
 test("the reductions skip work, never states: exactly the states of the plain search", async () => {
-  const { defineSpec, message } = await import("../../src/spec/index.ts");
+  const { defineSpec } = await import("../../src/spec/index.ts");
   // Clients ping a server and count the answers; a log hears about every answer. Many steps
   // commute, so sleep sets skip many orders, and the state counts must still match.
-  const pings = defineSpec(
-    "Pings",
-    { messages: { Ping: message<{ n: number }>({ name: "ping" }), Pong: message<{ n: number }>({ name: "pong" }), Note: message<{ n: number }>({ name: "note" }) } },
-    (spec) => {
-      const { Ping, Pong, Note } = spec.messages;
-      const zone = spec.defineZone({ name: "z" });
-      const Log = spec.defineActor({ name: "Log", zone, singleton: true, initialState: () => ({ seen: 0 }), transitions: { [Note]: { description: "Counts.", run: (s) => void (s.seen += 1) } } });
-      const Server = spec.defineActor({
-        name: "Server",
-        zone,
-        singleton: true,
-        initialState: () => ({ served: 0 }),
-        transitions: {
-          [Ping]: {
-            description: "Answers.",
-            sends: [Pong, Note],
-            run: (s, msg, ctx) => {
-              s.served += 1;
-              ctx.reply(Pong, { n: msg.n });
-              ctx.send(ctx.the(Log), Note, { n: msg.n });
-            },
+  const pings = (() => {
+    const Ping = defineMessage("Ping", { n: Number });
+    const Pong = defineMessage("Pong", { n: Number });
+    const Note = defineMessage("Note", { n: Number });
+    const zone = defineZone({ name: "z" });
+    const Log = defineActor({ name: "Log", zone, singleton: true, initialState: () => ({ seen: 0 }), transitions: { note: { on: Note, description: "Counts.", run: (s) => void (s.seen += 1) } } });
+    const Server = defineActor({
+      name: "Server",
+      zone,
+      singleton: true,
+      initialState: () => ({ served: 0 }),
+      transitions: {
+        ping: {
+          on: Ping,
+          description: "Answers.",
+          sends: [Pong, Note],
+          run: (s, msg, ctx) => {
+            s.served += 1;
+            ctx.reply(Pong, { n: msg.n });
+            ctx.send(ctx.the(Log), Note, { n: msg.n });
           },
         },
-      });
-      const Client = spec.defineActor({
-        name: "Client",
-        zone,
-        initialState: () => ({ sent: 0, got: 0 }),
-        actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
-        transitions: { [Pong]: { description: "Counts.", run: (s) => void (s.got += 1) } },
-      });
-      spec.defineProperties({ answered: { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) } });
-    },
-  );
+      },
+    });
+    const Client = defineActor({
+      name: "Client",
+      zone,
+      initialState: () => ({ sent: 0, got: 0 }),
+      actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
+      transitions: { pong: { on: Pong, description: "Counts.", run: (s) => void (s.got += 1) } },
+    });
+
+    const answered = defineProperty("answered", { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) });
+    return defineSpec({
+      name: "Pings",
+      actors: [Log, Server, Client],
+      properties: [answered],
+    });
+  })();
   const bounds = { depth: 10, faults: 1, repeats: 2, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   const plain = await check(pings, { ...bounds, reduce: false }, [], CLASSIC);
   const reduced = await check(pings, { ...bounds, reduce: true }, [], CLASSIC);
@@ -165,10 +184,10 @@ test("symmetry: two interchangeable Macs explore fewer states, with the same ver
 });
 
 test("inputs an action never reads are not tried twice", async () => {
-  const { defineSpec, message } = await import("../../src/spec/index.ts");
-  const typed = defineSpec("Typed", { messages: { Tick: message<{}>({ name: "tick" }) } }, (spec) => {
-    const zone = spec.defineZone({ name: "z" });
-    const Box = spec.defineActor({
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  const typed = (() => {
+    const zone = defineZone({ name: "z" });
+    const Box = defineActor({
       name: "Box",
       zone,
       initialState: () => ({ open: false }),
@@ -176,13 +195,17 @@ test("inputs an action never reads are not tried twice", async () => {
         open: {
           label: "Open",
           description: "Opens the box; the note is ignored.",
-          inputs: { note: { type: String }, loud: { type: Boolean } },
+          inputs: { note: String, loud: Boolean },
           run: (s, input) => void (s.open = input.loud || true),
         },
       },
     });
     void Box;
-  });
+    return defineSpec({
+      name: "Typed",
+      actors: [Box],
+    });
+  })();
   const report = await check(typed, { depth: 1, walks: 0 }, [], CLASSIC);
   // loud is read, note is not: of the four combinations, the two that differ only in the note are one.
   expect(report.reductions.inputs).toBe(2);
@@ -203,9 +226,10 @@ test("states that hold different sets or maps are different states, and changing
   const { defineSpec } = await import("../../src/spec/index.ts");
   // Picking 7 is the bug. Plain JSON writes every set and map as {}, which made picking 1 and
   // picking 7 one state, so the 7 was never judged.
-  const spec = defineSpec("sets", { messages: {} }, (spec) => {
-    const zone = spec.defineZone({ name: "Z" });
-    const Picker = spec.defineActor({
+  const spec = (() => {
+
+    const zone = defineZone({ name: "Z" });
+    const Picker = defineActor({
       name: "Picker",
       singleton: true,
       zone,
@@ -215,7 +239,7 @@ test("states that hold different sets or maps are different states, and changing
           label: "Pick",
           description: "Picks a number.",
           when: (state) => !state.done,
-          inputs: { n: { type: [1, 7] as const } },
+          inputs: { n: oneOf(1, 7) },
           run(state, inputs) {
             state.done = true;
             state.picked.add(inputs.n);
@@ -225,9 +249,14 @@ test("states that hold different sets or maps are different states, and changing
         look: { label: "Look", description: "Looks at what it picked.", when: (state) => state.done, run: (state) => void (state.sawSeven = state.picked.has(7) && state.counts.has(7)) },
       },
     });
-    spec.defineProperties({ neverSeven: { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven } });
-    return { Picker };
-  });
+
+    const neverSeven2 = defineProperty("neverSeven", { description: "It never sees a 7.", always: (w) => !w.the(Picker).state.sawSeven });
+    return defineSpec({
+      name: "sets",
+      actors: [Picker],
+      properties: [neverSeven2],
+    });
+  })();
   const report = await check(spec, { depth: 4, walks: 0 });
   const neverSeven = broken(report.properties[0]);
   const pick = neverSeven.counterexample.events.find((e) => e.key === "pick")!;
@@ -239,9 +268,10 @@ test("a step that fails is reported, and a step is reached, even when its state 
   // `poke` is a guarded step, which no counter tells apart, and it throws, which changes
   // nothing: its state is its parent's. Judging only new states missed both the error and
   // the step itself.
-  const spec = defineSpec("errors", { messages: {} }, (spec) => {
-    const zone = spec.defineZone({ name: "Z" });
-    const Counter = spec.defineActor({
+  const spec = (() => {
+
+    const zone = defineZone({ name: "Z" });
+    const Counter = defineActor({
       name: "Counter",
       singleton: true,
       zone,
@@ -257,8 +287,11 @@ test("a step that fails is reported, and a step is reached, even when its state 
         },
       },
     });
-    return { Counter };
-  });
+    return defineSpec({
+      name: "errors",
+      actors: [Counter],
+    });
+  })();
   for (const reduce of [false, true]) {
     const report = await check(spec, { depth: 4, walks: 0, reduce });
     expect(report.errors.map((e) => e.message)).toEqual(["Counter.poke: boom"]);
@@ -268,9 +301,10 @@ test("a step that fails is reported, and a step is reached, even when its state 
 
 test("a step that stores what is not plain data, or changes another's set, fails and says why", async () => {
   const { defineSpec } = await import("../../src/spec/index.ts");
-  const spec = defineSpec("plain", { messages: {} }, (spec) => {
-    const zone = spec.defineZone({ name: "Z" });
-    const Keeper = spec.defineActor({
+  const spec = (() => {
+
+    const zone = defineZone({ name: "Z" });
+    const Keeper = defineActor({
       name: "Keeper",
       singleton: true,
       zone,
@@ -284,9 +318,12 @@ test("a step that stores what is not plain data, or changes another's set, fails
         },
       },
     });
-    const Other = spec.defineActor({ name: "Other", singleton: true, zone, initialState: () => ({ seen: new Set<string>() }) });
-    return { Keeper, Other };
-  });
+    const Other = defineActor({ name: "Other", singleton: true, zone, initialState: () => ({ seen: new Set<string>() }) });
+    return defineSpec({
+      name: "plain",
+      actors: [Keeper, Other],
+    });
+  })();
   const report = await check(spec, { depth: 2, walks: 0 });
   const messages = report.errors.map((e) => e.message).sort();
   expect(messages).toHaveLength(2);
@@ -308,27 +345,36 @@ test("symmetry claims are tested on as many merged states as symmetryChecks says
 });
 
 test("setup: the checker explores from the world a scenario sets up, and a property it breaks is reported from there", async () => {
-  const { defineSpec, message } = await import("../../src/spec/index.ts");
-  const spec = defineSpec("Ledger", { messages: { Publish: message<{ seq: number }>({ name: "publish" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Ledger = s.defineActor({
+  const { defineSpec } = await import("../../src/spec/index.ts");
+  const spec = (() => {
+    const Publish = defineMessage("Publish", { seq: Number });
+    const zone = defineZone({ name: "z" });
+    const Ledger = defineActor({
       name: "Ledger",
       zone,
       singleton: true,
       initialState: () => ({ seq: 0 }),
-      transitions: { [s.messages.Publish]: { description: "Moves on.", run: (state, msg) => void (state.seq = msg.seq) } },
+      transitions: { publish: { on: Publish, description: "Moves on.", run: (state, msg) => void (state.seq = msg.seq) } },
     });
-    const Writer = s.defineActor({
+    const Writer = defineActor({
       name: "Writer",
       zone,
       singleton: true,
       initialState: () => ({ next: 1 }),
-      actions: { publish: { label: "Publish", description: "Publishes the next one.", sends: [s.messages.Publish], run: (state, _i, ctx) => ctx.send(ctx.the(Ledger), s.messages.Publish, { seq: state.next++ }) } },
+      actions: { publish: { label: "Publish", description: "Publishes the next one.", sends: [Publish], run: (state, _i, ctx) => ctx.send(ctx.the(Ledger), Publish, { seq: state.next++ }) } },
     });
-    s.defineProperties({ belowTen: { description: "The ledger stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 } });
+
+    const belowTen = defineProperty("belowTen", { description: "The ledger stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 });
+
     // From the spec's start, two publishes (repeats) never get near ten; from here, one does.
-    s.defineScenario({ name: "Nine published", setup: (w) => (w.set(Ledger, { seq: 9 }), w.set(Writer, { next: 10 })), run: () => {} });
-  });
+    const ninePublished = defineScenario("Nine published", { setup: (w) => (w.set(Ledger, { seq: 9 }), w.set(Writer, { next: 10 })), run: () => {} });
+    return defineSpec({
+      name: "Ledger",
+      actors: [Ledger, Writer],
+      properties: [belowTen],
+      scenarios: [ninePublished],
+    });
+  })();
   const { scenarioSeeds } = await import("../../src/check/seeds.ts");
   const bounds = { depth: 6, walks: 0 };
   expect((await check(spec, bounds)).properties[0].holds).toBe(true);

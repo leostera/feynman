@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { defineSpec, message } from "../../src/spec/index.ts";
+import { defineActor, defineSpec, defineZone } from "../../src/spec/index.ts";
 import { shapeWarnings, unbuilt } from "../../src/cli/shape.ts";
 
-const spec = defineSpec("Shape", { messages: { Go: message<{}>({ name: "go" }) } }, (spec) => {
-  const zone = spec.defineZone({ name: "z" });
-  spec.defineActor({
+const spec = (() => {
+  const zone = defineZone({ name: "z" });
+  const WorkerActor = defineActor({
     name: "Worker",
     zone,
     initialState: () => ({ done: false }),
@@ -20,7 +20,11 @@ const spec = defineSpec("Shape", { messages: { Go: message<{}>({ name: "go" }) }
       archive: { label: "Archive", description: "Not written yet.", run: () => {} },
     },
   });
-});
+  return defineSpec({
+    name: "Shape",
+    actors: [WorkerActor],
+  });
+})();
 
 test("a step citing many files is flagged; a short trail is not", () => {
   expect(shapeWarnings(spec).map((w) => w.step)).toEqual(["process"]);

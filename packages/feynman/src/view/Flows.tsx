@@ -90,7 +90,7 @@ export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[];
         <div className="flex min-w-0 flex-1 items-center justify-center bg-kumo-canvas p-6">
           <div className="max-w-md rounded-xl bg-kumo-base p-8 ring-1 ring-kumo-hairline">
             <h1 className="text-base font-semibold">No flows yet</h1>
-            <p className="mt-1 text-sm text-kumo-subtle">Add a scenario with <code>spec.defineScenario</code> to show how events move through this system.</p>
+            <p className="mt-1 text-sm text-kumo-subtle">Add a scenario with <code>defineScenario</code> to show how events move through this system.</p>
           </div>
         </div>
       </div>

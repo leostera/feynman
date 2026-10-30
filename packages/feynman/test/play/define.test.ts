@@ -1,21 +1,25 @@
 import { expect, test } from "bun:test";
-import { defineSpec, message, type Actor } from "../../src/spec/index.ts";
+import { defineActor, defineGroup, defineScenario, defineSpec, defineZone, type Actor } from "../../src/spec/index.ts";
 import { definePlayground, groupsOf, isPlayground } from "../../src/play/index.ts";
 
-const spec = defineSpec("Relay", { messages: { Ping: message<{}>({ name: "ping" }) } }, (spec) => {
-  const cloud = spec.defineZone({ name: "Cloud" });
-  const macs = spec.defineZone({ name: "Macs" });
-  const Worker = spec.defineActor({ name: "Worker", zone: cloud, singleton: true, initialState: () => ({}) });
-  const Store = spec.defineActor({ name: "Store", zone: cloud, singleton: true, initialState: () => ({ codes: 0 }) });
-  const App = spec.defineActor({ name: "App", zone: macs, initialState: () => ({ linked: false }) });
-  const Daemon = spec.defineActor({ name: "Daemon", zone: macs, initialState: () => ({ online: false }) });
-  spec.defineGroup({ name: "Mac", actors: { app: App, daemon: Daemon } });
-  spec.defineScenario({ name: "Connect", run: () => {} });
-  return { Worker, Store, App, Daemon };
-});
+const cloud = defineZone({ name: "Cloud" });
+const macs = defineZone({ name: "Macs" });
+const Worker = defineActor({ name: "Worker", zone: cloud, singleton: true, initialState: () => ({}) });
+const Store = defineActor({ name: "Store", zone: cloud, singleton: true, initialState: () => ({ codes: 0 }) });
+const App = defineActor({ name: "App", zone: macs, initialState: () => ({ linked: false }) });
+const Daemon = defineActor({ name: "Daemon", zone: macs, initialState: () => ({ online: false }) });
+
+const spec = (() => {
+  const connect = defineScenario("Connect", { run: () => {} });
+  return defineSpec({
+    name: "Relay",
+    actors: [Worker, Store, App, Daemon],
+    groups: [defineGroup({ name: "Mac", actors: { app: App, daemon: Daemon } })],
+    scenarios: [connect],
+  });
+})();
 
 test("a playground records groups, renders, tokens and links by name", () => {
-  const { Worker, Store, App } = spec.handles;
   const play = definePlayground(spec, (play) => {
     play.group("Relay", [Worker, Store], { icon: "cloud", status: ({ member }) => `${member(Store)?.state.codes ?? 0} codes` });
     play.group("Mac", { size: { w: 120, h: 90 } });

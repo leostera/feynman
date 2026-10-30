@@ -2,25 +2,31 @@
 // they need, and the check expects each such property to break in the design without the rule.
 import { expect, test } from "bun:test";
 import { check, checkRules } from "../../src/check/index.ts";
-import { defineSpec, type Rule } from "../../src/spec/index.ts";
+import { defineActor, defineProperty, defineRule, defineSpec, defineZone, type Rule } from "../../src/spec/index.ts";
 import { retriedCall } from "../../examples/retried-call.ts";
 
 const PLAIN = { depth: 12, repeats: 6, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
 
 /** A counter that must stay below 3: `cap` keeps it there; `decoy` is read nowhere. */
 function capped(claims: (rules: { cap: Rule; decoy: Rule }) => Rule[]) {
-  return defineSpec("Capped", { messages: {} }, (spec) => {
-    const cap = spec.defineRule({ name: "cap", description: "Counting stops at two." });
-    const decoy = spec.defineRule({ name: "decoy", description: "Changes nothing." });
-    const zone = spec.defineZone({ name: "z" });
-    const Counter = spec.defineActor({
-      name: "Counter",
-      zone,
-      singleton: true,
-      initialState: () => ({ n: 0 }),
-      actions: { count: { label: "Count", description: "Counts one more.", when: (s) => !cap.on || s.n < 2, run: (s) => void s.n++ } },
-    });
-    spec.defineProperties({ belowThree: { description: "The count stays below three.", always: (w) => w.the(Counter).state.n < 3, needs: claims({ cap, decoy }) } });
+  const cap = defineRule("cap", { description: "Counting stops at two." });
+  const decoy = defineRule("decoy", { description: "Changes nothing." });
+  const zone = defineZone({ name: "z" });
+  const Counter = defineActor({
+    name: "Counter",
+    zone,
+    singleton: true,
+    initialState: () => ({ n: 0 }),
+    actions: { count: { label: "Count", description: "Counts one more.", when: (s) => !cap.on || s.n < 2, run: (s) => void s.n++ } },
+  });
+
+  const belowThree = defineProperty("belowThree", { description: "The count stays below three.", always: (w) => w.the(Counter).state.n < 3, needs: claims({ cap, decoy }) });
+
+  return defineSpec({
+    name: "Capped",
+    actors: [Counter],
+    rules: [cap, decoy],
+    properties: [belowThree],
   });
 }
 
@@ -38,12 +44,13 @@ test("a rule is on as written, and off in the variant without it", () => {
   expect(() => spec.withoutRules(["nope"])).toThrow('Capped has no rule named "nope"; its rules: cap, decoy');
 });
 
-test("rules: names are words, unique, and a property only needs its own spec's rules", () => {
-  expect(() => defineSpec("A", { messages: {} }, (s) => void s.defineRule({ name: "two words", description: "" }))).toThrow("A rule's name is a word");
-  expect(() => defineSpec("A", { messages: {} }, (s) => (s.defineRule({ name: "r", description: "" }), void s.defineRule({ name: "r", description: "" })))).toThrow('Two rules are named "r"');
-  let foreign: Rule | undefined;
-  defineSpec("B", { messages: {} }, (s) => void (foreign = s.defineRule({ name: "r", description: "" })));
-  expect(() => defineSpec("A", { messages: {} }, (s) => s.defineProperties({ p: { description: "", always: () => true, needs: [foreign!] } }))).toThrow(`Property "p" needs rule "r", which is not one of this spec's`);
+test("rule.on reads the variant being run, for the same parts in both", () => {
+  const spec = capped(({ cap }) => [cap]);
+  const without = spec.withoutRules(["cap"]);
+  const when = (sp: typeof spec) => sp.actors[0].actions.count.when!({ n: 2 });
+  expect(when(spec)).toBe(false);
+  expect(when(without)).toBe(true);
+  expect(when(spec)).toBe(false);
 });
 
 for (const engine of ["integer", "classic"] as const) {
