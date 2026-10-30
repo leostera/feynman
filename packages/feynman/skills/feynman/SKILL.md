@@ -113,7 +113,7 @@ Before you finish, go through the spec once more. For each actor, message and st
 
    Then judge how likely a finding is before anyone writes tests or files issues. Check
    says how many faults each counterexample needs (it searches again with fewer, so "needs
-   no faults" means it happens in normal operation, without a lost message or a restart).
+   no faults" means it happens in normal operation, without a lost message or a crash).
    One fault on a rare path is a different finding from a plain delete-then-create. When
    you can reach production evidence (logs, error tracking, metrics), look for whether it
    happens, and say what you found; keep only findings with evidence or a severe outcome.
@@ -143,7 +143,11 @@ scenarios. Define each at the top level of the file, then put them together with
 checker follow every reference.
 
 ```ts
-import { defineActor, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, input, oneOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, input, lose, oneOf } from "@leostera/feynman";
+
+// Faults are steps the spec declares, from the faults library: here, at most one on any path.
+// `--set faults=2` raises it.
+const faults = budget("faults", 1);
 
 // Messages: an id (a word, as the code names it) and the schema of the payload. The payload's
 // type comes from the schema, and every payload sent is checked against it.
@@ -172,7 +176,6 @@ const Relay = defineActor({
   zone: cloud,
   singleton: true, // exactly one, present from the start
   initialState: () => ({ codes: {} as Record<string, { account: string; used: boolean }> }),
-  durable: ["codes"], // survives a restart (it lives in a database)
   // How it is drawn in the playground: an icon, a status, and its state as rows.
   display: {
     icon: "cloud",
@@ -207,6 +210,10 @@ const Relay = defineActor({
         ctx.reply(Redeemed, { account: entry.account });
       },
     },
+    // Faults: the network may lose a Redeem on its way here, and the relay may crash and come
+    // back with what it keeps in its database. Both spend the budget, and neither is fair.
+    redeemLost: lose(Redeem, { spend: faults }),
+    crash: crash({ keeps: ["codes"], spend: faults }),
   },
 });
 
@@ -225,6 +232,7 @@ const Person = defineActor({
   // and the checker tries them in every order.
   actions: {
     pair: {
+      with: [atMost(2)], // a person may pair forever; the checker tries it at most twice per path
       label: "Pair a Mac",
       description: "Asks the relay for a code to type on a Mac.",
       sources: ["apps/web/src/pair.tsx#createCode"],
@@ -252,6 +260,7 @@ const Mac = defineActor({
   links: (s) => (s.pending ? [{ to: "Relay", kind: "https", style: "dotted" }] : []),
   actions: {
     link: {
+      with: [atMost(2)],
       label: "Paste a pairing code",
       description: "Links this Mac to the account that issued the code.",
       // Inputs have a type; examples are what the playground offers and the checker tries:
@@ -326,10 +335,11 @@ const linkAMac = defineScenario("Link a Mac", {
     s.act(studio, "link", { code: alice.state.codes[0] });
     s.settle();
     // One step at a time, in any order: s.deliver(relay, Redeem) delivers a message in
-    // flight now, s.drop(relay, Redeem) loses it, s.fire(studio, "redeemTimeout") fires a
-    // timer, s.step(who, "step") runs a guarded step, s.restart(who) restarts.
+    // flight now, s.fire(studio, "redeemTimeout") fires a timer, and s.step(who, "name")
+    // takes any step by name: a guarded step, or a fault, s.step(relay, "redeemLost") to lose
+    // a Redeem in flight and s.step(relay, "crash") to crash the relay.
     // s.settle({ until: (w) => … }) runs left alone only until the world gets there, to
-    // step in at that moment (a restart, a drop) without delivering each message by hand.
+    // step in at that moment (a crash, a loss) without delivering each message by hand.
     // s.the(Actor) reaches singletons; s.world reads the whole world.
   },
 });
@@ -347,9 +357,8 @@ export default defineSpec({
 ```
 
 `defineSpec` says when the parts do not fit, before anything runs: two parts with one id, a
-message sent that no actor has a step `on`, an actor with two steps on one message, a call
-whose sender has no step on `failed(Call)`, an actor named in a group that is not in
-`actors`. `feynman check` also warns of a step on a message no step sends: it never runs.
+message sent that no actor has a step `on`, two fair steps on one message (the others say
+`fair: false`), an actor named in a group that is not in `actors`. `feynman check` also warns of a step on a message no step sends: it never runs.
 
 Several specs from one file (a buggy and a fixed variant) are a function of the variant
 that defines the parts inside and returns `defineSpec(…)`, as in `examples/`. A helper used
@@ -362,7 +371,10 @@ a named type for `initialState`.
   - `id`, `label`;
   - `fresh(prefix)` for ids, `hash(value)` and `random()`;
   - `send`, `reply`, `start(label)` and `cancel(label)`;
-  - `the(Actor)`/`all(Actor)` to find instances, and `note(text)`.
+  - `the(Actor)`/`all(Actor)` to find instances, and `note(text)`;
+  - for steps that build faults: `delivery` (the message taken, and whom from),
+    `forward()` (put it back in flight) and `reset({ keeps, drops })` (start again, as a
+    crash does). The faults library is built on these; write your own the same way.
 
   Don't use `Date`, `Math.random`, `async`, I/O or module-level mutable state.
 - **Mutate `state` in place.** The engine records each change as `path: before → after`.
@@ -529,8 +541,9 @@ export default definePlayground(spec, (play) => {
 
 ### Types
 
-- Everything a spec needs comes from `"@leostera/feynman"`: the `define*` functions,
-  `failed`, `input`, and the schemas. For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
+- Everything a spec needs comes from `"@leostera/feynman"`: the `define*` functions, the
+  faults library (`budget`, `spend`, `atMost`, `lose`, `duplicate`, `crash`, `defineCall`,
+  `failed`), `input`, and the schemas. For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **The source is the reference.** Feynman ships as TypeScript, so it is in
   `node_modules/@leostera/feynman/src`; read it when this page does not answer.
@@ -546,7 +559,6 @@ export default definePlayground(spec, (play) => {
 - **Actions without inputs** leave out `inputs`. Scenarios call them as `s.act(x, "pair")`.
 - **Use one message per meaning.** If a refusal means different things in different
   places, declare different messages. Don't add a field to tell them apart.
-- Write `durable` as a list of state fields, like `durable: ["codes"]`.
 - **States and payloads hold plain data**: strings, numbers, booleans, null, undefined,
   arrays, plain objects, `Set`s, `Map`s and dates. A function or class instance fails the
   step. Use a `Set` for a set (it is compared by its members, in any order) rather than an
@@ -579,19 +591,29 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   on up to `--symmetry-checks N` merged states (2000) and says when it is false; testing
   takes a large share of a symmetric search, so lower it for speed once the claim has held.
 - **State.** Keep only what decides behaviour. Use hashes, not secrets (`ctx.hash`).
-- **Repeats.** The checker lets each instance take the same action at most `--repeats N`
-  times on one path (2 by default). Raise it when a bug needs more.
-- **Faults.** The checker loses messages and restarts instances within `--faults N` (1 by
-  default). State listed in `durable` survives a restart. A message is lost silently: the
-  sender hears nothing, as with a queue, a datagram or a stream. A **call** is a message
-  whose failure reaches the caller, as an RPC, a `fetch` or a Durable Object stub throws:
-  define it with `defineCall` instead of `defineMessage`. Losing it, or the reply its
-  handler sends with `ctx.reply`, delivers its failure to the caller, handled by a
-  step `on: failed(Call)`: `run(state, failure, ctx)`, with
-  `failure.payload` and `failure.to`. The caller cannot tell which was lost, as the code
-  cannot: a retry after a lost reply runs the call twice, so that is where to look for
-  duplicates. Every actor that sends a call handles its failure (retry, give up, or record
-  it); a call has one reply; a restart drops the failures on their way to the instance. A
+- **Repeats.** Bound each action a person could take forever with `with: [atMost(2)]`: each
+  instance takes it at most twice on one path. Raise the number when a bug needs more; a
+  variable shared by several actions (`defineVariable("repeats", 2)`, then `atMost(repeats)`)
+  is raised with `--set repeats=3`.
+- **Faults are steps the spec declares**, from the faults library; the checker imposes none.
+  Declare a budget, `const faults = budget("faults", 1)`, and spend it from each fault, as
+  steps in the actor that suffers it:
+  - `lose(Message, { spend: faults })` on the receiver: the message is lost on the way. The
+    sender hears nothing, as with a queue, a datagram or a stream.
+  - `duplicate(Message, { spend: faults })`: the network delivers it twice.
+  - `crash({ keeps: ["codes"], spend: faults })`: the instance starts again from its
+    initial state, but for the fields in `keeps` (what it wrote to disk); its timers are gone.
+
+  `--set faults=0` checks the system without faults, `--set faults=2` with two on a path.
+  Declare the faults the system really has: a database that does not crash in the scope of
+  the spec gets no `crash`. A **call** is a message whose failure reaches the caller, as an
+  RPC, a `fetch` or a Durable Object stub throws: define it with `defineCall` instead of
+  `defineMessage`. Losing it delivers its failure to the caller, handled by a step
+  `on: failed(Call)`: `run(state, failure, ctx)`, with `failure.payload` and `failure.to`.
+  Losing its reply fails it too, when the lost reply says so:
+  `lose(Charged, { fails: Charge, spend: faults })`. The caller cannot tell which was lost,
+  as the code cannot: a retry after a lost reply runs the call twice, so that is where to
+  look for duplicates. A crash drops the failures on their way to the instance. A
   counterexample that ends with someone waiting on a lost message is the code having no
   answer for it (a finding), or the model missing the one it has (often: it is a call).
 - **Time.** Specs have no clock: a run is an order of events, and anything pending may go
@@ -603,7 +625,7 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   heartbeat always beats an expiry, on one machine), model it with state and say so; usually
   the counterexample is a real risk.
 - **Scenarios** change the world through events in `run`: spawns, actions, deliveries,
-  timers, drops and restarts. `s.world` and `s.the(X).state` are for reading. A scenario
+  timers and steps, faults included. `s.world` and `s.the(X).state` are for reading. A scenario
   starts from the spec's start, where only the singletons exist, in their `initialState`,
   unless it has a `setup`. A scenario that begins after some history (a second push, a fetch
   after pushes) sets that world up rather than replaying it:
@@ -629,7 +651,7 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   against the scenario ("its setup breaks …"). Set only instance states; messages in flight
   and timers come from events. Don't seed history in `initialState`: it applies to every
   scenario and every state the checker explores. To get to a moment and step in there,
-  `s.settle({ until: (w) => w.the(R2).state.layers.length > 0 })` and then `s.restart(…)`,
+  `s.settle({ until: (w) => w.the(R2).state.layers.length > 0 })` and then `s.step(r2, "crash")`,
   rather than delivering each message by hand.
 - **Left alone.** `s.settle()` and the playground's Play run the system
   left alone: messages in the order they were sent, and when none is in flight, the timers
@@ -653,8 +675,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   unfinished, not holds. When the paths that matter are simply longer than the depth (a push
   through five services and back), raise `--depth`, or `check: { depth }` in
   feynman.config.ts for every run, until the verdict is ✓ or ✗.
-- **Stuck.** A world where nothing can happen (no action, guard, message or timer, ignoring
-  `--repeats`) is reported as stuck: a deadlock, or a wait nothing will end. A system that
+- **Stuck.** A world where nothing can happen (no message or timer pending, no action
+  possible, no fair guard true; an exhausted `atMost` or budget does not count) is reported
+  as stuck: a deadlock, or a wait nothing will end. A system that
   is meant to finish says where with `finalState: { description, when: (w) => … }` in `defineSpec`;
   stopping there is fine. Say what finished means (`w.quiet && no call is waiting`): a final
   state of `w.quiet` alone calls every deadlock finished, including a caller waiting forever.
@@ -690,10 +713,17 @@ read worse. To update one:
    `groups`.
 8. If a hand-off or a result is still hard to see (a terminal, a Settings pane), add a
    playground file.
-9. Turn every safeguard switched by hand into a rule: a `const SOME_RULE = true` flipped to
+9. If it uses `--faults`, `--repeats`, `durable`, `s.drop` or `s.restart`, it predates
+   0.15, where faults became steps the spec declares (RFD0012). Declare a budget and the
+   faults the system has: `lose(M, { spend: faults })` in the receiver for each message the
+   network may lose, `crash({ keeps: [...durable], spend: faults })` in each actor that may
+   restart, and `with: [atMost(2)]` on each action. `s.drop(x, M)` becomes
+   `s.step(x, "mLost")` and `s.restart(x)` becomes `s.step(x, "crash")`. A step on
+   `failed(Call)` stays; a lost reply that fails its call says so with `fails`.
+10. Turn every safeguard switched by hand into a rule: a `const SOME_RULE = true` flipped to
    see a property break, a `buggy`/`fixed` branch, or a copy of the spec without a guard.
    `defineRule`, `rule.on` where it applies, `needs: [rule]` on what it protects.
-10. If it is written `defineSpec(name, { messages }, (spec) => { … })`, it predates 0.14,
+11. If it is written `defineSpec(name, { messages }, (spec) => { … })`, it predates 0.14,
     where a spec became its parts. Move each part to the top level of the file:
     - each `message<P>({ name, … })` becomes `defineMessage("Id", schema, { name, … })`,
       with the payload's type as a schema (`{ text: String }`), and `call<P>` becomes
@@ -711,10 +741,10 @@ read worse. To update one:
       `return { …actors }` with `spec.handles` becomes exported actors.
 
     Then `export default defineSpec({ name, actors, groups, properties, scenarios })`.
-11. If it fails with "s.wait is gone", "settle takes no duration" or a type error on
-    `ctx.now`: it predates time being the order of events. Each deadline becomes a timer
+12. If it calls `s.wait`, passes `s.settle` a duration, or reads `ctx.now`, it predates
+    time being the order of events. Each deadline becomes a timer
     that may fire at any point, and each wait in a scenario an `s.fire(instance, "timer")`.
-12. Run `feynman check` again: the same properties must hold, with the same
+13. Run `feynman check` again: the same properties must hold, with the same
     counterexamples, unless you fixed a modelling mistake. Say which.
 
 ## Commands
@@ -722,8 +752,8 @@ read worse. To update one:
 ```
 feynman list                   the specs found
 feynman run [spec] [--scenario NAME | --all] [--without RULE]
-feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
-              [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000] [--workers N]
+feynman check [spec] [--depth 14] [--set faults=1] [--instances Actor=N] [--max-states N] [--time-limit S]
+              [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
               [--only P,Q] [--without RULE,RULE] [--no-rules] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
@@ -736,8 +766,7 @@ feynman open
 `--depth` and finds the shortest counterexample. Random runs (`--walks N`, up to
 `--walk-depth` steps, a quarter of the time) go far deeper and find bugs the search cannot
 reach. Their counterexamples are shrunk but may not be the shortest, and they prove nothing.
-The search runs on one thread, on worlds as integers (RFD0008); `--workers N` applies only
-to the classic search (`FEYNMAN_ENGINE=classic`), which is slower even on several threads.
+The search runs on one thread, on worlds as integers (RFD0008).
 Read the verdicts as:
 
 - `✓` holds in every state within the bounds;
@@ -766,8 +795,8 @@ When `check` stops at a limit (states, time, or memory), it says so, and how far
 a safety property "held on every path of up to N events". It also says what the states
 differ in most ("Session.outcomes (1,359 values)"). A field with many values (a log, a
 counter, ids, a list that only grows) is usually the cause: bound it, or keep only what the
-properties read. Without one, it is the orders of what is in flight: fewer `--repeats`,
-instances or faults. Do not just raise `--max-states`: a state space that is too big usually
+properties read. Without one, it is the orders of what is in flight: smaller `atMost` limits,
+fewer instances, or a smaller budget (`--set faults=0`). Do not just raise `--max-states`: a state space that is too big usually
 means the spec models too much.
 
 A `feynman.config.ts` at the repository root can name spec globs and checker defaults:

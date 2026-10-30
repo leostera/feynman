@@ -14,7 +14,8 @@ file you get:
 - **A simulator.** Add people and machines, press the buttons they would, watch every message
   travel, lose one, and go back to any moment to try something else.
 - **A model checker that says how sure it is.** It tries every order of events within bounds,
-  with lost messages and restarts, then takes long random runs. Rules are safety ("never two
+  with the faults the spec declares (lost messages, duplicates, crashes), then takes long
+  random runs. Rules are safety ("never two
   holders") or liveness ("every request is answered"), judged under fairness as in TLA+, and
   a world where the system is stuck is reported too. A broken rule comes with the shortest
   trace that breaks it, and for liveness the loop it repeats forever; a rule that held says
@@ -44,7 +45,10 @@ as a scenario you can paste into the spec.
 Specs live in `specs/*.ts` and import `@leostera/feynman`:
 
 ```ts
-import { defineActor, defineMessage, defineProperty, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineSpec, defineZone, lose } from "@leostera/feynman";
+
+// Faults are steps the spec declares: at most one on any path (`--set faults=2` for two).
+const faults = budget("faults", 1);
 
 const Acquire = defineMessage("Acquire");
 const Granted = defineMessage("Granted", { token: Number }, { tone: "reply" });
@@ -76,6 +80,7 @@ const Client = defineActor({
   initialState: () => ({ token: null as number | null }),
   actions: {
     acquire: {
+      with: [atMost(2)], // at most twice per client on any path
       label: "Take the lock",
       description: "Asks the server for the lock.",
       sends: [Acquire],
@@ -86,6 +91,8 @@ const Client = defineActor({
   },
   transitions: {
     granted: { on: Granted, description: "Holds the lock.", run: (state, msg) => void (state.token = msg.token) },
+    // The network may lose the grant on its way.
+    grantedLost: lose(Granted, { spend: faults }),
   },
 });
 
@@ -106,8 +113,9 @@ export default defineSpec({
 
 Every part is a value: messages with the schema of their payload, checked when sent; actors
 whose steps say what they are `on`; properties and scenarios. `defineSpec` puts them
-together, and says when they do not fit: a message no one receives, a call whose failure no
-one handles, two steps on one message.
+together, and says when they do not fit: a message no one receives, an undeclared send, two
+fair steps on one message. Faults come from the faults library (`lose`, `duplicate`,
+`crash`, calls whose failure reaches the caller), built on the same steps as everything else.
 
 [`examples/`](examples/) has 28 well-known systems (two-phase commit, Raft's vote, chain
 replication, CRDTs, dining philosophers and more), each with a real bug for the checker to

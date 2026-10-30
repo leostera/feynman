@@ -4,6 +4,95 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## 0.15.0
+
+A smaller core (RFD0012). Feynman no longer decides how a system fails: a spec declares its
+faults, as steps from the faults library that ships with it (`lose`, `duplicate`, `crash`,
+calls whose failure reaches the caller, budgets and `atMost`). The library is built on the
+core's own primitives, so a fault the library lacks is a step you write. And there is one
+search, the integer core: the classic engine and its threads are gone.
+
+0.14.0 was tagged but never published to npm. From 0.13, apply 0.14's Migrating steps
+below, then these.
+
+### Migrating
+
+Every spec with faults changes. Without its faults declared, a spec is checked with none.
+The state counts and verdicts stay the same once they are.
+
+1. **Declare a budget, and the faults the system has**, as steps in the actor that suffers
+   them:
+
+   ```ts
+   import { budget, crash, lose } from "@leostera/feynman";
+
+   const faults = budget("faults", 1); // was --faults 1, the default
+
+   const Bank = defineActor({
+     // durable: ["seen"],                                  ← gone
+     transitions: {
+       charge: { on: Charge, … },
+       chargeLost: lose(Charge, { spend: faults }),           // the network may lose a Charge
+       crash: crash({ keeps: ["seen"], spend: faults }),       // was durable: ["seen"]
+     },
+   });
+   ```
+
+   Declare only what can happen: a message that cannot be lost gets no `lose`, a process
+   that does not restart in the spec's scope gets no `crash`. `duplicate(M, { spend })`
+   delivers a message twice.
+2. **Bound actions with `atMost`**, which replaces `--repeats` (2 by default):
+
+   ```ts
+   actions: { pay: { with: [atMost(2)], label: "Pay", … } }
+   ```
+
+   For one knob over several actions, `const repeats = defineVariable("repeats", 2)` and
+   `atMost(repeats)`; `--set repeats=3` raises them all.
+3. **Calls**: `defineCall` and `failed` keep their names and import. Losing a call fails it,
+   as before. Losing its reply fails it only when the loss says so:
+   `lose(Charged, { fails: Charge, spend: faults })`. The caller needs a step on
+   `failed(Charge)` only when a `lose` can fail the call; `defineSpec` says when it is missing.
+4. **Scenarios** take fault steps by name: `s.drop(bank, Charge)` becomes
+   `s.step(bank, "chargeLost")`, and `s.restart(bank)` becomes `s.step(bank, "crash")`.
+5. **The CLI and config**: `--faults N` becomes `--set faults=N`, and `--repeats N` an
+   `atMost` limit (or `--set repeats=N`, as above). `--workers`, `check.workers`,
+   `check.faults`, `check.repeats` and `FEYNMAN_ENGINE` are gone.
+6. **Agents and scripts**: `--json` has no `threads`, and `reductions` only `symmetric` and
+   `refuted`. A step's changes list the variables it moved: `@faults: 1 → 0`, and
+   `@Client.pay: 0 → 1` for an `atMost` count. Events carry their step's `tags`; a fault's
+   include `fault`.
+7. **Specs from 0.13 or earlier** no longer get errors saying what replaced `defineSpec`'s
+   closure, `message`, `s.wait` or a duration given to `s.settle`, or a timer's
+   `run(state, ctx)`: the 0.14 steps above, and the skill's "Bringing an older spec up to
+   date", have them.
+
+### A smaller core
+
+- **Several steps on one message**: any step on it whose `when` holds may take it. At most
+  one is fair, and the system left alone delivers to that one; the others say `fair: false`.
+- **Model variables**: `defineVariable(name, initial, { each? })` is state of the model
+  rather than of an actor. Steps list it in `uses` and read and write it with `ctx.get` and
+  `ctx.set`, guards and properties read it, and `--set name=value` starts it elsewhere
+  (`spec.setting({ … })` from code).
+- **`ctx.reset({ keeps, drops })`** starts an instance again, **`ctx.forward()`** puts the
+  message being handled back in flight, **`ctx.delivery`** says what it is and whom from,
+  and steps take **`tags`**, which the core keeps and never reads.
+- **Parts on steps**: `with: [atMost(2), spend(faults)]` folds a part's variables,
+  conditions and effects into a step.
+- **Stuck** means nothing is pending, no action is possible and no fair guard holds; an
+  exhausted `atMost` or budget does not keep a world from being stuck.
+- **Settling**, in scenarios and the playground's Play, fires only fair guards.
+
+### Checking
+
+- One search, the integer core (RFD0008). The classic engine, its sleep sets and its
+  worker threads are deleted; threads come back when the integer core runs in parallel.
+- Under symmetry, `atMost` counts are renamed with their instance: fewer states (or-set:
+  19,849, from 27,986).
+- Specs without faults check as fast as in 0.14; specs with many fault steps are 5–25%
+  slower, measured on the examples.
+
 ## 0.14.0
 
 A spec is made of parts (RFD0011). Messages, calls, zones, actors, rules, properties and
@@ -13,8 +102,7 @@ follow every reference, and a spec reads top to bottom with no closure around it
 
 ### Migrating
 
-Every spec changes. `feynman check` on a 0.13 spec says what replaced what it uses. Rewrite
-it in this order; the state counts and verdicts stay the same.
+Every spec changes. Rewrite it in this order; the state counts and verdicts stay the same.
 
 1. **Messages** move out of `defineSpec` and get a schema, the payload's type as a value:
 

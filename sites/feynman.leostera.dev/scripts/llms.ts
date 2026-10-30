@@ -30,9 +30,13 @@ differ in most); ? the explored states never reached a case where the rule could
 What it finds are design bugs: orderings, not typos. A retry that does something twice (after a
 lost answer, or a timer that fires first); a restart that forgets what it promised; a late
 message that overwrites a newer one; check-then-act races; reads that go back in time; replicas
-that never agree; a system that waits forever on a message nobody resends. Messages can be lost
-silently (\`message\`), or be calls whose failure reaches the caller (\`call\`), as an RPC or a
-\`fetch\` throws.
+that never agree; a system that waits forever on a message nobody resends.
+
+Faults are steps a spec declares, from the faults library in the package: \`lose(Message)\`,
+\`duplicate(Message)\`, \`crash({ keeps })\`, each spending a budget (\`budget("faults", 1)\`,
+raised with \`--set faults=2\`), and calls (\`defineCall\`) whose failure reaches the caller
+(\`failed(Call)\`), as an RPC or a \`fetch\` throws. \`atMost(n)\` bounds an action. The library is
+built on the core's own primitives, so a fault it lacks is a step the spec writes.
 
 Rules: a spec can name the parts of its design that keep properties true
 (\`defineRule\`, read as \`rule.on\`, claimed with \`needs: [rule]\` on properties).
