@@ -329,7 +329,7 @@ test("setup: the checker explores from the world a scenario sets up, and a prope
     // From the spec's start, two publishes (repeats) never get near ten; from here, one does.
     s.defineScenario({ name: "Nine published", setup: (w) => (w.set(Ledger, { seq: 9 }), w.set(Writer, { next: 10 })), run: () => {} });
   });
-  const { scenarioSeeds } = await import("../../src/cli/shape.ts");
+  const { scenarioSeeds } = await import("../../src/check/seeds.ts");
   const bounds = { depth: 6, walks: 0 };
   expect((await check(spec, bounds)).properties[0].holds).toBe(true);
   const seeds = scenarioSeeds(spec);

@@ -1,7 +1,7 @@
 # RFD0010 - Rules that are needed
 
 - Feature Name: `rules`
-- Status: Draft
+- Status: Accepted
 - Author: `leostera`
 - Start Date: `2026-10-30`
 - Updated: `2026-10-30`

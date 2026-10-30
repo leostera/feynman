@@ -14,7 +14,7 @@ import type { FunctionCode } from "../view/data.ts";
 import { context, specSources } from "./commands.ts";
 import { functionCode } from "./functions.ts";
 import { loadSpec } from "./load.ts";
-import { scenarioSeeds } from "./shape.ts";
+import { scenarioSeeds } from "../check/seeds.ts";
 
 declare const self: Worker;
 

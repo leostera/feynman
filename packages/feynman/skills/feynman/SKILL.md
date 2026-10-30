@@ -119,6 +119,14 @@ Before you finish, go through the spec once more. For each actor, message and st
    happens, and say what you found; keep only findings with evidence or a severe outcome.
    A finding that stays until it is fixed gets `known: "why, or the issue"` on its
    property: check still reports it, but no longer fails on it.
+
+   When a fix or a safeguard is the reason a property holds, make it a **rule**: name it
+   with `spec.defineRule`, read `rule.on` where it applies, and put `needs: [rule]` on the
+   properties it protects. Check then also checks the design without the rule and expects
+   each of them to break (`✓ rule  needed: without it, P breaks (5 events)`). A `✗` means the
+   rule does nothing, or the property is too weak to see what it prevents: both are worth
+   knowing. `feynman check <spec> --without rule` shows the design without it, with its
+   counterexamples. Never copy a spec to flip a flag: that is what rules are for.
 5. Run `feynman run <behaviour>` to read the traces of the scenarios as text.
 6. Once the spec is right, run `feynman lock`. It records the code each source stands
    for, so later checks flag sources whose code changed.
@@ -158,6 +166,11 @@ export default defineSpec(
       unit: "minutes",
       sources: ["packages/api/src/pairing.ts#CODE_TTL"],
     });
+
+    // A rule of the design: a part that exists to keep properties true (RFD0010). Read
+    // singleUseCodes.on where it applies (if (singleUseCodes.on) delete state.codes[hash]);
+    // properties that need it say needs: [singleUseCodes], and check expects them to break without it.
+    const singleUseCodes = spec.defineRule({ name: "singleUseCodes", description: "A code is deleted when it is redeemed." });
 
     const Relay = spec.defineActor({
       name: "Relay",
@@ -291,6 +304,8 @@ export default defineSpec(
       // Also: eventually (holds at some point), infinitelyOften, eventuallyAlways (holds from some point on).
       // never: no trace has this shape.
       redeemedOnce: { description: "A code is never redeemed twice.", never: (t) => t.count((e) => e.replied(Redeemed)) > t.count((e) => e.is(Person, "pair")) },
+      // needs: the rules of the design this property depends on (spec.defineRule); check expects it to break without each.
+      // codesSingleUse: { description: "…", always: (w) => …, needs: [singleUseCodes] },
       // known: a bug found and not fixed yet. Check reports it without failing, and fails once it holds.
       // codesExpire: { description: "…", always: (w) => …, known: "RELAY-12: expiry is not enforced yet" },
     });
@@ -664,10 +679,10 @@ read worse. To update one:
 
 ```
 feynman list                   the specs found
-feynman run [spec] [--scenario NAME]
+feynman run [spec] [--scenario NAME | --all] [--without RULE]
 feynman check [spec] [--depth 14] [--faults 1] [--repeats 2] [--instances Actor=N] [--max-states N] [--time-limit S]
-              [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000] [--workers N]
-              [--only P,Q] [--brief | --json | --as-scenario]
+              [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000] [--workers N]
+              [--only P,Q] [--without RULE,RULE] [--no-rules] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
@@ -694,6 +709,8 @@ breaks within the bounds, and the length of a shorter path that needs more, if t
 
 Read check's output with its own flags, not with grep:
 
+- `feynman run <spec>` with several scenarios prints one line each (✓, or ✗ and why);
+  `--scenario NAME` prints one trace, `--all` every one.
 - `--brief`: one line per property, and for each counterexample its length and faults.
   Start here when several specs or properties fail.
 - `--only P`: check and show only property P, with its counterexample.
@@ -703,9 +720,13 @@ Read check's output with its own flags, not with grep:
   it step by step. Paste it into the spec to keep the bug as a flow, and use it as the
   outline of a regression test in the system's own test suite.
 
-When `check` stops at its limits, it says so. If that happens, lower `--depth`, use
-fewer instances, or narrow the examples of inputs. An explored state space that is too
-big usually means the spec models too much.
+When `check` stops at a limit (states, time, or memory), it says so, and how far it got:
+a safety property "held on every path of up to N events". It also says what the states
+differ in most ("Session.outcomes (1,359 values)"). A field with many values (a log, a
+counter, ids, a list that only grows) is usually the cause: bound it, or keep only what the
+properties read. Without one, it is the orders of what is in flight: fewer `--repeats`,
+instances or faults. Do not just raise `--max-states`: a state space that is too big usually
+means the spec models too much.
 
 A `feynman.config.ts` at the repository root can name spec globs and checker defaults:
 

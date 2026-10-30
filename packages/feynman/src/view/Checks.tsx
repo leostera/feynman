@@ -5,7 +5,7 @@
 import { Badge, Button, cn } from "@cloudflare/kumo";
 import { CheckCircleIcon, CircleDashedIcon, PlayIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react";
 import { useMemo } from "react";
-import type { Counterexample, PropertyBroken, PropertyResult } from "../check/index.ts";
+import type { Counterexample, PropertyBroken, PropertyResult, RuleVerdict } from "../check/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { labelOf, ordinal, stepTitle, time } from "./format";
@@ -62,6 +62,15 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
                 ))}
               </div>
             </Section>
+            {report.rules && report.rules.length > 0 && (
+              <Section title="Rules">
+                <div className="flex flex-col gap-2">
+                  {report.rules.map((rule) => (
+                    <RuleCard key={rule.name} rule={rule} />
+                  ))}
+                </div>
+              </Section>
+            )}
             {report.stuck && (
               <Section title="Stuck">
                 <div className="rounded-lg px-4 py-3 ring-1 ring-kumo-danger/40">
@@ -124,6 +133,33 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
 }
 
 /** One property: its verdict, and how it breaks, if it does. */
+/** A rule of the design (RFD0010): whether each property that needs it broke without it. */
+function RuleCard({ rule }: { rule: RuleVerdict }) {
+  const held = rule.neededBy.filter((n) => n.verdict === "holds");
+  const open = rule.neededBy.filter((n) => n.verdict === "unfinished");
+  const verdict: Verdict = held.length ? "broken" : open.length ? "unfinished" : "holds";
+  return (
+    <div className={cn("rounded-lg px-4 py-3 ring-1", held.length ? "ring-kumo-danger/40" : "ring-kumo-hairline")}>
+      <div className="flex items-start gap-2">
+        <VerdictIcon verdict={verdict} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{rule.description}</p>
+          <p className="font-mono text-[11px] text-kumo-subtle">
+            rule · {rule.name}
+            <span className="font-sans">
+              {held.length
+                ? ` · not needed by ${held.map((n) => n.property).join(", ")}: it held without the rule. The rule does nothing here, or the property is too weak to see what it prevents.`
+                : open.length
+                  ? ` · needed by ${open.map((n) => n.property).join(", ")}? It held without the rule, but the search stopped early.`
+                  : ` · without it, ${rule.neededBy.map((n) => `${n.property} breaks in ${n.events} events`).join(", ")}`}
+            </span>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: PropertyResult; verdict: Verdict; scenario?: string; onOpen: Open; onScenario: (name: string) => void }) {
   // Broken while exploration found it holding: a scenario broke it.
   const byScenario = (verdict === "broken" || verdict === "known") && p.holds ? scenario : undefined;

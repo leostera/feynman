@@ -125,6 +125,36 @@ test("run: one scenario prints its trace; several, a line each unless --all", as
   expect((await capture(["run", "echo", "--scenario", "Say nothing"], root)).out).toContain("Ann (Client)  say");
 }, 60_000);
 
+test("check: rules a property needs are checked without them; --without shows the design without one", async () => {
+  const { root, commit } = repo();
+  writeFileSync(
+    join(root, "specs/capped.ts"),
+    `import { defineSpec } from "@leostera/feynman";
+export default defineSpec("Capped", { messages: {} }, (spec) => {
+  const cap = spec.defineRule({ name: "cap", description: "Counting stops at two." });
+  const decoy = spec.defineRule({ name: "decoy", description: "Changes nothing." });
+  const zone = spec.defineZone({ name: "z" });
+  const Counter = spec.defineActor({
+    name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
+    actions: { count: { label: "Count", description: "Counts one more.", when: (s) => !cap.on || s.n < 2, run: (s) => void s.n++ } },
+  });
+  spec.defineProperties({ belowThree: { description: "The count stays below three.", always: (w) => w.the(Counter).state.n < 3, needs: [cap, decoy] } });
+  spec.defineFinalState({ description: "It may stop at any count.", when: () => true });
+});
+`,
+  );
+  commit("capped");
+  const checked = await capture(["check", "capped", "--repeats", "5", "--walks", "0"], root);
+  expect(checked.out).toContain("✓ cap    needed: without it, belowThree breaks (3 events)");
+  expect(checked.out).toContain("✗ decoy  not needed by belowThree: held without the rule, in every state.");
+  expect(checked.status).toBe(1);
+  expect((await capture(["check", "capped", "--repeats", "5", "--walks", "0", "--no-rules"], root)).status).toBe(0);
+  const without = await capture(["check", "capped", "--repeats", "5", "--walks", "0", "--without", "cap"], root);
+  expect(without.out).toContain("Capped without cap: explored");
+  expect(without.out).toContain("✗ belowThree");
+  expect(without.out).not.toContain("✓ cap");
+}, 60_000);
+
 test("lock records sources; check then reports a changed one as stale", async () => {
   const { root, commit } = repo();
   writeFileSync(join(root, "specs/echo.ts"), SPEC(false).replace('"src/client.ts:1-3"', '"src/client.ts:1-2"'));

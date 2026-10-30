@@ -11,7 +11,12 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "types": ["bun", "node", "vite/client"]
+    "types": ["bun", "node", "vite/client"],
+    "paths": {
+      "@leostera/feynman": ["./src/spec/index.ts"],
+      "@leostera/feynman/play": ["./src/play/index.ts"],
+      "@leostera/feynman/config": ["./src/cli/index.ts"]
+    }
   },
   "include": ["bin", "src", "test", "examples"],
   "exclude": ["test/**/fixtures/projects"]

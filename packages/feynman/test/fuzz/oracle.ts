@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { check, Pool, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
 import { stepBreaks } from "../../src/check/judge.ts";
 import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, type Spec, type World } from "../../src/spec/index.ts";
-import { scenarioSeeds } from "../../src/cli/shape.ts";
+import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { explore, worldKey } from "../check/reference.ts";
 import { build, describe, type Size, type SpecDesc } from "./spec.ts";
 

@@ -7,8 +7,8 @@ import { spawnSync } from "node:child_process";
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from "node:zlib";
 import { createServer as createNetServer } from "node:net";
 import { createServer as createViteServer, type Plugin, type ViteDevServer } from "vite";
-import { check, type Report as CheckReport } from "../check/index.ts";
-import { scenarioSeeds } from "./shape.ts";
+import { check, checkRules, type Report as CheckReport } from "../check/index.ts";
+import { scenarioSeeds } from "../check/seeds.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "../code/index.ts";
 import type { Spec } from "../spec/index.ts";
 import type { Bundle, Embedded, SourceEntry, SpecEntry } from "../view/data.ts";
@@ -197,7 +197,15 @@ export async function prepare(ctx: Context, options: Options, onProgress?: Progr
         entry.calls = trees as Record<string, CallNode>;
         entry.functions = await timed(onProgress, () => functionCode(repository.root, repository.fileUrl, entry.calls), (f) => `collected ${plural(Object.keys(f).length, "function")} they reach`);
       }
-      if (options.check) entry.report = await timed(onProgress, () => check(spec, { ...ctx.config.check }, scenarioSeeds(spec), { source }), checkSummary);
+      if (options.check)
+        entry.report = await timed(
+          onProgress,
+          async () => {
+            const report = await check(spec, { ...ctx.config.check }, scenarioSeeds(spec), { source });
+            return spec.rules.some((r) => r.neededBy.length) ? { ...report, rules: await checkRules(spec, { ...ctx.config.check }, { source }) } : report;
+          },
+          checkSummary,
+        );
     } catch (error) {
       entry.error = error instanceof Error ? error.message : String(error);
       onProgress?.(red(`failed: ${entry.error.split("\n")[0]}`), true);
