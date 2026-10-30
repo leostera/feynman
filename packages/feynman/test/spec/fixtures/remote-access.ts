@@ -1,9 +1,7 @@
-import { atMost, budget, crash, defineActor, defineLimit, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, input, lose, oneOf } from "../../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineLimit, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, input, lose, oneOf } from "../../../src/spec/index.ts";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const NewCode = defineMessage("NewCode", { account: String }, { name: "new pairing code", over: "https" });
 const Code = defineMessage("Code", { code: String }, { name: "pairing code", over: "https", tone: "reply" });
@@ -68,7 +66,7 @@ const Person = defineActor({
   initialState: (ctx) => ({ account: `acct-${ctx.label}`, codes: [] as string[] }),
   actions: {
     pairHost: {
-      with: [atMost(repeats)],
+      with: [atMost(2)],
       label: "Pair a host",
       description: "Ask the relay for a pairing code to type on a Mac.",
       sources: ["apps/web/src/settings/pair.tsx#createCode"],
@@ -101,7 +99,7 @@ const Mac = defineActor({
   }),
   actions: {
     link: {
-      with: [atMost(repeats)],
+      with: [atMost(2)],
       label: "Paste a pairing code",
       description: "Link this Mac to the account that issued the code.",
       inputs: {

@@ -4,29 +4,16 @@
 // From a world with the configured instances, each state branches on: every action on
 // every instance (with inputs from its schema), every guarded transition that holds,
 // every pending delivery taken by each step on it (networks reorder; a fault is one more
-// step, RFD0012), and every timer set. States are deduplicated by a
-// fingerprint of a canonical key (keys.ts), so breadth-first order finds the shortest
-// counterexample. The search is split among threads (search.ts, owner.ts; RFD0007), with
-// the same result however many there are.
-//
-// Three reductions keep every state the plain search would visit, and skip only work
-// whose result is known:
-// - Sleep sets: when two steps on different instances commute (neither reads anyone else,
-//   or shares a counter with the other), both orders reach the same world,
-//   so the second order is not tried again. A state reached later with fewer such steps
-//   skipped is expanded again for the difference.
-// - Inputs an action did not read: other values for them would do exactly the same.
-// - Symmetry (keys.ts): interchangeable instances are renamed to one order.
+// step, RFD0012), and every timer set. The search runs on worlds as integers (integer.ts,
+// RFD0008), deduplicated by fingerprint, so breadth-first order finds the shortest
+// counterexample. Symmetry (keys.ts) renames interchangeable instances to one order.
 import { defaultMemoryLimit } from "./memory.ts";
 import { isLiveness, spawn, startWorld, type LivenessProperty, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { verdicts, type Verdicts } from "./judge.ts";
-import { NO_SYMMETRY, symmetryOf } from "./keys.ts";
+import { NO_SYMMETRY, symmetryOf, type Symmetry } from "./keys.ts";
 import { judgeLiveness, type Lasso } from "./liveness.ts";
-import { Owner } from "./owner.ts";
 import { IntegerSearch, type Variety } from "./integer.ts";
 import type { RuleVerdict } from "./rules.ts";
-import { InlineDriver, Pool, type SpecSource } from "./pool.ts";
-import { Search, type Root } from "./search.ts";
 import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
 import { rebind, shrink, walk, type WalkResult } from "./walk.ts";
 
@@ -55,14 +42,6 @@ export interface Bounds {
    * surely, at a cost; 0 trusts the claim.
    */
   symmetryChecks: number;
-  /** Skip orders and inputs that cannot make a difference. Off only to compare. */
-  reduce: boolean;
-  /**
-   * Worker threads to share a big search with, besides the main thread; 0 keeps it on the main
-   * thread. Workers join only when the spec can be loaded by them (by path) and the search is
-   * big enough to share. The result is the same however many there are.
-   */
-  workers: number;
 }
 
 /** Which limit stopped a search early. */
@@ -78,15 +57,7 @@ export const DEFAULT_BOUNDS: Bounds = {
   walkDepth: 120,
   symmetry: true,
   symmetryChecks: 2_000,
-  reduce: true,
-  workers: defaultWorkers(),
 };
-
-/** One thread fewer than the machine has, up to 7: past that, threads mostly wait on each other. */
-function defaultWorkers(): number {
-  const cores = typeof navigator === "undefined" ? 1 : navigator.hardwareConcurrency;
-  return Math.max(0, Math.min(7, cores - 1));
-}
 
 /** Share of the time limit random runs may use. */
 const WALK_SHARE = 0.25;
@@ -157,8 +128,6 @@ export interface Report {
   rules?: RuleVerdict[];
   depthReached: number;
   durationMs: number;
-  /** Threads the search ran on: the main thread, plus the workers that joined. */
-  threads: number;
   properties: PropertyResult[];
   /** Spec bugs met while exploring: an undeclared send, a message nobody handles. */
   errors: { message: string; counterexample: Counterexample }[];
@@ -168,10 +137,8 @@ export interface Report {
   coverage: { reached: string[]; missed: string[] };
   /** The random runs: how many, how many steps in all, and the longest. */
   walks: { runs: number; steps: number; deepest: number };
-  /** What the reductions saved: steps not tried because their result was known. */
+  /** Symmetry: the instances taken as interchangeable. */
   reductions: {
-    orders: number;
-    inputs: number;
     symmetric: string[][];
     /** Actors declared symmetric whose instances turned out not to be; the search was redone without. */
     refuted?: string[];
@@ -191,30 +158,17 @@ export interface Watch {
 
 /** How to run a check, besides the bounds. */
 export interface CheckOptions {
-  /** Where worker threads can load the spec; without it the search stays on the main thread. */
-  source?: SpecSource;
-  /** Worker threads to use, kept across checks; without it, one is started for this check when needed. */
-  pool?: Pool;
-  /** Every distinct state, as the search first meets it; keeps the search on the main thread. */
+  /** Every distinct state, as the search first meets it. */
   watch?: Watch;
-  /** The frontier size at which workers join (256): lower only to test sharing on small specs. */
-  shareFrom?: number;
-  /**
-   * Which search to run: the integer core (integer.ts, the default), or the classic one, with
-   * its reductions and worker threads. FEYNMAN_ENGINE sets the default, to run a suite through one.
-   * FEYNMAN_ENGINE sets the default, to run a whole suite through one.
-   */
-  engine?: Engine;
-  /** Stop once every property has broken (integer engine): for searches that only look for breaks. */
+  /** Stop once every property has broken: for searches that only look for breaks. */
   untilBroken?: boolean;
 }
 
-export type Engine = "integer" | "classic";
-
-function engineFrom(env: string | undefined): Engine {
-  if (env === undefined || env === "") return "integer";
-  if (env === "classic" || env === "integer") return env;
-  throw new Error(`FEYNMAN_ENGINE is integer or classic, not ${JSON.stringify(env)}`);
+/** Where paths start: the initial world, then each seed, with the symmetry of each. */
+export interface Root {
+  from?: ScenarioPlace;
+  world: World;
+  symmetry: Symmetry;
 }
 
 /**
@@ -233,16 +187,13 @@ export async function check(spec: Spec, bounds: Partial<Bounds> = {}, seeds: See
  * a loop that counts a step comes back to a different state each time round, and no liveness
  * counterexample could close. Liveness is a property of the system's states alone, as in
  * TLA+, so it is judged on a search without that memory. The safety search, without liveness,
- * keeps its reductions too.
+ * keeps symmetry too.
  */
 async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], options: CheckOptions): Promise<Report> {
   const started = Date.now();
   const part = (keep: (p: PropertyInfo) => boolean): Spec => ({ ...spec, properties: spec.properties.filter(keep) });
-  const sourceFor = (s: Spec) => (options.source ? { ...options.source, properties: s.properties.map((p) => p.id) } : undefined);
-  const safety = part((p) => !isLiveness(p));
-  const live = part(isLiveness);
-  const a = await checkTogether(safety, bounds, seeds, { ...options, source: sourceFor(safety) });
-  const b = await checkTogether(live, { ...bounds, walks: 0 }, seeds, { ...options, source: sourceFor(live), watch: undefined });
+  const a = await checkTogether(part((p) => !isLiveness(p)), bounds, seeds, options);
+  const b = await checkTogether(part(isLiveness), { ...bounds, walks: 0 }, seeds, { ...options, watch: undefined });
   return {
     ...a,
     properties: spec.properties.map((p) => (isLiveness(p) ? b : a).properties.find((q) => q.id === p.id)!),
@@ -252,7 +203,6 @@ async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], op
     ...(a.variety || b.variety ? { variety: a.variety ?? b.variety, mostInFlight: a.mostInFlight ?? b.mostInFlight } : {}),
     depthReached: Math.max(a.depthReached, b.depthReached),
     durationMs: Date.now() - started,
-    threads: Math.max(a.threads, b.threads),
   };
 }
 
@@ -262,52 +212,19 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const roots = rootsOf(spec, b, seeds);
   const walkVerdicts = verdicts();
   const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
-  const engine = options.engine ?? engineFrom(process.env.FEYNMAN_ENGINE);
-  if (engine === "integer") {
-    // The bounds as the integer core searches: without the classic search's reductions.
-    const integer = { ...b, reduce: false };
-    const search = new IntegerSearch(spec, integer, roots, options.watch ?? {}, started);
-    search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
-    search.run();
-    if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
-    return await reportOf(spec, integer, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
-  }
-  const shares = options.source !== undefined && b.workers > 0 && !options.watch;
-  const ownPool = shares && !options.pool ? new Pool(b.workers) : undefined;
-  try {
-    const search = await explore(spec, b, roots, started, options, shares ? (options.pool ?? ownPool) : undefined);
-    if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, { ...options, pool: options.pool ?? ownPool }, roots, started);
-    return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
-  } finally {
-    ownPool?.close();
-  }
+  const search = new IntegerSearch(spec, b, roots, options.watch ?? {}, started);
+  search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
+  search.run();
+  if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
+  return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
 }
-
-/** Frontier size at which worker owners are started: below it, starting them costs more than they save. */
-const SHARE_FROM = 256;
 
 const NO_WALKS: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
 
-/** The breadth-first search, on the main thread, joined by the pool's workers once it is big enough to share. */
-async function explore(spec: Spec, b: Bounds, roots: Root[], started: number, options: CheckOptions, pool: Pool | undefined): Promise<Search> {
-  const job = { bounds: b, roots: roots.map((r) => r.world) };
-  const inline = new InlineDriver(new Owner(spec, job));
-  const spawn = pool && options.source ? () => pool.owners(options.source!, job) : undefined;
-  const search = new Search({ spec, b, roots, watch: options.watch ?? {}, started, inline, spawn, shareFrom: options.shareFrom ?? SHARE_FROM });
-  await search.run();
-  return search;
-}
-
-/** The bounds asked for, with the reductions the spec's properties rule out turned off. */
+/** The bounds asked for; liveness is judged without symmetry for now (RFD0006: a property naming one instance is not symmetric). */
 function boundsFor(spec: Spec, bounds: Partial<Bounds>): Bounds {
   const b: Bounds = { ...DEFAULT_BOUNDS, ...bounds, instances: { ...DEFAULT_BOUNDS.instances, ...bounds.instances } };
-  // A `never` property that reads the path's events in order tells orders apart, so no two orders commute for it.
-  if (spec.properties.some((p) => p.kind === "never" && /\.events\b/.test(String(p.never)))) b.reduce = false;
-  // Step properties and liveness need every edge, which skipping orders drops; liveness is
-  // judged without symmetry for now (RFD0006: a property naming one instance is not symmetric).
-  const liveness = spec.properties.some(isLiveness);
-  if (liveness || spec.properties.some((p) => p.kind === "everyStep")) b.reduce = false;
-  if (liveness) b.symmetry = false;
+  if (spec.properties.some(isLiveness)) b.symmetry = false;
   return b;
 }
 
@@ -325,7 +242,7 @@ async function withoutSymmetry(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[
 }
 
 /** The report: each property's verdict (from the search, else a random run), errors, stuck, coverage. */
-async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: Search | IntegerSearch, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
+async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: IntegerSearch, walked: WalkResult, walkVerdicts: Verdicts, started: number): Promise<Report> {
   const { roots } = search;
   const named = (root: number, ce: Counterexample): Counterexample => ({ ...ce, ...(roots[root].from ? { from: roots[root].from } : {}) });
   const fromRoot = (root: number, choices: Choice[]) => named(root, replay(spec, roots[root].world, choices));
@@ -356,18 +273,17 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: S
     bounds: b,
     seeds,
     states: search.states,
-    exhaustive: !search.stoppedBy && !(search instanceof IntegerSearch && search.allBroken),
+    exhaustive: !search.stoppedBy && !search.allBroken,
     stoppedBy: search.stoppedBy,
-    ...(search.stoppedBy && search instanceof IntegerSearch ? { variety: search.variety(), mostInFlight: search.mostInFlight } : {}),
+    ...(search.stoppedBy ? { variety: search.variety(), mostInFlight: search.mostInFlight } : {}),
     depthReached: search.depthReached,
     durationMs: Date.now() - started,
-    threads: search.ownerCount,
     properties,
     errors: [...[...search.errors].map(([message, gid]) => ({ message, counterexample: fromSearch(gid) })), ...walkErrors],
     ...(stuckFound ? { stuck: stuckFound } : {}),
     coverage: { reached: all.filter((k) => reached.has(k)), missed: all.filter((k) => !reached.has(k)) },
     walks: { runs: walked.runs, steps: walked.steps, deepest: walked.deepest },
-    reductions: { orders: search.stats.orders, inputs: search.stats.inputs, symmetric: roots[0].symmetry.classes.map((c) => c.labels) },
+    reductions: { symmetric: roots[0].symmetry.classes.map((c) => c.labels) },
   };
 }
 
@@ -396,7 +312,7 @@ function allSteps(spec: Spec): string[] {
  * Each liveness property's verdict, by id. A property that held after the search stopped
  * early is unfinished.
  */
-async function livenessVerdicts(spec: Spec, liveness: LivenessProperty[], search: Search | IntegerSearch): Promise<Map<string, PropertyResult>> {
+async function livenessVerdicts(spec: Spec, liveness: LivenessProperty[], search: IntegerSearch): Promise<Map<string, PropertyResult>> {
   if (!liveness.length) return new Map();
   const graph = search.graph();
   const judged = liveness.map((property) => ({ property, verdict: judgeLiveness(graph, property) }));

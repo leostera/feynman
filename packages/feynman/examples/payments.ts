@@ -8,12 +8,10 @@
 // Expected: buggy breaks `debitedOnce` in 4 steps (pay, retry, debit, debit) with no fault;
 // fixed holds. `paymentsSettle` is unfinished: each retry adds a copy in flight, so the
 // worlds never run out, and a loop that never confirms could lie past any depth.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Debit = defineMessage("Debit", { id: String, amount: Number });
 const Debited = defineMessage("Debited", { id: String }, { tone: "reply" });
@@ -65,7 +63,7 @@ export function payments(variant: "buggy" | "fixed") {
     },
     actions: {
       pay: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Pay",
         description: "Pays 10, retrying until the bank confirms.",
         when: (state) => state.pending === null,

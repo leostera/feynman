@@ -13,12 +13,10 @@
 // Expected: buggy breaks `announcedOnceQuiet` in 3 steps with one fault (order, the shop
 // stores it, the shop restarts); fixed holds through a restart, and breaks in 4 when the
 // announcement is lost (order, store, announce, lost).
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const PlaceOrder = defineMessage("PlaceOrder");
 const OrderPlaced = defineMessage("OrderPlaced");
@@ -85,7 +83,7 @@ export function outbox(variant: "buggy" | "fixed") {
     initialState: () => ({}),
     display: { icon: "person", status: () => "shopping" },
     actions: {
-      order: { with: [atMost(repeats)], label: "Order", description: "Places an order.", sends: [PlaceOrder], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Shop), PlaceOrder, {}) },
+      order: { with: [atMost(2)], label: "Order", description: "Places an order.", sends: [PlaceOrder], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Shop), PlaceOrder, {}) },
     },
   });
 

@@ -11,12 +11,10 @@
 // Expected, with three nodes: buggy breaks `oneLeader` in 7 steps with one fault (A
 // campaigns, B votes for A, A leads; B restarts and forgets its vote, B campaigns, C votes for
 // B, B leads); fixed holds, with a restart too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const RequestVote = defineMessage("RequestVote");
 const Vote = defineMessage("Vote", {}, { tone: "reply" });
@@ -38,7 +36,7 @@ export function raftVote(variant: "buggy" | "fixed") {
     },
     actions: {
       campaign: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Campaign",
         description: "Votes for itself and asks the others for their votes.",
         when: (state) => state.votedFor === null,

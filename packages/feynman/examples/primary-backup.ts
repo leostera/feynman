@@ -14,12 +14,10 @@
 // Expected: buggy breaks `ackedIsReplicated` in 3 steps without faults (write, the primary
 // stores, acknowledges and replicates, the acknowledgement arrives first); fixed holds, with
 // a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Ack = defineMessage("Ack", {}, { tone: "reply" });
@@ -37,7 +35,7 @@ export function primaryBackup(variant: "buggy" | "fixed") {
     initialState: () => ({ acked: 0 }),
     display: { icon: "laptop", status: (s) => (s.acked ? `told ${s.acked} write(s) succeeded` : "nothing acknowledged") },
     actions: {
-      write: { with: [atMost(repeats)], label: "Write", description: "Writes to the primary.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Primary), Write, {}) },
+      write: { with: [atMost(2)], label: "Write", description: "Writes to the primary.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Primary), Write, {}) },
     },
     transitions: {
       ack: { on: Ack, description: "Is told the write succeeded.", run: (state) => void (state.acked += 1) },

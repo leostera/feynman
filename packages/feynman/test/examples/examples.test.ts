@@ -3,7 +3,7 @@
 // whichever way it explores: with or without its reductions, with or without symmetry, and
 // by random runs alone.
 import { beforeAll, describe, expect, test } from "bun:test";
-import { check, faultsIn, replay, type CheckOptions, type Counterexample, type Report } from "../../src/check/index.ts";
+import { check, faultsIn, replay, type Counterexample, type Report } from "../../src/check/index.ts";
 import { isLiveness } from "../../src/spec/index.ts";
 import { caseName, configured, corpus, type Expected } from "./corpus.ts";
 
@@ -32,10 +32,10 @@ for (const example of corpus) for (const c of example.cases) {
   const { spec, bounds: given } = configured(example.spec(c.variant), c.bounds);
   const bounds = { ...given, instances: example.instances ?? {} };
   describe(caseName(example, c), () => {
-    const run = (extra: Partial<typeof bounds> = {}, options: CheckOptions = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra }, [], options);
+    const run = (extra: Partial<typeof bounds> = {}) => check(spec, { ...bounds, ...EXHAUSTIVE, ...extra });
     let plain: Report;
     beforeAll(async () => {
-      plain = await run({ reduce: false, symmetry: false });
+      plain = await run({ symmetry: false });
     });
 
     test("the search finds what was worked out by hand, and nothing else", async () => {
@@ -52,24 +52,15 @@ for (const example of corpus) for (const c of example.cases) {
       }
     });
 
-    test("the classic search's reductions reach the same verdicts, with counterexamples just as short", async () => {
-      const reduced = await run({ reduce: true, symmetry: false }, { engine: "classic" });
-      expect(verdicts(reduced, c.expect)).toEqual(c.expect);
-      expect(stuckOf(reduced)).toEqual(c.stuck);
-      expect(reduced.coverage).toEqual(plain.coverage);
-      // Without a clock, sleep sets skip orders, never states.
-      expect(reduced.states).toBe(plain.states);
-    });
-
     test("symmetry reaches the same verdicts, in no more states, or is caught being wrong", async () => {
-      const folded = await run({ reduce: true, symmetry: true });
+      const folded = await run({ symmetry: true });
       expect(verdicts(folded, c.expect)).toEqual(c.expect);
       expect(stuckOf(folded)).toEqual(c.stuck);
       expect(folded.coverage).toEqual(plain.coverage);
       expect(folded.states).toBeLessThanOrEqual(plain.states);
       // Symmetry is off for liveness, so a wrong claim is caught by the safety properties alone.
       const safety = { ...spec, properties: spec.properties.filter((p) => !isLiveness(p)) };
-      expect(safety.properties.length === spec.properties.length ? folded.reductions.refuted : (await check(safety, { ...bounds, ...EXHAUSTIVE, reduce: true, symmetry: true })).reductions.refuted).toEqual(c.refuted);
+      expect(safety.properties.length === spec.properties.length ? folded.reductions.refuted : (await check(safety, { ...bounds, ...EXHAUSTIVE, symmetry: true })).reductions.refuted).toEqual(c.refuted);
     });
 
     // Liveness needs the whole graph, which random runs do not build: they judge safety only.

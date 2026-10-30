@@ -211,7 +211,7 @@ test("an actor without a zone says so", () => {
   ).toThrow("A: say where it runs, with zone: a zone from defineZone");
 });
 
-test("a timer whose run is (state, ctx), as in 0.13, says so when the spec is defined", () => {
+test("a timer whose run is (state, ctx) says so when the spec is defined", () => {
   expect(() =>
     (() => {
 

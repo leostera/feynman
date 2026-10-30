@@ -17,6 +17,8 @@ import { sortedJson } from "../../src/spec/json.ts";
 export interface ReferenceBounds {
   depth: number;
   instances: Record<string, number>;
+  /** Worlds to explore from besides the initial one, each with its own depth bound (scenario seeds). */
+  from?: World[];
 }
 
 export interface ReferenceResult {
@@ -65,10 +67,15 @@ export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
     for (const p of always) if (!result.broken.has(p.id) && !holdsIn(spec, node.world, p.always)) result.broken.set(p.id, depth);
   };
 
-  const start: Node = { world: initialWorld(spec, bounds), faults: 0 };
-  result.worlds.add(worldKey(start.world));
-  judge(start, 0);
-  let level = [add(start, 0)];
+  // Every root at depth 0, as the checker starts from all of them at once.
+  let level: number[] = [];
+  for (const world of [initialWorld(spec, bounds), ...(bounds.from ?? [])]) {
+    const start: Node = { world, faults: 0 };
+    if (index.has(worldKey(world))) continue;
+    result.worlds.add(worldKey(world));
+    judge(start, 0);
+    level.push(add(start, 0));
+  }
 
   for (let depth = 1; depth <= bounds.depth && level.length; depth++) {
     const next: number[] = [];

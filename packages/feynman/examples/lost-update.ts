@@ -12,12 +12,10 @@
 //
 // Expected, with two tellers: buggy breaks `moneyAddsUp` in 8 steps without faults (both
 // ask, both hear 100, both write); fixed holds, with a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose, oneOf } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const OPENING = 100;
 
@@ -45,7 +43,7 @@ export function lostUpdate(variant: "buggy" | "fixed") {
     },
     actions: {
       withdraw: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Withdraw",
         description: "Starts a withdrawal by asking for the balance.",
         when: (state) => state.status === "idle",

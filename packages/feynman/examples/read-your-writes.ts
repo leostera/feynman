@@ -14,12 +14,10 @@
 // Expected: buggy breaks `readsOwnWrites` in 6 steps without faults (write, the leader
 // numbers it, the client is told, read, the follower answers from before, the answer
 // arrives); fixed holds, with a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Written = defineMessage("Written", { version: Number }, { tone: "reply" });
@@ -43,9 +41,9 @@ export function readYourWrites(variant: "buggy" | "fixed") {
       mood: (s) => (s.stale ? "bad" : "ok"),
     },
     actions: {
-      write: { with: [atMost(repeats)], label: "Write", description: "Writes, through the leader.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Leader), Write, {}) },
+      write: { with: [atMost(2)], label: "Write", description: "Writes, through the leader.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Leader), Write, {}) },
       read: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Read",
         description: "Reads from the follower, saying which write it must see.",
         sends: [Read],

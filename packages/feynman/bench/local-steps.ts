@@ -9,7 +9,7 @@ import { sortedJson } from "../src/spec/json.ts";
 import { modelNamed } from "./models.ts";
 
 const model = modelNamed(process.argv[2] ?? "or-set-fault");
-const spec = (await import(`../examples/${model.file}.ts`))[model.export ?? "default"];
+const spec = (await import(`../examples/${model.file}.ts`))[model.export ?? "default"].setting(model.set);
 let calls = 0;
 const seen = new Set<string>();
 for (const actor of spec.actors)
@@ -24,5 +24,5 @@ for (const actor of spec.actors)
         return run(state, ...rest);
       };
     }
-const report = await check(spec, { ...model.bounds, walks: 0, workers: 0 });
+const report = await check(spec, { ...model.bounds, walks: 0 });
 console.log(JSON.stringify({ model: model.name, states: report.states, handlerCalls: calls, distinctLocalSteps: seen.size, repeatShare: +(1 - seen.size / calls).toFixed(3) }));

@@ -12,12 +12,10 @@
 // Expected, with three replicas: buggy breaks `readSeesWrite` in 8 steps without faults
 // (write, two replicas store it, both acknowledgements arrive, read, the third replica
 // answers, its answer arrives); fixed holds, with a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write", { version: Number });
 const Ack = defineMessage("Ack", {}, { tone: "reply" });
@@ -43,7 +41,7 @@ export function quorum(variant: "buggy" | "fixed") {
     },
     actions: {
       write: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Write",
         description: "Writes version 1 to every replica.",
         when: (state) => state.phase === "idle",
@@ -54,7 +52,7 @@ export function quorum(variant: "buggy" | "fixed") {
         },
       },
       read: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Read",
         description: "Once the write has succeeded, asks every replica for the value.",
         when: (state) => state.phase === "written",

@@ -2,8 +2,9 @@
 // caller the call's failure instead of silence. The caller cannot tell which was lost, so a
 // retry after a lost reply applies the call twice, unless the callee recognises it.
 import { expect, test } from "bun:test";
-import { check, type Bounds, type Report } from "../../src/check/index.ts";
+import { check, type Report } from "../../src/check/index.ts";
 import { act, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineSpec, defineZone, failed, fire, guard, lose, pendingInOrder, spawn, startWorld, stepsTaking, type World } from "../../src/spec/index.ts";
+import { agreesWithReference } from "./agree.ts";
 import { explore } from "./reference.ts";
 
 const Write = defineCall("Write", { id: Number }, { over: "rpc" });
@@ -75,16 +76,11 @@ function retries(idempotent: boolean) {
   });
 }
 
-const PLAIN = { depth: 12, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
-const comparable = (r: Report) => ({ ...r, durationMs: 0 });
+const PLAIN = { depth: 12, walks: 0, symmetry: false } as const;
 
-/** Both engines, which must agree on everything. */
-async function report(idempotent: boolean, faults: number, bounds: Partial<Bounds> = {}): Promise<Report> {
-  const spec = retries(idempotent).setting({ faults });
-  const integer = await check(spec, { ...PLAIN, ...bounds }, [], { engine: "integer" });
-  const classic = await check(spec, { ...PLAIN, ...bounds }, [], { engine: "classic" });
-  expect(comparable(integer)).toEqual(comparable(classic));
-  return integer;
+/** The check, which must find what the reference explorer does. */
+async function report(idempotent: boolean, faults: number): Promise<Report> {
+  return agreesWithReference(retries(idempotent).setting({ faults }), { depth: PLAIN.depth, instances: {} });
 }
 
 const withoutIds = (w: World) => w.pending.map(({ id: _, ...p }) => p);
@@ -172,7 +168,7 @@ test("with no faults left, a call is a message: nothing fails", async () => {
   expect(r.coverage.missed.sort()).toEqual(["Client.okLost", "Client.writeFailed", "Store.writeLost"]);
 });
 
-test("a retry after a lost reply applies the write twice; an idempotency key stops it; both engines and the reference agree", async () => {
+test("a retry after a lost reply applies the write twice; an idempotency key stops it; the reference agrees", async () => {
   const buggy = await report(false, 1);
   const broken = buggy.properties.find((p) => p.id === "appliedOnce")!;
   if (broken.holds) throw new Error("appliedOnce should break");
@@ -188,16 +184,6 @@ test("a retry after a lost reply applies the write twice; an idempotency key sto
   }
 });
 
-test("reductions keep the verdicts on calls", async () => {
-  for (const idempotent of [false, true]) {
-    const spec = retries(idempotent).setting({ faults: 2 });
-    const plain = await check(spec, PLAIN, [], { engine: "classic" });
-    const reduced = await check(spec, { ...PLAIN, reduce: true }, [], { engine: "classic" });
-    expect(reduced.properties.map((p) => [p.id, p.holds])).toEqual(plain.properties.map((p) => [p.id, p.holds]));
-    expect(reduced.states).toBe(plain.states);
-  }
-});
-
 test("a scenario takes a lost reply by its step, and --as-scenario delivers the failure by the call's name", async () => {
   const { retriedCall } = await import("../../examples/retried-call.ts");
   const { runScenario } = await import("../../src/spec/index.ts");
@@ -207,7 +193,7 @@ test("a scenario takes a lost reply by its step, and --as-scenario delivers the 
   const run = runScenario(spec, lost);
   expect(run.error).toBeUndefined();
   expect(run.events.map((e) => e.key)).toEqual(["pay", "charge", "chargedLost", "chargeFailed", "charge", "charged"]);
-  const report = await check(spec, PLAIN, [], { engine: "integer" });
+  const report = await check(spec, PLAIN);
   const broken = report.properties.find((p) => p.id === "chargedOnce")!;
   if (broken.holds) throw new Error("chargedOnce should break");
   const code = scenarioCode(spec, broken);
@@ -242,11 +228,9 @@ test("symmetric callers: a reply to a call is renamed like any message", async (
     });
     return defineSpec({ name: "Symmetric callers", actors: [Server, Agent] });
   })();
-  for (const engine of ["integer", "classic"] as const) {
-    const symmetric = await check(spec, { ...PLAIN, depth: 8, instances: { Agent: 2 }, symmetry: true }, [], { engine });
-    const plain = await check(spec, { ...PLAIN, depth: 8, instances: { Agent: 2 } }, [], { engine });
-    expect(symmetric.errors).toEqual([]);
-    expect(symmetric.exhaustive).toBe(true);
-    expect(symmetric.states).toBeLessThan(plain.states);
-  }
+  const symmetric = await check(spec, { ...PLAIN, depth: 8, instances: { Agent: 2 }, symmetry: true });
+  const plain = await check(spec, { ...PLAIN, depth: 8, instances: { Agent: 2 } });
+  expect(symmetric.errors).toEqual([]);
+  expect(symmetric.exhaustive).toBe(true);
+  expect(symmetric.states).toBeLessThan(plain.states);
 });

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { broken } from "../helpers.ts";
 import { check } from "../../src/check/index.ts";
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineZone, isLiveness, lose, oneOf } from "../../src/spec/index.ts";
+import { defineActor, defineMessage, defineProperty, defineScenario, defineZone, isLiveness, oneOf } from "../../src/spec/index.ts";
 import remoteAccess from "../spec/fixtures/remote-access.ts";
 
 /**
@@ -105,72 +105,6 @@ test("random runs go deeper than the search, and their counterexample is shrunk"
 });
 
 /** The classic search's reductions, which the integer core does without. */
-const CLASSIC = { engine: "classic" } as const;
-
-test("the reductions skip work, never states: exactly the states of the plain search", async () => {
-  const { defineSpec } = await import("../../src/spec/index.ts");
-  // Clients ping a server and count the answers; a log hears about every answer. Many steps
-  // commute, so sleep sets skip many orders, and the state counts must still match.
-  const pings = (() => {
-    const Ping = defineMessage("Ping", { n: Number });
-    const Pong = defineMessage("Pong", { n: Number });
-    const Note = defineMessage("Note", { n: Number });
-    const zone = defineZone({ name: "z" });
-    const faults = budget("faults", 1);
-    const Log = defineActor({ name: "Log", zone, singleton: true, initialState: () => ({ seen: 0 }), transitions: { note: { on: Note, description: "Counts.", run: (s) => void (s.seen += 1) }, noteLost: lose(Note, { spend: faults }) } });
-    const Server = defineActor({
-      name: "Server",
-      zone,
-      singleton: true,
-      initialState: () => ({ served: 0 }),
-      transitions: {
-        ping: {
-          on: Ping,
-          description: "Answers.",
-          sends: [Pong, Note],
-          run: (s, msg, ctx) => {
-            s.served += 1;
-            ctx.reply(Pong, { n: msg.n });
-            ctx.send(ctx.the(Log), Note, { n: msg.n });
-          },
-        },
-        pingLost: lose(Ping, { spend: faults }),
-      },
-    });
-    const Client = defineActor({
-      name: "Client",
-      zone,
-      initialState: () => ({ sent: 0, got: 0 }),
-      actions: { ping: { label: "Ping", description: "Pings.", with: [atMost(2)], sends: [Ping], run: (s, _i, ctx) => ((s.sent += 1), ctx.send(ctx.the(Server), Ping, { n: s.sent })) } },
-      transitions: { pong: { on: Pong, description: "Counts.", run: (s) => void (s.got += 1) }, pongLost: lose(Pong, { spend: faults }), crash: crash({ keeps: ["sent"], spend: faults }) },
-    });
-
-    const answered = defineProperty("answered", { description: "Never more answers than pings.", always: (w) => w.all(Client).every((c) => c.state.got <= c.state.sent) });
-    return defineSpec({
-      name: "Pings",
-      actors: [Log, Server, Client],
-      properties: [answered],
-    });
-  })();
-  const bounds = { depth: 10, instances: { Client: 2 }, symmetry: false, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = await check(pings, { ...bounds, reduce: false }, [], CLASSIC);
-  const reduced = await check(pings, { ...bounds, reduce: true }, [], CLASSIC);
-  expect(plain.errors).toEqual([]);
-  expect(plain.exhaustive && reduced.exhaustive).toBe(true);
-  expect(reduced.states).toBe(plain.states);
-  expect(reduced.coverage).toEqual(plain.coverage);
-  expect(reduced.reductions.orders).toBeGreaterThan(0);
-});
-
-test("the reductions keep the verdicts and the states on a spec with timers and retries", async () => {
-  const bounds = { depth: 8, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
-  const plain = await check(remoteAccess, { ...bounds, reduce: false }, [], CLASSIC);
-  const reduced = await check(remoteAccess, { ...bounds, reduce: true }, [], CLASSIC);
-  expect(reduced.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
-  expect(reduced.coverage).toEqual(plain.coverage);
-  expect(reduced.states).toBe(plain.states);
-}, 30_000);
-
 test("symmetry: two interchangeable Macs explore fewer states, with the same verdicts", async () => {
   const bounds = { depth: 7, instances: { Mac: 2 }, maxStates: 1_000_000, timeLimit: 60_000, walks: 0 };
   // Symmetry is off for liveness. This spec has `never` properties too, so its safety and its
@@ -184,34 +118,6 @@ test("symmetry: two interchangeable Macs explore fewer states, with the same ver
   expect(folded.states).toBeLessThan(plain.states);
   expect(folded.properties.map((p) => p.holds)).toEqual(plain.properties.map((p) => p.holds));
   expect(folded.coverage).toEqual(plain.coverage);
-});
-
-test("inputs an action never reads are not tried twice", async () => {
-  const { defineSpec } = await import("../../src/spec/index.ts");
-  const typed = (() => {
-    const zone = defineZone({ name: "z" });
-    const Box = defineActor({
-      name: "Box",
-      zone,
-      initialState: () => ({ open: false }),
-      actions: {
-        open: {
-          label: "Open",
-          description: "Opens the box; the note is ignored.",
-          inputs: { note: String, loud: Boolean },
-          run: (s, input) => void (s.open = input.loud || true),
-        },
-      },
-    });
-    void Box;
-    return defineSpec({
-      name: "Typed",
-      actors: [Box],
-    });
-  })();
-  const report = await check(typed, { depth: 1, walks: 0 }, [], CLASSIC);
-  // loud is read, note is not: of the four combinations, the two that differ only in the note are one.
-  expect(report.reductions.inputs).toBe(2);
 });
 
 test("a map that gained its entries in another order is the same state, renamed too", async () => {
@@ -296,11 +202,9 @@ test("a step that fails is reported, and a step is reached, even when its state 
       actors: [Counter],
     });
   })();
-  for (const reduce of [false, true]) {
-    const report = await check(spec, { depth: 4, walks: 0, reduce });
-    expect(report.errors.map((e) => e.message)).toEqual(["Counter.poke: boom"]);
-    expect(report.coverage.missed).toEqual([]);
-  }
+  const report = await check(spec, { depth: 4, walks: 0 });
+  expect(report.errors.map((e) => e.message)).toEqual(["Counter.poke: boom"]);
+  expect(report.coverage.missed).toEqual([]);
 });
 
 test("a step that stores what is not plain data, or changes another's set, fails and says why", async () => {

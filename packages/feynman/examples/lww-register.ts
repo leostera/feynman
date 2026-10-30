@@ -14,12 +14,10 @@
 // without faults (both write at time 1, and each replica gets them in a different order),
 // and in 3 with a fault (a write reaches one replica and is lost on the way to the other);
 // fixed holds without faults, and breaks in those 3 steps with one.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Put = defineMessage("Put", { ts: Number, writer: String });
 
@@ -36,7 +34,7 @@ export function lwwRegister(variant: "buggy" | "fixed") {
     display: { icon: "laptop", status: (s) => (s.clock ? `last wrote at time ${s.clock}` : "nothing written"), mood: (s) => (s.clock ? "info" : "off") },
     actions: {
       write: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Write",
         description: "Stamps a write with its clock and sends it to every replica.",
         sends: [Put],

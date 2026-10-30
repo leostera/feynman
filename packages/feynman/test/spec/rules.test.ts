@@ -5,7 +5,7 @@ import { check, checkRules } from "../../src/check/index.ts";
 import { defineActor, defineProperty, defineRule, defineSpec, defineZone, type Rule } from "../../src/spec/index.ts";
 import { retriedCall } from "../../examples/retried-call.ts";
 
-const PLAIN = { depth: 12, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
+const PLAIN = { depth: 12, walks: 0, symmetry: false } as const;
 
 /** A counter that must stay below 3: `cap` keeps it there; `decoy` is read nowhere. */
 function capped(claims: (rules: { cap: Rule; decoy: Rule }) => Rule[]) {
@@ -53,16 +53,14 @@ test("rule.on reads the variant being run, for the same parts in both", () => {
   expect(when(spec)).toBe(false);
 });
 
-for (const engine of ["integer", "classic"] as const) {
-  test(`${engine}: a needed rule breaks its property without it; a decoy does not`, async () => {
-    const spec = capped(({ cap, decoy }) => [cap, decoy]);
-    expect((await check(spec, PLAIN, [], { engine })).properties[0].holds).toBe(true);
-    expect(await checkRules(spec, PLAIN, { engine })).toEqual([
-      { name: "cap", description: "Counting stops at two.", neededBy: [{ property: "belowThree", verdict: "breaks", events: 3 }] },
-      { name: "decoy", description: "Changes nothing.", neededBy: [{ property: "belowThree", verdict: "holds" }] },
-    ]);
-  });
-}
+test("a needed rule breaks its property without it; a decoy does not", async () => {
+  const spec = capped(({ cap, decoy }) => [cap, decoy]);
+  expect((await check(spec, PLAIN)).properties[0].holds).toBe(true);
+  expect(await checkRules(spec, PLAIN)).toEqual([
+    { name: "cap", description: "Counting stops at two.", neededBy: [{ property: "belowThree", verdict: "breaks", events: 3 }] },
+    { name: "decoy", description: "Changes nothing.", neededBy: [{ property: "belowThree", verdict: "holds" }] },
+  ]);
+});
 
 test("the retried call's idempotency key is needed: without it, a lost answer charges twice", async () => {
   const [rule] = await checkRules(retriedCall("fixed"), PLAIN);

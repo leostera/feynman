@@ -173,8 +173,6 @@ function messageKey(message: unknown, what: string): string {
   throw new SpecError(`s.${what} takes a message, like s.${what}(bank, Charge): not ${JSON.stringify(message)}`);
 }
 
-const NO_CLOCK = "there is no clock, time is the order of events (RFD0004): a timer may fire at any point, or not, as a slow or fast clock would let it.";
-
 function scriptFor(runner: Runner): Script {
   const live = (id: string) => ({
     id,
@@ -203,8 +201,7 @@ function scriptFor(runner: Runner): Script {
     },
     settle(options) {
       if (!options) return runner.settle();
-      if (typeof options === "number") throw new SpecError(`settle takes no duration: ${NO_CLOCK} s.settle() runs until nothing more can happen; s.settle({ until: (w) => … }) until the world gets somewhere.`);
-      if (typeof options.until !== "function") throw new SpecError("settle: `until` is a predicate on the world, like (w) => w.the(Store).state.saved");
+      if (typeof options?.until !== "function") throw new SpecError("settle: `until` is a predicate on the world, like s.settle({ until: (w) => w.the(Store).state.saved })");
       runner.settleUntil((world) => options.until(worldView(runner.spec, world)));
     },
     fire(who, timer) {
@@ -223,11 +220,5 @@ function scriptFor(runner: Runner): Script {
       return worldView(runner.spec, runner.world);
     },
   } as Script;
-  // Gone since time became the order of events (RFD0004, 0.2): say so, rather than "is not a function".
-  Object.assign(script, {
-    wait() {
-      throw new SpecError(`s.wait is gone: ${NO_CLOCK} Fire the timer the scenario waits for: s.fire(instance, "timer").`);
-    },
-  });
   return script;
 }

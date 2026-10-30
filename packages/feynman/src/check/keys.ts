@@ -16,7 +16,7 @@ type Pending = World["pending"][number];
 /** Each frozen value's JSON, once: states and payloads are shared between worlds. */
 const texts = new WeakMap<object, string>();
 
-export function textOf(value: unknown): string {
+function textOf(value: unknown): string {
   if (value === null || typeof value !== "object") return sortedJson(value);
   let text = texts.get(value);
   if (text === undefined) texts.set(value, (text = sortedJson(value)));
@@ -123,7 +123,7 @@ export function symmetricKey(world: World, symmetry: Symmetry): string {
 }
 
 /** The renaming that gives a world its least key, and that key; no renaming without symmetry. */
-export function leastRenaming(world: World, symmetry: Symmetry): { key: string; renaming: Map<string, string>; plain: string } {
+function leastRenaming(world: World, symmetry: Symmetry): { key: string; renaming: Map<string, string>; plain: string } {
   if (!symmetry.classes.length) {
     const key = canonical(world);
     return { key, renaming: new Map(), plain: key };
@@ -218,77 +218,9 @@ function escape(text: string): string {
 
 export const NO_SYMMETRY: Symmetry = { classes: [], renamings: [] };
 
-// Fingerprints ---------------------------------------------------------------------------------------
+// Names ------------------------------------------------------------------------------------------------
 
-/**
- * A state's 64-bit fingerprint, as two 32-bit halves: what the search remembers of each state
- * (as TLC does), and all that crosses between threads. Two states share one with odds of
- * about n²/2⁶⁵ for n states: one in 36 million at a million states.
- */
-export function fingerprint(text: string): [number, number] {
-  return halves(Bun.hash.wyhash(text, SEED));
-}
-
-/** A 52-bit hash of a short name (a step's name in a sleep set, a fair step's identity), exact as a number. */
+/** A 52-bit hash of a short name (a fair step's identity), exact as a number. */
 export function nameHash(text: string): number {
   return Number(Bun.hash.wyhash(text, 0x2545f4914f6cdd1dn) & 0xfffffffffffffn);
-}
-
-/**
- * A state's fingerprint: its world up to symmetry, plus `extra` (the budget spent and what
- * `never` properties remember); and the fingerprint of the world without renaming, which
- * renamed twins do not share.
- *
- * Without symmetry it is taken without writing the world's key: each instance's and each
- * pending entry's line has a hash of its own, kept on the (frozen, shared) object, and the
- * fingerprint is a hash of those hashes, sorted. With symmetry, the least key among the
- * renamings has to be written out to be found.
- */
-export function statePrint(world: World, symmetry: Symmetry, extra: string): { print: [number, number]; plain: [number, number] } {
-  if (symmetry.classes.length) {
-    const { key, plain } = leastRenaming(world, symmetry);
-    return { print: fingerprint(key + extra), plain: fingerprint(plain) };
-  }
-  const print = halves(Bun.hash.wyhash(extra, worldHash(world)));
-  return { print, plain: print };
-}
-
-/** A hash of a world as `canonical` writes it, from the hashes of its lines. */
-function worldHash(world: World): bigint {
-  const pending = world.pending;
-  let messages = 0;
-  let timers = 0;
-  for (const p of pending) p.kind === "deliver" ? messages++ : timers++;
-  const n = world.instances.length;
-  // [instances, their lines' hashes (sorted), messages' hashes (sorted), timers in age order, the counters]
-  const words = new BigUint64Array(1 + n + messages + 2);
-  words[0] = BigInt(n);
-  for (let i = 0; i < n; i++) words[1 + i] = instanceHash(world.instances[i]);
-  let at = 1 + n;
-  for (const p of pending) if (p.kind === "deliver") words[at++] = pendingHash(p);
-  words.subarray(1, 1 + n).sort();
-  words.subarray(1 + n, at).sort();
-  words[at++] = timers ? Bun.hash.wyhash(pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id).map(pendingText).join(" "), SEED) : 0n;
-  words[at] = Bun.hash.wyhash(restLine(world), SEED);
-  return Bun.hash.wyhash(words, SEED);
-}
-
-const SEED = 0x9e3779b97f4a7c15n;
-const lineHashes = new WeakMap<object, bigint>();
-
-/** An instance's line (`id=state`), hashed once per instance object: unchanged instances are shared between worlds. */
-function instanceHash(instance: World["instances"][number]): bigint {
-  let h = lineHashes.get(instance);
-  if (h === undefined) lineHashes.set(instance, (h = Bun.hash.wyhash(instanceLine(instance), SEED)));
-  return h;
-}
-
-function pendingHash(p: Pending): bigint {
-  let h = lineHashes.get(p);
-  if (h === undefined) lineHashes.set(p, (h = Bun.hash.wyhash(pendingText(p), SEED)));
-  return h;
-}
-
-function halves(h: bigint): [number, number] {
-  return [Number(h >> 32n), Number(h & 0xffffffffn)];
 }

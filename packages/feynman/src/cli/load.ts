@@ -7,7 +7,6 @@
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { SpecSource } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
 import { CONFIG_FILE, type Config } from "./config.ts";
 import { CONFIG_NAMES, exactly, PLAY_NAMES, SPEC_NAMES } from "./names.ts";
@@ -59,14 +58,8 @@ async function bundle(path: string): Promise<string> {
       },
     ],
   });
-  if (!result.success) throw new Error([...result.logs.map(describeLog), ...upgradeHint(result.logs.map((log) => log.message))].join("\n") || "the spec could not be bundled");
+  if (!result.success) throw new Error(result.logs.map(describeLog).join("\n") || "the spec could not be bundled");
   return result.outputs[0].text();
-}
-
-/** What to do about imports of APIs a spec written for an older Feynman uses. */
-function upgradeHint(errors: string[]): string[] {
-  const gone = errors.some((error) => /No matching export .* for import "(message|call)"|Export named '(message|call)' not found/.test(error));
-  return gone ? ["message and call are gone since 0.14: a spec is made of parts (RFD0011). Messages are defineMessage(\"Id\", schema) and calls defineCall; the changelog's Migrating section has the steps."] : [];
 }
 
 /** A build message with where it happened: "specs/x.ts:12:4 Expected "}" but found ")"". */
@@ -77,19 +70,18 @@ function describeLog(log: { message: string; position?: { file: string; line: nu
 
 /** Import a TypeScript module through a fresh bundle, so edits are always seen. */
 export async function importFresh(path: string): Promise<unknown> {
-  return (await importBundled(path)).module;
+  return await importBundled(path);
 }
 
 /**
- * A fresh bundle of a module, imported; and where the bundle is, for worker threads to import
- * too. Each bundle gets a directory of its own: Bun's resolver can miss a file several threads
- * import at once from a directory that changed since it last looked (seen with Bun 1.3).
+ * A fresh bundle of a module, imported. Each bundle gets a directory of its own: Bun's resolver
+ * can miss a file imported from a directory that changed since it last looked (seen with Bun 1.3).
  */
-async function importBundled(path: string): Promise<{ module: unknown; bundled: string }> {
+async function importBundled(path: string): Promise<unknown> {
   scratch ??= mkdtempSync(join(tmpdir(), "feynman-load-"));
   const bundled = join(mkdtempSync(join(scratch, `${++counter}-`)), "spec.mjs");
   writeFileSync(bundled, await bundle(path));
-  return { module: await import(bundled), bundled };
+  return await import(bundled);
 }
 
 export class SpecLoadError extends Error {}
@@ -107,29 +99,20 @@ export async function loadPlayground(path: string): Promise<unknown> {
   return value;
 }
 
-/** A spec, and where worker threads can load it from (the checker shares big searches with them). */
-export interface LoadedSpec {
-  spec: Spec;
-  source: SpecSource;
-}
-
 /** The spec a file exports by default. */
-export async function loadSpec(path: string): Promise<LoadedSpec> {
+export async function loadSpec(path: string): Promise<Spec> {
   let module: { default?: unknown };
-  let bundled: string;
   try {
-    const loaded = await importBundled(path);
-    module = loaded.module as { default?: unknown };
-    bundled = loaded.bundled;
+    module = (await importBundled(path)) as { default?: unknown };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new SpecLoadError([`${path}: ${message}`, ...upgradeHint([message])].join("\n"));
+    throw new SpecLoadError(`${path}: ${message}`);
   }
   const spec = module.default as Spec | undefined;
   if (!spec || typeof spec !== "object" || !Array.isArray((spec as Spec).actors)) {
     throw new SpecLoadError(`${path} does not export a spec by default: export default defineSpec(…)`);
   }
-  return { spec, source: { module: bundled } };
+  return spec;
 }
 
 /** The repository's feynman.config.ts, or nothing configured. */

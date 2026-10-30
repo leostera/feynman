@@ -71,13 +71,11 @@ export function formatSources(statuses: SourceStatus[]): string[] {
   return lines;
 }
 
-/** What else the search did: random runs, and the work its reductions saved. */
+/** What else the search did: random runs, and the instances it took as interchangeable. */
 function searchNotes(report: Report): string[] {
   const notes: string[] = [];
   if (report.walks.runs) notes.push(`  also ${report.walks.runs.toLocaleString()} random run(s), ${report.walks.steps.toLocaleString()} steps, up to ${report.walks.deepest} deep: they find bugs deeper than the search, but prove nothing`);
-  const saved = report.reductions.orders + report.reductions.inputs;
   const symmetric = report.reductions.symmetric.map((labels) => labels.join(" = ")).join(", ");
-  if (saved) notes.push(`  skipped ${saved.toLocaleString()} step(s) whose result was known`);
   if (symmetric) notes.push(`  treated as interchangeable: ${symmetric}`);
   const out = notes.map((n) => dim(n));
   if (report.reductions.refuted?.length)
@@ -108,7 +106,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
   const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, ...variablesText(spec)].join(", ");
   const lines = [
-    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.threads > 1 ? ` on ${report.threads} threads` : ""}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
+    `${bold(spec.name)}: explored ${report.states.toLocaleString()} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
     ...varietyLines(report),
     ...(hasFaults(spec) ? [] : [yellow("! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().")]),
     ...(options.brief ? [] : searchNotes(report)),

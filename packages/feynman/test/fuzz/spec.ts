@@ -6,7 +6,7 @@
 // message handlers, replies, timers started and cancelled, guards, reading other instances,
 // shared counters (fresh ids, random numbers), durable fields across restarts, steps that
 // throw, final states, every kind of property, and calls whose failures reach their callers.
-import { atMost, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, failed, lose, oneOf, type AnyMessage, type Call, type Property, type Spec } from "../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, failed, lose, oneOf, type AnyMessage, type Call, type Property, type Spec } from "../../src/spec/index.ts";
 
 type Random = () => number;
 
@@ -167,10 +167,9 @@ export function build(desc: SpecDesc): Spec {
   const messages: AnyMessage[] = Array.from({ length: desc.messages }, (_, m) => (isCall(m) ? defineCall : defineMessage)(`M${m}`, { v: Number }, { name: `m${m}` }));
   const zone = defineZone({ name: "Zone" });
   // The faults and bounds a description asks for, declared (RFD0012): any message may be lost
-  // and any instance that is not a singleton may crash, within one budget; each action repeats
-  // at most `repeats` times.
+  // and any instance that is not a singleton may crash, within one budget; each action runs at
+  // most `repeats` times on a path.
   const faults = budget("faults", desc.bounds.faults);
-  const repeats = defineVariable("repeats", desc.bounds.repeats);
   const actors: any[] = [];
   const holds = (c: Cond, s: any) => (c.kind === "true" ? true : c.kind === "aIs" ? s.a === c.k : c.kind === "aBelow" ? s.a < c.k : s.b === c.is);
   const sendsOf = (ops: Op[]): AnyMessage[] => [...new Set(ops.flatMap((o) => (o.kind === "send" || o.kind === "reply" ? [messages[o.message]!] : o.kind === "if" ? sendsOf(o.then) : [])))];
@@ -259,7 +258,7 @@ export function build(desc: SpecDesc): Spec {
         {
           label: x.key,
           description: x.key,
-          with: [atMost(repeats)],
+          with: [atMost(desc.bounds.repeats)],
           when: (s: any) => holds(x.when, s),
           ...(x.input ? { inputs: { n: oneOf(0, 1) } } : {}),
           sends: sendsOf(x.ops),

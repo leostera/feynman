@@ -12,12 +12,10 @@
 // Expected: buggy breaks `monotonicReads` in 8 steps without faults (write, the head stores
 // it and passes it on, read from the head, the head answers, the answer arrives, read from
 // the tail, the tail answers from before, the answer arrives); fixed holds, with a fault too.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose, oneOf } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Write = defineMessage("Write");
 const Update = defineMessage("Update", { version: Number });
@@ -40,9 +38,9 @@ export function chainReplication(variant: "buggy" | "fixed") {
       mood: (s) => (s.regressed ? "bad" : s.reading ? "busy" : "ok"),
     },
     actions: {
-      write: { with: [atMost(repeats)], label: "Write", description: "Writes, at the head.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Head), Write, {}) },
+      write: { with: [atMost(2)], label: "Write", description: "Writes, at the head.", sends: [Write], run: (_state, _inputs, ctx) => ctx.send(ctx.the(Head), Write, {}) },
       read: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Read",
         description: variant === "buggy" ? "Reads from either replica, one read at a time." : "Reads from the tail, one read at a time.",
         when: (state) => !state.reading,

@@ -10,12 +10,10 @@
 // Expected, with three nodes: buggy breaks `oneLeader` in 3 steps without faults (A starts;
 // B beats A's id, leads, and starts its own election; C beats B's id and leads); fixed holds,
 // with a fault too, but a lost election message leaves the ring without a leader: stuck in 4.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Election = defineMessage("Election", { id: String });
 
@@ -34,7 +32,7 @@ export function changRoberts(variant: "buggy" | "fixed") {
     },
     actions: {
       start: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Start an election",
         description: "Sends its id to the next node.",
         when: (state) => !state.started,

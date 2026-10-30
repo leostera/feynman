@@ -29,18 +29,12 @@ export interface StepOptions {
   explain?: boolean;
   /** Which `always` invariants the world after it breaks (true). */
   invariants?: boolean;
-  /** Filled in with what the step touched besides its own state, for the checker's reductions. */
+  /** Filled in with what the step depended on, for the checker's step cache (integer.ts). */
   observe?: Observation;
 }
 
-/**
- * What a step touched besides its own instance. A step that reads nobody else and uses no
- * world-wide counter commutes with a step on another instance.
- */
+/** What a step depended on and touched, besides its argument: what decides whether its effect can be reused. */
 export interface Observation {
-  /** It depends on, or changes, more than its own instance: the sum of what follows, for reductions. */
-  readsOthers: boolean;
-  shared: boolean;
   /** It read another instance's state (`the`, `all`, `from`). */
   others: boolean;
   /** It used a counter every instance shares (`fresh`, `random`). */
@@ -49,16 +43,12 @@ export interface Observation {
   variables: boolean;
   /** It reset its instance, dropping the messages on their way to it that this picks. */
   drops?: (delivery: Delivery) => boolean;
-  /** The action inputs it read; all of them when it enumerated them. */
-  inputs: Set<string>;
-  /** Set to watch the instance's own state too (a proxy on it; the integer core's step cache). */
-  watchesOwn: boolean;
-  /** It read or changed its own instance: its state, its own variables or its timers. Watched only with `watchesOwn`. */
+  /** It read or changed its own instance: its state, its own variables or its timers. */
   own: boolean;
 }
 
-export function observation(watchesOwn = false): Observation {
-  return { readsOthers: false, shared: false, others: false, counters: false, variables: false, inputs: new Set(), watchesOwn, own: false };
+export function observation(): Observation {
+  return { others: false, counters: false, variables: false, own: false };
 }
 
 /** The state as a step sees it, noting any use of it. */
@@ -80,29 +70,6 @@ function watchedState(state: unknown, observe: Observation): unknown {
 export function deliveryIn(spec: Spec, world: World, p: Extract<Pending, { kind: "deliver" }>, onRead?: (id: string) => void): Delivery {
   const sender = world.instances.find((i) => i.id === p.from);
   return { message: p.message, from: sender ? worldView(spec, world, onRead).instance(sender) : undefined, payload: p.payload, ...(p.answers ? { answers: p.answers } : {}) } as Delivery;
-}
-
-/** The inputs, recording which ones the action reads. */
-function watchedInputs(inputs: Record<string, unknown>, observe: Observation): Record<string, unknown> {
-  const all = () => Object.keys(inputs).forEach((key) => observe.inputs.add(key));
-  return new Proxy(inputs, {
-    get(target, key) {
-      if (typeof key === "string") observe.inputs.add(key);
-      return target[key as string];
-    },
-    has(target, key) {
-      if (typeof key === "string") observe.inputs.add(key);
-      return key in target;
-    },
-    ownKeys(target) {
-      all();
-      return Reflect.ownKeys(target);
-    },
-    getOwnPropertyDescriptor(target, key) {
-      all();
-      return Reflect.getOwnPropertyDescriptor(target, key);
-    },
-  });
 }
 
 const FULL: StepOptions = {};
@@ -261,8 +228,7 @@ export function act(spec: Spec, world: World, instanceId: string, key: string, i
   const actor = actorNamed(spec, instance.actor);
   const action = actor.actions[key];
   if (!action) throw new SpecError(`${actor.name} has no action "${key}"`);
-  const seen = how.observe ? watchedInputs(inputs, how.observe) : inputs;
-  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, seen, ctx) }, how);
+  return runStep(spec, world, { kind: "action", instance, actor, step: action, inputs, call: (state, ctx) => action.run(state, inputs, ctx) }, how);
 }
 
 /**
@@ -380,7 +346,7 @@ function runStep(spec: Spec, before: World, run: Running, how: StepOptions): Ste
     ...run.delivery,
   };
   try {
-    const watching = how.observe?.watchesOwn ? watchedState(state, how.observe) : state;
+    const watching = how.observe ? watchedState(state, how.observe) : state;
     const returned = run.call(watching, makeCtx(spec, next, self, state, run, effects, how.observe));
     if (returned instanceof Promise) throw new SpecError("its run is async: a step happens at once, so it cannot await; tell others with a message and handle their reply in another step");
     // `(s) => s.n++` and `(s) => (s.list = [...])` return what they assign, harmlessly; an object
@@ -446,7 +412,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     const name = declared(variable);
     if (!quiet && observe) {
       if (spec.variables.find((v) => v.name === name)!.each) observe.own = true;
-      else observe.shared = observe.variables = true;
+      else observe.variables = true;
     }
     try {
       return variableIn(spec, world, self, name);
@@ -457,7 +423,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
   // A reply to a message that correlates records the request it answers.
   const answering = delivery && spec.messages[delivery.message]?.correlate ? { message: delivery.message, payload: delivery.payload } : undefined;
   let replied = false;
-  const onRead = observe ? (id: string) => void (id === self.id ? (observe.own = true) : (observe.readsOthers = observe.others = true)) : undefined;
+  const onRead = observe ? (id: string) => void (id === self.id ? (observe.own = true) : (observe.others = true)) : undefined;
   const ownTouched = () => void (observe && (observe.own = true));
   const view = worldView(spec, world, onRead);
   const send = (to: { id: string }, value: unknown, payload: unknown, options?: SendOptions, tagged?: { message: string; payload: unknown }) => {
@@ -537,9 +503,9 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       Object.assign(old, fresh);
       for (const p of world.pending) if (p.kind === "timer" && p.to === self.id) effects.cancelled.push(p.timer);
       const drops = options?.drops;
-      // What it drops depends on what others sent it, so it commutes with no one; the integer
-      // core applies `drops` itself, to each message in flight to the instance (Observation).
-      if (drops && observe) (observe.readsOthers = true), (observe.drops = drops);
+      // What it drops depends on what others sent it: the integer core applies `drops` itself,
+      // to each message in flight to the instance (Observation).
+      if (drops && observe) observe.drops = drops;
       world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !drops?.(deliveryOf(p))));
     },
     get(variable: { name: string }) {
@@ -552,7 +518,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       const info = spec.variables.find((v) => v.name === name)!;
       if (observe) {
         if (info.each) observe.own = true;
-        else observe.shared = observe.variables = true;
+        else observe.variables = true;
       }
       const before = variableValue(variable, true);
       const stored = freeze(clone(value));
@@ -582,13 +548,13 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       if (world.pending.length < had) effects.cancelled.push(label);
     },
     fresh(prefix: string) {
-      if (observe) observe.shared = observe.counters = true;
+      if (observe) observe.counters = true;
       world.fresh[prefix] = (world.fresh[prefix] ?? 0) + 1;
       return `${prefix}-${world.fresh[prefix]}`;
     },
     hash: hashOf,
     random() {
-      if (observe) observe.shared = observe.counters = true;
+      if (observe) observe.counters = true;
       world.rng = (world.rng + 0x6d2b79f5) >>> 0;
       let t = world.rng;
       t = Math.imul(t ^ (t >>> 15), t | 1);

@@ -1,9 +1,6 @@
 // What every random spec is checked against. Each check that fails is a finding: a seed, which
 // check, and what differed. See spec.ts for the specs.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { check, faultsIn, Pool, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
+import { check, faultsIn, initialWorld, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
 import { stepBreaks } from "../../src/check/judge.ts";
 import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, type Spec, type World } from "../../src/spec/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
@@ -24,8 +21,6 @@ const MAX_STATES = 60_000;
 const SEARCH = { walks: 0, maxStates: MAX_STATES, timeLimit: 60_000 } as const;
 
 export interface FuzzOptions {
-  /** Worker threads to compare against the main thread alone; none to skip that check. */
-  pool?: Pool;
   size?: Size;
 }
 
@@ -47,50 +42,34 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
   try {
     // The search (the integer core), and the worlds it reaches.
     const worlds = new Set<string>();
-    const plain = await check(spec, { ...bounds, symmetry: false, workers: 0 }, [], { watch: { state: (w) => worlds.add(worldKey(w)) } });
+    const plain = await check(spec, { ...bounds, symmetry: false }, [], { watch: { state: (w) => worlds.add(worldKey(w)) } });
     if (!plain.exhaustive) return { findings, states: plain.states, skipped: "too big" };
 
     againstReference(spec, desc, plain, worlds, find);
     for (const p of plain.properties) if (!p.holds) counterexampleHolds(spec, p, find);
     if (plain.stuck) stuckHolds(spec, plain.stuck.counterexample, find);
 
-    // The classic search without reductions: the very same report.
-    const classic = await check(spec, { ...bounds, reduce: false, symmetry: false, workers: 0 }, [], CLASSIC);
-    sameReport("classic: report", plain, classic, find);
-
-    const reduced = await check(spec, { ...bounds, reduce: true, symmetry: false, workers: 0 }, [], CLASSIC);
-    same("sleep sets: verdicts", signature(reduced), signature(plain), find);
-    same("sleep sets: states", reduced.states, plain.states, find);
-    same("sleep sets: coverage", reduced.coverage, plain.coverage, find);
-
-    const folded = await check(spec, { ...bounds, symmetry: true, workers: 0 });
+    const folded = await check(spec, { ...bounds, symmetry: true });
     if (!folded.reductions.refuted) {
       same("symmetry: verdicts", signature(folded), signature(plain), find);
       if (folded.states > plain.states) find("symmetry: states", `${folded.states} with symmetry, ${plain.states} without`);
     }
-    sameReport("classic: report with symmetry", folded, await check(spec, { ...bounds, reduce: false, symmetry: true, workers: 0 }, [], CLASSIC), find);
 
-    // From scenario seeds too, whose instances may differ from the bounds'.
+    // From scenario seeds too, whose instances may differ from the bounds': the worlds the reference reaches from them.
     const seeds = scenarioSeeds(spec);
-    if (seeds.length) sameReport("classic: report from seeds", await check(spec, { ...bounds, workers: 0 }, seeds), await check(spec, { ...bounds, reduce: false, workers: 0 }, seeds, CLASSIC), find);
+    if (seeds.length) {
+      const seeded = new Set([worldKey(initialWorld(spec, desc.bounds)), ...seeds.map((s) => worldKey(s.world))]);
+      await check(spec, { ...bounds, symmetry: false }, seeds, { watch: { state: (w) => seeded.add(worldKey(w)) } });
+      const ref = explore(spec, { ...desc.bounds, from: seeds.map((s) => s.world) });
+      if (seeded.size !== ref.worlds.size || [...seeded].some((w) => !ref.worlds.has(w))) find("seeds: worlds", `${seeded.size} worlds from the scenarios, the reference ${ref.worlds.size}`);
+    }
 
     await walksAgree(spec, desc, plain, find);
-    if (options.pool) await sharedAlike(seed, size, spec, bounds, options.pool, find);
     return { findings, states: plain.states };
   } catch (error) {
     find("crash", error instanceof Error ? (error.stack ?? error.message) : String(error));
     return { findings, states: 0 };
   }
-}
-
-/** The classic search, where a check is of it: its reductions, its threads, or agreeing with the integer core. */
-const CLASSIC = { engine: "classic" } as const;
-
-/** Two reports alike in everything but the clock. */
-function sameReport(check: string, ours: Report, theirs: Report, find: (check: string, detail: string) => void): void {
-  // What a stopped search's states differ in is the integer engine's diagnostic only.
-  const comparable = ({ variety: _v, mostInFlight: _m, ...r }: Report) => ({ ...r, durationMs: 0 });
-  if (!Bun.deepEquals(comparable(ours), comparable(theirs))) find(check, `states ${ours.states} vs ${theirs.states}; verdicts ${JSON.stringify(signature(ours))} vs ${JSON.stringify(signature(theirs))}`);
 }
 
 /** The plain search against the reference explorer: the same worlds, `always` breaks, errors, coverage, stuck world and liveness verdicts. */
@@ -153,7 +132,7 @@ function counterexampleHolds(spec: Spec, p: Extract<PropertyResult, { holds: fal
  * the search's bounds, the exhaustive search found that property broken too.
  */
 async function walksAgree(spec: Spec, desc: SpecDesc, plain: Report, find: (check: string, detail: string) => void): Promise<void> {
-  const walked = await check(spec, { ...desc.bounds, depth: 0, walks: 300, walkDepth: desc.bounds.depth + 4, timeLimit: 60_000, workers: 0 });
+  const walked = await check(spec, { ...desc.bounds, depth: 0, walks: 300, walkDepth: desc.bounds.depth + 4, timeLimit: 60_000 });
   for (const p of walked.properties) {
     if (p.holds || p.foundBy !== "walk") continue;
     counterexampleHolds(spec, p, (check, detail) => find(`walks: ${check}`, detail));
@@ -185,22 +164,6 @@ function stays(spec: Spec, world: World): boolean {
   // A message is taken fairly when one of the steps on it is fair.
   const fairlyTaken = (instance: string, message: string) => (actorOf(instance).stepsOn[message] ?? []).some((step) => fair(instance, step));
   return !guards.some((g) => fair(g.instance, g.key)) && !pending.some((p) => (p.kind === "deliver" ? fairlyTaken(p.to, p.message) : fair(p.to, p.timer)));
-}
-
-/** The report with workers forced to join, against the main thread alone: the same in every way. */
-async function sharedAlike(seed: number, size: Size, spec: Spec, bounds: Partial<Bounds>, pool: Pool, find: (check: string, detail: string) => void): Promise<void> {
-  // A directory of its own: see importBundled in src/cli/load.ts.
-  mkdirSync(join(tmpdir(), "feynman-fuzz"), { recursive: true });
-  const module = join(mkdtempSync(join(tmpdir(), "feynman-fuzz", `${seed}-`)), "spec.ts");
-  writeFileSync(module, `import { build, describe } from ${JSON.stringify(join(import.meta.dir, "spec.ts"))};\nexport default build(describe(${seed}, ${JSON.stringify(size)}));\n`);
-  const alone = await check(spec, { ...bounds, workers: 0 }, [], CLASSIC);
-  const shared = await check(spec, { ...bounds, workers: pool.size }, [], { source: { module }, pool, shareFrom: 2, ...CLASSIC });
-  const comparable = (r: Report) => ({ ...r, durationMs: 0, threads: 0, bounds: { ...r.bounds, workers: 0 } });
-  if (!Bun.deepEquals(comparable(shared), comparable(alone))) {
-    const a = signature(alone);
-    const s = signature(shared);
-    find("threads", `${shared.threads} threads differ from one: states ${shared.states} vs ${alone.states}; verdicts ${JSON.stringify(s)} vs ${JSON.stringify(a)}`);
-  }
 }
 
 /** Each property's verdict, with a counterexample's length; and the stuck world and errors. */

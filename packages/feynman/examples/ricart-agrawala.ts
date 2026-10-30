@@ -16,12 +16,10 @@
 // Expected, with two nodes: buggy breaks `mutex` in 6 steps without faults (both ask with
 // timestamp 1, each request lands and is answered, both answers land); fixed holds, with a
 // fault too, but a lost request leaves both nodes waiting for good: stuck in 4 steps.
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Request = defineMessage("Request", { ts: Number });
 const Ok = defineMessage("Ok", { ts: Number }, { tone: "reply" });
@@ -42,7 +40,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
     },
     actions: {
       request: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Ask to go in",
         description: "Stamps a request with its clock and asks every other node.",
         when: (state) => state.asking === null && !state.inside,
@@ -55,7 +53,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
         },
       },
       exit: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Leave",
         description: "Leaves the critical section, and answers everyone it kept waiting.",
         when: (state) => state.inside,

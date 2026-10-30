@@ -13,12 +13,10 @@
 //   can happen: the coordinator waits forever. The checker reports that as stuck, too, as
 //   early as it can: in 5 steps (begin, prepare one, it votes, the vote is counted, the
 //   other prepare lost).
-import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineVariable, defineZone, lose, oneOf, type Script } from "@leostera/feynman";
+import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose, oneOf, type Script } from "@leostera/feynman";
 
 /** Faults on one path: lost messages and crashes (RFD0012). `--set faults=2` raises it. */
 const faults = budget("faults", 1);
-/** Times one instance takes each action on one path. */
-const repeats = defineVariable("repeats", 2);
 
 const Prepare = defineMessage("Prepare");
 const Vote = defineMessage("Vote", { yes: Boolean });
@@ -41,7 +39,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     actions: {
       vote: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Vote",
         description: "Votes on the transaction; a no aborts it here at once.",
         when: (state) => state.prepared && state.vote === null,
@@ -83,7 +81,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     },
     actions: {
       begin: {
-        with: [atMost(repeats)],
+        with: [atMost(2)],
         label: "Begin",
         description: "Asks every participant to prepare.",
         when: (state) => !state.begun,
