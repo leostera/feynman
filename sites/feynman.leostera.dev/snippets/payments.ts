@@ -1,5 +1,6 @@
-import { defineActor, defineMessage, defineProperty, defineSpec, defineZone } from "@leostera/feynman";
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineSpec, defineZone, lose } from "@leostera/feynman";
 
+const faults = budget("faults", 1); // at most one fault on any path
 const Debit = defineMessage("Debit", { id: String });
 const zone = defineZone({ name: "Payments" });
 
@@ -12,6 +13,7 @@ const Bank = defineActor({
       description: "Debits the account.",
       run: (state) => void (state.debits += 1),
     },
+    debitLost: lose(Debit, { spend: faults }), // the network may lose it
   },
 });
 
@@ -20,6 +22,7 @@ const Client = defineActor({
   initialState: () => ({ paid: 0, pending: "" }),
   actions: {
     pay: {
+      with: [atMost(2)],
       label: "Pay",
       description: "Pays, retrying until the bank answers.",
       sends: [Debit], starts: ["retry"],

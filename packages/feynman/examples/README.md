@@ -38,22 +38,23 @@ bun run feynman dev                # every example in the simulator
 | `g-counter.ts` | A counter merged by its larger total: increments made at the same time are lost | state-based CRDTs, merges that keep what both sides know |
 | `or-set.ts` | A replicated set racing an add against a remove; the textbook OR-Set fix, which assumes causal delivery, still breaks when a remove overtakes its add | operation-based CRDTs, tombstones, what a protocol assumes of delivery |
 | `idempotent-consumer.ts` | A consumer that remembers the jobs it did only in memory: a restart and a redelivery charge twice | at-least-once delivery, idempotency keys, durable state, timers |
-| `retried-call.ts` | A client that retries a payment when the call to the bank fails: a lost answer and a retry charge twice | calls whose failure reaches the caller (`call`), retries, idempotency keys |
+| `retried-call.ts` | A client that retries a payment when the call to the bank fails: a lost answer and a retry charge twice | calls whose failure reaches the caller (`defineCall`), retries, idempotency keys |
 | `read-repair.ts` | Read repair that overwrites without comparing versions: a slow repair takes a replica back to an older value | read repair, versioned writes, ghost state for invariants about the past |
 | `lost-update.ts` | Withdrawals that read a balance and write a new one: both read 100, and one withdrawal is never taken off | read-modify-write races, compare-and-set, a retry as a guarded step |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
-`test/examples/examples.test.ts` checks every case five ways: the plain search finds exactly what was
-worked out by hand; counterexamples replay; the reductions and symmetry reach the same
-verdicts with counterexamples as short; and random runs alone find every bug. When a
+`test/examples/examples.test.ts` checks every case four ways: the plain search finds exactly what was
+worked out by hand; counterexamples replay; symmetry reaches the same verdicts with
+counterexamples as short; and random runs alone find every bug. When a
 verdict here disagrees with the header, find out who is wrong before changing either: so
 far it has been the spec three times and the checker twice.
 
 ## Oracles
 
 `oracles/*.tla` are independent TLA+ models of the same systems, written to Feynman's
-semantics: the network is a bag and any message in it may go next, a fault loses one or
-restarts an instance, and each instance takes each action at most `Repeats` times. Systems
+semantics: the network is a bag and any message in it may go next, a fault (the steps the
+spec declares from the faults library) loses one or restarts an instance, and each instance
+takes each action at most `Repeats` times (`atMost(2)` in the specs). Systems
 that never run out of things to do get a `steps` counter, bounded by `Depth`, and a `VIEW`
 that leaves it out, so TLC merges states as the checker does: the first time, at the
 smallest depth.
