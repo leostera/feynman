@@ -2,9 +2,16 @@
 import type { Commit } from "./refs.ts";
 import type { Repository } from "./repository.ts";
 
-/** `pages/github.com/leostera/feynman/<commit>.html`: a commit's page never changes. */
+/**
+ * The Feynman the builder installs (the Dockerfile's FEYNMAN_VERSION; a test keeps them equal).
+ * A page depends on it as much as on the commit: a spec using what an older Feynman lacks
+ * fails to build there, and a newer one checks and draws differently.
+ */
+export const FEYNMAN_VERSION = "0.13.0";
+
+/** `pages/0.13.0/github.com/leostera/feynman/<commit>.html`: a commit's page, built by one Feynman, never changes. */
 export function pageKey(repository: Repository, commit: Commit): string {
-  return `pages/${repository.id}/${commit}.html`;
+  return `pages/${FEYNMAN_VERSION}/${repository.id}/${commit}.html`;
 }
 
 export async function putPage(bucket: R2Bucket, repository: Repository, commit: Commit, page: ArrayBuffer): Promise<void> {
@@ -23,9 +30,9 @@ export interface Failure {
 
 const FAILURE_TTL_MS = 60 * 60 * 1_000;
 
-/** `failures/<host>/<path>/<target>.json`: the target as asked for, a commit or a prefix. */
+/** `failures/<version>/<host>/<path>/<target>.json`: the target as asked for, a commit or a prefix. */
 function failureKey(repository: Repository, target: string): string {
-  return `failures/${repository.id}/${target}.json`;
+  return `failures/${FEYNMAN_VERSION}/${repository.id}/${target}.json`;
 }
 
 export async function putFailure(bucket: R2Bucket, repository: Repository, target: string, failure: Failure): Promise<void> {

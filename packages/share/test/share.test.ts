@@ -104,3 +104,14 @@ describe("resolveRef", () => {
   test("a prefix of no tip needs a clone", () => expect(resolveRef(refs, "01fa5df")).toEqual({ kind: "abbreviated", prefix: "01fa5df" }));
   test("a name that is nothing", () => expect(resolveRef(refs, "nope")).toEqual({ kind: "missing" }));
 });
+
+describe("FEYNMAN_VERSION", () => {
+  test("is the Feynman the Dockerfile installs: pages are cached by it", async () => {
+    const { FEYNMAN_VERSION, pageKey } = await import("../src/pages.ts");
+    const dockerfile = await Bun.file(new URL("../Dockerfile", import.meta.url)).text();
+    expect(/^ARG FEYNMAN_VERSION=(.+)$/m.exec(dockerfile)?.[1]).toBe(FEYNMAN_VERSION);
+    const parsed = parseRepository("github.com/leostera/feynman");
+    if (!parsed.ok) throw new Error(parsed.reason);
+    expect(pageKey(parsed.repository, "a".repeat(40) as Commit)).toBe(`pages/${FEYNMAN_VERSION}/github.com/leostera/feynman/${"a".repeat(40)}.html`);
+  });
+});
