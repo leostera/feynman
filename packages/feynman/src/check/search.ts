@@ -27,6 +27,7 @@ import type { Driver, InlineDriver } from "./pool.ts";
 import { PrintMap } from "./prints.ts";
 import type { Choice, ScenarioPlace } from "./steps.ts";
 import type { Bounds, Report, Watch } from "./explore.ts";
+import { MEMORY_EVERY, overMemory } from "./memory.ts";
 
 /** Where paths start: the initial world, then each seed, with the symmetry of each. */
 export interface Root {
@@ -330,6 +331,10 @@ export class Search {
     }
     if (failed && !news) return true;
     const shadow = failed || existing !== undefined;
+    if (!shadow && this.states % MEMORY_EVERY === 0 && overMemory(this.b.memoryLimit)) {
+      this.stoppedBy = "memoryLimit";
+      return false;
+    }
     if (!shadow && this.states >= this.b.maxStates) {
       this.stoppedBy = "maxStates";
       return false;

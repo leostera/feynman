@@ -19,3 +19,28 @@ for (const engine of ["integer", "classic"] as const) {
     expect(within.states).toBeLessThanOrEqual(stopped.states);
   }, 60_000);
 }
+
+for (const engine of ["integer", "classic"] as const) {
+  test(`${engine}: a search past its memory limit stops and keeps its verdicts`, async () => {
+    const { defineSpec } = await import("../../src/spec/index.ts");
+    // Two counters that climb on their own: 10,000 states, more than one memory reading apart.
+    const spec = defineSpec("Counters", { messages: {} }, (spec) => {
+      const zone = spec.defineZone({ name: "z" });
+      const Counter = spec.defineActor({
+        name: "Counter",
+        zone,
+        singleton: true,
+        initialState: () => ({ a: 0, b: 0 }),
+        actions: {
+          a: { label: "A", description: "Counts a.", when: (s) => s.a < 99, run: (s) => void s.a++ },
+          b: { label: "B", description: "Counts b.", when: (s) => s.b < 99, run: (s) => void s.b++ },
+        },
+      });
+      spec.defineProperties({ small: { description: "Never past 99.", always: (w) => w.the(Counter).state.a < 100 } });
+    });
+    const report = await check(spec, { depth: 400, repeats: 1000, walks: 0, reduce: false, symmetry: false, workers: 0, memoryLimit: 1 }, [], { engine });
+    expect(report.stoppedBy).toBe("memoryLimit");
+    expect(report.states).toBeLessThan(10_000);
+    expect(report.properties[0]).toMatchObject({ id: "small", holds: true });
+  }, 60_000);
+}
