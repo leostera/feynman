@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { act, defineSpec, fire, message, pendingInOrder, Runner, runScenario, startWorld } from "../../src/spec/index.ts";
+import { act, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, fire, pendingInOrder, Runner, runScenario, startWorld } from "../../src/spec/index.ts";
 import remoteAccess from "./fixtures/remote-access.ts";
 
 test("a scenario runs to its end, recording what each step changed and sent", () => {
@@ -56,9 +56,10 @@ test("a lost reply leaves the Mac retrying, and the relay refuses the used code"
 });
 
 test("a send the step does not declare is a spec error, and the step has no effects", () => {
-  const spec = defineSpec("Undeclared", { messages: { Ping: message<{}>({ name: "ping" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const A = s.defineActor({
+  const spec = (() => {
+    const Ping = defineMessage("Ping");
+    const zone = defineZone({ name: "z" });
+    const A = defineActor({
       name: "A",
       zone,
       singleton: true,
@@ -70,37 +71,48 @@ test("a send the step does not declare is a spec error, and the step has no effe
           sources: ["a.ts#go"],
           run(state, _inputs, ctx) {
             state.n = 1;
-            ctx.send(ctx.the(A), s.messages.Ping, {});
+            ctx.send(ctx.the(A), Ping, {});
           },
         },
       },
     });
-  });
+    return defineSpec({
+      name: "Undeclared",
+      actors: [A],
+    });
+  })();
   const [start] = startWorld(spec);
   const step = act(spec, start.world, "a", "go");
-  expect(step.event.error).toBe("A.go: sends message:Ping, which it does not declare in sends");
+  expect(step.event.error).toBe("A.go: sends Ping, which it does not declare in sends");
   expect(step.event.changes).toEqual([]);
   expect(step.world.pending).toEqual([]);
   expect(step.world.instances[0].state).toEqual({ n: 0 });
 });
 
 test("invariants that do not hold are reported on the event that broke them", () => {
-  const spec = defineSpec("Broken", { messages: { Ping: message<{}>({ name: "ping" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Counter = s.defineActor({
+  const spec = (() => {
+    const Ping = defineMessage("Ping");
+    const zone = defineZone({ name: "z" });
+    const Counter = defineActor({
       name: "Counter",
       zone,
       singleton: true,
       initialState: () => ({ n: 0 }),
       actions: {
-        bump: { label: "Bump", description: "Adds one.", sources: ["c.ts#bump"], sends: [s.messages.Ping], run: (state, _i, ctx) => { state.n += 1; ctx.send(ctx.the(Counter), s.messages.Ping, {}); } },
+        bump: { label: "Bump", description: "Adds one.", sources: ["c.ts#bump"], sends: [Ping], run: (state, _i, ctx) => { state.n += 1; ctx.send(ctx.the(Counter), Ping, {}); } },
       },
       transitions: {
-        [s.messages.Ping]: { description: "Adds one more.", sources: ["c.ts#ping"], run: (state) => void (state.n += 1) },
+        ping: { on: Ping, description: "Adds one more.", sources: ["c.ts#ping"], run: (state) => void (state.n += 1) },
       },
     });
-    s.defineProperties({ atMostTwo: { description: "n stays at two or below.", always: (w) => w.the(Counter).state.n <= 2 } });
-  });
+
+    const atMostTwo = defineProperty("atMostTwo", { description: "n stays at two or below.", always: (w) => w.the(Counter).state.n <= 2 });
+    return defineSpec({
+      name: "Broken",
+      actors: [Counter],
+      properties: [atMostTwo],
+    });
+  })();
   let world = startWorld(spec).at(-1)!.world;
   world = act(spec, world, "counter", "bump").world;
   const delivered = fire(spec, world, pendingInOrder(world)[0].id);
@@ -118,38 +130,47 @@ test("a restart keeps durable state and forgets the rest, and its timers", () =>
   expect(runner.world.pending.filter((p) => p.kind === "timer")).toEqual([]);
 });
 
+const Tick = defineMessage("Tick", { n: Number });
+
 // A counter that ticks itself up to 3, sending a note to a log each time.
 function ticker(run: (state: { n: number }) => unknown = (state) => void (state.n += 1)) {
-  return defineSpec("Ticker", { messages: { Tick: message<{ n: number }>({ name: "tick" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Log = s.defineActor({
-      name: "Log",
-      zone,
-      singleton: true,
-      initialState: () => ({ seen: [] as number[] }),
-      transitions: { [s.messages.Tick]: { description: "Writes it down.", run: (state, msg) => void state.seen.push(msg.n) } },
-    });
-    const Counter = s.defineActor({
-      name: "Counter",
-      zone,
-      singleton: true,
-      initialState: () => ({ n: 0 }),
-      transitions: {
-        tick: {
-          description: "Counts one.",
-          sends: [s.messages.Tick],
-          when: (state) => state.n < 3,
-          run: (state, ctx) => {
-            const returned = run(state);
-            ctx.send(ctx.the(Log), s.messages.Tick, { n: state.n });
-            return returned as void;
-          },
+  const zone = defineZone({ name: "z" });
+  const Log = defineActor({
+    name: "Log",
+    zone,
+    singleton: true,
+    initialState: () => ({ seen: [] as number[] }),
+    transitions: { tick: { on: Tick, description: "Writes it down.", run: (state, msg) => void state.seen.push(msg.n) } },
+  });
+  const Counter = defineActor({
+    name: "Counter",
+    zone,
+    singleton: true,
+    initialState: () => ({ n: 0 }),
+    transitions: {
+      tick: {
+        description: "Counts one.",
+        sends: [Tick],
+        when: (state) => state.n < 3,
+        run: (state, _, ctx) => {
+          const returned = run(state);
+          ctx.send(ctx.the(Log), Tick, { n: state.n });
+          return returned as void;
         },
       },
-    });
-    s.defineScenario({ name: "Until two are logged", run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 2 }) });
-    s.defineScenario({ name: "Until ten are logged", run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 10 }) });
-    s.defineScenario({ name: "Until it has started", run: (sc) => sc.settle({ until: (w) => w.the(Counter).state.n >= 0 }) });
+    },
+  });
+
+  const untilTwoAreLogged = defineScenario("Until two are logged", { run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 2 }) });
+
+  const untilTenAreLogged = defineScenario("Until ten are logged", { run: (sc) => sc.settle({ until: (w) => w.the(Log).state.seen.length === 10 }) });
+
+  const untilItHasStarted = defineScenario("Until it has started", { run: (sc) => sc.settle({ until: (w) => w.the(Counter).state.n >= 0 }) });
+
+  return defineSpec({
+    name: "Ticker",
+    actors: [Log, Counter],
+    scenarios: [untilTwoAreLogged, untilTenAreLogged, untilItHasStarted],
   });
 }
 
@@ -176,59 +197,79 @@ test("a step that returns a new state is an error: state changes in place", () =
 
 test("an actor without a zone says so", () => {
   expect(() =>
-    defineSpec("Nowhere", { messages: {} }, (s) => {
-      s.defineActor({ name: "A", singleton: true, initialState: () => ({}) } as never);
-    }),
-  ).toThrow("A: say where it runs, with zone: a zone from spec.defineZone");
+    (() => {
+
+    const AActor = defineActor({ name: "A", singleton: true, initialState: () => ({}) } as never);
+    return defineSpec({
+      name: "Nowhere",
+      actors: [AActor],
+    });
+  })(),
+  ).toThrow("A: say where it runs, with zone: a zone from defineZone");
 });
 
-test("a timer whose run takes a message says so when the spec is defined", () => {
+test("a timer whose run is (state, ctx), as in 0.13, says so when the spec is defined", () => {
   expect(() =>
-    defineSpec("Retries", { messages: {} }, (s) => {
-      const zone = s.defineZone({ name: "z" });
-      s.defineActor({
-        name: "Client",
-        zone,
-        singleton: true,
-        initialState: () => ({ tries: 0 }),
-        transitions: { retry: { description: "Tries again.", run: ((state: { tries: number }, _msg: unknown, _ctx: unknown) => void state.tries++) as never } },
-      });
-    }),
-  ).toThrow("Client.retry: a timer or guarded transition receives no message: its run is (state, ctx), not (state, msg, ctx)");
+    (() => {
+
+    const zone = defineZone({ name: "z" });
+    const ClientActor = defineActor({
+      name: "Client",
+      zone,
+      singleton: true,
+      initialState: () => ({ tries: 0 }),
+      transitions: { retry: { description: "Tries again.", run: ((state: { tries: number }, _ctx: unknown) => void state.tries++) as never } },
+    });
+    return defineSpec({
+      name: "Retries",
+      actors: [ClientActor],
+    });
+  })(),
+  ).toThrow("Client.retry: a timer or a guard receives nothing, and its run is (state, _, ctx), not (state, ctx)");
 });
+
+const Push = defineMessage("Push", { commit: Number });
 
 // A store that keeps pushed commits, and clients that push the next one.
 function repository() {
-  return defineSpec("Repository", { messages: { Push: message<{ commit: number }>({ name: "push" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Store = s.defineActor({
-      name: "Store",
-      zone,
-      singleton: true,
-      initialState: () => ({ commits: [] as number[], head: 0 }),
-      transitions: { [s.messages.Push]: { description: "Keeps it.", run: (state, msg) => void (state.commits.push(msg.commit), (state.head = msg.commit)) } },
-    });
-    const Client = s.defineActor({
-      name: "Client",
-      zone,
-      initialState: () => ({ head: 0 }),
-      actions: { push: { label: "Push", description: "Pushes the next commit.", sends: [s.messages.Push], run: (state, _i, ctx) => ctx.send(ctx.the(Store), s.messages.Push, { commit: ++state.head }) } },
-    });
-    s.defineScenario({
-      name: "Second push",
-      setup(w) {
-        w.set(Store, { commits: [1], head: 1 });
-        w.spawn(Client, "Alice", { head: 1 });
-      },
-      run(sc) {
-        sc.act(sc.the(Client), "push");
-        sc.settle();
-      },
-    });
-    s.defineScenario({ name: "No such field", setup: (w) => w.set(Store, { tip: 1 } as never), run: () => {} });
-    s.defineScenario({ name: "Set a client", setup: (w) => w.set(Client, { head: 1 }), run: () => {} });
-    s.defineScenario({ name: "Spawn the store", setup: (w) => w.spawn(Store, "Store"), run: () => {} });
-    s.defineScenario({ name: "Not plain", setup: (w) => w.set(Store, { commits: [() => 1] as never }), run: () => {} });
+  const zone = defineZone({ name: "z" });
+  const Store = defineActor({
+    name: "Store",
+    zone,
+    singleton: true,
+    initialState: () => ({ commits: [] as number[], head: 0 }),
+    transitions: { push: { on: Push, description: "Keeps it.", run: (state, msg) => void (state.commits.push(msg.commit), (state.head = msg.commit)) } },
+  });
+  const Client = defineActor({
+    name: "Client",
+    zone,
+    initialState: () => ({ head: 0 }),
+    actions: { push: { label: "Push", description: "Pushes the next commit.", sends: [Push], run: (state, _i, ctx) => ctx.send(ctx.the(Store), Push, { commit: ++state.head }) } },
+  });
+
+  const secondPush = defineScenario("Second push", {
+    setup(w) {
+      w.set(Store, { commits: [1], head: 1 });
+      w.spawn(Client, "Alice", { head: 1 });
+    },
+    run(sc) {
+      sc.act(sc.the(Client), "push");
+      sc.settle();
+    },
+  });
+
+  const noSuchField = defineScenario("No such field", { setup: (w) => w.set(Store, { tip: 1 } as never), run: () => {} });
+
+  const setAClient = defineScenario("Set a client", { setup: (w) => w.set(Client, { head: 1 }), run: () => {} });
+
+  const spawnTheStore = defineScenario("Spawn the store", { setup: (w) => w.spawn(Store, "Store"), run: () => {} });
+
+  const notPlain = defineScenario("Not plain", { setup: (w) => w.set(Store, { commits: [() => 1] as never }), run: () => {} });
+
+  return defineSpec({
+    name: "Repository",
+    actors: [Store, Client],
+    scenarios: [secondPush, noSuchField, setAClient, spawnTheStore, notPlain],
   });
 }
 
@@ -253,8 +294,4 @@ test("setup: fields the state does not have, the wrong way to set an instance, a
   expect(error("Set a client")).toBe("setup: set(Client): it is not a singleton; spawn(Client, label, state) sets up one of them");
   expect(error("Spawn the store")).toBe("setup: spawn(Store): it is a singleton, there from the start; set(Store, state) sets it up");
   expect(error("Not plain")).toContain("setup: Store: holds state.commits[0]: a function, which is not plain data");
-  expect(() => defineSpec("Twice", { messages: {} }, (s) => {
-    s.defineScenario({ name: "A", run: () => {} });
-    s.defineScenario({ name: "A", run: () => {} });
-  })).toThrow('Two scenarios are named "A"');
 });

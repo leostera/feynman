@@ -5,56 +5,65 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main } from "../../src/cli/main.ts";
 
-const SPEC = (refuseEmpty: boolean) => `import { defineSpec, message } from "@leostera/feynman";
+const SPEC = (refuseEmpty: boolean) => `import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, input } from "@leostera/feynman";
 
-export default defineSpec("Echo", { messages: { Say: message<{ text: string }>({ name: "say" }), Heard: message<{ text: string }>({ name: "heard", tone: "reply" }) } }, (spec) => {
-  const { Say, Heard } = spec.messages;
-  const zone = spec.defineZone({ name: "Everywhere" });
-  const Server = spec.defineActor({
-    name: "Server",
-    zone,
-    singleton: true,
-    initialState: () => ({ heard: [] as string[] }),
-    transitions: {
-      [Say]: {
-        description: "Repeats what it hears.",
-        sources: ["src/server.ts#say"],
-        sends: [Heard],
-        run(state, msg, ctx) {
-          ${refuseEmpty ? "if (!msg.text) return;" : ""}
-          state.heard.push(msg.text);
-          ctx.reply(Heard, { text: msg.text });
-        },
+const Say = defineMessage("Say", { text: String });
+const Heard = defineMessage("Heard", { text: String }, { tone: "reply" });
+
+const zone = defineZone({ name: "Everywhere" });
+
+const Server = defineActor({
+  name: "Server",
+  zone,
+  singleton: true,
+  initialState: () => ({ heard: [] as string[] }),
+  transitions: {
+    say: {
+      on: Say,
+      description: "Repeats what it hears.",
+      sources: ["src/server.ts#say"],
+      sends: [Heard],
+      run(state, msg, ctx) {
+        ${refuseEmpty ? "if (!msg.text) return;" : ""}
+        state.heard.push(msg.text);
+        ctx.reply(Heard, { text: msg.text });
       },
     },
-  });
-  const Client = spec.defineActor({
-    name: "Client",
-    zone,
-    initialState: () => ({ got: [] as string[] }),
-    actions: {
-      say: {
-        label: "Say",
-        description: "Says something.",
-        inputs: { text: spec.defineInput(String, { examples: () => ["hi", ""] }) },
-        sources: ["src/client.ts#say"],
-        sends: [Say],
-        run: (_s, { text }, ctx) => ctx.send(ctx.the(Server), Say, { text }),
-      },
+  },
+});
+
+const Client = defineActor({
+  name: "Client",
+  zone,
+  initialState: () => ({ got: [] as string[] }),
+  actions: {
+    say: {
+      label: "Say",
+      description: "Says something.",
+      inputs: { text: input(String, { examples: () => ["hi", ""] }) },
+      sources: ["src/client.ts#say"],
+      sends: [Say],
+      run: (_s, { text }, ctx) => ctx.send(ctx.the(Server), Say, { text }),
     },
-    transitions: { [Heard]: { description: "Hears it back.", sources: ["src/client.ts:1-3"], run: (s, msg) => void s.got.push(msg.text) } },
-  });
-  spec.defineProperties({
-    serverHearsEverything: { description: "Everything said is heard by the server.", always: (w) => w.the(Server).state.heard.every((t) => typeof t === "string") },
-  });
-  spec.defineScenario({
-    name: "Say nothing",
-    run(s) {
-      const c = s.spawn(Client, "Ann");
-      s.act(c, "say", { text: "" });
-      s.settle();
-    },
-  });
+  },
+  transitions: { heard: { on: Heard, description: "Hears it back.", sources: ["src/client.ts:1-3"], run: (s, msg) => void s.got.push(msg.text) } },
+});
+
+const serverHearsEverything = defineProperty("serverHearsEverything", { description: "Everything said is heard by the server.", always: (w) => w.the(Server).state.heard.every((t) => typeof t === "string") });
+
+const sayNothing = defineScenario("Say nothing", {
+  run(s) {
+    const c = s.spawn(Client, "Ann");
+    s.act(c, "say", { text: "" });
+    s.settle();
+  },
+});
+
+export default defineSpec({
+  name: "Echo",
+  actors: [Server, Client],
+  properties: [serverHearsEverything],
+  scenarios: [sayNothing],
 });
 `;
 
@@ -113,7 +122,9 @@ test("list, run, check, lock: a spec in specs/ next to package.json", async () =
 
 test("run: one scenario prints its trace; several, a line each unless --all", async () => {
   const { root, commit } = repo();
-  const two = SPEC(false).replace("  spec.defineScenario({\n    name: \"Say nothing\",", "  spec.defineScenario({ name: \"Do nothing\", run: () => {} });\n  spec.defineScenario({\n    name: \"Say nothing\",");
+  const two = SPEC(false)
+    .replace('const sayNothing = defineScenario("Say nothing"', 'const doNothing = defineScenario("Do nothing", { run: () => {} });\nconst sayNothing = defineScenario("Say nothing"')
+    .replace("scenarios: [sayNothing]", "scenarios: [doNothing, sayNothing]");
   writeFileSync(join(root, "specs/echo.ts"), two);
   commit("echo");
   const summary = await capture(["run", "echo"], root);
@@ -129,18 +140,16 @@ test("check: rules a property needs are checked without them; --without shows th
   const { root, commit } = repo();
   writeFileSync(
     join(root, "specs/capped.ts"),
-    `import { defineSpec } from "@leostera/feynman";
-export default defineSpec("Capped", { messages: {} }, (spec) => {
-  const cap = spec.defineRule({ name: "cap", description: "Counting stops at two." });
-  const decoy = spec.defineRule({ name: "decoy", description: "Changes nothing." });
-  const zone = spec.defineZone({ name: "z" });
-  const Counter = spec.defineActor({
-    name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
-    actions: { count: { label: "Count", description: "Counts one more.", when: (s) => !cap.on || s.n < 2, run: (s) => void s.n++ } },
-  });
-  spec.defineProperties({ belowThree: { description: "The count stays below three.", always: (w) => w.the(Counter).state.n < 3, needs: [cap, decoy] } });
-  spec.defineFinalState({ description: "It may stop at any count.", when: () => true });
+    `import { defineActor, defineProperty, defineRule, defineSpec, defineZone } from "@leostera/feynman";
+const cap = defineRule("cap", { description: "Counting stops at two." });
+const decoy = defineRule("decoy", { description: "Changes nothing." });
+const zone = defineZone({ name: "z" });
+const Counter = defineActor({
+  name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
+  actions: { count: { label: "Count", description: "Counts one more.", when: (s) => !cap.on || s.n < 2, run: (s) => void s.n++ } },
 });
+const belowThree = defineProperty("belowThree", { description: "The count stays below three.", always: (w) => w.the(Counter).state.n < 3, needs: [cap, decoy] });
+export default defineSpec({ name: "Capped", actors: [Counter], properties: [belowThree], finalState: { description: "It may stop at any count.", when: () => true } });
 `,
   );
   commit("capped");
@@ -188,11 +197,12 @@ test("check type-checks specs: a send that is not declared is an error before an
 
 /** The Echo spec with a property the empty example breaks, marked known or not. */
 const NEVER_EMPTY = (known?: string) =>
-  SPEC(false).replace(
-    "spec.defineProperties({",
-    `spec.defineProperties({
-    nothingEmpty: { description: "The server never hears nothing.", always: (w) => !w.the(Server).state.heard.includes("")${known ? `, known: ${JSON.stringify(known)}` : ""} },`,
-  );
+  SPEC(false)
+    .replace(
+      "const sayNothing =",
+      `const nothingEmpty = defineProperty("nothingEmpty", { description: "The server never hears nothing.", always: (w) => !w.the(Server).state.heard.includes("")${known ? `, known: ${JSON.stringify(known)}` : ""} });\n\nconst sayNothing =`,
+    )
+    .replace("properties: [serverHearsEverything]", "properties: [nothingEmpty, serverHearsEverything]");
 
 test("check --brief, --only, --json and --as-scenario: what agents read", async () => {
   const { root, commit } = repo();
@@ -215,12 +225,12 @@ test("check --brief, --only, --json and --as-scenario: what agents read", async 
   const property = spec.properties.find((p: { id: string }) => p.id === "nothingEmpty");
   expect(property.verdict).toBe("broken");
   expect(property.counterexample.faults).toBe(0);
-  expect(property.counterexample.events.map((e: { instance: string; step: string }) => `${e.instance} ${e.step}`)).toEqual(["Client say", "Server message:Say"]);
+  expect(property.counterexample.events.map((e: { instance: string; step: string }) => `${e.instance} ${e.step}`)).toEqual(["Client say", "Server say"]);
 
   const code = await capture(["check", "--depth", "4", "--only", "nothingEmpty", "--as-scenario"], root);
   expect(code.out).toContain('const client = s.spawn(Client, "Client");');
   expect(code.out).toContain('s.act(client, "say", {"text":""});');
-  expect(code.out).toContain('s.deliver(server, "Say"); // from client');
+  expect(code.out).toContain("s.deliver(server, Say); // from client");
 
   await expect(main(["check", "--as-scenario"], root)).rejects.toThrow("name its property with --only");
   await expect(main(["check", "--only", "nope"], root)).rejects.toThrow("No property named nope");
@@ -250,14 +260,12 @@ test("check: a liveness property cut off at the depth bound says to raise --dept
   const { root } = repo();
   writeFileSync(
     join(root, "specs/count.ts"),
-    `import { defineSpec } from "@leostera/feynman";
-export default defineSpec("Count", { messages: {} }, (spec) => {
-  const zone = spec.defineZone({ name: "Here" });
-  const Counter = spec.defineActor({ name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
-    transitions: { tick: { description: "Counts one.", sources: ["src/server.ts#say"], when: (s) => s.n < 30, run: (s) => void s.n++ } } });
-  spec.defineProperties({ reaches: { description: "It gets to 30.", eventually: (w) => w.the(Counter).state.n >= 30 } });
-  spec.defineFinalState({ description: "Done.", when: (w) => w.the(Counter).state.n >= 30 });
-});
+    `import { defineActor, defineProperty, defineSpec, defineZone } from "@leostera/feynman";
+const zone = defineZone({ name: "Here" });
+const Counter = defineActor({ name: "Counter", zone, singleton: true, initialState: () => ({ n: 0 }),
+  transitions: { tick: { description: "Counts one.", sources: ["src/server.ts#say"], when: (s) => s.n < 30, run: (s) => void s.n++ } } });
+const reaches = defineProperty("reaches", { description: "It gets to 30.", eventually: (w) => w.the(Counter).state.n >= 30 });
+export default defineSpec({ name: "Count", actors: [Counter], properties: [reaches], finalState: { description: "Done.", when: (w) => w.the(Counter).state.n >= 30 } });
 `,
   );
   const { out } = await capture(["check", "count", "--depth", "10", "--walks", "0"], root);
@@ -270,14 +278,13 @@ test("check: a scenario's setup is explored from, and one that breaks a property
   const { root } = repo();
   writeFileSync(
     join(root, "specs/ledger.ts"),
-    `import { defineSpec } from "@leostera/feynman";
-export default defineSpec("Ledger", { messages: {} }, (spec) => {
-  const zone = spec.defineZone({ name: "Here" });
-  const Ledger = spec.defineActor({ name: "Ledger", zone, singleton: true, initialState: () => ({ seq: 0 }),
-    actions: { bump: { label: "Bump", description: "Moves on.", sources: ["src/server.ts#say"], run: (s) => void s.seq++ } } });
-  spec.defineProperties({ belowTen: { description: "It stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 } });
-  spec.defineScenario({ name: "Ten already", setup: (w) => w.set(Ledger, { seq: 10 }), run: () => {} });
-});
+    `import { defineActor, defineProperty, defineScenario, defineSpec, defineZone } from "@leostera/feynman";
+const zone = defineZone({ name: "Here" });
+const Ledger = defineActor({ name: "Ledger", zone, singleton: true, initialState: () => ({ seq: 0 }),
+  actions: { bump: { label: "Bump", description: "Moves on.", sources: ["src/server.ts#say"], run: (s) => void s.seq++ } } });
+const belowTen = defineProperty("belowTen", { description: "It stays below ten.", always: (w) => w.the(Ledger).state.seq < 10 });
+const tenAlready = defineScenario("Ten already", { setup: (w) => w.set(Ledger, { seq: 10 }), run: () => {} });
+export default defineSpec({ name: "Ledger", actors: [Ledger], properties: [belowTen], scenarios: [tenAlready] });
 `,
   );
   const { out } = await capture(["check", "ledger", "--walks", "0"], root);

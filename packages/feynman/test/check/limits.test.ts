@@ -3,6 +3,7 @@
 // search had already found: that is what makes "held on every path of up to N events" true.
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
+import { defineActor, defineProperty, defineZone } from "../../src/spec/index.ts";
 import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
 
 for (const engine of ["integer", "classic"] as const) {
@@ -24,9 +25,10 @@ for (const engine of ["integer", "classic"] as const) {
   test(`${engine}: a search past its memory limit stops and keeps its verdicts`, async () => {
     const { defineSpec } = await import("../../src/spec/index.ts");
     // Two counters that climb on their own: 10,000 states, more than one memory reading apart.
-    const spec = defineSpec("Counters", { messages: {} }, (spec) => {
-      const zone = spec.defineZone({ name: "z" });
-      const Counter = spec.defineActor({
+    const spec = (() => {
+
+      const zone = defineZone({ name: "z" });
+      const Counter = defineActor({
         name: "Counter",
         zone,
         singleton: true,
@@ -36,8 +38,14 @@ for (const engine of ["integer", "classic"] as const) {
           b: { label: "B", description: "Counts b.", when: (s) => s.b < 99, run: (s) => void s.b++ },
         },
       });
-      spec.defineProperties({ small: { description: "Never past 99.", always: (w) => w.the(Counter).state.a < 100 } });
-    });
+
+      const small = defineProperty("small", { description: "Never past 99.", always: (w) => w.the(Counter).state.a < 100 });
+      return defineSpec({
+        name: "Counters",
+        actors: [Counter],
+        properties: [small],
+      });
+    })();
     const report = await check(spec, { depth: 400, repeats: 1000, walks: 0, reduce: false, symmetry: false, workers: 0, memoryLimit: 1 }, [], { engine });
     expect(report.stoppedBy).toBe("memoryLimit");
     expect(report.states).toBeLessThan(10_000);

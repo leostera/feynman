@@ -7,12 +7,15 @@ import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { runScenario, type ScenarioInfo, type Script, type Setup, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 
-/** The scenario the code defines, its setup and run compiled with the spec's actors in scope. */
+/** The scenario the code defines, its setup and run compiled with the spec's actors and messages in scope. */
 function compile(spec: Spec, name: string, code: string): ScenarioInfo {
   // The code is TypeScript (`find(…)!`): transpile it, with the spec's actors in scope.
   const scope = (body: string, param: string) => {
     const js = new Bun.Transpiler({ loader: "ts" }).transformSync(`const f = (${param}) => {${body}};`);
-    return new Function(...spec.actors.map((a) => actorVariable(a.name)), `${js}\nreturn f;`)(...spec.actors.map((a) => ({ name: a.name })));
+    const messages = Object.values(spec.messages);
+    const names = [...spec.actors.map((a) => actorVariable(a.name)), ...messages.map((m) => m.id), "failed"];
+    const values = [...spec.actors.map((a) => ({ name: a.name })), ...messages.map((m) => ({ kind: "message", key: m.key })), (m: { key: string }) => ({ kind: "failure", key: `failed:${m.key}` })];
+    return new Function(...names, `${js}\nreturn f;`)(...values);
   };
   const run = code.slice(code.indexOf("run(s) {") + "run(s) {".length, code.lastIndexOf("},"));
   const setup = code.includes("setup(w) {") ? code.slice(code.indexOf("setup(w) {") + "setup(w) {".length, code.indexOf("\n  },\n  run(s) {")) : null;

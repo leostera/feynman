@@ -230,7 +230,7 @@ function lostHint(spec: Spec, path: { events: readonly Event[]; worlds: readonly
   const waiting = labelOf(message?.tone && message.tone !== "request" ? lost.instance : lost.from);
   return [
     `The lost ${message?.name ?? lost.message} to ${labelOf(lost.instance)} is never sent again, so ${waiting} waits for an answer that cannot come.`,
-    `Model what the code does when none comes: if the code is told (an RPC or fetch that throws), declare ${message?.name ?? lost.message} with call(…) and handle its failure; otherwise a timer that retries. If it cannot be lost here, check with --faults 0.`,
+    `Model what the code does when none comes: if the code is told (an RPC or fetch that throws), define ${message?.id ?? lost.message} with defineCall and handle its failure with a step on failed(${message?.id ?? "it"}); otherwise a timer that retries. If it cannot be lost here, check with --faults 0.`,
     `If the code has no answer for it, that is a finding: report it, rather than weaken the property or call this world final.`,
   ].join("\n    ");
 }

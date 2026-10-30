@@ -9,6 +9,8 @@
 import type { Trace, TraceEvent, WorldView } from "./spec.ts";
 import type { ActorInfo, Change, Event, EventKind, InstanceState, Pending, Sent, Spec, StepInfo, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
+import { stepKey } from "./dsl.ts";
+import { mismatch } from "./schema.ts";
 
 export interface Step {
   world: World;
@@ -202,7 +204,7 @@ export function fire(spec: Spec, world: World, pendingId: number, how: StepOptio
   const actor = actorNamed(spec, instance.actor);
   if (pending.kind === "timer") {
     const transition = actor.transitions[pending.timer];
-    return runStep(spec, consumed, { kind: "timer", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) }, how);
+    return runStep(spec, consumed, { kind: "timer", instance, actor, step: transition, call: (state, ctx) => transition.run(state, undefined, ctx) }, how);
   }
   const transition = actor.transitions[pending.message];
   const delivery = { message: pending.message, payload: pending.payload, from: pending.from };
@@ -242,7 +244,7 @@ export function guard(spec: Spec, world: World, instanceId: string, key: string,
   const actor = actorNamed(spec, instance.actor);
   const transition = actor.transitions[key];
   if (!transition || transition.message || !transition.when) throw new SpecError(`${actor.name}.${key} is not a guarded transition`);
-  return runStep(spec, world, { kind: "guard", instance, actor, step: transition, call: (state, ctx) => transition.run(state, ctx) }, how);
+  return runStep(spec, world, { kind: "guard", instance, actor, step: transition, call: (state, ctx) => transition.run(state, undefined, ctx) }, how);
 }
 
 /** A fault: a pending delivery is lost. */
@@ -387,6 +389,12 @@ function sentence(step: StepInfo, state: unknown, payload: unknown): string | un
   }
 }
 
+/** The key of a message given to `send` or `reply`: a message from defineMessage, not a string. */
+function keyOf(value: unknown): string {
+  if (typeof value === "object" && value !== null && (value as { kind?: unknown }).kind === "message") return (value as { key: string }).key;
+  throw new SpecError(`sends ${typeof value === "string" ? JSON.stringify(value) : String(value)}: send and reply take a message from defineMessage, like ctx.send(bank, Charge, { payment })`);
+}
+
 function makeCtx(
   spec: Spec,
   world: World,
@@ -402,10 +410,13 @@ function makeCtx(
   const answering = delivery && spec.messages[delivery.message]?.call ? { message: delivery.message, payload: delivery.payload } : undefined;
   let replied = false;
   const view = worldView(spec, world, observe ? (id) => id !== self.id && (observe.readsOthers = true) : undefined);
-  const send = (to: { id: string }, message: string, payload: unknown, text?: string, answers?: { message: string; payload: unknown }) => {
-    if (!step.sends.includes(message)) throw new SpecError(`sends ${message}, which it does not declare in sends`);
+  const send = (to: { id: string }, value: unknown, payload: unknown, text?: string, answers?: { message: string; payload: unknown }) => {
+    const message = keyOf(value);
+    if (!step.sends.includes(message)) throw new SpecError(`sends ${message.slice("message:".length)}, which it does not declare in sends`);
     const info = spec.messages[message];
     if (!info) throw new SpecError(`${message} is not one of this spec's messages`);
+    const wrong = mismatch(info.schema, payload);
+    if (wrong) throw new SpecError(`sends ${info.name} with ${wrong}`);
     const target = world.instances.find((i) => i.id === to?.id);
     if (!target) throw new SpecError(`sends ${message} to an instance that does not exist`);
     const id = ++world.seq;
@@ -424,7 +435,8 @@ function makeCtx(
     the: view.the,
     all: view.all,
     send,
-    reply(message: string, payload: unknown, text?: string) {
+    reply(value: unknown, payload: unknown, text?: string) {
+      const message = keyOf(value);
       if (!from) throw new SpecError("reply is only possible in a message transition");
       if (delivery && calledBy(delivery.message)) throw new SpecError("a failure happens in this instance: there is no one to reply to");
       if (answering) {
@@ -432,7 +444,7 @@ function makeCtx(
         if (spec.messages[message]?.call) throw new SpecError(`replies to ${messageName(spec, answering.message)} with ${messageName(spec, message)}, a call: a call's reply is part of it, not a call of its own`);
         replied = true;
       }
-      send(from, message, payload, text, answering);
+      send(from, value, payload, text, answering);
     },
     start(label: string) {
       if (!step.starts.includes(label)) throw new SpecError(`starts ${label}, which it does not declare in starts`);
@@ -544,14 +556,19 @@ export function holdsIn(spec: Spec, world: World, predicate: (world: WorldView) 
   }
 }
 
+/** The name of the step an event took, as the spec names it: `charge` for the step on Charge. */
+export function stepNameOf(spec: Spec, event: { actor: string; key: string }): string {
+  return spec.actors.find((a) => a.name === event.actor)?.transitions[event.key]?.name ?? event.key;
+}
+
 export function traceView(events: readonly Event[]): Trace {
   const views: TraceEvent[] = events.map((e) => ({
     index: e.index,
     actor: e.actor,
     key: e.key,
-    is: (actor, key) => e.actor === actor.name && e.key === key && !e.error,
-    replied: (key) => e.sent.some((s) => s.message === key),
-    sent: (key) => e.sent.some((s) => s.message === key),
+    is: (actor, step) => e.actor === actor.name && e.key === stepKey(actor, step) && !e.error,
+    replied: (message) => e.sent.some((s) => s.message === message.key),
+    sent: (message) => e.sent.some((s) => s.message === message.key),
   }));
   return {
     events: views,

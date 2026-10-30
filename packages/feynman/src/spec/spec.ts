@@ -1,5 +1,6 @@
 // What a spec is at runtime, and what the engine produces: plain data that views, the
 // checker, and diffs read. Functions (initial state, run, predicates) are the only code.
+import type { Fields } from "./schema.ts";
 import type { ActorPlace, Icon, Link, Display, Script, Setup, Shape, Trace, TraceEvent, World as WorldView, ZonePlace } from "./dsl.ts";
 
 export interface Spec {
@@ -20,7 +21,7 @@ export interface Spec {
   rules: RuleInfo[];
   /** The rules turned off in this spec, by name: it is a variant of the design without them. */
   without: string[];
-  /** The same design without these rules too, built again from the spec's definition. */
+  /** The same design without these rules too, assembled again from the spec's parts. */
   withoutRules(names: string[]): Spec;
 }
 
@@ -52,6 +53,8 @@ export interface MessageInfo {
    * as `failed:<key>`, instead of silence.
    */
   call: boolean;
+  /** Its payload's schema (RFD0011): every payload sent is checked against it. */
+  schema: Fields;
 }
 
 export interface ZoneInfo {
@@ -68,7 +71,10 @@ export interface LimitInfo {
 }
 
 export interface StepInfo {
+  /** What the engine keys it by: the message for a step on one (`message:Charge`), else its name. */
   key: string;
+  /** Its name in the spec: `charge`, `retry`, `pay`. */
+  name: string;
   description: string;
   /** The sentence for one event, from the state after it and the step's payload. */
   say?: (state: unknown, payload: unknown) => string;
@@ -104,9 +110,10 @@ export interface ActionInfo extends StepInfo {
 }
 
 export interface TransitionInfo extends StepInfo {
-  /** The message key, for a transition keyed by a message; otherwise internal. */
+  /** The message key, for a step on a message or a call's failure; otherwise a timer or a guard. */
   message?: string;
-  run: (state: any, msgOrCtx: any, ctx?: any) => void;
+  /** For a timer or a guard, `received` is undefined. */
+  run: (state: any, received: any, ctx: any) => void;
 }
 
 export interface ActorInfo {

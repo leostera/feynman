@@ -3,70 +3,73 @@
 // call twice, unless the callee recognises it.
 import { expect, test } from "bun:test";
 import { check, type Bounds, type Report } from "../../src/check/index.ts";
-import { act, call, defineSpec, fire, lose, message, pendingInOrder, restart, spawn, startWorld, type SpecBuilder, type World } from "../../src/spec/index.ts";
+import { act, defineActor, defineCall, defineMessage, defineProperty, defineSpec, defineZone, failed, fire, lose, pendingInOrder, restart, spawn, startWorld, type World } from "../../src/spec/index.ts";
 import { explore } from "./reference.ts";
+
+const Write = defineCall("Write", { id: Number }, { over: "rpc" });
+const Ok = defineMessage("Ok", { id: Number }, { tone: "reply" });
 
 /** A client that writes and, when the call throws, writes again; the store applies each write, once per id if `idempotent`. */
 function retries(idempotent: boolean) {
-  return defineSpec(
-    `Retried writes (${idempotent ? "with" : "without"} an idempotency key)`,
-    { messages: { Write: call<{ id: number }>({ name: "write", over: "rpc" }), Ok: message<{ id: number }>({ name: "ok", tone: "reply" }) } },
-    (spec) => {
-      const { Write, Ok } = spec.messages;
-      const zone = spec.defineZone({ name: "z" });
-      const Store = spec.defineActor({
-        name: "Store",
-        zone,
-        singleton: true,
-        initialState: () => ({ applied: 0, seen: [] as number[] }),
-        transitions: {
-          [Write]: {
-            description: "Applies the write and answers.",
-            sends: [Ok],
-            run(state, msg, ctx) {
-              if (!idempotent || !state.seen.includes(msg.id)) state.applied++;
-              if (idempotent && !state.seen.includes(msg.id)) state.seen.push(msg.id);
-              ctx.reply(Ok, { id: msg.id });
-            },
-          },
+  const zone = defineZone({ name: "z" });
+  const Store = defineActor({
+    name: "Store",
+    zone,
+    singleton: true,
+    initialState: () => ({ applied: 0, seen: [] as number[] }),
+    transitions: {
+      write: {
+        on: Write,
+        description: "Applies the write and answers.",
+        sends: [Ok],
+        run(state, msg, ctx) {
+          if (!idempotent || !state.seen.includes(msg.id)) state.applied++;
+          if (idempotent && !state.seen.includes(msg.id)) state.seen.push(msg.id);
+          ctx.reply(Ok, { id: msg.id });
         },
-      });
-      const Client = spec.defineActor({
-        name: "Client",
-        zone,
-        singleton: true,
-        initialState: () => ({ written: 0, waiting: null as number | null }),
-        actions: {
-          write: {
-            label: "Write",
-            description: "Writes once more.",
-            when: (s) => s.waiting === null,
-            sends: [Write],
-            run(state, _inputs, ctx) {
-              state.written++;
-              state.waiting = state.written;
-              ctx.send(ctx.the(Store), Write, { id: state.written });
-            },
-          },
-        },
-        transitions: {
-          [Ok]: { description: "The write is done.", run: (s) => void (s.waiting = null) },
-          [spec.failed(Write)]: {
-            description: "The call threw: writes again.",
-            sends: [Write],
-            run(_state, failure, ctx) {
-              ctx.send(failure.to, Write, failure.payload);
-            },
-          },
-        },
-      });
-      spec.defineProperties({
-        appliedOnce: { description: "The store applies no more writes than the client made.", always: (w) => w.the(Store).state.applied <= w.the(Client).state.written },
-        answered: { description: "A write in progress ends.", leadsTo: { whenever: (w) => w.the(Client).state.waiting !== null, then: (w) => w.the(Client).state.waiting === null } },
-      });
-      return { Store, Client };
+      },
     },
-  );
+  });
+  const Client = defineActor({
+    name: "Client",
+    zone,
+    singleton: true,
+    initialState: () => ({ written: 0, waiting: null as number | null }),
+    actions: {
+      write: {
+        label: "Write",
+        description: "Writes once more.",
+        when: (s) => s.waiting === null,
+        sends: [Write],
+        run(state, _inputs, ctx) {
+          state.written++;
+          state.waiting = state.written;
+          ctx.send(ctx.the(Store), Write, { id: state.written });
+        },
+      },
+    },
+    transitions: {
+      ok: { on: Ok, description: "The write is done.", run: (s) => void (s.waiting = null) },
+      writeFailed: {
+        on: failed(Write),
+        description: "The call threw: writes again.",
+        sends: [Write],
+        run(_state, failure, ctx) {
+          ctx.send(failure.to, Write, failure.payload);
+        },
+      },
+    },
+  });
+
+  const appliedOnce = defineProperty("appliedOnce", { description: "The store applies no more writes than the client made.", always: (w) => w.the(Store).state.applied <= w.the(Client).state.written });
+
+  const answered = defineProperty("answered", { description: "A write in progress ends.", leadsTo: { whenever: (w) => w.the(Client).state.waiting !== null, then: (w) => w.the(Client).state.waiting === null } });
+
+  return defineSpec({
+    name: `Retried writes (${idempotent ? "with" : "without"} an idempotency key)`,
+    actors: [Store, Client],
+    properties: [appliedOnce, answered],
+  });
 }
 
 const PLAIN = { depth: 12, repeats: 1, walks: 0, reduce: false, symmetry: false, workers: 0 } as const;
@@ -104,17 +107,22 @@ test("a call and its failure: a lost write and a lost reply both reach the calle
 });
 
 test("a failure cannot be lost, and a restart of the caller drops the failures on their way to it", () => {
-  const spec = defineSpec("Restarts", { messages: { Ask: call<{}>({ name: "ask" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Server = s.defineActor({ name: "Server", zone, singleton: true, initialState: () => ({}), transitions: { [s.messages.Ask]: { description: "Takes it.", run: () => {} } } });
-    s.defineActor({
+  const spec = (() => {
+    const Ask = defineCall("Ask");
+    const zone = defineZone({ name: "z" });
+    const Server = defineActor({ name: "Server", zone, singleton: true, initialState: () => ({}), transitions: { ask: { on: Ask, description: "Takes it.", run: () => {} } } });
+    const AskerActor = defineActor({
       name: "Asker",
       zone,
       initialState: () => ({ failed: 0 }),
-      actions: { ask: { label: "Ask", description: "Asks.", sends: [s.messages.Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), s.messages.Ask, {}) } },
-      transitions: { [s.failed(s.messages.Ask)]: { description: "Gives up.", run: (state) => void state.failed++ } },
+      actions: { ask: { label: "Ask", description: "Asks.", sends: [Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), Ask, {}) } },
+      transitions: { askFailed: { on: failed(Ask), description: "Gives up.", run: (state) => void state.failed++ } },
     });
-  });
+    return defineSpec({
+      name: "Restarts",
+      actors: [Server, AskerActor],
+    });
+  })();
   let world = startWorld(spec).at(-1)!.world;
   world = spawn(spec, world, "Asker", "A").world;
   world = act(spec, world, "asker-a", "ask").world;
@@ -126,40 +134,38 @@ test("a failure cannot be lost, and a restart of the caller drops the failures o
 });
 
 test("a call is declared and handled as one: its failure is handled, its reply is one, and only calls fail", () => {
-  const MESSAGES = { Ask: call<{}>({ name: "ask" }), Tell: message<{}>({ name: "tell" }) };
-  const define = (body: (s: SpecBuilder<typeof MESSAGES>) => void) => () => defineSpec("Calls", { messages: MESSAGES }, body);
-  expect(
-    define((s) => {
-      const zone = s.defineZone({ name: "z" });
-      s.defineActor({ name: "Asker", zone, singleton: true, initialState: () => ({}), actions: { ask: { label: "Ask", description: "Asks.", sends: [s.messages.Ask], run: () => {} } } });
-    }),
-  ).toThrow("Asker: sends ask, a call: handle its failure with a transition keyed by spec.failed(Ask)");
-  expect(define((s) => void s.failed(s.messages.Tell))).toThrow("spec.failed(message:Tell): tell is a message, not a call; declare it with call(…) for its failure to reach the caller");
-  expect(
-    define((s) => {
-      const zone = s.defineZone({ name: "z" });
-      s.defineActor({ name: "A", zone, singleton: true, initialState: () => ({}), transitions: { ["failed:message:Tell" as never]: { description: "No.", run: () => {} } } });
-    }),
-  ).toThrow("A: failed:message:Tell is not the failure of one of this spec's calls");
+  const Ask = defineCall("Ask");
+  const Tell = defineMessage("Tell");
+  const z = defineZone({ name: "z" });
+  const Answerer = defineActor({ name: "Answerer", zone: z, singleton: true, initialState: () => ({}), transitions: { ask: { on: Ask, description: "Hears it.", run: () => {} } } });
+  const asker = defineActor({ name: "Asker", zone: z, singleton: true, initialState: () => ({}), actions: { ask: { label: "Ask", description: "Asks.", sends: [Ask], run: () => {} } } });
+  expect(() => defineSpec({ name: "Calls", actors: [Answerer, asker] })).toThrow("Asker: sends ask, a call: handle its failure with a step on failed(Ask)");
+  expect(() => failed(Tell as never)).toThrow("failed(Tell): tell is a message, not a call; define it with defineCall for its failure to reach the caller");
   // Replying twice to a call, or with a call, is a spec error at the step.
-  const twice = defineSpec("Twice", { messages: { Ask: call<{}>({ name: "ask" }), Ok: message<{}>({ name: "ok", tone: "reply" }) } }, (s) => {
-    const zone = s.defineZone({ name: "z" });
-    const Server = s.defineActor({
+  const twice = (() => {
+    const Ask = defineCall("Ask");
+    const Ok = defineMessage("Ok", {}, { tone: "reply" });
+    const zone = defineZone({ name: "z" });
+    const Server = defineActor({
       name: "Server",
       zone,
       singleton: true,
       initialState: () => ({}),
-      transitions: { [s.messages.Ask]: { description: "Answers twice.", sends: [s.messages.Ok], run: (_s, _m, ctx) => (ctx.reply(s.messages.Ok, {}), ctx.reply(s.messages.Ok, {})) } },
+      transitions: { ask: { on: Ask, description: "Answers twice.", sends: [Ok], run: (_s, _m, ctx) => (ctx.reply(Ok, {}), ctx.reply(Ok, {})) } },
     });
-    s.defineActor({
+    const AskerActor = defineActor({
       name: "Asker",
       zone,
       singleton: true,
       initialState: () => ({}),
-      actions: { ask: { label: "Ask", description: "Asks.", sends: [s.messages.Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), s.messages.Ask, {}) } },
-      transitions: { [s.messages.Ok]: { description: "Done.", run: () => {} }, [s.failed(s.messages.Ask)]: { description: "Gives up.", run: () => {} } },
+      actions: { ask: { label: "Ask", description: "Asks.", sends: [Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), Ask, {}) } },
+      transitions: { ok: { on: Ok, description: "Done.", run: () => {} }, askFailed: { on: failed(Ask), description: "Gives up.", run: () => {} } },
     });
-  });
+    return defineSpec({
+      name: "Twice",
+      actors: [Server, AskerActor],
+    });
+  })();
   const asked = act(twice, startWorld(twice).at(-1)!.world, "asker", "ask").world;
   expect(fire(twice, asked, pendingInOrder(asked)[0].id).event.error).toBe("Server.message:Ask: replies twice to ask, a call: a call has one reply");
 });
@@ -211,32 +217,37 @@ test("a scenario delivers a call's failure by the call's name, and --as-scenario
   const report = await check(spec, { ...PLAIN, faults: 1 }, [], { engine: "integer" });
   const broken = report.properties.find((p) => p.id === "chargedOnce")!;
   if (broken.holds) throw new Error("chargedOnce should break");
-  expect(scenarioCode(spec, broken)).toContain('s.deliver(client, "failed:Charge"); // from bank');
+  expect(scenarioCode(spec, broken)).toContain("s.deliver(client, failed(Charge)); // from bank");
 });
 
 test("symmetric callers: a reply to a call is renamed like any message (0.12.0 crashed here)", async () => {
-  const spec = defineSpec("Symmetric callers", { messages: { Ask: call<{ from: string }>({ name: "ask" }), Told: message<{ to: string }>({ name: "told", tone: "reply" }) } }, (spec) => {
-    const { Ask, Told } = spec.messages;
-    const zone = spec.defineZone({ name: "z" });
-    const Server = spec.defineActor({
+  const spec = (() => {
+    const Ask = defineCall("Ask", { from: String });
+    const Told = defineMessage("Told", { to: String }, { tone: "reply" });
+    const zone = defineZone({ name: "z" });
+    const Server = defineActor({
       name: "Server",
       zone,
       singleton: true,
       initialState: () => ({ asked: 0 }),
-      transitions: { [Ask]: { description: "Answers.", sends: [Told], run: (s, m, ctx) => void (s.asked++, ctx.reply(Told, { to: m.from })) } },
+      transitions: { ask: { on: Ask, description: "Answers.", sends: [Told], run: (s, m, ctx) => void (s.asked++, ctx.reply(Told, { to: m.from })) } },
     });
-    spec.defineActor({
+    const AgentActor = defineActor({
       name: "Agent",
       zone,
       symmetric: true,
       initialState: () => ({ told: false }),
       actions: { ask: { label: "Ask", description: "Asks the server.", sends: [Ask], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), Ask, { from: ctx.self.id }) } },
       transitions: {
-        [Told]: { description: "Told.", run: (s) => void (s.told = true) },
-        [spec.failed(Ask)]: { description: "Gives up.", run: () => {} },
+        told: { on: Told, description: "Told.", run: (s) => void (s.told = true) },
+        askFailed: { on: failed(Ask), description: "Gives up.", run: () => {} },
       },
     });
-  });
+    return defineSpec({
+      name: "Symmetric callers",
+      actors: [Server, AgentActor],
+    });
+  })();
   for (const engine of ["integer", "classic"] as const) {
     const symmetric = await check(spec, { ...PLAIN, faults: 1, instances: { Agent: 2 }, symmetry: true }, [], { engine });
     const plain = await check(spec, { ...PLAIN, faults: 1, instances: { Agent: 2 } }, [], { engine });

@@ -10,20 +10,18 @@ function fixture() {
   mkdirSync(join(dir, "specs"));
   writeFileSync(
     join(dir, "specs", "tiny.ts"),
-    `import { defineSpec } from "@leostera/feynman";
-export default defineSpec("Tiny", { messages: {} }, (spec) => {
-  const zone = spec.defineZone({ name: "z" });
-  const Lamp = spec.defineActor({ name: "Lamp", zone, initialState: () => ({ on: false }), actions: { flip: { label: "Flip", description: "Flips it.", run: (s) => void (s.on = !s.on) } } });
-  return { Lamp };
-});`,
+    `import { defineActor, defineSpec, defineZone } from "@leostera/feynman";
+const zone = defineZone({ name: "z" });
+export const Lamp = defineActor({ name: "Lamp", zone, initialState: () => ({ on: false }), actions: { flip: { label: "Flip", description: "Flips it.", run: (s) => void (s.on = !s.on) } } });
+export default defineSpec({ name: "Tiny", actors: [Lamp] });`,
   );
   writeFileSync(
     join(dir, "specs", "tiny.play.tsx"),
     `import { definePlayground, Node } from "@leostera/feynman/play";
 import { useState } from "react";
-import spec from "./tiny.ts";
+import spec, { Lamp } from "./tiny.ts";
 export default definePlayground(spec, (play) => {
-  play.actor(spec.handles.Lamp, { node: ({ state }) => <Node shape="circle" icon="bell" label={state.on ? "on" : "off"} /> });
+  play.actor(Lamp, { node: ({ state }) => <Node shape="circle" icon="bell" label={state.on ? "on" : "off"} /> });
 });
 export const unused = useState;`,
   );
