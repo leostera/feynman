@@ -23,8 +23,21 @@ scenario. The Code view lists each event's inputs and messages and the code its 
 the functions that code reaches in the repository, each readable in place.
 
 Checker verdicts: ✗ a trace violates the rule; ✓ the rule holds in every state explored within
-configured bounds; ~ no violation was found before a search limit stopped exploration (not a
-proof); ? the explored states never reached a case where the rule could be judged.
+configured bounds; ~ no violation was found before a search limit (states, time, memory)
+stopped exploration (not a proof; it says how deep every path was explored, and what the states
+differ in most); ? the explored states never reached a case where the rule could be judged.
+
+What it finds are design bugs: orderings, not typos. A retry that does something twice (after a
+lost answer, or a timer that fires first); a restart that forgets what it promised; a late
+message that overwrites a newer one; check-then-act races; reads that go back in time; replicas
+that never agree; a system that waits forever on a message nobody resends. Messages can be lost
+silently (\`message\`), or be calls whose failure reaches the caller (\`call\`), as an RPC or a
+\`fetch\` throws.
+
+Rules: a spec can name the parts of its design that keep properties true
+(\`spec.defineRule\`, read as \`rule.on\`, claimed with \`needs: [rule]\` on properties).
+\`feynman check\` also checks the design without each rule and fails if a property that needs it
+still holds; \`--without RULE\` shows the design without it.
 
 ## Docs
 

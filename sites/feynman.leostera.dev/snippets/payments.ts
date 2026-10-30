@@ -45,7 +45,7 @@ export default defineSpec(
       },
     });
 
-    spec.defineInvariants({
+    spec.defineProperties({
       debitedOnce: {
         description: "The bank debits once per payment.",
         always: (w) =>

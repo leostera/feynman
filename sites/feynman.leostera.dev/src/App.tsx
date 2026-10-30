@@ -4,6 +4,8 @@ import { useState, type ReactNode } from "react";
 import payments from "../snippets/payments.ts?highlight";
 import paymentsCheck from "../snippets/payments-check.txt?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
+import rules from "../snippets/rules.ts?highlight";
+import rulesCheck from "../snippets/rules-check.txt?highlight";
 
 type Showcase = {
   id: string;
@@ -44,17 +46,96 @@ const SHOWCASES: Showcase[] = [
     example: "Payments",
     text: "See what a change does to every flow. Here, a retry charges twice.",
     image: "payments",
-    alt: "Playground of payments: the bank debits the same payment twice and the rule is broken",
+    alt: "Playground of payments: the bank debits the same payment twice and the property is broken",
     repository: "github.com/leostera/feynman",
     at: `#/playground/payments/${encodeURIComponent("The retry fires first")}`,
   },
 ];
 
+/** An example spec in Feynman's own explorer, opened at the scenario that shows the bug. */
+type Example = { spec: string; scenario: string; name: string };
+
+const EXAMPLES = "/s/github.com/leostera/feynman/";
+const exampleHref = (e: Example) => `${EXAMPLES}#/playground/${e.spec}/${encodeURIComponent(e.scenario)}`;
+
+/** The kinds of bug a design hides, each in examples that open on the trace that shows it. */
+const BUGS: { title: string; text: string; examples: Example[] }[] = [
+  {
+    title: "A retry does it twice",
+    text: "The bank's answer is lost, the client's call fails, it retries, and the bank charges again. Or the retry timer fires before the answer arrives, with nothing lost at all.",
+    examples: [
+      { spec: "retried-call", scenario: "The answer is lost", name: "Retried call" },
+      { spec: "payments", scenario: "The retry fires first", name: "Payments" },
+    ],
+  },
+  {
+    title: "A restart forgets",
+    text: "A node votes, restarts with its vote only in memory, and votes again in the same term: two leaders. An order is stored, and its announcement dies with the process.",
+    examples: [
+      { spec: "raft-vote", scenario: "A voter restarts", name: "Raft vote" },
+      { spec: "outbox", scenario: "The shop restarts after storing", name: "Outbox" },
+    ],
+  },
+  {
+    title: "A late message wins",
+    text: "A lock holder stalls past its lease and wakes up, and its write lands after the next holder's. A slow cache fill overtakes the invalidation that should have replaced it.",
+    examples: [
+      { spec: "lease-lock", scenario: "A stalled holder wakes up", name: "Lease lock" },
+      { spec: "cache", scenario: "A stale fill overtakes the invalidation", name: "Cache" },
+    ],
+  },
+  {
+    title: "Check, then act",
+    text: "Two doctors each see the other on call, and both go home. Two withdrawals read the same balance, and one is never taken off.",
+    examples: [
+      { spec: "write-skew", scenario: "Both at once", name: "Write skew" },
+      { spec: "lost-update", scenario: "Both read before either writes", name: "Lost update" },
+    ],
+  },
+  {
+    title: "Reads go back in time",
+    text: "A client reads from the head of a chain, then from the tail, and sees an older value the second time. A read from one replica misses a write that finished.",
+    examples: [
+      { spec: "chain-replication", scenario: "Reading from both ends", name: "Chain replication" },
+      { spec: "quorum", scenario: "A read misses the write", name: "Quorum" },
+    ],
+  },
+  {
+    title: "Replicas never agree",
+    text: "Two writes get the same timestamp, the replicas keep them in different orders, and no amount of waiting brings them back together.",
+    examples: [{ spec: "lww-register", scenario: "Two writes at the same time", name: "Last-writer-wins" }],
+  },
+  {
+    title: "Two of the one thing",
+    text: "A resent token crosses its slow first copy, and two nodes hold the one token. Two nodes ask at the same moment, and each lets the other in.",
+    examples: [
+      { spec: "token-ring", scenario: "A resend crosses the first copy", name: "Token ring" },
+      { spec: "ricart-agrawala", scenario: "Both ask at once", name: "Ricart–Agrawala" },
+    ],
+  },
+  {
+    title: "Waiting forever",
+    text: "A vote is lost and the coordinator never decides. Two philosophers each hold one fork and wait for the other. The checker says who waits, and for what.",
+    examples: [
+      { spec: "two-phase-commit", scenario: "A vote is lost", name: "Two-phase commit" },
+      { spec: "dining-philosophers", scenario: "Both get hungry", name: "Dining philosophers" },
+    ],
+  },
+];
+
+/** Bugs found while designing real systems with Feynman, before their code was written. */
+const FOUND = [
+  "Two quick sign-ins, then a refresh: the service refused the old grant's refresh, and the handler deleted the newer grant.",
+  "A shard split whose activation message was lost: listings asked the new shard, forever, to serve.",
+  "A partial message that held one of a receiver's four slots forever, once its sender gave up on it.",
+  "Text edited after it was approved for saving: it was stored without passing the content screen again.",
+];
+
 const VERDICTS: { mark: string; name: string; text: string; tone: string }[] = [
-  { mark: "✗", name: "Broken", text: "A scenario, search, or random walk found a trace that violates the rule.", tone: "text-kumo-danger" },
+  { mark: "✗", name: "Broken", text: "A scenario, search, or random walk found a trace that breaks the property.", tone: "text-kumo-danger" },
   { mark: "✓", name: "Holds", text: "The bounded search explored every state it was configured to reach and found no violation.", tone: "text-kumo-success" },
-  { mark: "~", name: "Held so far", text: "No violation appeared, but a search limit stopped exploration before it finished.", tone: "text-kumo-warning" },
-  { mark: "?", name: "Not tested", text: "The explored states never reached a case where this rule could be judged.", tone: "text-kumo-subtle" },
+  { mark: "~", name: "Held so far", text: "A limit stopped the search first. It says how far it got (\u201cheld on every path of up to 9 events\u201d) and what to make smaller.", tone: "text-kumo-warning" },
+  { mark: "?", name: "Not tested", text: "The explored states never reached a case where this property could be judged.", tone: "text-kumo-subtle" },
 ];
 
 export function App() {
@@ -66,6 +147,9 @@ export function App() {
         </a>
         <nav className="flex items-center gap-1">
           <span className="hidden items-center gap-1 md:flex">
+            <LinkButton href="#bugs" variant="ghost" size="sm">
+              What it finds
+            </LinkButton>
             <LinkButton href="#model" variant="ghost" size="sm">
               How it works
             </LinkButton>
@@ -96,7 +180,40 @@ export function App() {
           <Showcases />
         </section>
 
-        <Section id="model" title="One model. Explore it and check it." lead="A spec is a TypeScript file: actors, messages, and the rules that must hold. The same file runs the playground and the checker.">
+        <Section
+          id="bugs"
+          title="The bugs designs hide"
+          lead="Not typos or types: orderings. A message lost, late, or delivered twice; a restart in the middle; two people at once. Each example is a spec you can open, on the shortest trace that breaks it."
+        >
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {BUGS.map((bug) => (
+              <li key={bug.title} className="flex flex-col gap-3 rounded-lg bg-kumo-recessed p-4">
+                <p className="font-medium">{bug.title}</p>
+                <p className="flex-1 text-kumo-subtle text-pretty">{bug.text}</p>
+                <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                  {bug.examples.map((e) => (
+                    <a key={e.spec} href={exampleHref(e)} className="inline-flex items-center gap-1 font-medium text-kumo-brand hover:underline">
+                      {e.name} <ArrowRightIcon size={14} />
+                    </a>
+                  ))}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-8 rounded-lg p-5 ring-1 ring-kumo-line">
+            <p className="font-medium">Found in real designs, before the code</p>
+            <ul className="mt-3 grid gap-2 text-kumo-subtle sm:grid-cols-2">
+              {FOUND.map((f) => (
+                <li key={f} className="flex gap-2">
+                  <span className="font-mono text-kumo-danger">✗</span>
+                  <span className="text-pretty">{f}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Section>
+
+        <Section id="model" title="One model. Explore it and check it." lead="A spec is a TypeScript file: actors, messages, and the properties that must hold. The same file runs the playground and the checker.">
           <div className="grid items-start gap-4 lg:grid-cols-[1.25fr_1fr]">
             <CodeBlock snippet={payments} label="specs/payments.ts" />
             <div className="space-y-3 lg:sticky lg:top-6">
@@ -106,7 +223,7 @@ export function App() {
           </div>
         </Section>
 
-        <Section id="checker" title="Know how far a check went" lead="Every rule gets a verdict that says what the search covered.">
+        <Section id="checker" title="Know how far a check went" lead="Every property gets a verdict that says what the search covered.">
           <ul className="grid gap-3 sm:grid-cols-2">
             {VERDICTS.map(({ mark, name, text, tone }) => (
               <li key={name} className="flex gap-3 rounded-lg bg-kumo-recessed p-4">
@@ -117,6 +234,20 @@ export function App() {
               </li>
             ))}
           </ul>
+        </Section>
+
+        <Section
+          id="rules"
+          title="Know which parts of the design matter"
+          lead="Name the rules a design relies on, and say which properties need them. The checker also checks the design without each rule, and fails if nothing breaks: the rule does nothing, or the property is too weak to see what it prevents."
+        >
+          <div className="grid items-start gap-4 lg:grid-cols-[1fr_1.15fr]">
+            <CodeBlock snippet={rules} label="specs/retried-call.ts" />
+            <div className="space-y-3 lg:sticky lg:top-6">
+              <CodeBlock snippet={rulesCheck} label="bunx feynman check" />
+              <p className="text-kumo-subtle">Without the idempotency key, a lost answer and a retry charge the customer twice.</p>
+            </div>
+          </div>
         </Section>
 
         <Section id="agents" title="Onboard your agent" lead="Give your agent the Feynman skill and one behavior to model. It reads the code, writes the spec, runs the checks, and reports what it found.">

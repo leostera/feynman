@@ -10,6 +10,23 @@ The site and the explorer are deployed, not released, so entries are dated.
 `@leostera/feynman` has its own changelog, release by release, in
 [`packages/feynman/CHANGELOG.md`](packages/feynman/CHANGELOG.md).
 
+## 2026-10-30
+
+### Site
+
+- "The bugs designs hide": eight kinds of design bug (a retry that does it twice, a restart
+  that forgets, a late message that wins, check-then-act, reads that go back in time,
+  replicas that never agree, two of the one thing, waiting forever), each linking to the
+  examples that show it, opened on the scenario that breaks it. Below them, four bugs found
+  in real designs before their code was written.
+- "Know which parts of the design matter": rules (`spec.defineRule`, `needs`) and
+  `--without`, on the retried call.
+- The verdicts say what a stopped search reports now, and the page says "properties" where it
+  said "rules", which now mean the parts of a design.
+- The payments snippet used `defineInvariants`, gone since properties were renamed; it is
+  `defineProperties`, and its output says the counterexample needs no faults.
+- `llms.txt` describes the bugs Feynman finds, calls, and rules.
+
 ## 2026-10-28
 
 ### Repository

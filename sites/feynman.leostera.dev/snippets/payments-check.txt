@@ -2,7 +2,7 @@ $ bunx feynman check
 specs/payments.ts
 Payments: explored 55 states in 135ms
   ✗ debitedOnce  The bank debits once per payment.
-    shortest counterexample, 4 event(s):
+    shortest counterexample, 4 event(s), needs no faults:
        1  Client  pay
           paid: 0 → 1
           → Bank: debit {"id":"payment-1"}
