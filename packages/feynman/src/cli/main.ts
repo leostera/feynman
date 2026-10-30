@@ -24,7 +24,7 @@ Commands:
                            (safety and liveness), that nothing gets stuck, scenarios,
                            and that every source still resolves.
       --depth N --faults N --repeats N --max-states N --time-limit SECONDS
-      --memory-limit GB          stop, keeping the verdicts so far, past this much memory (60% of the machine's)
+      --memory-limit GB          stop, keeping the verdicts so far, past this much memory (50% of the machine's)
       --instances Actor=N,Actor=N
       --walks N --walk-depth N   random runs past the depth (0 to turn off)
       --no-symmetry              keep interchangeable instances apart
