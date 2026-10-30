@@ -23,10 +23,13 @@ function brokenByScenarios(spec: Spec): Map<string, string> {
   return out;
 }
 
-function headline(verdicts: Verdict[], errors: number, exhaustive: boolean): string {
+/** The page's one-line verdict: as strong as its weakest property, never stronger. */
+function headline(verdicts: Verdict[], errors: number): string {
   const problems = verdicts.filter((v) => v === "broken" || v === "fixed").length + errors;
   if (problems) return `${problems} problem(s)`;
-  return exhaustive ? "Every property holds" : "Nothing broke in the states explored";
+  if (verdicts.every((v) => v === "holds" || v === "known")) return "Every property holds";
+  if (verdicts.includes("unfinished")) return "Nothing broke in the states explored";
+  return "Nothing broke, but some properties were never tested";
 }
 
 export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name: string) => void }) {
@@ -42,7 +45,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
         ) : (
           <>
             <div>
-              <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, { report, brokenBy: scenarios })), report.errors.length, report.exhaustive)}</h1>
+              <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, { report, brokenBy: scenarios })), report.errors.length)}</h1>
               <p className="text-sm text-kumo-subtle">
                 Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events up to {report.bounds.depth} steps deep
                 {Object.keys(report.bounds.instances).length ? `, and ${Object.entries(report.bounds.instances).map(([a, n]) => `${n} ${a}`).join(", ")}` : ""}.
