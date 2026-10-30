@@ -9,11 +9,11 @@ test("a scenario runs to its end, recording what each step changed and sent", ()
     "Person.spawn",
     "Mac.spawn",
     "Person.pairHost",
-    "Axo relay.message:NewCode",
-    "Person.message:Code",
+    "Axo relay.newCode",
+    "Person.code",
     "Mac.link",
-    "Axo relay.message:Redeem",
-    "Mac.message:Redeemed",
+    "Axo relay.redeem",
+    "Mac.redeemed",
   ]);
   const link = run.events.find((e) => e.key === "link")!;
   expect(link.inputs).toEqual({ code: "code-1" });
@@ -48,9 +48,9 @@ test("a lost reply leaves the Mac retrying, and the relay refuses the used code"
   runner.loseNext("message:Redeemed");
   runner.settle();
   const keys = runner.events.map((e) => `${e.kind} ${e.actor}.${e.key}`);
-  expect(keys).toContain("lose Mac.message:Redeemed");
+  expect(keys).toContain("lose Mac.message:Redeemed"); // a lost message is not a step: its key is the message
   expect(keys).toContain("timer Mac.redeemTimeout");
-  expect(keys.at(-1)).toBe("deliver Mac.message:Refused");
+  expect(keys.at(-1)).toBe("deliver Mac.refused");
   const mac = runner.world.instances.find((i) => i.id === studio)!.state as { link: { account: string | null } };
   expect(mac.link.account).toBeNull();
 });
@@ -282,7 +282,7 @@ test("setup: a scenario starts in the world it sets, and its flow starts after i
     ["Alice", { head: 1 }],
   ]);
   // No spawn and no setup in the trace: only what the scenario does.
-  expect(run.events.map((e) => `${e.actor} ${e.key}`)).toEqual(["Client push", "Store message:Push"]);
+  expect(run.events.map((e) => `${e.actor} ${e.key}`)).toEqual(["Client push", "Store push"]);
   expect(run.worlds.at(-1)!.instances[0].state).toEqual({ commits: [1, 2], head: 2 });
   expect(Object.isFrozen(run.initial.instances[0].state)).toBe(true);
 });
@@ -294,4 +294,34 @@ test("setup: fields the state does not have, the wrong way to set an instance, a
   expect(error("Set a client")).toBe("setup: set(Client): it is not a singleton; spawn(Client, label, state) sets up one of them");
   expect(error("Spawn the store")).toBe("setup: spawn(Store): it is a singleton, there from the start; set(Store, state) sets it up");
   expect(error("Not plain")).toContain("setup: Store: holds state.commits[0]: a function, which is not plain data");
+});
+
+test("several steps on one message: each is a way to take it, left alone takes the fair one, and a step's when gates it", async () => {
+  const Ping = defineMessage("Ping");
+  const zone = defineZone({ name: "z" });
+  const Server = defineActor({
+    name: "Server",
+    zone,
+    singleton: true,
+    initialState: () => ({ answered: 0, ignored: 0, open: true }),
+    transitions: {
+      answer: { on: Ping, description: "Answers.", run: (s) => void s.answered++ },
+      ignore: { on: Ping, fair: false, when: (s) => s.open, description: "Ignores it, while open.", run: (s) => void (s.ignored++, (s.open = false)) },
+    },
+  });
+  const Client = defineActor({ name: "Client", zone, singleton: true, initialState: () => ({}), actions: { ping: { label: "Ping", description: "Pings.", sends: [Ping], run: (_s, _i, ctx) => ctx.send(ctx.the(Server), Ping, {}) } } });
+  const ignored = defineScenario("Ignored", { run: (s) => (s.act(s.the(Client), "ping"), s.step(s.the(Server), "ignore")) });
+  const settled = defineScenario("Settled", { run: (s) => (s.act(s.the(Client), "ping"), s.settle()) });
+  const spec = defineSpec({ name: "Steps", actors: [Server, Client], scenarios: [ignored, settled] });
+  const run = runScenario(spec, spec.scenarios[0]);
+  expect(run.error).toBeUndefined();
+  expect(run.events.map((e) => `${e.actor}.${e.key}`).slice(-2)).toEqual(["Client.ping", "Server.ignore"]);
+  expect(run.worlds.at(-1)!.instances.find((i) => i.actor === "Server")!.state).toEqual({ answered: 0, ignored: 1, open: false });
+  expect(runScenario(spec, spec.scenarios[1]).events.at(-1)!.key).toBe("answer");
+  // The checker takes the message either way, while the guard allows.
+  const { check } = await import("../../src/check/index.ts");
+  const report = await check(spec, { depth: 6, faults: 0, repeats: 2, walks: 0 });
+  expect(report.coverage.missed).toEqual([]);
+  // Start; one ping in flight; answered or ignored; two in flight; then those, met by either order.
+  expect(report.states).toBe(9);
 });

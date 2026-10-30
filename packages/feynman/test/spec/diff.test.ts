@@ -64,8 +64,8 @@ test("the same scenario at two versions: changed steps, and steps that no longer
   expect(diff.steps.map((s) => `${s.status} ${(s.head ?? s.base)!.actor}.${(s.head ?? s.base)!.key}`)).toEqual([
     "same Client.spawn",
     "same Client.say",
-    "changed Server.message:Say",
-    "removed Client.message:Heard",
+    "changed Server.say",
+    "removed Client.heard",
   ]);
   expect(diffRuns(runScenario(after, after.scenarios[0]), runScenario(after, after.scenarios[0])).status).toBe("same");
 });

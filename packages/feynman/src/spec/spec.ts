@@ -71,10 +71,8 @@ export interface LimitInfo {
 }
 
 export interface StepInfo {
-  /** What the engine keys it by: the message for a step on one (`message:Charge`), else its name. */
+  /** Its name in the spec, which the engine keys it by: `charge`, `retry`, `pay`. */
   key: string;
-  /** Its name in the spec: `charge`, `retry`, `pay`. */
-  name: string;
   description: string;
   /** The sentence for one event, from the state after it and the step's payload. */
   say?: (state: unknown, payload: unknown) => string;
@@ -129,7 +127,13 @@ export interface ActorInfo {
   place: ActorPlace;
   links?: (state: unknown, self: { id: string; label: string }) => Link[];
   actions: Record<string, ActionInfo>;
+  /** By name. */
   transitions: Record<string, TransitionInfo>;
+  /**
+   * The steps on each message, by message key, in the order declared: each is a way the message
+   * can be taken when it is in flight. At most one is fair: what "left alone" delivers to.
+   */
+  stepsOn: Record<string, string[]>;
 }
 
 /**

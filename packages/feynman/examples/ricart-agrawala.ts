@@ -63,7 +63,7 @@ export function ricartAgrawala(variant: "buggy" | "fixed") {
       },
     },
     transitions: {
-      request: {
+      answerRequest: {
         on: Request,
         description: "Answers at once, unless it is inside or its own request comes first.",
         say: (s, msg) => (s.deferred.some((d) => d.ts === msg.ts) ? `Keeps a request stamped ${msg.ts} waiting` : `Says ok to a request stamped ${msg.ts}`),

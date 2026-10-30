@@ -37,8 +37,8 @@ test("each action's flow holds what it set off, even where flows interleave", ()
   const flows = flowsOf(run);
   const describe = (indices: number[]) => indices.map((i) => `${run.events[i].instance}.${run.events[i].key}`);
   expect(flows.map((f) => f.kind)).toEqual(["spawn", "action", "action"]);
-  expect(describe(flows[1].events)).toEqual(["client-a.ping", "server.message:Ping", "client-a.message:Pong"]);
-  expect(describe(flows[2].events)).toEqual(["client-b.ping", "server.message:Ping", "client-b.message:Pong"]);
+  expect(describe(flows[1].events)).toEqual(["client-a.ping", "server.ping", "client-a.pong"]);
+  expect(describe(flows[2].events)).toEqual(["client-b.ping", "server.ping", "client-b.pong"]);
   // Every event is in exactly one flow.
   expect(flows.flatMap((f) => f.events).sort((a, b) => a - b)).toEqual(run.events.map((_, i) => i));
 });

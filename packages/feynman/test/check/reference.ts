@@ -11,7 +11,7 @@
 // properties are left to the checker.
 import { initialWorld } from "../../src/check/explore.ts";
 import { inputCombinations } from "../../src/check/steps.ts";
-import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, losable, lose, restart, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
+import { act, actorNamed, choices, fire, guard, holdsIn, isLiveness, losable, lose, restart, stepsTaking, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
 import { sortedJson } from "../../src/spec/json.ts";
 
 export interface ReferenceBounds {
@@ -128,14 +128,17 @@ function enabledIn(spec: Spec, world: World): Map<string, "weak" | "strong"> {
     if (f) out.set(f.id, f.kind);
   }
   for (const p of pending) {
-    const f = fairOf(spec, world, p.to, p.kind === "deliver" ? p.message : p.timer, idOf(p));
-    if (f) out.set(f.id, f.kind);
+    for (const step of stepsTaking(spec, world, p)) {
+      const f = fairOf(spec, world, p.to, step, idOf(p, step));
+      if (f) out.set(f.id, f.kind);
+    }
   }
   return out;
 }
 
-function idOf(p: World["pending"][number]): string {
-  return p.kind === "deliver" ? `d|${sortedJson([p.to, p.from, p.message, p.payload])}` : `t|${p.to}|${p.timer}`;
+/** A delivery is fair to the step that takes it: the same message to another step is another fair step. */
+function idOf(p: World["pending"][number], step: string): string {
+  return p.kind === "deliver" ? `d|${step}|${sortedJson([p.to, p.from, p.message, p.payload])}` : `t|${p.to}|${p.timer}`;
 }
 
 function fairOf(spec: Spec, world: World, instance: string, key: string, id: string): { id: string; kind: "weak" | "strong" } | undefined {
@@ -225,7 +228,7 @@ function successors(spec: Spec, node: { world: World; acts: Record<string, numbe
     for (const inputs of inputCombinations(spec, world, info.inputs)) out.push({ step: act(spec, world, a.instance, a.key, inputs), acts: { ...acts, [id]: (acts[id] ?? 0) + 1 }, faults });
   }
   for (const g of guards) out.push({ step: guard(spec, world, g.instance, g.key), acts, faults, fair: fairOf(spec, world, g.instance, g.key, `g|${g.instance}|${g.key}`)?.id });
-  for (const p of pending) out.push({ step: fire(spec, world, p.id), acts, faults, fair: fairOf(spec, world, p.to, p.kind === "deliver" ? p.message : p.timer, idOf(p))?.id });
+  for (const p of pending) for (const step of stepsTaking(spec, world, p)) out.push({ step: fire(spec, world, p.id, step), acts, faults, fair: fairOf(spec, world, p.to, step, idOf(p, step))?.id });
   if (faults < bounds.faults) {
     for (const p of pending) if (losable(p)) out.push({ step: lose(spec, world, p.id), acts, faults: faults + 1 });
     for (const i of world.instances) if (!actorNamed(spec, i.actor).singleton) out.push({ step: restart(spec, world, i.id), acts, faults: faults + 1 });

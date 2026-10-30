@@ -3,7 +3,7 @@
 // The search proves things up to its depth; random runs go much deeper and find bugs the
 // search cannot reach, but prove nothing. Each run is seeded, so runs are reproducible, and
 // a broken property's run is shrunk to the fewest steps that still break it.
-import { actorNamed, choices as enabled, traceView, type Event, type Spec, type World } from "../spec/index.ts";
+import { actorNamed, choices as enabled, stepsTaking, traceView, type Event, type Spec, type World } from "../spec/index.ts";
 import { pendingText } from "./keys.ts";
 import { judge, safely, startBreaks, stepBreaks, stuck, type Verdicts } from "./judge.ts";
 import { apply, branches, QUIET, type Choice, type Counterexample } from "./steps.ts";
@@ -137,7 +137,8 @@ export function rebind(spec: Spec, was: World, world: World, choice: Choice): Ch
   if (choice.kind === "fire" || choice.kind === "lose") {
     const pending = was.pending.find((p) => p.id === choice.pending);
     const same = pending && world.pending.find((p) => pendingText(p) === pendingText(pending));
-    return same ? { ...choice, pending: same.id } : null;
+    if (!same || (choice.kind === "fire" && !stepsTaking(spec, world, same).includes(choice.step))) return null;
+    return { ...choice, pending: same.id };
   }
   if (choice.kind === "restart") return world.instances.some((i) => i.id === choice.instance) ? choice : null;
   const now = enabled(spec, world);

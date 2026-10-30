@@ -102,7 +102,7 @@ test("a call and its failure: a lost write and a lost reply both reach the calle
   expect(failure(lostReply.world)).toEqual(failure(lostRequest.world));
   // The failure carries the call and whom it was to; the client retries it.
   const retried = fire(spec, lostReply.world, pendingInOrder(lostReply.world)[0].id);
-  expect(retried.event).toMatchObject({ kind: "deliver", key: "failed:message:Write", from: "store", description: "The call threw: writes again." });
+  expect(retried.event).toMatchObject({ kind: "deliver", key: "writeFailed", message: "failed:message:Write", from: "store", description: "The call threw: writes again." });
   expect(retried.world.pending).toMatchObject([{ to: "store", message: "message:Write", payload: { id: 1 } }]);
 });
 
@@ -167,14 +167,14 @@ test("a call is declared and handled as one: its failure is handled, its reply i
     });
   })();
   const asked = act(twice, startWorld(twice).at(-1)!.world, "asker", "ask").world;
-  expect(fire(twice, asked, pendingInOrder(asked)[0].id).event.error).toBe("Server.message:Ask: replies twice to ask, a call: a call has one reply");
+  expect(fire(twice, asked, pendingInOrder(asked)[0].id).event.error).toBe("Server.ask: replies twice to ask, a call: a call has one reply");
 });
 
 test("without faults, a call is a message: the same states, and nothing fails", async () => {
   const r = await report(false, { faults: 0 });
   expect(r.exhaustive).toBe(true);
   expect(r.properties.every((p) => p.holds)).toBe(true);
-  expect(r.coverage.missed).toEqual(["Client.failed:message:Write"]);
+  expect(r.coverage.missed).toEqual(["Client.writeFailed"]);
 });
 
 test("a retry after a lost reply applies the write twice; an idempotency key stops it; both engines and the reference agree", async () => {
@@ -183,7 +183,7 @@ test("a retry after a lost reply applies the write twice; an idempotency key sto
   expect(broken.holds).toBe(false);
   if (broken.holds) return;
   // The shortest way: write, the store applies it, its reply is lost, the client writes it again.
-  expect(broken.counterexample.events.map((e) => `${e.actor}.${e.kind === "lose" ? "lose" : e.key}`)).toEqual(["Client.write", "Store.message:Write", "Client.lose", "Client.failed:message:Write", "Store.message:Write"]);
+  expect(broken.counterexample.events.map((e) => `${e.actor}.${e.kind === "lose" ? "lose" : e.key}`)).toEqual(["Client.write", "Store.write", "Client.lose", "Client.writeFailed", "Store.write"]);
   const fixed = await report(true, { faults: 1 });
   expect(fixed.properties.map((p) => [p.id, p.holds])).toEqual([["appliedOnce", true], ["answered", true]]);
   // The retry is fair, so every write in progress ends, even with a fault; the reference explorer counts the same states.
@@ -213,7 +213,7 @@ test("a scenario delivers a call's failure by the call's name, and --as-scenario
   const lost = spec.scenarios.find((s) => s.name === "The answer is lost")!;
   const run = runScenario(spec, lost);
   expect(run.error).toBeUndefined();
-  expect(run.events.map((e) => e.key)).toEqual(["pay", "message:Charge", "message:Charged", "failed:message:Charge", "message:Charge", "message:Charged"]);
+  expect(run.events.map((e) => e.key)).toEqual(["pay", "charge", "message:Charged", "chargeFailed", "charge", "charged"]);
   const report = await check(spec, { ...PLAIN, faults: 1 }, [], { engine: "integer" });
   const broken = report.properties.find((p) => p.id === "chargedOnce")!;
   if (broken.holds) throw new Error("chargedOnce should break");

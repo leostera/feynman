@@ -1,5 +1,5 @@
 // Running a spec: a Runner applies steps and keeps the trace; scenarios script one.
-import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
+import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, instanceById, lose, nextLeftAlone, restart, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
@@ -108,6 +108,15 @@ export class Runner {
 
   drop(instance: string, message: string, payload?: unknown): Event {
     return this.apply(lose(this.spec, this.current, this.inFlight(instance, message, payload)));
+  }
+
+  /** One of an instance's steps, by name: on a message, it takes the oldest it is on in flight; else a guard. */
+  step(instance: string, name: string, payload?: unknown): Event {
+    const actor = actorNamed(this.spec, instanceById(this.current, instance).actor);
+    const step = actor.transitions[name];
+    if (!step) throw new SpecError(`${actor.name} has no step named ${name}`);
+    if (!step.message) return this.guard(instance, name);
+    return this.apply(fire(this.spec, this.current, this.inFlight(instance, step.message, payload), name));
   }
 
   guard(instance: string, transition: string): Event {
@@ -233,8 +242,8 @@ function scriptFor(runner: Runner): Script {
     drop(who, message, payload) {
       runner.drop(who.id, messageKey(message, "drop"), payload);
     },
-    step(who, transition) {
-      const event = runner.guard(who.id, transition);
+    step(who, name, payload) {
+      const event = runner.step(who.id, name, payload);
       if (event.error) throw new SpecError(event.error);
     },
     get world() {

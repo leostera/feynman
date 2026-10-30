@@ -1,4 +1,5 @@
 // Words and numbers as the explorer shows them.
+import { deliveryName } from "../spec/engine.ts";
 import type { Event, Spec, World } from "../spec/index.ts";
 
 /** An event's place in a run, counted from 1: specs have no clock (RFD0004), events have an order. */
@@ -55,7 +56,7 @@ export function stepTitle(spec: Spec, event: Event): string {
     case "action":
       return spec.actors.find((a) => a.name === event.actor)?.actions[event.key]?.label ?? event.key;
     case "deliver":
-      return messageName(spec, event.key);
+      return deliveryName(spec, event);
     default:
       return event.key;
   }

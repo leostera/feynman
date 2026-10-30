@@ -68,7 +68,7 @@ export function orSet(variant: "buggy" | "fixed") {
       },
     },
     transitions: {
-      add: {
+      applyAdd: {
         on: Add,
         description: variant === "buggy" ? "Adds x." : "Adds x with the add's tag, unless that tag was removed already.",
         say: (s, msg) => (s.removed.has(msg.tag) ? "Ignores an add it already saw removed" : "Adds x"),
@@ -77,7 +77,7 @@ export function orSet(variant: "buggy" | "fixed") {
           if (variant === "fixed" && !state.removed.has(msg.tag)) state.tags.add(msg.tag);
         },
       },
-      remove: {
+      applyRemove: {
         on: Remove,
         description: variant === "buggy" ? "Removes x." : "Removes the tags the other replica had seen.",
         say: (s) => (contains(s) ? "Keeps x: an add it was not told about" : "Removes x"),
