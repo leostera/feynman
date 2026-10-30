@@ -63,8 +63,9 @@ class Interner<T> {
 interface Renamed {
   renaming: Map<string, string>;
   identity: boolean;
-  states: Map<number, number>;
-  pendings: Map<number, number>;
+  /** By state and pending id: the renamed line's id. */
+  states: number[];
+  pendings: number[];
 }
 
 /**
@@ -477,7 +478,7 @@ export class IntegerSearch {
     // A step property is judged on every step, so one broken on the way to a known state counts too.
     let breaks = NO_IDS;
     let tuple: number | undefined;
-    if (this.everySteps.some((p) => !this.broken.has(p.id))) {
+    if (this.everySteps.length && this.everySteps.some((p) => !this.broken.has(p.id))) {
       const after = (child ??= this.applied(parent.vector, step));
       tuple = this.childTuple(parent, step, after);
       breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf(after, L));
@@ -699,7 +700,7 @@ export class IntegerSearch {
   private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
     const here = this.here(vector, L);
     const out = new Set<string>();
-    for (const choice of branches(this.spec, here.world())) {
+    for (const choice of this.choicesOf(here, this.tupleOf(vector, L))) {
       const step = this.step(here, choice);
       out.add(step.effect.error ? `error:${step.effect.error}` : this.symmetricPrint(this.applied(vector, step), L, symmetry).world.join(","));
     }
@@ -733,8 +734,11 @@ export class IntegerSearch {
     let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]) + lane2(1, L.variables, v[L.variables]);
     let extra1 = lane1(1, L.memory, v[L.memory]);
     let extra2 = lane2(1, L.memory, v[L.memory]);
-    let best: [number, number] | undefined;
-    let least: [number, number] | undefined;
+    // The least over the renamings, of the world with and without the memory: as numbers, compared hi then lo.
+    let best1 = -1;
+    let best2 = 0;
+    let least1 = -1;
+    let least2 = 0;
     let plain: [number, number] = [0, 0];
     const timers: number[] = [];
     for (const renaming of symmetry.renamings) {
@@ -753,31 +757,29 @@ export class IntegerSearch {
       for (let i = end; i < v.length; i++) timers.push(this.renamedPending(r, v[i]));
       const t = timersHash(timers, 0);
       (h1 += lane1(4, t, 0)), (h2 += lane2(4, t, 0));
-      const world: [number, number] = [h1 >>> 0, h2 >>> 0];
-      if (r.identity) plain = world;
-      if (!least || lessThan(world, least)) least = world;
-      const full: [number, number] = [(h1 + extra1) >>> 0, (h2 + extra2) >>> 0];
-      if (!best || lessThan(full, best)) best = full;
+      const w1 = h1 >>> 0;
+      const w2 = h2 >>> 0;
+      if (r.identity) plain = [w1, w2];
+      if (least1 < 0 || w1 < least1 || (w1 === least1 && w2 < least2)) (least1 = w1), (least2 = w2);
+      const f1 = (h1 + extra1) >>> 0;
+      const f2 = (h2 + extra2) >>> 0;
+      if (best1 < 0 || f1 < best1 || (f1 === best1 && f2 < best2)) (best1 = f1), (best2 = f2);
     }
-    return { print: best!, plain, world: least! };
+    return { print: [best1, best2], plain, world: [least1, least2] };
   }
 
   private renamed(renaming: Map<string, string>): Renamed {
     let r = this.renamedBy.get(renaming);
-    if (!r) this.renamedBy.set(renaming, (r = { renaming, identity: [...renaming].every(([from, to]) => from === to), states: new Map(), pendings: new Map() }));
+    if (!r) this.renamedBy.set(renaming, (r = { renaming, identity: [...renaming].every(([from, to]) => from === to), states: [], pendings: [] }));
     return r;
   }
 
   private renamedState(r: Renamed, state: number): number {
-    let line = r.states.get(state);
-    if (line === undefined) r.states.set(state, (line = this.lineId(renamedLine(this.instanceStates.keys[state], r.renaming))));
-    return line;
+    return (r.states[state] ??= this.lineId(renamedLine(this.instanceStates.keys[state], r.renaming)));
   }
 
   private renamedPending(r: Renamed, pending: number): number {
-    let line = r.pendings.get(pending);
-    if (line === undefined) r.pendings.set(pending, (line = this.lineId(renamedLine(this.pendings.keys[pending], r.renaming))));
-    return line;
+    return (r.pendings[pending] ??= this.lineId(renamedLine(this.pendings.keys[pending], r.renaming)));
   }
 
   private lineId(line: string): number {
@@ -1317,12 +1319,9 @@ const UNKNOWN = 0;
 const HOLDS = 1;
 const BREAKS = 2;
 
-function lessThan(a: [number, number], b: [number, number]): boolean {
-  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
-}
-
+/** An edge, always of one shape (`fair` undefined when the step is not fair). */
 function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undefined): Edge {
-  return { to, option, fault, ...(fair === undefined ? {} : { fair }) };
+  return { to, option, fault, fair };
 }
 const NO_IDS: string[] = [];
 
@@ -1438,3 +1437,4 @@ function childPrint(parent: Entry, step: Step): Uint32Array {
   return CHILD;
 }
 const CHILD = new Uint32Array(2);
+
