@@ -133,10 +133,10 @@ Let go only once the write has landed
   ✓ noStaleWrites  Storage never accepts a write from an older lock holder after a newer one's.
   ✗ lockIsFreed  Whoever holds the lock, it is eventually free again.
     shortest counterexample, 4 event(s), needs 1 fault(s):
-       1  Worker A (Worker)  start
-       2  Lock service (Lock service)  acquire the lock  {}  from Worker A
-       3  Worker A (Worker)  granted  {"token":1}  from Lock service
-       4  Worker A (Worker)  crash
+       1  Worker (Worker)  start
+       2  Lock service (Lock service)  acquire the lock  {}  from Worker
+       3  Worker (Worker)  granted  {"token":1}  from Lock service
+       4  Worker (Worker)  crash
     then nothing fair can happen: it stays there forever, and never holds
 ```
 
