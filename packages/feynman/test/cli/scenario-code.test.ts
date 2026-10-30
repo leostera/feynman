@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
 import { actorVariable, scenarioCode } from "../../src/cli/scenario-code.ts";
-import { scenarioSeeds } from "../../src/cli/shape.ts";
+import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { runScenario, type ScenarioInfo, type Script, type Setup, type Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 

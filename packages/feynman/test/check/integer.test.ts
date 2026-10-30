@@ -3,7 +3,7 @@
 // generated specs, with and without symmetry, and from scenario seeds.
 import { expect, test } from "bun:test";
 import { check, type Bounds, type Report, type Seed } from "../../src/check/index.ts";
-import { scenarioSeeds } from "../../src/cli/shape.ts";
+import { scenarioSeeds } from "../../src/check/seeds.ts";
 import type { Spec } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
 import { build, describe as describeSpec } from "../fuzz/spec.ts";

@@ -439,6 +439,14 @@ export interface Trace {
  * or of every fair infinite behaviour (`eventually`, `leadsTo`, `infinitelyOften`,
  * `eventuallyAlways`). See RFD0006 for what each means, and fairness.
  */
+/** A rule of the design (see `SpecBuilder.defineRule`). */
+export interface Rule {
+  readonly name: string;
+  readonly description: string;
+  /** Whether the rule is in this design: true as written, false in a variant without it. */
+  readonly on: boolean;
+}
+
 export type PropertyDef = (
   | { description: string; always: (world: World) => boolean }
   /** Of every step: the world before it, the world after, and the event. */
@@ -453,6 +461,11 @@ export type PropertyDef = (
   /** From some point on, this always holds. */
   | { description: string; eventuallyAlways: (world: World) => boolean }
 ) & {
+  /**
+   * The rules of the design this property needs (RFD0010): without any one of them, it should
+   * break. `check` checks the design without each rule, and fails when the property still holds.
+   */
+  needs?: readonly Rule[];
   /**
    * A known bug: the property states what should hold, the system does not do it yet, and
    * `check` expects it broken. Say why, or link the issue. Check reports it, but it does not
@@ -545,6 +558,12 @@ export interface SpecBuilder<M extends Registry> {
   defineFinalState(def: { description: string; when: (world: World) => boolean }): void;
   defineGroup(def: GroupDef): Group;
   /**
+   * A rule of the design: a part that exists to keep properties true (RFD0010). Read `rule.on`
+   * where it applies; properties that need it say so with `needs: [rule]`. It is on in the spec
+   * as written, and off in the variant without it (`feynman check --without name`).
+   */
+  defineRule(def: { name: string; description: string }): Rule;
+  /**
    * A flow a reader should see, scripted: `run` replays it event by event. `setup`, when
    * given, sets the world it starts in (see Setup), for a scenario that begins after some
    * history: a second push, a fetch after pushes.
@@ -567,6 +586,16 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
   options: SpecOptions<M>,
   body: (spec: SpecBuilder<M>) => H | void,
 ): Spec & { handles: H } {
+  return buildSpec(name, options, body, []);
+}
+
+/** A spec from its definition, with these rules off (RFD0010): the design as written has none off. */
+function buildSpec<M extends Registry, H extends Record<string, Actor<any, any>>>(
+  name: string,
+  options: SpecOptions<M>,
+  body: (spec: SpecBuilder<M>) => H | void,
+  without: string[],
+): Spec & { handles: H } {
   const messages: Record<string, MessageInfo> = {};
   for (const [id, def] of Object.entries(options.messages)) {
     const key = `message:${id}`;
@@ -582,7 +611,16 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
     properties: [],
     scenarios: [],
     groups: [],
+    rules: [],
+    without,
+    withoutRules(names) {
+      for (const n of names) if (!spec.rules.some((r) => r.name === n)) throw new Error(`${name} has no rule named "${n}"; its rules: ${spec.rules.map((r) => r.name).join(", ") || "none"}`);
+      const off = [...new Set([...without, ...names])];
+      return buildSpec(off.length ? `${name} without ${off.join(", ")}` : name, options, body, off);
+    },
   };
+  // The rules defined in this build: a property may only need these.
+  const rules = new Set<Rule>();
   const builder: SpecBuilder<M> = {
     messages: Object.fromEntries(Object.keys(options.messages).map((id) => [id, `message:${id}`])) as SpecBuilder<M>["messages"],
     failed(key) {
@@ -610,6 +648,10 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
     defineProperties(defs) {
       for (const [id, def] of Object.entries(defs)) {
         if (spec.properties.some((p) => p.id === id)) throw new Error(`Two properties are named "${id}"`);
+        for (const rule of def.needs ?? []) {
+          if (!rules.has(rule)) throw new Error(`Property "${id}" needs ${rule?.name ? `rule "${rule.name}", which is not one of this spec's: define it with spec.defineRule in this spec` : "something that is not a rule: pass rules from spec.defineRule"}`);
+          spec.rules.find((r) => r.name === rule.name)!.neededBy.push(id);
+        }
         spec.properties.push(propertyInfo(id, def));
       }
     },
@@ -617,6 +659,14 @@ export function defineSpec<M extends Registry, H extends Record<string, Actor<an
       if (spec.finalState) throw new Error("defineFinalState is called once; say every final world in one predicate");
       if (typeof def.when !== "function") throw new Error("defineFinalState: `when` is a predicate on the world, like (w) => w.the(Client).state.done");
       spec.finalState = { description: def.description, when: def.when as never };
+    },
+    defineRule(def) {
+      if (typeof def.name !== "string" || !/^[A-Za-z_][\w-]*$/.test(def.name)) throw new Error(`A rule's name is a word, like "pendingRule", which --without names it by: not ${JSON.stringify(def.name)}`);
+      if (spec.rules.some((r) => r.name === def.name)) throw new Error(`Two rules are named "${def.name}"`);
+      const rule: Rule = Object.freeze({ name: def.name, description: def.description, on: !without.includes(def.name) });
+      rules.add(rule);
+      spec.rules.push({ name: def.name, description: def.description, neededBy: [] });
+      return rule;
     },
     defineGroup(def) {
       const group = groupInfo(spec, def);
@@ -780,7 +830,7 @@ function propertyInfo(id: string, def: PropertyDef): PropertyInfo {
     if (typeof value !== "function") throw new Error(`Property "${id}": ${what} is a function, like (w) => …`);
     return value as never;
   };
-  const base = { id, description: def.description, ...(def.known === undefined ? {} : { known: def.known }) };
+  const base = { id, description: def.description, ...(def.known === undefined ? {} : { known: def.known }), ...(def.needs?.length ? { needs: def.needs.map((r) => r.name) } : {}) };
   if ("always" in def) return { ...base, kind: "always", always: predicate(def.always, "always") };
   if ("everyStep" in def) return { ...base, kind: "everyStep", everyStep: predicate(def.everyStep, "everyStep") };
   if ("never" in def) return { ...base, kind: "never", never: predicate(def.never, "never") };

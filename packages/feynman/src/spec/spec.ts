@@ -16,6 +16,12 @@ export interface Spec {
   scenarios: ScenarioInfo[];
   /** Actors shown as one thing, at a higher level of abstraction. */
   groups: GroupInfo[];
+  /** The rules of the design (RFD0010). */
+  rules: RuleInfo[];
+  /** The rules turned off in this spec, by name: it is a variant of the design without them. */
+  without: string[];
+  /** The same design without these rules too, built again from the spec's definition. */
+  withoutRules(names: string[]): Spec;
 }
 
 export interface GroupInfo {
@@ -139,7 +145,17 @@ export type PropertyInfo = (
   description: string;
   /** A known bug: why the property is expected to break (see `PropertyDef.known`). */
   known?: string;
+  /** The rules it needs, by name: without any of them, it should break (RFD0010). */
+  needs?: string[];
 };
+
+/** A rule of the design: a part that exists to keep properties true (RFD0010). */
+export interface RuleInfo {
+  name: string;
+  description: string;
+  /** The properties that need it, by id. */
+  neededBy: string[];
+}
 
 /** The liveness kinds: judged on fair infinite behaviours, after exploring (RFD0006). */
 export const LIVENESS_KINDS = ["eventually", "leadsTo", "infinitelyOften", "eventuallyAlways"] as const;

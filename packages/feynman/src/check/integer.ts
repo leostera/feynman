@@ -208,6 +208,10 @@ export class IntegerSearch {
   completeDepth = 0;
   /** The most messages in flight at once in any explored world. */
   mostInFlight = 0;
+  /** Stop once every property has broken: nothing is left to learn (a rule's claim, RFD0010). */
+  untilBroken = false;
+  /** Whether it stopped because every property had broken. */
+  allBroken = false;
   readonly ownerCount = 1;
   readonly root: number[] = [];
   private parent: number[] = [];
@@ -329,6 +333,10 @@ export class IntegerSearch {
           return;
         }
         if (!this.expand(frontier[f], depth, next, open)) return;
+        if (this.untilBroken && this.broken.size === this.spec.properties.length) {
+          this.allBroken = true;
+          return;
+        }
       }
       frontier = next;
     }

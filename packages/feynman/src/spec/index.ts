@@ -1,6 +1,7 @@
 export { call, defineSpec, message } from "./dsl.ts";
 export type {
   Actor,
+  Rule,
   Ctx,
   Failure,
   InputDef,

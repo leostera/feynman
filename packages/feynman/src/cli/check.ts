@@ -2,15 +2,16 @@
 // outcome is gathered first (SpecCheck), then shown as text, briefly, as JSON, or as the
 // scenario replaying one counterexample.
 import { join } from "node:path";
-import { check, DEFAULT_BOUNDS, faultsIn, Pool, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type SpecSource } from "../check/index.ts";
+import { check, checkRules, DEFAULT_BOUNDS, faultsIn, Pool, startBreaks, withFewestFaults, type Bounds, type PropertyBroken, type Report, type RuleVerdict, type SpecSource } from "../check/index.ts";
 import { checkSources, type SourceStatus } from "../code/index.ts";
 import { runScenario, type Event, type Spec, type World } from "../spec/index.ts";
 import { specSources, loadSelected, type Context } from "./commands.ts";
 import { playgroundFor } from "./discover.ts";
-import { dim, formatReport, formatSources, red, unfinishedHint, yellow } from "./format.ts";
+import { dim, formatReport, formatSources, green, red, unfinishedHint, yellow } from "./format.ts";
 import { loadPlayground } from "./load.ts";
 import { scenarioCode } from "./scenario-code.ts";
-import { scenarioSeeds, shapeWarnings, totalSteps, unbuilt, type ShapeWarning } from "./shape.ts";
+import { scenarioSeeds } from "../check/seeds.ts";
+import { shapeWarnings, totalSteps, unbuilt, type ShapeWarning } from "./shape.ts";
 import { typecheck } from "./types.ts";
 import { verdictOf } from "../check/verdict.ts";
 
@@ -19,6 +20,10 @@ export interface CheckOptions {
   /** Property ids to check and show; all when empty. */
   only: string[];
   output: "text" | "brief" | "json" | "scenario";
+  /** Rules to turn off: check the design without them (RFD0010). */
+  without: string[];
+  /** Check that each rule is needed (RFD0010); off with --no-rules. */
+  rules: boolean;
 }
 
 export interface ScenarioOutcome {
@@ -40,6 +45,8 @@ export interface SpecCheck {
   shape: ShapeWarning[];
   unbuilt: { actor: string; step: string }[];
   steps: number;
+  /** Each rule a property needs, checked in the design without it (RFD0010). */
+  rules: RuleVerdict[];
 }
 
 /** Whether a spec's check fails: a broken property, a stale `known`, a spec error, a stuck world, a broken scenario or a missing source. */
@@ -47,6 +54,8 @@ export function fails(result: SpecCheck, focused: boolean): boolean {
   const verdicts = result.report.properties.map((p) => verdictOf(p, result));
   if (verdicts.some((v) => v === "broken" || v === "fixed") || result.report.errors.length) return true;
   if (result.report.stuck && !focused) return true;
+  // A rule a property needs that it held without: the rule does nothing, or the property is too weak.
+  if (result.rules.some((r) => r.neededBy.some((n) => n.verdict === "holds"))) return true;
   if (focused) return false;
   return result.scenarios.some((s) => s.broken && !s.known) || result.sources.some((s) => s.status === "missing");
 }
@@ -79,10 +88,13 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
   // One pool of worker threads for every spec, and every check at fewer faults.
   const pool = new Pool(options.bounds.workers ?? ctx.config.check?.workers ?? DEFAULT_BOUNDS.workers);
   try {
-    for (const { path, spec, source } of selected) {
+    for (const selection of selected) {
+      const { path } = selection;
+      const spec = options.without.length ? selection.spec.withoutRules(options.without) : selection.spec;
+      const source = options.without.length ? { ...selection.source, without: options.without } : selection.source;
       const focused = focus(spec, options.only);
       if (!focused) continue;
-      const result = await checkSpec(ctx, path, focused, options.bounds, { source: options.only.length ? { ...source, properties: options.only } : source, pool });
+      const result = await checkSpec(ctx, path, focused, options.bounds, { source: options.only.length ? { ...source, properties: options.only } : source, pool }, options.rules);
       results.push(result);
       if (fails(result, options.only.length > 0)) status = 1;
       if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
@@ -123,7 +135,7 @@ function counterexampleJson(p: PropertyBroken) {
   };
 }
 
-async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>, threads: { source: SpecSource; pool: Pool }): Promise<SpecCheck> {
+async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial<Bounds>, threads: { source: SpecSource; pool: Pool }, rules: boolean): Promise<SpecCheck> {
   const merged = { ...ctx.config.check, ...bounds, instances: { ...ctx.config.check?.instances, ...bounds.instances } };
   const known = new Set(spec.properties.filter((p) => p.known !== undefined).map((p) => p.id));
   const runs = spec.scenarios.map((scenario) => ({ scenario, run: runScenario(spec, scenario) }));
@@ -143,6 +155,7 @@ async function checkSpec(ctx: Context, path: string, spec: Spec, bounds: Partial
   const seeds = scenarioSeeds(spec, runs);
   const report = await withFewestFaults(spec, await check(spec, merged, seeds, threads), seeds, threads);
   return {
+    rules: rules ? await checkRules(spec, merged, threads) : [],
     path,
     spec,
     scenarios,
@@ -160,10 +173,11 @@ function formatCheck(result: SpecCheck, how: { brief: boolean; focused: boolean 
   const lines = [dim(result.path)];
   if (!how.focused)
     for (const s of result.scenarios.filter((s) => s.broken)) lines.push(s.known ? yellow(`  ✗ scenario "${s.name}": ${s.broken} (known bug)`) : red(`  ✗ scenario "${s.name}": ${s.broken}`));
-  lines.push(formatReport(spec, report, { brokenBy: result.brokenBy, brief: how.brief, verdict: (p) => verdictOf(p, result), command: `feynman check ${result.path}` }));
+  lines.push(formatReport(spec, report, { brokenBy: result.brokenBy, brief: how.brief, verdict: (p) => verdictOf(p, result), command: `feynman check ${result.path}${spec.without.length ? ` --without ${spec.without.join(",")}` : ""}` }));
   const verdicts = report.properties.map((p) => verdictOf(p, result));
   if (verdicts.includes("unfinished")) lines.push(dim(`  ${unfinishedHint(report)}`));
   if (verdicts.includes("untested")) lines.push(dim(`  "?" was never tested: add a scenario that gets there, so exploration starts from its end.`));
+  lines.push(...formatRules(result.rules));
   if (how.focused) return lines.join("\n");
   lines.push(...formatSources(result.sources));
   for (const w of result.shape) lines.push(yellow(`  ! ${w.actor} ${w.step} ${w.message}`));
@@ -173,6 +187,26 @@ function formatCheck(result: SpecCheck, how: { brief: boolean; focused: boolean 
     lines.push(dim(all ? `  no step points at code yet; this spec is a design. Add sources as the code appears.` : `  ${result.unbuilt.length} step(s) have no code yet${which}`));
   }
   return lines.join("\n");
+}
+
+/**
+ * Each rule's claim (RFD0010): ✓ every property that needs it broke without it; ✗ one held
+ * without it, so the rule does nothing or the property is too weak; ~ one held, unfinished.
+ */
+function formatRules(rules: RuleVerdict[]): string[] {
+  if (!rules.length) return [];
+  const width = Math.max(...rules.map((r) => r.name.length));
+  const lines = [dim("  rules")];
+  for (const rule of rules) {
+    const name = rule.name.padEnd(width);
+    const held = rule.neededBy.filter((n) => n.verdict === "holds");
+    const open = rule.neededBy.filter((n) => n.verdict === "unfinished");
+    if (held.length) lines.push(red(`    ✗ ${name}  not needed by ${held.map((n) => n.property).join(", ")}: held without the rule, in every state. The rule does nothing here, or the property is too weak to see what it prevents.`));
+    else if (open.length) lines.push(yellow(`    ~ ${name}  needed by ${open.map((n) => n.property).join(", ")}? held without the rule, but the search stopped before exploring everything`));
+    else lines.push(green(`    ✓ ${name}`) + dim(`  needed: without it, ${rule.neededBy.map((n) => `${n.property} breaks (${n.events} events)`).join(", ")}`));
+  }
+  if (rules.some((r) => r.neededBy.some((n) => n.verdict === "breaks"))) lines.push(dim(`  See what a rule prevents: feynman check <spec> --without RULE`));
+  return lines;
 }
 
 // JSON -----------------------------------------------------------------------------------------------
@@ -203,6 +237,8 @@ function toJson(result: SpecCheck) {
     errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(ev, e.counterexample.worlds[i])) })),
     ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(ev, report.stuck!.counterexample.worlds[i])) } } : {}),
     neverRan: report.coverage.missed,
+    ...(spec.without.length ? { without: spec.without } : {}),
+    rules: result.rules,
     sources: result.sources.map((s) => ({ source: s.source, status: s.status, ...(s.status === "missing" ? { reason: s.reason } : {}) })),
     warnings: result.shape,
     unbuilt: result.unbuilt,

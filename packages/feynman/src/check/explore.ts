@@ -24,6 +24,7 @@ import { NO_SYMMETRY, symmetryOf } from "./keys.ts";
 import { judgeLiveness, type Lasso } from "./liveness.ts";
 import { Owner } from "./owner.ts";
 import { IntegerSearch, type Variety } from "./integer.ts";
+import type { RuleVerdict } from "./rules.ts";
 import { InlineDriver, Pool, type SpecSource } from "./pool.ts";
 import { Search, type Root } from "./search.ts";
 import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
@@ -158,6 +159,8 @@ export interface Report {
   variety?: Variety[];
   /** With `variety`: the most messages in flight at once in an explored world. */
   mostInFlight?: number;
+  /** Each rule a property needs, checked in the design without it (RFD0010), when asked for (checkRules). */
+  rules?: RuleVerdict[];
   depthReached: number;
   durationMs: number;
   /** Threads the search ran on: the main thread, plus the workers that joined. */
@@ -208,6 +211,8 @@ export interface CheckOptions {
    * FEYNMAN_ENGINE sets the default, to run a whole suite through one.
    */
   engine?: Engine;
+  /** Stop once every property has broken (integer engine): for searches that only look for breaks. */
+  untilBroken?: boolean;
 }
 
 export type Engine = "integer" | "classic";
@@ -268,6 +273,7 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
     // The bounds as the integer core searches: without the classic search's reductions.
     const integer = { ...b, reduce: false };
     const search = new IntegerSearch(spec, integer, roots, options.watch ?? {}, started);
+    search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
     search.run();
     if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
     return await reportOf(spec, integer, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
@@ -356,7 +362,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: S
     bounds: b,
     seeds,
     states: search.states,
-    exhaustive: !search.stoppedBy,
+    exhaustive: !search.stoppedBy && !(search instanceof IntegerSearch && search.allBroken),
     stoppedBy: search.stoppedBy,
     ...(search.stoppedBy && search instanceof IntegerSearch ? { variety: search.variety(), mostInFlight: search.mostInFlight } : {}),
     depthReached: search.depthReached,

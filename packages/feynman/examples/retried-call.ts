@@ -30,6 +30,9 @@ export function retriedCall(variant: "buggy" | "fixed") {
       const { Charge, Charged } = spec.messages;
       const shop = spec.defineZone({ name: "Shop", description: "takes the order and pays for it", place: { column: 0 } });
       const bank = spec.defineZone({ name: "Bank", description: "moves the money", place: { column: 1, region: true } });
+      // The fix, as a rule of the design: `feynman check retried-call --without idempotencyKey` shows what it prevents.
+      const idempotencyKey = spec.defineRule({ name: "idempotencyKey", description: "The bank remembers the payments it has charged, and charges each one once." });
+      const remembers = variant === "fixed";
 
       const Client = spec.defineActor({
         name: "Client",
@@ -85,15 +88,16 @@ export function retriedCall(variant: "buggy" | "fixed") {
         transitions: {
           [Charge]: {
             description:
-              variant === "buggy"
+              !remembers
                 ? "Charges the customer and answers."
                 : "Charges the customer, unless it has charged this payment already, and answers.",
             sends: [Charged],
             say: (s) => (s.charges > 1 ? "Charges the customer again" : "Charges the customer"),
             run(state, msg, ctx) {
-              if (variant === "buggy" || !state.seen.includes(msg.payment)) {
+              const keyed = remembers && idempotencyKey.on;
+              if (!keyed || !state.seen.includes(msg.payment)) {
                 state.charges += 1;
-                if (variant === "fixed") state.seen.push(msg.payment);
+                if (keyed) state.seen.push(msg.payment);
               }
               ctx.reply(Charged, { payment: msg.payment });
             },
@@ -103,7 +107,7 @@ export function retriedCall(variant: "buggy" | "fixed") {
 
       spec.defineFinalState({ description: "The order is paid.", when: (w) => w.the(Client).state.paid });
       spec.defineProperties({
-        chargedOnce: { description: "The customer is never charged twice.", always: (w) => w.the(Bank).state.charges <= 1 },
+        chargedOnce: { description: "The customer is never charged twice.", always: (w) => w.the(Bank).state.charges <= 1, needs: [idempotencyKey] },
         paymentsEnd: {
           description: "A payment in progress ends paid.",
           leadsTo: { whenever: (w) => w.the(Client).state.paying, then: (w) => w.the(Client).state.paid },

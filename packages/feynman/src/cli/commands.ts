@@ -56,9 +56,9 @@ export async function list(ctx: Context): Promise<number> {
   return status;
 }
 
-export async function runCommand(ctx: Context, named: string[], scenarioName?: string, all = false): Promise<number> {
+export async function runCommand(ctx: Context, named: string[], scenarioName?: string, all = false, without: string[] = []): Promise<number> {
   let status = 0;
-  const selected = await loadSelected(ctx, named);
+  const selected = (await loadSelected(ctx, named)).map((s) => (without.length ? { ...s, spec: s.spec.withoutRules(without) } : s));
   // Every trace of every scenario runs to tens of kilobytes: several scenarios get a line each.
   const traces = all || scenarioName !== undefined || selected.reduce((n, { spec }) => n + spec.scenarios.length, 0) <= 1;
   for (const { path, spec } of selected) {

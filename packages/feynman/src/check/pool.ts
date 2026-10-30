@@ -45,6 +45,8 @@ export interface SpecSource {
   module: string;
   export?: string;
   properties?: string[];
+  /** The rules turned off: the variant of the design without them (RFD0010). */
+  without?: string[];
 }
 
 /** The spec a source names, loaded as a worker does. */
@@ -52,7 +54,8 @@ export async function loadSource(source: SpecSource): Promise<Spec> {
   const module = (await import(source.module)) as Record<string, unknown>;
   const spec = module[source.export ?? "default"] as Spec | undefined;
   if (!spec || typeof spec !== "object" || !Array.isArray(spec.actors)) throw new Error(`${source.module} does not export a spec as ${source.export ?? "default"}`);
-  return source.properties ? { ...spec, properties: spec.properties.filter((p) => source.properties!.includes(p.id)) } : spec;
+  const variant = source.without?.length ? spec.withoutRules(source.without) : spec;
+  return source.properties ? { ...variant, properties: variant.properties.filter((p) => source.properties!.includes(p.id)) } : variant;
 }
 
 /** Worker threads, started when first needed and kept until closed. One search uses a pool at a time. */

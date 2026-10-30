@@ -6,6 +6,21 @@ after.
 
 ## Unreleased
 
+### Rules that are needed
+
+- A spec can name the rules of its design, the parts that exist to keep a property true
+  (RFD0010): `const key = spec.defineRule({ name: "idempotencyKey", description: "…" })`,
+  read as `key.on` where it applies. A property that depends on it says `needs: [key]`, a
+  reference the type checker follows, not a string.
+- `feynman check` also checks the design without each rule, and expects every property that
+  needs it to break: `✓ idempotencyKey  needed: without it, chargedOnce breaks (5 events)`.
+  When one still holds, the check fails (`✗`): the rule does nothing, or the property is too
+  weak to see what it prevents. That search stops as soon as every such property broke.
+  `--no-rules` skips it; `--json` and the explorer's Checks panel show the verdicts.
+- `feynman check --without RULE` (and `feynman run --without RULE`) look at the design
+  without a rule, with its counterexamples and `--as-scenario`: no more copying a spec to
+  flip a flag. The retried-call example declares its idempotency key as a rule.
+
 ### When a search does not finish
 
 - A search stopped by a limit says how far it got in full: a safety property that held "held
