@@ -76,9 +76,12 @@ pred restart[d: Doctor] {
 
 pred nothing { W.onCall' = W.onCall and W.phase' = W.phase and W.acts' = W.acts and W.net' = W.net and W.faults' = W.faults }
 
-fact behaviour {
-  init
-  always (nothing or (some d: Doctor | goOff[d] or restart[d]) or (some d: Doctor, k: Kind | deliver[d, k] or lose[d, k]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  nothing or (some d: Doctor | goOff[d] or restart[d]) or (some d: Doctor, k: Kind | deliver[d, k] or lose[d, k])
 }
 
 pred covered { W.onCall >= 1 }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.onCall + univ.(W.acts) + univ.(univ.(W.net)) + W.faults }

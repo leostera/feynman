@@ -41,6 +41,7 @@ bun run feynman dev                # every example in the simulator
 | `retried-call.ts` | A client that retries a payment when the call to the bank fails: a lost answer and a retry charge twice | calls whose failure reaches the caller (`defineCall`), retries, idempotency keys |
 | `read-repair.ts` | Read repair that overwrites without comparing versions: a slow repair takes a replica back to an older value | read repair, versioned writes, ghost state for invariants about the past |
 | `lost-update.ts` | Withdrawals that read a balance and write a new one: both read 100, and one withdrawal is never taken off | read-modify-write races, compare-and-set, a retry as a guarded step |
+| `webhooks.ts` | Deduplicating events by the last id seen: a duplicated event arriving after the next one is credited twice | messages the network duplicates (`duplicate`), deduplication that assumes order |
 | `switch.ts` | "On" twice, through a world that is back where it started | what a `never` property remembers of the path |
 
 `test/examples/examples.test.ts` checks every case four ways: the plain search finds exactly what was
@@ -61,18 +62,45 @@ smallest depth.
 
 `test/examples/tla.oracle.ts` runs TLC on every configuration and checks that the checker reaches
 the same distinct states (its worlds projected onto the TLA+ variables: no ids),
-the same verdict on every invariant, and counterexamples just as short. It needs Java and
-`tla2tools.jar` (the TLA+ Toolbox has one; or set `TLA_TOOLS_JAR`), and is skipped without.
+the same verdict on every invariant, and counterexamples just as short. Where a model has a
+`FairSpec`, which makes fair what Feynman does (delivering what is in flight; actions and
+faults are not fair), TLC also checks the liveness properties under it, and the checker must
+reach the same verdicts. It needs Java and `tla2tools.jar` (the TLA+ Toolbox has one; or set
+`TLA_TOOLS_JAR`), and is skipped without.
+
+### Alloy
+
+`oracles/alloy/` models some of the systems in Alloy 6, to the same semantics. Alloy shares
+neither TLC's method nor the checker's: it searches traces by SAT, from the shortest up, so
+its first counterexample is a shortest one. A model gives `init`, a `step`, its invariants as
+predicates, and `counts`, the integers it keeps; `test/examples/alloy.oracle.ts` checks each
+invariant over traces up to the oracle's depth and compares the verdict and the
+counterexample's length with the checker's at the same depth. Alloy's integers wrap around,
+so it also checks that every count starts at 2 or less and that a step raises the largest by
+at most one, which with the bits it picks rules out an overflow. It needs Java and Alloy
+(`brew install alloy-analyzer`, or set `ALLOY_JAR`), and is skipped without.
+
+### SPIN
+
+`oracles/spin/` models some of the systems in Promela for SPIN, an explicit-state checker in C
+that shares nothing with the checker but the semantics. A model is one process whose loop
+takes one `d_step` per event, so SPIN's states are the model's variables and its steps are
+events. `test/examples/spin.oracle.ts` checks that SPIN stores exactly as many states as the
+checker reaches, and finds each invariant (an `ltl` claim `p_<name>`) broken in as few
+events, breadth first. SPIN's optimisations are off when it counts: it would hide variables
+only ever written. It needs SPIN and a C compiler (`brew install spin`), and is skipped
+without.
 
 ### P
 
 `oracles/p/` models some of the systems in P (see `test/examples/corpus.ts`). P delivers each machine's messages in order, so every message goes through a
 `Network` machine that holds a bag and delivers (or, within the fault budget, loses) any
-message in it; timers may fire at any moment once set, as the checker's may; a `Chaos`
+message in it (webhooks has its own, which may also duplicate one); timers may fire at any moment once set, as the checker's may; a `Chaos`
 machine restarts an instance at any moment, within the same budget. Properties are
 monitors over announced events. P's checker runs seeded schedules rather than every state, so
 `test/examples/p.oracle.ts` compares verdicts only: P breaks the property (with the property's
 own assertion) exactly when the checker does. It needs .NET 8 and `dotnet tool install
 --global P`, and is skipped without.
 
-Run both kinds with `bun run oracles` (about two minutes); `bun run test` leaves them out.
+Run them all with `bun run oracles` (TLC and P take about fifteen minutes, Alloy about as
+long, SPIN about one); `bun run test` leaves them out.

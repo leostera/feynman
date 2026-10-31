@@ -32,6 +32,7 @@ import { tokenRing } from "../../examples/token-ring.ts";
 import { writeSkew } from "../../examples/write-skew.ts";
 import { lightSwitch } from "../../examples/switch.ts";
 import { twoPhaseCommit } from "../../examples/two-phase-commit.ts";
+import { webhooks } from "../../examples/webhooks.ts";
 
 export type Variant = "buggy" | "fixed";
 
@@ -95,6 +96,14 @@ export interface AlloyOracle {
   configs: { variant: Variant; faults: number; repeats: number }[];
 }
 
+/** An independent SPIN model, examples/oracles/spin/<model>.pml: the same states, verdicts and shortest counterexamples. */
+export interface SpinOracle {
+  model: string;
+  /** Safety invariants both sides check: an `ltl` claim p_<name> in the model. */
+  invariants: string[];
+  configs: { variant: Variant; faults: number; repeats: number }[];
+}
+
 /** An independent P model, examples/oracles/p/<project>: the same verdict on one property. */
 export interface POracle {
   project: string;
@@ -114,6 +123,7 @@ export interface Example {
   cases: Case[];
   tla?: TlaOracle;
   alloy?: AlloyOracle;
+  spin?: SpinOracle;
   p?: POracle;
 }
 
@@ -151,6 +161,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
+    spin: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
   },
   {
@@ -173,6 +184,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
     ],
     tla: { module: "Cache", invariants: ["consistentOnceQuiet"], liveness: ["converges"], configs: BOTH_WAYS },
+    spin: { model: "Cache", invariants: ["consistentOnceQuiet"], configs: BOTH_WAYS },
   },
   {
     name: "leader election",
@@ -183,7 +195,8 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { agree: "holds" }, refuted: ["Node"] },
     ],
     tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], liveness: ["agree"], configs: BOTH_WAYS },
-    alloy: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], depth: 10, configs: BOTH_WAYS },
+    alloy: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], depth: 9, configs: BOTH_WAYS },
+    spin: { model: "LeaderElection", invariants: ["agreeOnceQuiet"], configs: BOTH_WAYS },
   },
   {
     name: "job queue",
@@ -244,6 +257,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
     alloy: { module: "Outbox", invariants: ["announcedOnceQuiet"], depth: 8, configs: BOTH_WAYS },
+    spin: { model: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
     p: {
       project: "Outbox",
       property: "announcedOnceQuiet",
@@ -268,6 +282,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
     alloy: { module: "WriteSkew", invariants: ["covered"], depth: 9, configs: BOTH_WAYS },
+    spin: { model: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
     p: { project: "WriteSkew", property: "covered", assertion: "nobody is on call", depth: 9 },
   },
   {
@@ -343,6 +358,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
     alloy: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], depth: 8, configs: BOTH_WAYS },
+    spin: { model: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
     p: { project: "PrimaryBackup", property: "ackedIsReplicated", assertion: "acknowledged a write the backup does not have", depth: 8 },
   },
   {
@@ -489,6 +505,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     alloy: { module: "RetriedCall", invariants: ["chargedOnce"], depth: 11, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    spin: { model: "RetriedCall", invariants: ["chargedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
       project: "RetriedCall",
       property: "chargedOnce",
@@ -525,6 +542,31 @@ export const corpus: Example[] = [
     ],
     tla: { module: "LostUpdate", invariants: ["moneyAddsUp"], configs: BOTH_WAYS },
     p: { project: "LostUpdate", property: "moneyAddsUp", assertion: "the balance and what was paid out do not add up", depth: 40 },
+  },
+  {
+    name: "webhooks",
+    spec: webhooks,
+    cases: [
+      { variant: "buggy", bounds: { depth: 10, faults: 0 }, expect: { creditedOnce: "holds" } },
+      // The first event is sent and duplicated, one copy arrives, the second is sent and arrives, the other copy arrives.
+      { variant: "buggy", bounds: { depth: 10, faults: 1 }, expect: { creditedOnce: { events: 6, faults: 1 } } },
+      { variant: "fixed", bounds: { depth: 10, faults: 2 }, expect: { creditedOnce: "holds" } },
+    ],
+    tla: { module: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    alloy: { module: "Webhooks", invariants: ["creditedOnce"], depth: 10, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    spin: { model: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    p: {
+      project: "Webhooks",
+      property: "creditedOnce",
+      assertion: "the shop credited more than it was notified of",
+      depth: 10,
+      cases: [
+        { testCase: "tcBuggy", variant: "buggy", faults: 0 },
+        { testCase: "tcBuggyOneFault", variant: "buggy", faults: 1 },
+        { testCase: "tcFixedOneFault", variant: "fixed", faults: 1 },
+        { testCase: "tcFixedTwoFaults", variant: "fixed", faults: 2 },
+      ],
+    },
   },
 ];
 

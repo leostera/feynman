@@ -57,9 +57,12 @@ pred nothing {
   W.faults' = W.faults and W.placing' = W.placing and W.placed' = W.placed
 }
 
-fact behaviour {
-  init
-  always (order or publish or placeOrder or orderPlaced or placingLost or placedLost or restart or nothing)
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  order or publish or placeOrder or orderPlaced or placingLost or placedLost or restart or nothing
 }
 
 pred announcedOnceQuiet { (W.placing = 0 and W.placed = 0) implies (W.outbox > 0 or W.announced = W.orders) }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.orders + W.outbox + W.announced + W.acts + W.faults + W.placing + W.placed }

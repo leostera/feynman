@@ -54,9 +54,12 @@ pred restart {
 
 pred nothing { keepStores and W.acts' = W.acts and W.faults' = W.faults and W.net' = W.net }
 
-fact behaviour {
-  init
-  always (write or restart or nothing or (some k: Kind | deliver[k] or lose[k]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  write or restart or nothing or (some k: Kind | deliver[k] or lose[k])
 }
 
 pred ackedIsReplicated { W.acked <= W.backup }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.acked + W.primary + W.backup + W.acts + W.faults + univ.(W.net) }
