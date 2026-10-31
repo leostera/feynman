@@ -69,9 +69,12 @@ pred restart {
 
 pred nothing { W.published' = W.published and W.unacked' = W.unacked and W.timer' = W.timer and keepConsumer and W.net' = W.net and W.faults' = W.faults }
 
-fact behaviour {
-  init
-  always (publish or redeliver or onJob or onDone or restart or nothing or (some k: Kind | lose[k]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  publish or redeliver or onJob or onDone or restart or nothing or (some k: Kind | lose[k])
 }
 
 pred chargedOnce { W.charged <= 1 }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.published + W.charged + univ.(W.net) + W.faults }

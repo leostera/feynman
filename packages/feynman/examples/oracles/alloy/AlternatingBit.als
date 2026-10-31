@@ -89,10 +89,13 @@ pred ackLost[t: Int] { spend and t in Tags and W.ack[t] > 0 and moveAck[t, none]
 
 pred nothing { keepSender and keepReceiver and W.data' = W.data and W.ack' = W.ack and W.faults' = W.faults }
 
-fact behaviour {
-  init
-  always (start or retry or nothing or (some p: Pos | onData[p] or dataLost[p]) or (some t: Tags | onAck[t] or ackLost[t]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  start or retry or nothing or (some p: Pos | onData[p] or dataLost[p]) or (some t: Tags | onAck[t] or ackLost[t])
 }
 
 pred inStep { W.next <= W.kept }
 pred inOrder { W.kept <= 2 and some W.inOrderSoFar }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.next + W.acts + W.kept + univ.(W.data) + univ.(W.ack) + W.faults }

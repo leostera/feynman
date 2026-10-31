@@ -72,9 +72,12 @@ pred nothing {
   W.charge' = W.charge and W.charged' = W.charged and W.failed' = W.failed
 }
 
-fact behaviour {
-  init
-  always (pay or bankCharges or clientPaid or clientRetries or chargeLost or chargedLost or nothing)
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  pay or bankCharges or clientPaid or clientRetries or chargeLost or chargedLost or nothing
 }
 
 pred chargedOnce { W.charges <= 1 }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.charges + W.pays + W.faults + W.charge + W.charged + W.failed }

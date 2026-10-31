@@ -4,6 +4,25 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
+## Unreleased
+
+Faster, and checked against more. Nothing changes for spec authors.
+
+- **Faster checks.** `feynman check` over the 28 examples takes 1.3 s, from 4 s in 0.15.0; a
+  single spec about half as long (payments 628 → 259 ms), and the search 30–75% less on the
+  examples, most on liveness. What each step adds to `never` memory and fairness is cached;
+  liveness is judged on dense arrays; random runs reuse the search's work, and are skipped
+  when the search has seen every world. The CLI starts faster: the explorer's dependencies
+  load only for `dev`, `build` and `open`, and `tsc` runs alongside the first check.
+- **A mistyped option** says which, and where to look, instead of reporting a crash.
+- **A new example**, `webhooks.ts`: deduplicating events by the last id seen, which a
+  duplicated event arriving late gets past. It is the first to use `duplicate`.
+- **More oracles.** The examples' liveness verdicts are checked against TLC under the same
+  fairness. Ten examples are checked against Alloy 6, which finds counterexamples by SAT over
+  traces rather than by enumerating states, and eight against SPIN, an explicit-state checker
+  in C: the same verdicts, counterexamples just as short, and with SPIN the same number of
+  states.
+
 ## 0.15.0
 
 A smaller core (RFD0012). Feynman no longer decides how a system fails: a spec declares its

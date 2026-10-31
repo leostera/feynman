@@ -131,17 +131,18 @@ pred crash[p: P] {
 
 pred nothing { keepParticipants and keepCoordinator and keepPrepare and keepVoteMsg and keepDecide and keepFaults }
 
-fact behaviour {
-  init
-  always (
-    begin or nothing
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  (begin or nothing
     or (some p: P, a: Answer | castVote[p, a] or onVote[p, a] or voteLost[p, a])
     or (some p: P | onPrepare[p] or prepareLost[p] or crash[p])
-    or (some p: P, d: Decision | onDecide[p, d] or decideLost[p, d])
-  )
+    or (some p: P, d: Decision | onDecide[p, d] or decideLost[p, d]))
 }
 
 pred quiet { all p: P | W.prepare[p] = 0 and (all a: Answer | W.voteMsg[p][a] = 0) and (all d: Decision | W.decide[p][d] = 0) }
 
 pred atomic { not (some p, q: P | W.outcome[p] = Commit and W.outcome[q] = Abort) }
 pred decidedOnceQuiet { (quiet and (all p: P | some W.vote[p])) implies some W.decided }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { univ.(W.voted) + W.begins + univ.(W.prepare) + univ.(univ.(W.voteMsg)) + univ.(univ.(W.decide)) + W.faults }

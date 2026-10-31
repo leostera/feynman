@@ -6,6 +6,8 @@
 // action at most twice (atMost(2)). TLC then gives the reachable states, which invariants break, and the shortest way there.
 // The models in examples/oracles/alloy follow the same semantics for Alloy 6, which searches
 // traces by SAT rather than states one by one: which invariants break, and the shortest way.
+// Those in examples/oracles/spin do for SPIN, an explicit-state checker in C of its own: the
+// reachable states, which invariants break, and the shortest way.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -111,36 +113,106 @@ function alloyJars(dir: string): string[] {
 }
 
 /**
- * Check `always <invariant>` on an Alloy model, examples/oracles/alloy/<module>.als, over
- * traces of up to `steps` states, with Buggy, Faults and Repeats set as given. Alloy tries
- * trace lengths from the shortest up, so the first counterexample is a shortest one: for each
- * invariant, the events on it (states minus the first), or undefined when none is that short.
- * Integers are 4 bits, which is fastest by far; a model's counts stay well under 8, and a
- * trace that overflows one is left out (-n) rather than wrapping around.
+ * Check `always <invariant>` on an Alloy model, examples/oracles/alloy/<module>.als, over its
+ * traces from `init` taking a `step` at a time, of up to `steps` states, with Buggy, Faults and
+ * Repeats set as given. Alloy tries trace lengths from the shortest up, so the first
+ * counterexample is a shortest one: for each invariant, the events on it (states minus the
+ * first), or undefined when none is that short.
+ *
+ * Alloy's integers wrap around, which could hide a counterexample or make one up. So each
+ * model lists the integers it keeps (`fun counts`), and two checks show none overflows: they
+ * start between -2 and 2, and a step grows the largest of their sizes by at most one, never
+ * to the most negative integer (whose size does not fit). On a trace of n states they then
+ * stay within n + 1 either way, and the integers have the bits for that.
  */
 export function alloy(module: string, constants: { Buggy: boolean; Faults: number; Repeats: number }, invariants: string[], steps: number): Record<string, number | undefined> {
+  // Counts reach at most steps + 1; the check on one step adds one more.
+  const bits = Math.ceil(Math.log2(steps + 3)) + 1;
   const dir = mkdtempSync(join(tmpdir(), "feynman-alloy-"));
   try {
     const model = readFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", "alloy", `${module}.als`), "utf8");
+    const scope = `for ${bits} Int`;
     const config = [
       `pred Buggy { ${constants.Buggy ? "" : "some none"} }`,
       `fun Faults: one Int { ${constants.Faults} }`,
       `fun Repeats: one Int { ${constants.Repeats} }`,
-      ...invariants.map((i) => `check ${i}_holds { always ${i} } for 4 Int, 1..${steps} steps`),
+      `fun size_[c: Int]: Int { c < 0 implies minus[0, c] else c }`,
+      `fun sizes_[s: set Int]: set Int { { n: Int | some c: s | n = size_[c] } }`,
+      `check startSmall { init implies (all c: counts | -2 <= c and c <= 2) } ${scope}, 1 steps`,
+      `check growSlowly { ((all c: counts | -${steps + 1} <= c and c <= ${steps + 1}) and step) implies (all c: counts' | c != min[Int] and size_[c] <= plus[max[sizes_[counts]], 1]) } ${scope}, 2 steps`,
+      ...invariants.map((i) => `check ${i}_holds { (init and always step) implies always ${i} } ${scope}, 1..${steps} steps`),
     ];
     writeFileSync(join(dir, `${module}.als`), `${model}\n${config.join("\n")}\n`);
-    const run = spawnSync(JAVA!, ["--enable-native-access=ALL-UNNAMED", "-jar", ALLOY_JAR!, "exec", "-f", "-q", "-n", "-s", ALLOY_SOLVER, "-t", "json", "-o", join(dir, "out"), join(dir, `${module}.als`)], { encoding: "utf8" });
+    const run = spawnSync(JAVA!, ["--enable-native-access=ALL-UNNAMED", "-jar", ALLOY_JAR!, "exec", "-f", "-q", "-s", ALLOY_SOLVER, "-t", "json", "-o", join(dir, "out"), join(dir, `${module}.als`)], { encoding: "utf8" });
     const receipt = join(dir, "out", "receipt.json");
     if (run.status !== 0 || !existsSync(receipt)) throw new Error(`Alloy failed on ${module}:\n${run.stdout}\n${run.stderr}`);
     const commands = JSON.parse(readFileSync(receipt, "utf8")).commands as Record<string, { solution?: { instances: unknown[] }[] }>;
-    return Object.fromEntries(
-      invariants.map((i) => {
-        const command = commands[`${i}_holds`];
-        if (!command) throw new Error(`Alloy did not run ${i} on ${module}`);
-        const found = command.solution?.[0];
-        return [i, found ? found.instances.length - 1 : undefined];
-      }),
-    );
+    const ran = (name: string) => {
+      const command = commands[name];
+      if (!command) throw new Error(`Alloy did not run ${name} on ${module}`);
+      return command.solution?.[0];
+    };
+    if (ran("startSmall")) throw new Error(`${module}: a count starts above 2 or below -2`);
+    if (ran("growSlowly")) throw new Error(`${module}: a step moves a count further from zero by more than one`);
+    return Object.fromEntries(invariants.map((i) => [i, ran(`${i}_holds`) ? ran(`${i}_holds`)!.instances.length - 1 : undefined]));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** SPIN and a C compiler for the verifiers it writes, if both are around. */
+export const HAS_SPIN = spawnSync("spin", ["-V"]).status === 0 && spawnSync("cc", ["--version"]).status === 0;
+
+export interface SpinResult {
+  /** Distinct states SPIN stored. */
+  states: number;
+  /** For each invariant, the events on a shortest counterexample, or undefined when it holds. */
+  violated: Record<string, number | undefined>;
+}
+
+/**
+ * Run SPIN on a Promela model, examples/oracles/spin/<model>.pml, with BUGGY, FAULTS and
+ * REPEATS defined as given: every reachable state, breadth first, and each invariant (an
+ * `ltl` claim `[] p` named p_<invariant>, as some names are Promela's keywords) on its own. A model is one process whose loop takes one
+ * `d_step` per event, so SPIN's states are the model's variables and its steps are events; the
+ * loop is an end state, as a world where nothing can happen is not an error here. SPIN's own
+ * optimisations are off (-o1 -o2 -o3) when counting states: it would hide variables only ever
+ * written, such as a count no step reads, and merge states the checker tells apart. The claims
+ * keep statement merging, without which SPIN cannot search them breadth first.
+ */
+export function spin(model: string, constants: { Buggy: boolean; Faults: number; Repeats: number }, invariants: string[]): SpinResult {
+  const dir = mkdtempSync(join(tmpdir(), "feynman-spin-"));
+  const sh = (command: string, args: string[]) => {
+    const run = spawnSync(command, args, { cwd: dir, encoding: "utf8" });
+    if (run.error || (run.status !== 0 && command !== "./pan")) throw new Error(`${command} failed on ${model}:\n${run.stdout}${run.stderr}`);
+    return `${run.stdout}${run.stderr}`;
+  };
+  try {
+    copyFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", "spin", `${model}.pml`), join(dir, `${model}.pml`));
+    const defines = [`-DBUGGY=${constants.Buggy ? 1 : 0}`, `-DFAULTS=${constants.Faults}`, `-DREPEATS=${constants.Repeats}`];
+    // Every state, without the claims.
+    sh("spin", ["-o1", "-o2", "-o3", ...defines, "-a", `${model}.pml`]);
+    sh("cc", ["-O2", "-DBFS", "-DSAFETY", "-DNOCLAIM", "-o", "pan", "pan.c"]);
+    const all = sh("./pan", ["-m100000"]);
+    const states = Number(/(\d+) states, stored/.exec(all)?.[1] ?? NaN);
+    if (!/errors: 0/.test(all) || Number.isNaN(states)) throw new Error(`SPIN failed on ${model}:\n${all}`);
+    // Each claim, breadth first, so a counterexample is a shortest one.
+    sh("spin", ["-o1", "-o2", ...defines, "-a", `${model}.pml`]);
+    sh("cc", ["-O2", "-DBFS", "-DSAFETY", "-o", "pan", "pan.c"]);
+    const violated: Record<string, number | undefined> = {};
+    for (const invariant of invariants) {
+      rmSync(join(dir, `${model}.pml.trail`), { force: true });
+      const out = sh("./pan", ["-m100000", "-N", `p_${invariant}`]);
+      if (/errors: 0/.test(out)) {
+        violated[invariant] = undefined;
+        continue;
+      }
+      if (!/assertion violated/.test(out) || !existsSync(join(dir, `${model}.pml.trail`))) throw new Error(`SPIN failed on ${model}, ${invariant}:\n${out}`);
+      // The trail: a line per step, "step:process:transition"; negative steps are markers.
+      const steps = readFileSync(join(dir, `${model}.pml.trail`), "utf8").split("\n").filter((line) => /^\d+:/.test(line));
+      violated[invariant] = steps.length;
+    }
+    return { states, violated };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

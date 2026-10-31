@@ -80,9 +80,12 @@ pred restart {
 
 pred nothing { keepBank and keepClient and W.net' = W.net and W.faults' = W.faults }
 
-fact behaviour {
-  init
-  always (pay or retry or restart or nothing or (some i: Id | onDebit[i] or onDebited[i]) or (some k: Kind, i: Id | lose[k, i]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  pay or retry or restart or nothing or (some i: Id | onDebit[i] or onDebited[i]) or (some k: Kind, i: Id | lose[k, i])
 }
 
 pred debitedOnce { W.debits <= W.paid }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { W.debits + W.paid + W.acts + W.fresh + univ.(univ.(W.net)) + W.faults }

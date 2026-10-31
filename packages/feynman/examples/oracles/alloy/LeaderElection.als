@@ -54,10 +54,13 @@ pred restart[n: Node] {
 
 pred nothing { W.leader' = W.leader and W.announced' = W.announced and W.acts' = W.acts and W.net' = W.net and W.faults' = W.faults }
 
-fact behaviour {
-  init
-  always (nothing or (some n: Node | announce[n] or restart[n]) or (some to, from: Node | deliver[to, from] or lose[to, from]))
+-- One step of the system: what may happen next. The harness checks traces from init.
+pred step {
+  nothing or (some n: Node | announce[n] or restart[n]) or (some to, from: Node | deliver[to, from] or lose[to, from])
 }
 
 pred quiet { all to, from: Node | W.net[to][from] = 0 }
 pred agreeOnceQuiet { (quiet and W.announced = Node) implies (all a, b: Node | W.leader[a] = W.leader[b]) }
+
+-- Every integer the model keeps: the harness checks none comes near overflowing.
+fun counts: set Int { univ.(W.acts) + univ.(univ.(W.net)) + W.faults }
