@@ -9,7 +9,9 @@
 // Those in examples/oracles/spin do for SPIN, an explicit-state checker in C of its own: the
 // reachable states, which invariants break, and the shortest way. Those in
 // examples/oracles/nusmv do for NuSMV, which works on sets of states as BDDs: the reachable
-// states, which invariants break and the shortest way, and the liveness verdicts.
+// states, which invariants break and the shortest way, and the liveness verdicts. Those in
+// examples/oracles/quint are Quint specs, which Apalache checks by SMT (Z3), a step deeper
+// at a time: which invariants break, and the shortest way.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -264,6 +266,38 @@ export function nusmv(model: string, constants: { Buggy: boolean; Faults: number
       broken[l] = !holds[invariants.length + 1 + n];
     });
     return { states, violated, broken };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Quint, and a Java for the Apalache it runs (JAVA_HOME, or Homebrew's). */
+export const HAS_QUINT = spawnSync("quint", ["--version"]).status === 0 && !!JAVA;
+const QUINT_ENV = { ...process.env, JAVA_HOME: process.env.JAVA_HOME ?? "/opt/homebrew/opt/openjdk" };
+
+/**
+ * Check invariants of a Quint spec, examples/oracles/quint/<module>.qnt (a module of that name,
+ * with constants BUGGY, FAULTS and REPEATS, `init` and `step`), with Apalache, over runs of up
+ * to `depth` steps. Apalache checks each invariant after every step, deeper and deeper, so the
+ * first counterexample is a shortest one: for each invariant, the events on it, or undefined
+ * when none is that short. Its integers are SMT's, which do not overflow.
+ */
+export function quint(module: string, constants: { Buggy: boolean; Faults: number; Repeats: number }, invariants: string[], depth: number): Record<string, number | undefined> {
+  const dir = mkdtempSync(join(tmpdir(), "feynman-quint-"));
+  try {
+    const source = readFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", "quint", `${module}.qnt`), "utf8");
+    const main = `module main {\n  import ${module}(BUGGY = ${constants.Buggy}, FAULTS = ${constants.Faults}, REPEATS = ${constants.Repeats}).*\n}\n`;
+    writeFileSync(join(dir, `${module}.qnt`), `${source}\n${main}`);
+    return Object.fromEntries(
+      invariants.map((invariant) => {
+        const trace = join(dir, `${invariant}.itf.json`);
+        const run = spawnSync("quint", ["verify", "--main", "main", "--max-steps", String(depth), "--invariant", invariant, "--out-itf", trace, `${module}.qnt`], { cwd: dir, env: QUINT_ENV, encoding: "utf8" });
+        const out = `${run.stdout}${run.stderr}`;
+        if (run.status === 0 && /\[ok\]/.test(out)) return [invariant, undefined];
+        if (!/\[violation\]/.test(out) || !existsSync(trace)) throw new Error(`Quint failed on ${module}, ${invariant}:\n${out}`);
+        return [invariant, (JSON.parse(readFileSync(trace, "utf8")).states as unknown[]).length - 1];
+      }),
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
