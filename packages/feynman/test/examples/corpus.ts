@@ -82,6 +82,19 @@ export interface TlaOracle {
   configs: { variant: Variant; faults: number; repeats: number }[];
 }
 
+/**
+ * An independent Alloy 6 model, examples/oracles/alloy/<module>.als, searched by SAT over
+ * traces: the same verdicts and shortest counterexamples, up to a trace length.
+ */
+export interface AlloyOracle {
+  module: string;
+  /** Safety invariants both sides check, by the same name (a pred in the model). */
+  invariants: string[];
+  /** Events a trace may have: Alloy's verdict that an invariant holds is only up to this many. */
+  depth: number;
+  configs: { variant: Variant; faults: number; repeats: number }[];
+}
+
 /** An independent P model, examples/oracles/p/<project>: the same verdict on one property. */
 export interface POracle {
   project: string;
@@ -100,6 +113,7 @@ export interface Example {
   instances?: Record<string, number>;
   cases: Case[];
   tla?: TlaOracle;
+  alloy?: AlloyOracle;
   p?: POracle;
 }
 
@@ -122,6 +136,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { debitedOnce: "holds", paymentsSettle: "unfinished" } },
     ],
     tla: { module: "Payments", invariants: ["debitedOnce"], depth: 9, configs: BOTH_WAYS },
+    alloy: { module: "Payments", invariants: ["debitedOnce"], depth: 8, configs: BOTH_WAYS },
     p: { project: "Payments", property: "debitedOnce", assertion: "the bank debited more often than the client paid", depth: 8 },
   },
   {
@@ -135,6 +150,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 7, faults: 1 } }, stuck: { events: 5, faults: 1 } },
     ],
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
+    alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
   },
   {
@@ -167,6 +183,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { agree: "holds" }, refuted: ["Node"] },
     ],
     tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], liveness: ["agree"], configs: BOTH_WAYS },
+    alloy: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], depth: 10, configs: BOTH_WAYS },
   },
   {
     name: "job queue",
@@ -192,6 +209,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { inStep: "holds", inOrder: "holds" } },
     ],
     tla: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
+    alloy: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
     p: { project: "AlternatingBit", property: "inOrder", assertion: "the receiver kept an item out of order", depth: 9 },
   },
   {
@@ -225,6 +243,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { announcedOnceQuiet: { events: 4, faults: 1 } } },
     ],
     tla: { module: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
+    alloy: { module: "Outbox", invariants: ["announcedOnceQuiet"], depth: 8, configs: BOTH_WAYS },
     p: {
       project: "Outbox",
       property: "announcedOnceQuiet",
@@ -248,6 +267,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { covered: "holds" }, stuck: { events: 5, faults: 1 } },
     ],
     tla: { module: "WriteSkew", invariants: ["covered"], configs: BOTH_WAYS },
+    alloy: { module: "WriteSkew", invariants: ["covered"], depth: 9, configs: BOTH_WAYS },
     p: { project: "WriteSkew", property: "covered", assertion: "nobody is on call", depth: 9 },
   },
   {
@@ -322,6 +342,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { ackedIsReplicated: "holds" } },
     ],
     tla: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
+    alloy: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], depth: 8, configs: BOTH_WAYS },
     p: { project: "PrimaryBackup", property: "ackedIsReplicated", assertion: "acknowledged a write the backup does not have", depth: 8 },
   },
   {
@@ -444,6 +465,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 10, faults: 1 }, expect: { chargedOnce: "holds" } },
     ],
     tla: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 10, configs: BOTH_WAYS },
+    alloy: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 8, configs: BOTH_WAYS },
     p: {
       project: "IdempotentConsumer",
       property: "chargedOnce",
@@ -466,6 +488,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 12, faults: 2 }, expect: { chargedOnce: "holds", paymentsEnd: "holds" } },
     ],
     tla: { module: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    alloy: { module: "RetriedCall", invariants: ["chargedOnce"], depth: 11, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
       project: "RetriedCall",
       property: "chargedOnce",
