@@ -44,6 +44,45 @@ Commands:
   open                     Build, then open that file.
 `;
 
+const ARGS = {
+  allowPositionals: true,
+  options: {
+    scenario: { type: "string" },
+    all: { type: "boolean" },
+    without: { type: "string" },
+    set: { type: "string", multiple: true },
+    "no-rules": { type: "boolean" },
+    depth: { type: "string" },
+    "max-states": { type: "string" },
+    "memory-limit": { type: "string" },
+    "time-limit": { type: "string" },
+    walks: { type: "string" },
+    "walk-depth": { type: "string" },
+    "no-symmetry": { type: "boolean" },
+    "symmetry-checks": { type: "string" },
+    instances: { type: "string" },
+    base: { type: "string" },
+    port: { type: "string" },
+    out: { type: "string" },
+    only: { type: "string" },
+    brief: { type: "boolean" },
+    json: { type: "boolean" },
+    "as-scenario": { type: "boolean" },
+  },
+} as const;
+
+/** The command line after the command; a mistyped option is the user's error, not a crash. */
+function parsed(args: string[]) {
+  try {
+    return parseArgs({ args, ...ARGS });
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (!code?.startsWith("ERR_PARSE_ARGS")) throw error;
+    const option = /'(-[^']*)'/.exec((error as Error).message)?.[1];
+    throw new Error(code === "ERR_PARSE_ARGS_UNKNOWN_OPTION" && option ? `Unknown option ${option}. \`feynman help\` lists the options.` : `${(error as Error).message.split(". ")[0]}. \`feynman help\` lists the options.`);
+  }
+}
+
 export async function main(argv: string[], cwd = process.cwd()): Promise<number> {
   const [command, ...rest] = argv;
   if (!command || command === "help" || command === "--help" || command === "-h") {
@@ -54,34 +93,9 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
     console.log(manifest.version);
     return 0;
   }
-  const { values, positionals } = parseArgs({
-    args: rest,
-    allowPositionals: true,
-    options: {
-      scenario: { type: "string" },
-      all: { type: "boolean" },
-      without: { type: "string" },
-      set: { type: "string", multiple: true },
-      "no-rules": { type: "boolean" },
-      depth: { type: "string" },
-      "max-states": { type: "string" },
-      "memory-limit": { type: "string" },
-      "time-limit": { type: "string" },
-      walks: { type: "string" },
-      "walk-depth": { type: "string" },
-      "no-symmetry": { type: "boolean" },
-      "symmetry-checks": { type: "string" },
-      instances: { type: "string" },
-      base: { type: "string" },
-      port: { type: "string" },
-      out: { type: "string" },
-      only: { type: "string" },
-      brief: { type: "boolean" },
-      json: { type: "boolean" },
-      "as-scenario": { type: "boolean" },
-    },
-  });
+  const { values, positionals } = parsed(rest);
   const ctx = await context(cwd);
+
   switch (command) {
     case "list":
       return list(ctx);
