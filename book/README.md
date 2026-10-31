@@ -70,7 +70,7 @@ run `feynman check <file>`. The comment at the top of every step says what to ex
 ## Where it came from
 
 The book owes its shape to three others: Hillel Wayne's [Learn TLA+](https://learntla.com),
-Alcino Cunha and Nuno Macedo's [Practical Alloy](https://practicalalloy.github.io), and the
+Alcino Cunha, Nuno Macedo, Julien Brunel and David Chemouil's [Practical Alloy](https://practicalalloy.github.io), and the
 [P language tutorials](https://p-org.github.io/P/tutorial). Chapter 16 follows the P
 two-phase-commit tutorial, and chapter 18 follows Martin Kleppmann's
 [How to do distributed locking](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html).

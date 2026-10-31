@@ -14,6 +14,8 @@ See [feynman.leostera.dev](https://feynman.leostera.dev).
 - [`packages/share`](packages/share): the explorer of any public git repository, built on
   demand, that the site serves under `/s/`.
 - [`sites/feynman.leostera.dev`](sites/feynman.leostera.dev): the website.
+- [`book`](book/README.md): *Writing specs with Feynman*, a book that teaches it step by step,
+  with every spec it builds in [`book/specs`](book/specs).
 - [`docs/rfds`](docs/rfds): design documents.
 - [`CHANGELOG.md`](CHANGELOG.md): what changed in the site, the explorer and the repository.
 

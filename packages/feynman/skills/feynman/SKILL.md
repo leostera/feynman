@@ -19,6 +19,32 @@ from it:
 what matters in the domain (a terminal to type in, a Settings pane), add a small
 playground file beside the spec that composes Feynman's kit; see "Playground files".
 
+## The book
+
+*Writing specs with Feynman* (https://github.com/leostera/feynman/blob/main/book/README.md) is the long form of this page: every rule
+here, with the reasoning behind it, worked step by step on real specs whose checked output
+is quoted. This page says what to do; the book shows why, and what goes wrong otherwise.
+Read the chapter for the task in front of you:
+
+| Task | Chapter |
+| --- | --- |
+| A first spec, end to end | 1. A first spec |
+| Actors, state, actions; what to leave out | 3. Things and what they hold |
+| Messages, and where a step ends | 4. Telling each other |
+| Writing properties; reading a counterexample | 5. What must stay true |
+| Scenarios a reader needs | 6. Showing that it happens |
+| Timers, with no clock | 7. When the timer fires first |
+| Lost messages, calls that fail, retries, idempotency | 8. When the answer never comes |
+| Crashes, and what is on disk | 9. When it restarts right here |
+| Liveness, fairness, `leadsTo` | 10. Does it ever finish? |
+| Rules and `needs`; `--without` | 11. Which part does the work? |
+| Bounds, symmetry, `~` and `?`, a state space too big | 12. How sure are we? |
+| Reading code into a spec; sources, lock, diff | 13. Pointing at the code |
+| Displays, tokens, playground files, flows | 14. Explaining it to the new person |
+| Triaging counterexamples; a `✓` that lies | 15. My agent found a bug. Is it real? |
+| Worked protocols: 2PC, outbox, leases and fencing, CRDTs | 16 to 19 |
+| From TLA+, Alloy or P; a one-page reference | Appendices A and B |
+
 ## Setup
 
 Feynman runs on [Bun](https://bun.sh) (1.3 or later). In the repository to model:
@@ -110,6 +136,9 @@ Before you finish, go through the spec once more. For each actor, message and st
      behaviour in a scenario whose description says it is intended.
    - **A finding:** the code really does this, and should not. Do not weaken the invariant
      to make it go away; report it.
+
+   Chapter 15 of the book works through an agent's spec with one of each: a spec that split
+   one SQL statement into two steps, and a real lost-ticket bug behind a restart.
 
    Then judge how likely a finding is before anyone writes tests or files issues. Check
    says how many faults each counterexample needs (it searches again with fewer, so "needs
@@ -391,7 +420,8 @@ a named type for `initialState`.
 
 ### Make the playground worth looking at
 
-The playground is drawn from the spec, so the spec decides how good it looks. For every
+The playground is drawn from the spec, so the spec decides how good it looks. Chapter 14 of
+the book takes one spec from bare to finished in four steps, with screenshots of each. For every
 actor, add:
 
 - **`display.icon`.** One of `person`, `people`, `phone`, `laptop`, `desktop`, `browser`,
@@ -543,7 +573,8 @@ export default definePlayground(spec, (play) => {
 
 - Everything a spec needs comes from `"@leostera/feynman"`: the `define*` functions, the
   faults library (`budget`, `spend`, `atMost`, `lose`, `duplicate`, `crash`, `defineCall`,
-  `failed`), `input`, and the schemas. For helpers, the types are `Actor`, `Instance`, `World`, `Ctx`, `Script`, `Display`,
+  `failed`), `input`, and the schemas. For helpers, the types are `Actor`, `Instance`, `WorldView` (the world a property or guard
+  reads; `World` is the engine's), `Setup` (what a shared `setup` takes), `Ctx`, `Script`, `Display`,
   `Link`, `Row`, `Token`, `Icon`, `Mood`, `ZonePlace` and `ActorPlace`.
 - **The source is the reference.** Feynman ships as TypeScript, so it is in
   `node_modules/@leostera/feynman/src`; read it when this page does not answer.
@@ -579,6 +610,9 @@ its call tree says nothing about this one.
 
 **Point at real code; never invent paths.** `feynman check` fails on sources that don't
 resolve. When the code does not exist yet, leave `sources` out of that step instead.
+Members of an interface or a type are not definitions: point at their lines
+(`db.ts:9-10`). Chapter 13 of the book models a small codebase this way, and uses
+`lock` and `diff` to review a change to it.
 
 ### Modelling choices
 
@@ -590,6 +624,9 @@ resolve. When the code does not exist yet, leave `sources` out of that step inst
   computes with them (electing the highest id, hashing an id). The checker tests the claim
   on up to `--symmetry-checks N` merged states (2000) and says when it is false; testing
   takes a large share of a symmetric search, so lower it for speed once the claim has held.
+  It can only test the states it merges: a false claim whose difference shows only later
+  can pass the search, and the random runs, which merge nothing, are what catch it. Keep
+  them on (chapter 12 of the book shows one).
 - **State.** Keep only what decides behaviour. Use hashes, not secrets (`ctx.hash`).
 - **Repeats.** Bound each action a person could take forever with `with: [atMost(2)]`: each
   instance takes it at most twice on one path. Raise the number when a bug needs more; a
@@ -797,7 +834,7 @@ differ in most ("Session.outcomes (1,359 values)"). A field with many values (a 
 counter, ids, a list that only grows) is usually the cause: bound it, or keep only what the
 properties read. Without one, it is the orders of what is in flight: smaller `atMost` limits,
 fewer instances, or a smaller budget (`--set faults=0`). Do not just raise `--max-states`: a state space that is too big usually
-means the spec models too much.
+means the spec models too much. Chapter 12 of the book lists what to cut, in order of payoff.
 
 A `feynman.config.ts` at the repository root can name spec globs and checker defaults:
 

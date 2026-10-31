@@ -46,6 +46,7 @@ still holds; \`--without RULE\` shows the design without it.
 ## Docs
 
 - [Writing and checking specs](${SITE}/SKILL.md): the skill an agent follows to model a codebase, check the model, and report what it found
+- [Writing specs with Feynman](${REPOSITORY}/blob/main/book/README.md): the book, building specs step by step, from a first race to two-phase commit, leases and CRDTs
 - [The package](https://www.npmjs.com/package/@leostera/feynman): @leostera/feynman on npm
 
 ## Explorers
