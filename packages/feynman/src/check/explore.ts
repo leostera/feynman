@@ -211,11 +211,19 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const started = Date.now();
   const roots = rootsOf(spec, b, seeds);
   const walkVerdicts = verdicts();
-  const walked = b.walks > 0 ? walk(spec, roots, b, walkVerdicts, started + b.timeLimit * WALK_SHARE) : NO_WALKS;
   const search = new IntegerSearch(spec, b, roots, options.watch ?? {}, started);
   search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
-  search.run();
+  // The search goes first, leaving random runs their share of the time. When it explores every
+  // world there is, they would find nothing it did not, and are skipped; else they run, and a
+  // search stopped at its share goes on, up to the time limit.
+  search.run(b.walks > 0 ? started + b.timeLimit * (1 - WALK_SHARE) : undefined);
   if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
+  let walked = NO_WALKS;
+  if (b.walks > 0 && !search.complete && !search.allBroken) {
+    walked = walk(spec, roots, b, walkVerdicts, Math.min(Date.now() + b.timeLimit * WALK_SHARE, started + b.timeLimit));
+    if (search.stoppedBy === "timeLimit") search.run();
+    if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
+  }
   return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
 }
 

@@ -225,6 +225,14 @@ export class IntegerSearch {
   stuckAt: number | undefined;
   states = 0;
   stoppedBy: StopReason | undefined;
+  /** Whether the search ran out of worlds before the depth bound: it has explored every world reachable. */
+  complete = false;
+  /** Whether a new world was found at the depth bound, and not expanded. */
+  private cut = false;
+  /** Where `run` goes on from, if it stopped at a deadline. */
+  private resume: { frontier: Entry[]; next: Entry[]; depth: number; at: number } | undefined;
+  /** For liveness: the nodes at the depth bound, whose edges are added at the end if they can be. */
+  private open: Entry[] = [];
   /** A symmetry claim turned out false: the search stopped, to be run again without it. */
   refuted = false;
   depthReached = 0;
@@ -355,32 +363,38 @@ export class IntegerSearch {
     return layout;
   }
 
-  run(): void {
-    // For liveness: the nodes at the depth bound, whose edges are added at the end if they can be.
-    const open: Entry[] = [];
-    let frontier = this.start(open);
-    const deadline = this.started + this.b.timeLimit;
-    for (let depth = 0; frontier.length && depth < this.b.depth; depth++) {
-      const next: Entry[] = [];
-      for (let f = 0; f < frontier.length; f++) {
+  /**
+   * Breadth first, until the depth bound, a limit, or `deadline` (the time limit's, by default).
+   * Stopped by a deadline, it can be run again, and goes on from where it was.
+   */
+  run(deadline = this.started + this.b.timeLimit): void {
+    this.stoppedBy = undefined;
+    const r = (this.resume ??= { frontier: this.start(this.open), next: [], depth: 0, at: 0 });
+    while (r.frontier.length && r.depth < this.b.depth) {
+      for (; r.at < r.frontier.length; r.at++) {
         // Every world within `depth` events has been found and judged: those past it, not all.
-        this.completeDepth = depth;
-        if ((f & 255) === 0 && Date.now() > deadline) {
+        this.completeDepth = r.depth;
+        if ((r.at & 255) === 0 && Date.now() > deadline) {
           this.stoppedBy = "timeLimit";
           return;
         }
-        if (!this.expand(frontier[f], depth, next, open)) return;
+        if (!this.expand(r.frontier[r.at], r.depth, r.next, this.open)) return;
         if (this.untilBroken && this.broken.size === this.spec.properties.length) {
           this.allBroken = true;
           return;
         }
       }
-      frontier = next;
+      r.frontier = r.next;
+      r.next = [];
+      r.depth++;
+      r.at = 0;
     }
+    // Nothing new at the depth bound: every world reachable has been explored.
+    this.complete = !this.cut;
     // Liveness needs the edges out of the worlds at the depth bound too. Where every step from
     // one lands on a known state, nothing lies past it, and its edges are added: in a space the
     // bound does not cut, liveness is then judged in full, as TLC would.
-    if (this.keepsEdges) for (const entry of open) this.close(entry);
+    if (this.keepsEdges) for (const entry of this.open) this.close(entry);
   }
 
   /** One node per distinct root: judged, and the frontier to start from. */
@@ -410,7 +424,11 @@ export class IntegerSearch {
   /** A new state at a depth: expanded in the next round, or (for liveness) closed at the end. */
   private queue(entry: Entry, depth: number, next: Entry[], open: Entry[]): void {
     if (depth < this.b.depth) next.push(entry);
-    else if (this.keepsEdges) open.push(entry);
+    else {
+      // A new world at the bound: there may be more past it.
+      this.cut = true;
+      if (this.keepsEdges) open.push(entry);
+    }
   }
 
   /** Every step from a frontier entry, in the order `branches` gives them. False when the search must stop. */
