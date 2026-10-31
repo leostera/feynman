@@ -37,12 +37,15 @@ export interface ReferenceResult {
 /** A world in the graph: its successors (by index; -1 for a world past the depth bound) and the fair steps possible in it. */
 type GraphNode = { world: World; faults: number; depth: number; edges: { to: number; fair?: string }[]; enabled: Map<string, "weak" | "strong">; closed: boolean };
 
-/** What a world is, for this explorer: states and variables, messages in flight as a bag, which timers are set. */
+/**
+ * What a world is, for this explorer: states and variables, messages in flight as a bag (a
+ * reply with the request it answers, which a lost reply's failure carries), which timers are set.
+ */
 export function worldKey(world: World): string {
   return sortedJson({
     instances: world.instances.map((i) => (i.variables ? [i.id, i.state, i.variables] : [i.id, i.state])),
     variables: world.variables ?? {},
-    messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload])).sort(),
+    messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload, p.answers ?? null])).sort(),
     timers: world.pending.filter((p) => p.kind === "timer").map((p) => `${p.to}|${p.timer}`).sort(),
     fresh: world.fresh,
     rng: world.rng,
