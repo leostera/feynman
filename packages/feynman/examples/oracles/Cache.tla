@@ -74,5 +74,14 @@ Lose(m) ==
 
 Next == Read \/ \E v \in {"b", "c"} : Write(v) \/ \E m \in DOMAIN net : Deliver(m) \/ Lose(m)
 
+(* Feynman's fairness: a message in flight is delivered; reads, writes and losses are not fair. *)
+Msgs ==
+  {[type |-> "Get"], [type |-> "Load"]}
+    \cup {[type |-> "Loaded", value |-> v, version |-> n] : v \in {"a", "b", "c"}, n \in 0..Repeats}
+    \cup {[type |-> "Update", value |-> v] : v \in {"b", "c"}}
+    \cup {[type |-> "Invalidate", version |-> n] : n \in 1..Repeats}
+FairSpec == Init /\ [][Next]_vars /\ \A m \in Msgs : WF_vars(Deliver(m))
+
+converges == <>[](entry = None \/ entry.value = value)
 consistentOnceQuiet == net = EmptyBag => (entry = None \/ entry.value = value)
 =============================================================================

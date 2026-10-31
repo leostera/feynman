@@ -16,6 +16,7 @@ Charged == [type |-> "Charged", payment |-> Payment]
 Failed == [type |-> "Failed", payment |-> Payment]
 
 VARIABLES paying, paid, charges, seen, net, pays, faults
+vars == <<paying, paid, charges, seen, net, pays, faults>>
 
 One(m) == SetToBag({m})
 Take(m) == net (-) One(m)
@@ -60,5 +61,12 @@ Next ==
   \/ Pay \/ BankCharges \/ ClientPaid \/ ClientRetries
   \/ \E m \in DOMAIN net : Lose(m)
 
+(* Feynman's fairness: what is in flight is delivered, and a failure reaches the client. *)
+(* Paying and losing are not fair.                                                     *)
+FairSpec ==
+  /\ Init /\ [][Next]_vars
+  /\ WF_vars(BankCharges) /\ WF_vars(ClientPaid) /\ WF_vars(ClientRetries)
+
 chargedOnce == charges <= 1
+paymentsEnd == paying ~> paid
 =============================================================================

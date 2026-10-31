@@ -46,5 +46,12 @@ Restart(n) ==
 Next == \/ \E n \in N : Announce(n) \/ Restart(n)
         \/ \E m \in DOMAIN net : Deliver(m) \/ Lose(m)
 
+(* Feynman's fairness: a message in flight is delivered; announcing, losing and *)
+(* restarting are not fair.                                                     *)
+FairSpec ==
+  /\ Init /\ [][Next]_vars
+  /\ \A to, from \in N : WF_vars(Deliver([to |-> to, from |-> from, id |-> from]))
+
+agree == (\A n \in N : announced[n]) ~> \A a, b \in N : leader[a] = leader[b]
 agreeOnceQuiet == (net = EmptyBag /\ \A n \in N : announced[n]) => \A a, b \in N : leader[a] = leader[b]
 =============================================================================
