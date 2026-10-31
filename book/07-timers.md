@@ -18,7 +18,7 @@ three minutes, and find that someone else bought it while they typed. So the box
 From here on, the website and its database are one actor, the box office. In chapter 5 the
 website passed messages on and decided nothing: every decision was one conditional statement
 in the database. A part of the system that decides nothing adds states without adding
-behaviour, so we take it out. Chapter 13 has more on what to leave out.
+behaviour, so we take it out. Chapters 12 and 13 have more on what to leave out.
 
 ## Step 1: holding, then paying
 
