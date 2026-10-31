@@ -1,11 +1,13 @@
-// Comparing the checker with TLC, the TLA+ model checker, on the same systems.
+// Comparing the checker with TLC, the TLA+ model checker, and with Alloy, on the same systems.
 //
-// Each oracle in ../oracles is an independent TLA+ model of a spec in ../specs, following
+// Each oracle in examples/oracles is an independent TLA+ model of an example, following
 // Feynman's semantics: the network is a bag, any message in it may go next, a fault (a step
 // the spec declares, RFD0012) loses one or restarts an instance, and each instance takes each
 // action at most twice (atMost(2)). TLC then gives the reachable states, which invariants break, and the shortest way there.
+// The models in examples/oracles/alloy follow the same semantics for Alloy 6, which searches
+// traces by SAT rather than states one by one: which invariants break, and the shortest way.
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { check, pendingText, type Bounds, type Report } from "../../src/check/index.ts";
@@ -96,6 +98,52 @@ export async function feynman(spec: Spec, bounds: Partial<Bounds>): Promise<{ re
   const seen = new Set<string>();
   const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
   return { report, distinct: seen.size };
+}
+
+/** Alloy 6's jar: ALLOY_JAR, or where Homebrew's alloy-analyzer puts it; only when a Java can run it. */
+export const ALLOY_JAR = JAVA ? [process.env.ALLOY_JAR, ...alloyJars("/opt/homebrew/opt/alloy-analyzer/libexec")].find((p): p is string => !!p && existsSync(p)) : undefined;
+
+/** The SAT solver Alloy uses: ALLOY_SOLVER, or SAT4J, its own, the fastest on these models. */
+const ALLOY_SOLVER = process.env.ALLOY_SOLVER ?? "sat4j";
+
+function alloyJars(dir: string): string[] {
+  return existsSync(dir) ? readdirSync(dir).filter((f) => /^org\.alloytools\.alloy\.dist.*\.jar$/.test(f)).map((f) => join(dir, f)) : [];
+}
+
+/**
+ * Check `always <invariant>` on an Alloy model, examples/oracles/alloy/<module>.als, over
+ * traces of up to `steps` states, with Buggy, Faults and Repeats set as given. Alloy tries
+ * trace lengths from the shortest up, so the first counterexample is a shortest one: for each
+ * invariant, the events on it (states minus the first), or undefined when none is that short.
+ * Integers are 4 bits, which is fastest by far; a model's counts stay well under 8, and a
+ * trace that overflows one is left out (-n) rather than wrapping around.
+ */
+export function alloy(module: string, constants: { Buggy: boolean; Faults: number; Repeats: number }, invariants: string[], steps: number): Record<string, number | undefined> {
+  const dir = mkdtempSync(join(tmpdir(), "feynman-alloy-"));
+  try {
+    const model = readFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", "alloy", `${module}.als`), "utf8");
+    const config = [
+      `pred Buggy { ${constants.Buggy ? "" : "some none"} }`,
+      `fun Faults: one Int { ${constants.Faults} }`,
+      `fun Repeats: one Int { ${constants.Repeats} }`,
+      ...invariants.map((i) => `check ${i}_holds { always ${i} } for 4 Int, 1..${steps} steps`),
+    ];
+    writeFileSync(join(dir, `${module}.als`), `${model}\n${config.join("\n")}\n`);
+    const run = spawnSync(JAVA!, ["--enable-native-access=ALL-UNNAMED", "-jar", ALLOY_JAR!, "exec", "-f", "-q", "-n", "-s", ALLOY_SOLVER, "-t", "json", "-o", join(dir, "out"), join(dir, `${module}.als`)], { encoding: "utf8" });
+    const receipt = join(dir, "out", "receipt.json");
+    if (run.status !== 0 || !existsSync(receipt)) throw new Error(`Alloy failed on ${module}:\n${run.stdout}\n${run.stderr}`);
+    const commands = JSON.parse(readFileSync(receipt, "utf8")).commands as Record<string, { solution?: { instances: unknown[] }[] }>;
+    return Object.fromEntries(
+      invariants.map((i) => {
+        const command = commands[`${i}_holds`];
+        if (!command) throw new Error(`Alloy did not run ${i} on ${module}`);
+        const found = command.solution?.[0];
+        return [i, found ? found.instances.length - 1 : undefined];
+      }),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 export function readOracle(module: string): string {
