@@ -15,7 +15,7 @@ import { judgeLiveness, type Lasso } from "./liveness.ts";
 import { IntegerSearch, type Variety } from "./integer.ts";
 import type { RuleVerdict } from "./rules.ts";
 import { apply, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
-import { rebind, shrink, walk, type WalkResult } from "./walk.ts";
+import { rebind, shrink, type WalkResult } from "./walk.ts";
 
 export { apply, branches, placeText, QUIET, replay, type Choice, type Counterexample, type ScenarioPlace } from "./steps.ts";
 
@@ -220,7 +220,7 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
   let walked = NO_WALKS;
   if (b.walks > 0 && !search.complete && !search.allBroken) {
-    walked = walk(spec, roots, b, walkVerdicts, Math.min(Date.now() + b.timeLimit * WALK_SHARE, started + b.timeLimit));
+    walked = search.walk(walkVerdicts, Math.min(Date.now() + b.timeLimit * WALK_SHARE, started + b.timeLimit));
     if (search.stoppedBy === "timeLimit") search.run();
     if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
   }

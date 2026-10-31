@@ -24,13 +24,14 @@ import { deliveryIn } from "../spec/engine.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Root, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
-import { startBreaks, stuck } from "./judge.ts";
+import { startBreaks, stuck, type Verdicts } from "./judge.ts";
 import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { fairness } from "./fairness.ts";
 import { memoryOf, rootMemory } from "./nevers.ts";
 import { PrintMap } from "./prints.ts";
 import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
+import { seeded, WEIGHTS, type WalkResult } from "./walk.ts";
 
 type Instance = World["instances"][number];
 type Pending = World["pending"][number];
@@ -227,6 +228,8 @@ export class IntegerSearch {
   stoppedBy: StopReason | undefined;
   /** Whether the search ran out of worlds before the depth bound: it has explored every world reachable. */
   complete = false;
+  /** Each root's vector, where random runs start. */
+  private rootVectors: Int32Array[] = [];
   /** Whether a new world was found at the depth bound, and not expanded. */
   private cut = false;
   /** Where `run` goes on from, if it stopped at a deadline. */
@@ -404,6 +407,7 @@ export class IntegerSearch {
     for (const [r, { world, symmetry }] of this.roots.entries()) {
       const L = this.layoutOf(world);
       const vector = this.vectorOf(world, memory, L);
+      this.rootVectors[r] = vector;
       const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
       const [h1, h2] = folded ? folded.print : printOf(vector, L);
       if (this.seen.get(h1, h2) !== undefined) continue;
@@ -419,6 +423,85 @@ export class IntegerSearch {
       this.queue({ gid, layout: L, tuple, vector, h1, h2 }, 0, frontier, open);
     }
     return frontier;
+  }
+
+  /**
+   * Random runs (walk.ts) on the search's vectors and caches: the same runs, picked by the same
+   * seeds and weights from the same choices in the same order, judged as judge.ts judges them,
+   * in a fraction of the time of running each step through the engine. A run records its
+   * choices by name, found again in real worlds only for what it reports.
+   */
+  walk(v: Verdicts, until: number): WalkResult {
+    const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
+    if (this.b.walks <= 0) return out;
+    for (const [root, { world }] of this.roots.entries()) {
+      for (const id of startBreaks(this.spec, world).filter((id) => !v.broken.has(id))) {
+        v.broken.add(id);
+        out.findings.push({ id, root, choices: [] });
+      }
+    }
+    for (let run = 0; run < this.b.walks && Date.now() < until; run++) {
+      const root = run % this.roots.length;
+      const random = seeded(run + 1);
+      let vector = this.rootVectors[root];
+      const L = this.layoutOf(this.roots[root].world);
+      let tuple = this.tupleOf(vector, L);
+      const named: number[] = [];
+      const trail: TraceStep[] = [];
+      for (let depth = 0; depth < this.b.walkDepth; depth++) {
+        const here = this.here(vector, L);
+        const choice = this.pick(here, this.choicesOf(here, tuple), random);
+        if (!choice) break;
+        const step = this.step(here, choice);
+        const { effect } = step;
+        named.push(this.nameIn(choice, vector, L));
+        out.steps++;
+        if (named.length > out.deepest) out.deepest = named.length;
+        this.reachedSteps[effect.reached] = true;
+        if (effect.error) {
+          if (!v.errors.has(effect.error)) {
+            v.errors.add(effect.error);
+            out.errors.push({ message: effect.error, root, choices: this.choicesNamed(root, named) });
+          }
+          break;
+        }
+        const nevers = this.nevers.length ? this.remember(vector[L.memory], () => trail, effect.event, step) : NO_IDS;
+        const child = this.applied(vector, step);
+        const childTuple = this.childTuple({ vector, tuple }, step, child);
+        const findings = [...this.failingAt(childTuple, child, L), ...nevers].filter((id) => !v.broken.has(id));
+        if (this.everySteps.length && this.everySteps.some((p) => !v.broken.has(p.id))) {
+          const before = vector;
+          for (const id of this.stepBreaks(tuple, childTuple, effect.event, depth, () => this.instancesOf(before, L), () => this.instancesOf(child, L), v.broken)) if (!findings.includes(id)) findings.push(id);
+        }
+        for (const id of new Set(findings)) {
+          v.broken.add(id);
+          out.findings.push({ id, root, choices: this.choicesNamed(root, named) });
+        }
+        trail.push(this.traceSteps.values[effect.event]);
+        vector = child;
+        tuple = childTuple;
+      }
+      if (!out.stuck && vector.length === L.messages + 1 && stuck(this.spec, this.instancesOf(vector, L))) out.stuck = { root, choices: this.choicesNamed(root, named) };
+      out.runs++;
+    }
+    return out;
+  }
+
+  /** A run's next choice (walk.ts pick): mostly the system's fair steps, some people, rarely an unfair step. */
+  private pick(here: Here, options: Choice[], random: () => number): Choice | undefined {
+    const groups: Record<keyof typeof WEIGHTS, Choice[]> = { system: [], people: [], unfair: [] };
+    for (const c of options) {
+      if (c.kind === "act") groups.people.push(c);
+      else if (this.fairOf(here, c)) groups.system.push(c);
+      else groups.unfair.push(c);
+    }
+    const kinds = (Object.keys(groups) as (keyof typeof groups)[]).filter((k) => groups[k].length);
+    if (!kinds.length) return undefined;
+    const total = kinds.reduce((sum, k) => sum + WEIGHTS[k], 0);
+    let roll = random() * total;
+    const kind = kinds.find((k) => (roll -= WEIGHTS[k]) < 0) ?? kinds.at(-1)!;
+    const group = groups[kind];
+    return group[Math.floor(random() * group.length)];
   }
 
   /** A new state at a depth: expanded in the next round, or (for liveness) closed at the end. */
@@ -579,7 +662,7 @@ export class IntegerSearch {
    * A child's tuple: its parent's, but for the stepping instance's state and whether anything
    * is pending, kept by those for each parent tuple; worked out afresh when the variables change.
    */
-  private childTuple(parent: Entry, step: Step, child: Int32Array): number {
+  private childTuple(parent: { vector: Int32Array; tuple: number }, step: Step, child: Int32Array): number {
     const L = step.layout;
     if (child[L.variables] !== parent.vector[L.variables]) return this.tupleOf(child, L);
     const key = (child[step.slot] * L.instances.length + step.slot) * 2 + (child.length > L.messages + 1 ? 1 : 0);
@@ -603,14 +686,14 @@ export class IntegerSearch {
    * evaluated holds. One that reads the event's place in the path is not kept: the place is
    * not in the key.
    */
-  private stepBreaks(before: number, after: number, event: number, index: number, beforeWorld: () => World, afterWorld: () => World): string[] {
+  private stepBreaks(before: number, after: number, event: number, index: number, beforeWorld: () => World, afterWorld: () => World, broken: Set<string> = this.broken): string[] {
     const key = `${before},${after},${event}`;
     let known = this.stepAnswers.get(key);
     if (!known) this.stepAnswers.set(key, (known = new Uint8Array(this.everySteps.length)));
     let views: { before: ReturnType<typeof worldView>; after: ReturnType<typeof worldView> } | undefined;
     const out: string[] = [];
     this.everySteps.forEach((p, i) => {
-      if (this.broken.has(p.id)) return;
+      if (broken.has(p.id)) return;
       if (known[i] === UNKNOWN) {
         views ??= { before: worldView(this.spec, beforeWorld()), after: worldView(this.spec, afterWorld()) };
         let readsIndex = false;
@@ -874,10 +957,15 @@ export class IntegerSearch {
   }
 
   private pathTo(gid: number): Choice[] {
-    const names: ChoiceName[] = [];
-    for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) names.push(this.names.values[this.named[at]]);
-    names.reverse();
-    let world = this.roots[this.root[gid]].world;
+    const named: number[] = [];
+    for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) named.push(this.named[at]);
+    return this.choicesNamed(this.root[gid], named.reverse());
+  }
+
+  /** Named choices from a root (nameIn), found again in real worlds. */
+  private choicesNamed(root: number, named: number[]): Choice[] {
+    const names = named.map((n) => this.names.values[n]);
+    let world = this.roots[root].world;
     const out: Choice[] = [];
     for (const name of names) {
       const choice = this.choiceIn(world, name);
@@ -948,12 +1036,17 @@ export class IntegerSearch {
 
   /** The `always` properties a new state breaks: which fail is worked out once per tuple. */
   private judge(tuple: number, vector: Int32Array, gid: number, L: Layout): void {
+    for (const id of this.failingAt(tuple, vector, L)) if (!this.broken.has(id)) this.breaks(id, gid);
+  }
+
+  /** The `always` properties that fail in a world: worked out once per tuple. */
+  private failingAt(tuple: number, vector: Int32Array, L: Layout): string[] {
     let failing = this.alwaysFailing[tuple];
     if (!failing) {
       const world = this.instancesOf(vector, L);
       this.alwaysFailing[tuple] = failing = this.always.flatMap((p) => (p.holds(world) ? [] : [p.id]));
     }
-    for (const id of failing) if (!this.broken.has(id)) this.breaks(id, gid);
+    return failing;
   }
 
   /**
