@@ -114,6 +114,16 @@ export interface NusmvOracle {
   configs: { variant: Variant; faults: number; repeats: number }[];
 }
 
+/** An independent Quint spec, examples/oracles/quint/<module>.qnt, checked by Apalache: the same verdicts and shortest counterexamples, up to a depth. */
+export interface QuintOracle {
+  module: string;
+  /** Safety invariants both sides check, by the same name (a val in the spec). */
+  invariants: string[];
+  /** Steps a run may take: Apalache's verdict that an invariant holds is only up to this many. */
+  depth: number;
+  configs: { variant: Variant; faults: number; repeats: number }[];
+}
+
 /** An independent P model, examples/oracles/p/<project>: the same verdict on one property. */
 export interface POracle {
   project: string;
@@ -135,6 +145,7 @@ export interface Example {
   alloy?: AlloyOracle;
   spin?: SpinOracle;
   nusmv?: NusmvOracle;
+  quint?: QuintOracle;
   p?: POracle;
 }
 
@@ -172,6 +183,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
+    quint: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
     spin: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
     nusmv: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
@@ -271,6 +283,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
     alloy: { module: "Outbox", invariants: ["announcedOnceQuiet"], depth: 8, configs: BOTH_WAYS },
+    quint: { module: "Outbox", invariants: ["announcedOnceQuiet"], depth: 8, configs: BOTH_WAYS },
     spin: { model: "Outbox", invariants: ["announcedOnceQuiet"], configs: BOTH_WAYS },
     p: {
       project: "Outbox",
@@ -372,6 +385,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
     alloy: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], depth: 8, configs: BOTH_WAYS },
+    quint: { module: "PrimaryBackup", invariants: ["ackedIsReplicated"], depth: 8, configs: BOTH_WAYS },
     spin: { model: "PrimaryBackup", invariants: ["ackedIsReplicated"], configs: BOTH_WAYS },
     p: { project: "PrimaryBackup", property: "ackedIsReplicated", assertion: "acknowledged a write the backup does not have", depth: 8 },
   },
@@ -496,6 +510,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 10, configs: BOTH_WAYS },
     alloy: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 8, configs: BOTH_WAYS },
+    quint: { module: "IdempotentConsumer", invariants: ["chargedOnce"], depth: 8, configs: BOTH_WAYS },
     p: {
       project: "IdempotentConsumer",
       property: "chargedOnce",
@@ -519,6 +534,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     alloy: { module: "RetriedCall", invariants: ["chargedOnce"], depth: 11, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    quint: { module: "RetriedCall", invariants: ["chargedOnce"], depth: 11, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     spin: { model: "RetriedCall", invariants: ["chargedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     nusmv: { model: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
@@ -569,6 +585,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     alloy: { module: "Webhooks", invariants: ["creditedOnce"], depth: 10, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    quint: { module: "Webhooks", invariants: ["creditedOnce"], depth: 10, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     spin: { model: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     nusmv: { model: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {

@@ -104,6 +104,15 @@ each `LTLSPEC` liveness verdict. Counts saturate rather than overflow, and every
 or built from source into `~/.local/opt/nusmv`: the macOS binary is x86-64 only), and is
 skipped without.
 
+### Quint
+
+`oracles/quint/` has Quint specs of some of the systems, written as Quint is (bags as maps
+from message to count, messages as records), which `quint verify` hands to Apalache: SMT, by
+Z3, a step deeper at a time, so its first counterexample is a shortest one, and its integers
+do not overflow. `test/examples/quint.oracle.ts` compares each invariant's verdict and
+counterexample length with the checker's at the same depth. It needs Quint and a Java
+(`brew install quint openjdk`; Quint fetches Apalache the first time), and is skipped without.
+
 ### P
 
 `oracles/p/` models some of the systems in P (see `test/examples/corpus.ts`). P delivers each machine's messages in order, so every message goes through a
@@ -116,4 +125,5 @@ own assertion) exactly when the checker does. It needs .NET 8 and `dotnet tool i
 --global P`, and is skipped without.
 
 Run them all with `bun run oracles` (TLC and P take about fifteen minutes, Alloy about as
-long, SPIN and NuSMV about a minute together); `bun run test` leaves them out.
+long, Quint about nine minutes, SPIN and NuSMV about a minute together); `bun run test`
+leaves them out.
