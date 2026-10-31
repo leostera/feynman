@@ -97,6 +97,14 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+(* Feynman's fairness: a message in flight is delivered. Votes, beginning, losses and *)
+(* restarts are not fair: a person may stop, the network may stop failing.             *)
+Msgs ==
+  {Msg("Prepare", p, C, None) : p \in P} \cup {Msg("Vote", C, p, v) : p \in P, v \in {"yes", "no"}}
+    \cup {Msg("Decide", p, C, d) : p \in P, d \in {"commit", "abort"}}
+FairSpec == Spec /\ \A m \in Msgs : WF_vars(Deliver(m))
+
 atomic == ~(\E p, q \in P : outcome[p] = "commit" /\ outcome[q] = "abort")
 decidedOnceQuiet == (net = EmptyBag /\ \A p \in P : vote[p] # None) => decided # None
+decides == (\A p \in P : vote[p] # None) ~> decided # None
 =============================================================================

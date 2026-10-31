@@ -25,6 +25,13 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
           if (!p) throw new Error(`${example.name} has no property ${invariant}`);
           expect({ invariant, broken: !p.holds, events: p.holds ? undefined : p.counterexample.events.length }).toEqual({ invariant, broken: !!theirs, events: theirs?.events });
         }
+        // The same verdict on each liveness property, under the same fairness.
+        for (const property of o.liveness ?? []) {
+          const theirs = tlc(o.module, constants, [], { temporal: { specification: "FairSpec", properties: [property] } }).temporal;
+          const p = ours.report.properties.find((x) => x.id === property);
+          if (!p) throw new Error(`${example.name} has no property ${property}`);
+          expect({ property, broken: !p.holds, unfinished: p.holds && !!p.unfinished }).toEqual({ property, broken: !!theirs, unfinished: false });
+        }
       }, 300_000);
     }
   }

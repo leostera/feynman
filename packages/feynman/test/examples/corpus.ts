@@ -73,6 +73,12 @@ export interface TlaOracle {
   invariants: string[];
   /** For systems that never run out of things to do: both sides stop at this depth, and the model has a `view`. */
   depth?: number;
+  /**
+   * Liveness properties both sides check, by the same name: TLC under the model's `FairSpec`,
+   * which makes fair what Feynman does (delivering what is in flight). Only for models without
+   * a depth: a liveness verdict needs every world.
+   */
+  liveness?: string[];
   configs: { variant: Variant; faults: number; repeats: number }[];
 }
 
@@ -128,7 +134,7 @@ export const corpus: Example[] = [
       // Blocking: once everyone has voted and a vote is lost, it never decides (6); quiet needs the other vote delivered too (7).
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 7, faults: 1 } }, stuck: { events: 5, faults: 1 } },
     ],
-    tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
+    tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
   },
   {
@@ -150,7 +156,7 @@ export const corpus: Example[] = [
       { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { converges: "holds" } },
       { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { converges: { events: 7, faults: 1 } } },
     ],
-    tla: { module: "Cache", invariants: ["consistentOnceQuiet"], configs: BOTH_WAYS },
+    tla: { module: "Cache", invariants: ["consistentOnceQuiet"], liveness: ["converges"], configs: BOTH_WAYS },
   },
   {
     name: "leader election",
@@ -160,7 +166,7 @@ export const corpus: Example[] = [
       { variant: "buggy", bounds: { depth: 12, faults: 0 }, expect: { agree: { events: 9, faults: 0 } } },
       { variant: "fixed", bounds: { depth: 12, faults: 0 }, expect: { agree: "holds" }, refuted: ["Node"] },
     ],
-    tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], configs: BOTH_WAYS },
+    tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], liveness: ["agree"], configs: BOTH_WAYS },
   },
   {
     name: "job queue",
@@ -459,7 +465,7 @@ export const corpus: Example[] = [
       { variant: "buggy", bounds: { depth: 10, faults: 1 }, expect: { chargedOnce: { events: 5, faults: 1 }, paymentsEnd: "holds" } },
       { variant: "fixed", bounds: { depth: 12, faults: 2 }, expect: { chargedOnce: "holds", paymentsEnd: "holds" } },
     ],
-    tla: { module: "RetriedCall", invariants: ["chargedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    tla: { module: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
       project: "RetriedCall",
       property: "chargedOnce",
