@@ -1,6 +1,6 @@
 // Chapter 14, step 2: icons, names, a status and a mood, and a zone for each part.
 //
-// Expected: the same verdicts.
+// Expected, at `--depth 40`: the same verdicts.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /**

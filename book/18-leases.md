@@ -225,7 +225,7 @@ The natural fix: before writing, ask whether the lease is still yours
 ```
 
 ```sh
-feynman check specs/18-leases/4-check-first.ts --depth 20 --only noStaleWrites
+feynman check specs/18-leases/4-check-first.ts --depth 40 --only noStaleWrites
 ```
 
 ```text

@@ -1,7 +1,8 @@
 // Chapter 18, step 3: the lock is a lease, which runs out after 30 seconds.
 //
-// Expected: `lockIsFreed` holds; `noStaleWrites` breaks with no faults: A's lease runs out
-// while its write is on the way, B takes the lock and writes, and A's write lands after.
+// Expected, at `--depth 30`: `lockIsFreed` holds; `noStaleWrites` breaks with no faults: A's
+// lease runs out while its write is on the way, B takes the lock and writes, and A's write
+// lands after.
 import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, type Setup } from "@leostera/feynman";
 
 /** At most one fault on any path. */

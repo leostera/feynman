@@ -1,0 +1,1080 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`01-wire/1-overdraft.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "moneyIsKept": "holds",
+    "noOverdrafts": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`01-wire/2-fixed.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "moneyIsKept": "holds",
+    "noOverdrafts": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`01-wire/3-rule.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "moneyIsKept": "holds",
+    "noOverdrafts": "holds",
+  },
+  "rules": {
+    "atomicDebit": [
+      "noOverdrafts: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`02-setup/hello.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "neverOn": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`03-counter/1-an-actor.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`03-counter/2-an-action.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`03-counter/2b-a-mistake.ts 1`] = `
+{
+  "errors": 1,
+  "properties": {},
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`03-counter/3-which-seat.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`03-counter/4-sold-out.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`04-online/1-buy.ts 1`] = `
+{
+  "loadError": "book/specs/04-online/1-buy.ts: Box office.buy: sends ticket, but no actor of Box office has a step on Ticket",
+}
+`;
+
+exports[`04-online/2-tickets.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`04-online/2a-quiet.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`04-online/3-sold-out.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`04-online/4-two-people.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {},
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/1-what-must-hold.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/2-a-database.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "broken",
+    "ticketsMatchTheBooks": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/3-steps-and-paths.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "noMoreTicketsThanSeats": "holds",
+    "oneOwnerPerSeat": "broken",
+    "soldSeatsStaySold": "broken",
+    "ticketsMatchTheBooks": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/4-fixed.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "soldSeatsStaySold": "holds",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`06-scenarios/1-the-race.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "broken",
+    "soldSeatsStaySold": "broken",
+    "ticketsMatchTheBooks": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`06-scenarios/2-fixed.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "soldSeatsStaySold": "holds",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`07-timers/1-holds.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "holdsAreRespected": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`07-timers/2-expiry.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "holdsAreRespected": "broken",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`07-timers/3-fixed.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "holdsAreRespected": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/1-a-bank.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/2-lost.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/3-retry.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "broken",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/4-idempotent.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/5-duplicates.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`09-restarts/1-forgets.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "broken",
+  },
+  "rules": {},
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`09-restarts/2-keeps.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`09-restarts/3-resume.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "oneTicket": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`10-liveness/1-eventually.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsEnd": "broken",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+    "seatIsSold": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`10-liveness/2-rearm.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`11-rules/1-rules.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "oneTicket: holds",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: holds",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`11-rules/2-every-rule.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: holds",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`11-rules/3-the-payer.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`12-bounds/1-false-symmetry.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "firstEntrantWins": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`12-bounds/2-untested.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "crowdsHearBack": "untested",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`13-code/box-office.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`14-explaining/1-bare.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`14-explaining/2-at-a-glance.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`14-explaining/3-inside.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`14-explaining/4-ticket.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`15-triage/1-the-agents-draft.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreKept": "broken",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "broken",
+    "paymentsEnd": "broken",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`15-triage/2-one-statement.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreKept": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "broken",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`15-triage/3-a-faithful-restart.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreKept": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "broken",
+  },
+  "rules": {
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": true,
+  "typeErrors": 0,
+}
+`;
+
+exports[`15-triage/4-email-the-ticket.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "chargedOnce": "holds",
+    "holdsAreKept": "holds",
+    "holdsAreRespected": "holds",
+    "holdsEnd": "holds",
+    "oneTicket": "holds",
+    "paymentsEnd": "holds",
+  },
+  "rules": {
+    "emailTickets": [
+      "paymentsEnd: breaks",
+    ],
+    "idempotencyKey": [
+      "chargedOnce: breaks",
+    ],
+    "payOnlyTheHolder": [
+      "holdsAreRespected: breaks",
+    ],
+    "rearmHolds": [
+      "holdsEnd: breaks",
+    ],
+    "resumePayments": [
+      "paymentsEnd: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/1-one-phase.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/2-two-phases.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "holds",
+    "nobodyWaitsForever": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/3-lost-messages.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "holds",
+    "nobodyWaitsForever": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/4-a-timeout.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "holds",
+    "nobodyWaitsForever": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/5-giving-up-alone.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "broken",
+    "nobodyWaitsForever": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/6-ask.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "holds",
+    "nobodyWaitsForever": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`16-two-phase-commit/7-a-restart.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "atomic": "holds",
+    "nobodyWaitsForever": "holds",
+  },
+  "rules": {
+    "logDecision": [
+      "atomic: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`17-outbox/1-write-then-publish.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyOrderShips": "broken",
+    "onlyOrdersShip": "holds",
+    "shippedOnce": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`17-outbox/2-publish-then-write.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyOrderShips": "holds",
+    "onlyOrdersShip": "broken",
+    "shippedOnce": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`17-outbox/3-the-outbox.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyOrderShips": "holds",
+    "onlyOrdersShip": "holds",
+    "shippedOnce": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`17-outbox/4-idempotent.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyOrderShips": "holds",
+    "onlyOrdersShip": "holds",
+    "shippedOnce": "holds",
+  },
+  "rules": {
+    "dedupe": [
+      "shippedOnce: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`18-leases/1-a-lock.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lockIsFreed": "broken",
+    "noStaleWrites": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`18-leases/2-wait-for-the-write.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lockIsFreed": "broken",
+    "noStaleWrites": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`18-leases/3-a-lease.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lockIsFreed": "holds",
+    "noStaleWrites": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`18-leases/4-check-first.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lockIsFreed": "holds",
+    "noStaleWrites": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`18-leases/5-fencing.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lockIsFreed": "holds",
+    "noStaleWrites": "holds",
+  },
+  "rules": {
+    "fencing": [
+      "noStaleWrites: breaks",
+    ],
+  },
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`19-counters/1-the-bigger-number.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyLikeCounts": "broken",
+    "neverOvercounts": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`19-counters/2-send-the-like.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyLikeCounts": "broken",
+    "neverOvercounts": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`19-counters/3-a-g-counter.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyLikeCounts": "broken",
+    "neverOvercounts": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`19-counters/4-gossip.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "everyLikeCounts": "holds",
+    "neverOvercounts": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
