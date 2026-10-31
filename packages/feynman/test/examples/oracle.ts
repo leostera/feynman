@@ -7,7 +7,9 @@
 // The models in examples/oracles/alloy follow the same semantics for Alloy 6, which searches
 // traces by SAT rather than states one by one: which invariants break, and the shortest way.
 // Those in examples/oracles/spin do for SPIN, an explicit-state checker in C of its own: the
-// reachable states, which invariants break, and the shortest way.
+// reachable states, which invariants break, and the shortest way. Those in
+// examples/oracles/nusmv do for NuSMV, which works on sets of states as BDDs: the reachable
+// states, which invariants break and the shortest way, and the liveness verdicts.
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -213,6 +215,55 @@ export function spin(model: string, constants: { Buggy: boolean; Faults: number;
       violated[invariant] = steps.length;
     }
     return { states, violated };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** NuSMV: NUSMV, or on PATH, or where a build from source installs it in ~/.local/opt. */
+export const NUSMV = [process.env.NUSMV, "NuSMV", join(process.env.HOME ?? "", ".local", "opt", "nusmv", "bin", "NuSMV")].find((p): p is string => !!p && spawnSync(p, ["-h"]).status !== null && !spawnSync(p, ["-h"]).error);
+
+export interface NusmvResult {
+  /** Reachable states, as NuSMV counts them. */
+  states: number;
+  /** For each invariant, the events on a shortest counterexample, or undefined when it holds. */
+  violated: Record<string, number | undefined>;
+  /** For each liveness property, whether it is broken. */
+  broken: Record<string, boolean>;
+}
+
+/**
+ * Run NuSMV on a model, examples/oracles/nusmv/<model>.smv, with BUGGY, FAULTS and REPEATS
+ * defined as given. A model's variables are the state; the step taken is an input variable
+ * (IVAR), so it is not. Invariants are INVARSPECs and liveness properties LTLSPECs, by name,
+ * under the model's JUSTICE constraints, which are Feynman's fairness (each fair step taken or
+ * not possible, infinitely often). Counts saturate rather than overflow, so every model has an invariant `bounded`
+ * that none reaches its top, and it must hold.
+ */
+export function nusmv(model: string, constants: { Buggy: boolean; Faults: number; Repeats: number }, invariants: string[], liveness: string[] = []): NusmvResult {
+  const dir = mkdtempSync(join(tmpdir(), "feynman-nusmv-"));
+  try {
+    const source = readFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", "nusmv", `${model}.smv`), "utf8");
+    writeFileSync(join(dir, `${model}.smv`), `${source}\nDEFINE BUGGY := ${constants.Buggy ? "TRUE" : "FALSE"}; FAULTS := ${constants.Faults}; REPEATS := ${constants.Repeats};\n`);
+    const checks = [...["bounded", ...invariants].map((i) => `check_invar -P ${i}`), ...liveness.map((l) => `check_ltlspec -P ${l}`)];
+    writeFileSync(join(dir, "run.cmd"), ["go", "print_reachable_states", ...checks, "quit"].join("\n") + "\n");
+    const run = spawnSync(NUSMV!, ["-source", "run.cmd", `${model}.smv`], { cwd: dir, encoding: "utf8" });
+    const out = `${run.stdout}${run.stderr}`;
+    const states = Number(/reachable states: (\d+)/.exec(out)?.[1] ?? NaN);
+    // Each check's verdict is a line "-- invariant …" or "-- specification …"; a counterexample follows it, a state at a time.
+    const verdicts = out.split(/^(?=-- (?:invariant|specification) )/m).slice(1);
+    if (Number.isNaN(states) || verdicts.length !== checks.length) throw new Error(`NuSMV failed on ${model}:\n${out}`);
+    const holds = verdicts.map((v) => / is true\n/.test(v.split("\n").slice(0, 3).join("\n")));
+    if (!holds[0]) throw new Error(`${model}: a count reaches the top of its range, where it saturates`);
+    const violated: Record<string, number | undefined> = {};
+    invariants.forEach((i, n) => {
+      violated[i] = holds[n + 1] ? undefined : (verdicts[n + 1].match(/-> State: /g)?.length ?? 0) - 1;
+    });
+    const broken: Record<string, boolean> = {};
+    liveness.forEach((l, n) => {
+      broken[l] = !holds[invariants.length + 1 + n];
+    });
+    return { states, violated, broken };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

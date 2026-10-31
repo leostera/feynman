@@ -1,0 +1,56 @@
+-- An independent model of examples/webhooks.ts, for NuSMV. A provider sends two events, in
+-- order; the shop credits each, skipping the last event seen (buggy) or any event seen before
+-- (fixed), which it keeps as a list in the order it credited them. The network is a bag: a
+-- count of copies per event. A fault duplicates an event in flight or loses one. The step
+-- taken and its event e are inputs, not state; `none` changes nothing, possible anywhere, as
+-- in TLA+. The harness defines BUGGY, FAULTS and REPEATS.
+MODULE main
+VAR
+  sent : 0..2;
+  acts : 0..7;
+  balance : 0..63;
+  last : 0..2;
+  -- The events credited, in order; 0 past the end.
+  seen0 : 0..2;
+  seen1 : 0..2;
+  net1 : 0..7;
+  net2 : 0..7;
+  faults : 0..7;
+IVAR
+  step : {notify, credit, duplicate, lose, none};
+  e : 1..2;
+DEFINE
+  inFlight := e = 1 ? net1 : net2;
+  seenBefore := seen0 = e | seen1 = e;
+  credits := step = credit & (BUGGY ? last != e : !seenBefore);
+ASSIGN
+  init(sent) := 0; init(acts) := 0; init(balance) := 0; init(last) := 0; init(seen0) := 0; init(seen1) := 0;
+  init(net1) := 0; init(net2) := 0; init(faults) := 0;
+  next(sent) := step = notify ? min(sent + 1, 2) : sent;
+  next(acts) := step = notify ? min(acts + 1, 7) : acts;
+  next(balance) := credits ? min(balance + 10, 63) : balance;
+  next(last) := credits & BUGGY ? e : last;
+  next(seen0) := credits & !BUGGY & seen0 = 0 ? e : seen0;
+  next(seen1) := credits & !BUGGY & seen0 != 0 ? e : seen1;
+  next(net1) := case
+    step = notify & sent = 0 : min(net1 + 1, 7);
+    step = duplicate & e = 1 : min(net1 + 1, 7);
+    step in {credit, lose} & e = 1 : max(net1 - 1, 0);
+    TRUE : net1;
+  esac;
+  next(net2) := case
+    step = notify & sent = 1 : min(net2 + 1, 7);
+    step = duplicate & e = 2 : min(net2 + 1, 7);
+    step in {credit, lose} & e = 2 : max(net2 - 1, 0);
+    TRUE : net2;
+  esac;
+  next(faults) := step in {duplicate, lose} ? min(faults + 1, 7) : faults;
+TRANS
+  case
+    step = notify : sent < 2 & acts < REPEATS;
+    step = credit : inFlight > 0;
+    step in {duplicate, lose} : faults < FAULTS & inFlight > 0;
+    step = none : TRUE;
+  esac
+INVARSPEC NAME bounded := acts < 7 & balance < 63 & net1 < 7 & net2 < 7 & faults < 7
+INVARSPEC NAME creditedOnce := balance <= 10 * sent

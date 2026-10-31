@@ -104,6 +104,16 @@ export interface SpinOracle {
   configs: { variant: Variant; faults: number; repeats: number }[];
 }
 
+/** An independent NuSMV model, examples/oracles/nusmv/<model>.smv: the same states, verdicts, shortest counterexamples, and liveness verdicts under the same fairness. */
+export interface NusmvOracle {
+  model: string;
+  /** Safety invariants both sides check, by the same name (an INVARSPEC NAME in the model). */
+  invariants: string[];
+  /** Liveness properties both sides check, by the same name (an LTLSPEC NAME, under the model's JUSTICE). */
+  liveness?: string[];
+  configs: { variant: Variant; faults: number; repeats: number }[];
+}
+
 /** An independent P model, examples/oracles/p/<project>: the same verdict on one property. */
 export interface POracle {
   project: string;
@@ -124,6 +134,7 @@ export interface Example {
   tla?: TlaOracle;
   alloy?: AlloyOracle;
   spin?: SpinOracle;
+  nusmv?: NusmvOracle;
   p?: POracle;
 }
 
@@ -162,6 +173,7 @@ export const corpus: Example[] = [
     tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
     spin: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
+    nusmv: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
   },
   {
@@ -185,6 +197,7 @@ export const corpus: Example[] = [
     ],
     tla: { module: "Cache", invariants: ["consistentOnceQuiet"], liveness: ["converges"], configs: BOTH_WAYS },
     spin: { model: "Cache", invariants: ["consistentOnceQuiet"], configs: BOTH_WAYS },
+    nusmv: { model: "Cache", invariants: ["consistentOnceQuiet"], liveness: ["converges"], configs: BOTH_WAYS },
   },
   {
     name: "leader election",
@@ -197,6 +210,7 @@ export const corpus: Example[] = [
     tla: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], liveness: ["agree"], configs: BOTH_WAYS },
     alloy: { module: "LeaderElection", invariants: ["agreeOnceQuiet"], depth: 9, configs: BOTH_WAYS },
     spin: { model: "LeaderElection", invariants: ["agreeOnceQuiet"], configs: BOTH_WAYS },
+    nusmv: { model: "LeaderElection", invariants: ["agreeOnceQuiet"], liveness: ["agree"], configs: BOTH_WAYS },
   },
   {
     name: "job queue",
@@ -506,6 +520,7 @@ export const corpus: Example[] = [
     tla: { module: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     alloy: { module: "RetriedCall", invariants: ["chargedOnce"], depth: 11, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     spin: { model: "RetriedCall", invariants: ["chargedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    nusmv: { model: "RetriedCall", invariants: ["chargedOnce"], liveness: ["paymentsEnd"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
       project: "RetriedCall",
       property: "chargedOnce",
@@ -555,6 +570,7 @@ export const corpus: Example[] = [
     tla: { module: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     alloy: { module: "Webhooks", invariants: ["creditedOnce"], depth: 10, configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     spin: { model: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
+    nusmv: { model: "Webhooks", invariants: ["creditedOnce"], configs: [...BOTH_WAYS, { variant: "fixed", faults: 2, repeats: 2 }, { variant: "buggy", faults: 2, repeats: 2 }] },
     p: {
       project: "Webhooks",
       property: "creditedOnce",

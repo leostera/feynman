@@ -1,0 +1,124 @@
+-- An independent model of examples/two-phase-commit.ts, for NuSMV. A coordinator asks two
+-- participants (0 and 1) to prepare; each votes; the coordinator decides once it can (fixed)
+-- or on the first vote (buggy) and tells everyone. The network is a bag: a count of copies of
+-- each message. A fault loses a message, or restarts a participant, which keeps everything
+-- (its fields are durable): a restart only spends the budget. Votes are 1 (yes) and 2 (no),
+-- decisions 1 (commit) and 2 (abort), 0 none. The step taken, its participant p and its
+-- value x (a vote or a decision) are inputs, not state; `none` changes nothing, possible
+-- anywhere, as in TLA+. The harness defines BUGGY, FAULTS and REPEATS.
+MODULE main
+VAR
+  prepared : array 0..1 of boolean;
+  vote : array 0..1 of 0..2;
+  outcome : array 0..1 of 0..2;
+  voted : array 0..1 of 0..7;
+  begun : boolean;
+  begins : 0..7;
+  votes : array 0..1 of 0..2;
+  decided : 0..2;
+  faults : 0..7;
+  -- In flight: Prepare by participant; Vote and Decide at p * 2 + x - 1.
+  prepare : array 0..1 of 0..7;
+  voteMsg : array 0..3 of 0..7;
+  decide : array 0..3 of 0..7;
+IVAR
+  step : {begin, castVote, onPrepare, onVote, onDecide, prepareLost, voteLost, decideLost, crash, none};
+  p : 0..1;
+  x : 1..2;
+DEFINE
+  at := p * 2 + x - 1;
+  -- The coordinator, counting a vote x from p.
+  counted0 := p = 0 ? x : votes[0];
+  counted1 := p = 1 ? x : votes[1];
+  everyone := counted0 != 0 & counted1 != 0;
+  decidesNow := step = onVote & decided = 0 & (BUGGY | everyone | x = 2);
+  decision := ((BUGGY & x = 1) | (!BUGGY & everyone & counted0 = 1 & counted1 = 1)) ? 1 : 2;
+  lost := step in {prepareLost, voteLost, decideLost, crash};
+ASSIGN
+  init(prepared[0]) := FALSE; init(prepared[1]) := FALSE;
+  init(vote[0]) := 0; init(vote[1]) := 0;
+  init(outcome[0]) := 0; init(outcome[1]) := 0;
+  init(voted[0]) := 0; init(voted[1]) := 0;
+  init(begun) := FALSE; init(begins) := 0;
+  init(votes[0]) := 0; init(votes[1]) := 0;
+  init(decided) := 0; init(faults) := 0;
+  init(prepare[0]) := 0; init(prepare[1]) := 0;
+  init(voteMsg[0]) := 0; init(voteMsg[1]) := 0; init(voteMsg[2]) := 0; init(voteMsg[3]) := 0;
+  init(decide[0]) := 0; init(decide[1]) := 0; init(decide[2]) := 0; init(decide[3]) := 0;
+
+  next(prepared[0]) := step = onPrepare & p = 0 ? TRUE : prepared[0];
+  next(prepared[1]) := step = onPrepare & p = 1 ? TRUE : prepared[1];
+  next(vote[0]) := step = castVote & p = 0 ? x : vote[0];
+  next(vote[1]) := step = castVote & p = 1 ? x : vote[1];
+  next(outcome[0]) := case
+    step = castVote & p = 0 & x = 2 : 2;
+    step = onDecide & p = 0 & outcome[0] = 0 : x;
+    TRUE : outcome[0];
+  esac;
+  next(outcome[1]) := case
+    step = castVote & p = 1 & x = 2 : 2;
+    step = onDecide & p = 1 & outcome[1] = 0 : x;
+    TRUE : outcome[1];
+  esac;
+  next(voted[0]) := step = castVote & p = 0 ? min(voted[0] + 1, 7) : voted[0];
+  next(voted[1]) := step = castVote & p = 1 ? min(voted[1] + 1, 7) : voted[1];
+  next(begun) := step = begin ? TRUE : begun;
+  next(begins) := step = begin ? min(begins + 1, 7) : begins;
+  next(votes[0]) := step = onVote & p = 0 ? x : votes[0];
+  next(votes[1]) := step = onVote & p = 1 ? x : votes[1];
+  next(decided) := decidesNow ? decision : decided;
+  next(faults) := lost ? min(faults + 1, 7) : faults;
+  next(prepare[0]) := case
+    step = begin : min(prepare[0] + 1, 7);
+    step in {onPrepare, prepareLost} & p = 0 : max(prepare[0] - 1, 0);
+    TRUE : prepare[0];
+  esac;
+  next(prepare[1]) := case
+    step = begin : min(prepare[1] + 1, 7);
+    step in {onPrepare, prepareLost} & p = 1 : max(prepare[1] - 1, 0);
+    TRUE : prepare[1];
+  esac;
+  next(voteMsg[0]) := case step = castVote & at = 0 : min(voteMsg[0] + 1, 7); step in {onVote, voteLost} & at = 0 : max(voteMsg[0] - 1, 0); TRUE : voteMsg[0]; esac;
+  next(voteMsg[1]) := case step = castVote & at = 1 : min(voteMsg[1] + 1, 7); step in {onVote, voteLost} & at = 1 : max(voteMsg[1] - 1, 0); TRUE : voteMsg[1]; esac;
+  next(voteMsg[2]) := case step = castVote & at = 2 : min(voteMsg[2] + 1, 7); step in {onVote, voteLost} & at = 2 : max(voteMsg[2] - 1, 0); TRUE : voteMsg[2]; esac;
+  next(voteMsg[3]) := case step = castVote & at = 3 : min(voteMsg[3] + 1, 7); step in {onVote, voteLost} & at = 3 : max(voteMsg[3] - 1, 0); TRUE : voteMsg[3]; esac;
+  -- A decision goes to both participants: Decide d at 0 * 2 + d - 1 and 1 * 2 + d - 1.
+  next(decide[0]) := case decidesNow & decision = 1 : min(decide[0] + 1, 7); step in {onDecide, decideLost} & at = 0 : max(decide[0] - 1, 0); TRUE : decide[0]; esac;
+  next(decide[1]) := case decidesNow & decision = 2 : min(decide[1] + 1, 7); step in {onDecide, decideLost} & at = 1 : max(decide[1] - 1, 0); TRUE : decide[1]; esac;
+  next(decide[2]) := case decidesNow & decision = 1 : min(decide[2] + 1, 7); step in {onDecide, decideLost} & at = 2 : max(decide[2] - 1, 0); TRUE : decide[2]; esac;
+  next(decide[3]) := case decidesNow & decision = 2 : min(decide[3] + 1, 7); step in {onDecide, decideLost} & at = 3 : max(decide[3] - 1, 0); TRUE : decide[3]; esac;
+TRANS
+  case
+    step = begin : !begun & begins < REPEATS;
+    step = castVote : prepared[p] & vote[p] = 0 & voted[p] < REPEATS;
+    step = onPrepare : prepare[p] > 0;
+    step = onVote : voteMsg[at] > 0;
+    step = onDecide : decide[at] > 0;
+    step = prepareLost : faults < FAULTS & prepare[p] > 0;
+    step = voteLost : faults < FAULTS & voteMsg[at] > 0;
+    step = decideLost : faults < FAULTS & decide[at] > 0;
+    step = crash : faults < FAULTS;
+    step = none : TRUE;
+  esac
+
+DEFINE
+  quiet := prepare[0] + prepare[1] + voteMsg[0] + voteMsg[1] + voteMsg[2] + voteMsg[3] + decide[0] + decide[1] + decide[2] + decide[3] = 0;
+
+INVARSPEC NAME bounded := voted[0] < 7 & voted[1] < 7 & begins < 7 & faults < 7 & prepare[0] < 7 & prepare[1] < 7
+  & voteMsg[0] < 7 & voteMsg[1] < 7 & voteMsg[2] < 7 & voteMsg[3] < 7 & decide[0] < 7 & decide[1] < 7 & decide[2] < 7 & decide[3] < 7
+INVARSPEC NAME atomic := !((outcome[0] = 1 & outcome[1] = 2) | (outcome[0] = 2 & outcome[1] = 1))
+INVARSPEC NAME decidedOnceQuiet := (quiet & vote[0] != 0 & vote[1] != 0) -> decided != 0
+
+-- Feynman's fairness: every message in flight is delivered. Voting, beginning, losses and
+-- restarts are not fair.
+JUSTICE prepare[0] = 0 | (step = onPrepare & p = 0)
+JUSTICE prepare[1] = 0 | (step = onPrepare & p = 1)
+JUSTICE voteMsg[0] = 0 | (step = onVote & at = 0)
+JUSTICE voteMsg[1] = 0 | (step = onVote & at = 1)
+JUSTICE voteMsg[2] = 0 | (step = onVote & at = 2)
+JUSTICE voteMsg[3] = 0 | (step = onVote & at = 3)
+JUSTICE decide[0] = 0 | (step = onDecide & at = 0)
+JUSTICE decide[1] = 0 | (step = onDecide & at = 1)
+JUSTICE decide[2] = 0 | (step = onDecide & at = 2)
+JUSTICE decide[3] = 0 | (step = onDecide & at = 3)
+LTLSPEC NAME decides := G ((vote[0] != 0 & vote[1] != 0) -> F decided != 0)

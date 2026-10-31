@@ -1,0 +1,49 @@
+-- An independent model of examples/retried-call.ts, for NuSMV. A client pays through a call
+-- to the bank and, when the call fails, sends the same charge again. The bank charges every
+-- charge (buggy), or once per payment (fixed). The network is a bag: a count of copies of the
+-- charge, its answer and the call's failure. A fault loses the charge or its answer, and
+-- either way the client is told its call failed; that failure is never lost. The step taken
+-- is an input, not part of the state; `none` changes nothing, possible anywhere, as in TLA+:
+-- a person may stop, the network may stop failing, and only fairness says what must go on.
+-- The harness defines BUGGY, FAULTS and REPEATS.
+MODULE main
+VAR
+  paying : boolean; paid : boolean; seen : boolean;
+  charges : 0..7; pays : 0..7; faults : 0..7;
+  charge : 0..7; charged : 0..7; failed : 0..7;
+IVAR
+  step : {pay, bankCharges, clientPaid, clientRetries, chargeLost, chargedLost, none};
+DEFINE
+  en_pay := !paying & !paid & pays < REPEATS;
+  en_bankCharges := charge > 0;
+  en_clientPaid := charged > 0;
+  en_clientRetries := failed > 0;
+  en_chargeLost := faults < FAULTS & charge > 0;
+  en_chargedLost := faults < FAULTS & charged > 0;
+ASSIGN
+  init(paying) := FALSE; init(paid) := FALSE; init(seen) := FALSE;
+  init(charges) := 0; init(pays) := 0; init(faults) := 0;
+  init(charge) := 0; init(charged) := 0; init(failed) := 0;
+  next(paying) := case step = pay : TRUE; step = clientPaid : FALSE; TRUE : paying; esac;
+  next(paid) := case step = clientPaid : TRUE; TRUE : paid; esac;
+  next(seen) := case step = bankCharges & !BUGGY : TRUE; TRUE : seen; esac;
+  next(charges) := case step = bankCharges & (BUGGY | !seen) : min(charges + 1, 7); TRUE : charges; esac;
+  next(pays) := case step = pay : min(pays + 1, 7); TRUE : pays; esac;
+  next(faults) := case step in {chargeLost, chargedLost} : min(faults + 1, 7); TRUE : faults; esac;
+  next(charge) := case step in {pay, clientRetries} : min(charge + 1, 7); step in {bankCharges, chargeLost} : max(charge - 1, 0); TRUE : charge; esac;
+  next(charged) := case step = bankCharges : min(charged + 1, 7); step in {clientPaid, chargedLost} : max(charged - 1, 0); TRUE : charged; esac;
+  next(failed) := case step in {chargeLost, chargedLost} : min(failed + 1, 7); step = clientRetries : max(failed - 1, 0); TRUE : failed; esac;
+TRANS
+  case
+    step = pay : en_pay; step = bankCharges : en_bankCharges; step = clientPaid : en_clientPaid;
+    step = clientRetries : en_clientRetries; step = chargeLost : en_chargeLost; step = chargedLost : en_chargedLost;
+    step = none : TRUE;
+  esac
+INVARSPEC NAME bounded := charges < 7 & pays < 7 & faults < 7 & charge < 7 & charged < 7 & failed < 7
+INVARSPEC NAME chargedOnce := charges <= 1
+-- Feynman's fairness: what is in flight is delivered, and a failure reaches the client.
+-- Paying and losing are not fair.
+JUSTICE !en_bankCharges | step = bankCharges
+JUSTICE !en_clientPaid | step = clientPaid
+JUSTICE !en_clientRetries | step = clientRetries
+LTLSPEC NAME paymentsEnd := G (paying -> F paid)
