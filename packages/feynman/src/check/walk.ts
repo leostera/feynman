@@ -2,12 +2,13 @@
 //
 // The search proves things up to its depth; random runs go much deeper and find bugs the
 // search cannot reach, but prove nothing. Each run is seeded, so runs are reproducible, and
-// a broken property's run is shrunk to the fewest steps that still break it.
+// a broken property's run is shrunk to the fewest steps that still break it. The runs
+// themselves go on the search's vectors (IntegerSearch.walk); this is what they report, how
+// they pick, and the shrinking.
 import { actorNamed, choices as enabled, stepsTaking, traceView, type Event, type Spec, type World } from "../spec/index.ts";
 import { pendingText } from "./keys.ts";
-import { judge, safely, startBreaks, stepBreaks, stuck, type Verdicts } from "./judge.ts";
-import { apply, branches, QUIET, type Choice, type Counterexample } from "./steps.ts";
-import type { Bounds } from "./explore.ts";
+import { safely, stepBreaks } from "./judge.ts";
+import { apply, type Choice, type Counterexample } from "./steps.ts";
 
 export interface WalkFinding {
   id: string;
@@ -26,81 +27,10 @@ export interface WalkResult {
 }
 
 /** How often a run picks each kind of step, when it can: mostly the system's fair steps, some people, rarely an unfair step (a fault). */
-const WEIGHTS = { system: 0.6, people: 0.32, unfair: 0.08 };
-
-/** Where runs start. */
-export interface WalkRoot {
-  world: World;
-}
-
-export function walk(spec: Spec, roots: WalkRoot[], b: Bounds, v: Verdicts, until: number): WalkResult {
-  const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
-  if (b.walks > 0) {
-    for (const [root, { world }] of roots.entries()) {
-      for (const id of startBreaks(spec, world).filter((id) => !v.broken.has(id))) {
-        v.broken.add(id);
-        out.findings.push({ id, root, choices: [] });
-      }
-    }
-  }
-  for (let run = 0; run < b.walks && Date.now() < until; run++) {
-    const root = run % roots.length;
-    const random = seeded(run + 1);
-    let world = roots[root].world;
-    const path: Choice[] = [];
-    const events: Event[] = [];
-    for (let depth = 0; depth < b.walkDepth; depth++) {
-      const choice = pick(spec, world, branches(spec, world), random);
-      if (!choice) break;
-      const step = apply(spec, world, choice, QUIET);
-      path.push(choice);
-      events.push(step.event);
-      out.steps++;
-      out.deepest = Math.max(out.deepest, path.length);
-      const { findings, error } = judge(spec, step.event, () => events, v);
-      if (!step.event.error) findings.push(...stepBreaks(spec, world, step.world, step.event, v.broken).filter((id) => !findings.includes(id)));
-      for (const id of findings) {
-        v.broken.add(id);
-        out.findings.push({ id, root, choices: [...path] });
-      }
-      if (error) {
-        v.errors.add(error);
-        out.errors.push({ message: error, root, choices: [...path] });
-      }
-      if (step.event.error) break;
-      world = step.world;
-    }
-    if (!out.stuck && stuck(spec, world)) out.stuck = { root, choices: [...path] };
-    out.runs++;
-  }
-  return out;
-}
-
-function pick(spec: Spec, world: World, options: Choice[], random: () => number): Choice | undefined {
-  const unfair = (c: Choice) => c.kind !== "act" && stepOf(spec, world, c).fair === false;
-  const groups = {
-    system: options.filter((c) => c.kind !== "act" && !unfair(c)),
-    people: options.filter((c) => c.kind === "act"),
-    unfair: options.filter(unfair),
-  };
-  const kinds = (Object.keys(groups) as (keyof typeof groups)[]).filter((k) => groups[k].length);
-  if (!kinds.length) return undefined;
-  const total = kinds.reduce((sum, k) => sum + WEIGHTS[k], 0);
-  let roll = random() * total;
-  const kind = kinds.find((k) => (roll -= WEIGHTS[k]) < 0) ?? kinds.at(-1)!;
-  const group = groups[kind];
-  return group[Math.floor(random() * group.length)];
-}
-
-/** The step a delivery, timer or guard runs. */
-function stepOf(spec: Spec, world: World, choice: Exclude<Choice, { kind: "act" }>) {
-  if (choice.kind === "guard") return actorNamed(spec, world.instances.find((i) => i.id === choice.instance)!.actor).transitions[choice.key]!;
-  const to = world.pending.find((p) => p.id === choice.pending)!.to;
-  return actorNamed(spec, world.instances.find((i) => i.id === to)!.actor).transitions[choice.step]!;
-}
+export const WEIGHTS = { system: 0.6, people: 0.32, unfair: 0.08 };
 
 /** mulberry32: small, fast, and the same everywhere. */
-function seeded(seed: number): () => number {
+export function seeded(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;
