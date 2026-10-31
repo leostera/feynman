@@ -25,6 +25,19 @@ Faster, and checked against more. Nothing changes for spec authors.
   counterexamples just as short, and with SPIN and NuSMV the same number of states. NuSMV also
   checks liveness under the same fairness, a second opinion beside TLC's.
 
+Fixes found while writing the book, *Writing specs with Feynman* (`book/` in the repository),
+which the skill now points at:
+
+- Traces print a `Set` as its members and a `Map` as its entries, not `{}`.
+- A step a scenario took is no longer reported as never ran.
+- `feynman run` marks a scenario that breaks a property with ✗, as `check` does.
+- Fault steps (`lose`, `crash`, …) no longer count as steps with no code yet.
+- The playground, left alone, no longer takes faults (a crash, a lost message): they wait to be
+  asked for, as in a scenario's `settle`.
+- The checks page no longer says "Every property holds" while some are unfinished or untested.
+- `--help` after a command prints the usage.
+- The skill names `WorldView` (and `Setup`) as the types for helpers, not `World`.
+
 ## 0.15.0
 
 A smaller core (RFD0012). Feynman no longer decides how a system fails: a spec declares its
