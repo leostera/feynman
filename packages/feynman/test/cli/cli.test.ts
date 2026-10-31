@@ -236,6 +236,14 @@ test("check --brief, --only, --json and --as-scenario: what agents read", async 
   await expect(main(["check", "--only", "nope"], root)).rejects.toThrow("No property named nope");
 }, 60_000);
 
+test("a mistyped option is the user's error, with where to look, not a crash", async () => {
+  const error = await main(["check", "--export", "fixed"]).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(Error);
+  expect(error).not.toBeInstanceOf(TypeError);
+  expect((error as Error).message).toBe("Unknown option --export. `feynman help` lists the options.");
+  await expect(main(["check", "--depth"])).rejects.toThrow("argument missing. `feynman help` lists the options.");
+});
+
 test("check: a property marked known is reported but does not fail, until it holds", async () => {
   const { root, commit } = repo();
   writeFileSync(join(root, "specs/echo.ts"), NEVER_EMPTY("ECHO-1: empty messages are not refused yet"));
