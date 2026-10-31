@@ -33,6 +33,9 @@ import { PrintMap } from "./prints.ts";
 import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
 import { seeded, WEIGHTS, type WalkResult } from "./walk.ts";
 
+/** walk.ts WEIGHTS by kind: system, people, unfair. */
+const KIND_WEIGHTS = [WEIGHTS.system, WEIGHTS.people, WEIGHTS.unfair];
+
 type Instance = World["instances"][number];
 type Pending = World["pending"][number];
 type PendingTemplate = Omit<Pending, "id">;
@@ -228,6 +231,8 @@ export class IntegerSearch {
   stoppedBy: StopReason | undefined;
   /** Whether the search ran out of worlds before the depth bound: it has explored every world reachable. */
   complete = false;
+  /** Scratch for pick: each option's kind. */
+  private kinds = new Uint8Array(64);
   /** Each root's vector, where random runs start. */
   private rootVectors: Int32Array[] = [];
   /** Whether a new world was found at the depth bound, and not expanded. */
@@ -489,19 +494,31 @@ export class IntegerSearch {
 
   /** A run's next choice (walk.ts pick): mostly the system's fair steps, some people, rarely an unfair step. */
   private pick(here: Here, options: Choice[], random: () => number): Choice | undefined {
-    const groups: Record<keyof typeof WEIGHTS, Choice[]> = { system: [], people: [], unfair: [] };
-    for (const c of options) {
-      if (c.kind === "act") groups.people.push(c);
-      else if (this.fairOf(here, c)) groups.system.push(c);
-      else groups.unfair.push(c);
+    // Each option's kind (0 system, 1 people, 2 unfair) and how many of each, without arrays per step.
+    if (this.kinds.length < options.length) this.kinds = new Uint8Array(options.length * 2);
+    const kinds = this.kinds;
+    const counts = [0, 0, 0];
+    for (let i = 0; i < options.length; i++) {
+      const c = options[i];
+      kinds[i] = c.kind === "act" ? 1 : this.fairOf(here, c) ? 0 : 2;
+      counts[kinds[i]]++;
     }
-    const kinds = (Object.keys(groups) as (keyof typeof groups)[]).filter((k) => groups[k].length);
-    if (!kinds.length) return undefined;
-    const total = kinds.reduce((sum, k) => sum + WEIGHTS[k], 0);
+    let total = 0;
+    let last = -1;
+    for (let k = 0; k < 3; k++) if (counts[k]) (total += KIND_WEIGHTS[k]), (last = k);
+    if (last < 0) return undefined;
     let roll = random() * total;
-    const kind = kinds.find((k) => (roll -= WEIGHTS[k]) < 0) ?? kinds.at(-1)!;
-    const group = groups[kind];
-    return group[Math.floor(random() * group.length)];
+    let kind = last;
+    for (let k = 0; k < 3; k++) {
+      if (!counts[k]) continue;
+      if ((roll -= KIND_WEIGHTS[k]) < 0) {
+        kind = k;
+        break;
+      }
+    }
+    let nth = Math.floor(random() * counts[kind]);
+    for (let i = 0; i < options.length; i++) if (kinds[i] === kind && nth-- === 0) return options[i];
+    return undefined;
   }
 
   /** A new state at a depth: expanded in the next round, or (for liveness) closed at the end. */
