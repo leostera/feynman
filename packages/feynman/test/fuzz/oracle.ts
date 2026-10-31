@@ -59,9 +59,12 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
     const seeds = scenarioSeeds(spec);
     if (seeds.length) {
       const seeded = new Set([worldKey(initialWorld(spec, desc.bounds)), ...seeds.map((s) => worldKey(s.world))]);
-      await check(spec, { ...bounds, symmetry: false }, seeds, { watch: { state: (w) => seeded.add(worldKey(w)) } });
-      const ref = explore(spec, { ...desc.bounds, from: seeds.map((s) => s.world) });
-      if (seeded.size !== ref.worlds.size || [...seeded].some((w) => !ref.worlds.has(w))) find("seeds: worlds", `${seeded.size} worlds from the scenarios, the reference ${ref.worlds.size}`);
+      const fromSeeds = await check(spec, { ...bounds, symmetry: false }, seeds, { watch: { state: (w) => seeded.add(worldKey(w)) } });
+      // Only a search that finished explores all the reference does.
+      if (fromSeeds.exhaustive) {
+        const ref = explore(spec, { ...desc.bounds, from: seeds.map((s) => s.world) });
+        if (seeded.size !== ref.worlds.size || [...seeded].some((w) => !ref.worlds.has(w))) find("seeds: worlds", `${seeded.size} worlds from the scenarios, the reference ${ref.worlds.size}`);
+      }
     }
 
     await walksAgree(spec, desc, plain, find);
