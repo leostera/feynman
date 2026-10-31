@@ -1,0 +1,79 @@
+-- An independent model of examples/leader-election.ts, for NuSMV. Three nodes, 0 to 2, with
+-- ids 1 to 3, each announce themselves to the others; a node takes a heard id as its leader
+-- when it is higher (fixed) or always (buggy). The network is a bag: a count of copies per
+-- receiver and sender, at receiver * 3 + sender. A fault loses an announcement, or restarts a
+-- node, which forgets everything (no field is durable) but not how often it has announced.
+-- The step taken, its node a and its sender b are inputs, not state; `none` changes nothing,
+-- possible anywhere, as in TLA+. The harness defines BUGGY, FAULTS and REPEATS.
+MODULE main
+VAR
+  leader : array 0..2 of 1..3;
+  announced : array 0..2 of boolean;
+  acts : array 0..2 of 0..7;
+  net : array 0..8 of 0..7;
+  faults : 0..7;
+IVAR
+  step : {announce, deliver, lose, restart, none};
+  a : 0..2;
+  b : 0..2;
+DEFINE
+  at := a * 3 + b;
+ASSIGN
+  init(leader[0]) := 1; init(announced[0]) := FALSE; init(acts[0]) := 0;
+  next(leader[0]) := case
+    step = deliver & a = 0 & (BUGGY | b + 1 > leader[0]) : b + 1;
+    step = restart & a = 0 : 1;
+    TRUE : leader[0];
+  esac;
+  next(announced[0]) := case step = announce & a = 0 : TRUE; step = restart & a = 0 : FALSE; TRUE : announced[0]; esac;
+  next(acts[0]) := step = announce & a = 0 ? min(acts[0] + 1, 7) : acts[0];
+  init(leader[1]) := 2; init(announced[1]) := FALSE; init(acts[1]) := 0;
+  next(leader[1]) := case
+    step = deliver & a = 1 & (BUGGY | b + 1 > leader[1]) : b + 1;
+    step = restart & a = 1 : 2;
+    TRUE : leader[1];
+  esac;
+  next(announced[1]) := case step = announce & a = 1 : TRUE; step = restart & a = 1 : FALSE; TRUE : announced[1]; esac;
+  next(acts[1]) := step = announce & a = 1 ? min(acts[1] + 1, 7) : acts[1];
+  init(leader[2]) := 3; init(announced[2]) := FALSE; init(acts[2]) := 0;
+  next(leader[2]) := case
+    step = deliver & a = 2 & (BUGGY | b + 1 > leader[2]) : b + 1;
+    step = restart & a = 2 : 3;
+    TRUE : leader[2];
+  esac;
+  next(announced[2]) := case step = announce & a = 2 : TRUE; step = restart & a = 2 : FALSE; TRUE : announced[2]; esac;
+  next(acts[2]) := step = announce & a = 2 ? min(acts[2] + 1, 7) : acts[2];
+  init(net[0]) := 0; next(net[0]) := net[0];
+  init(net[1]) := 0; next(net[1]) := case step = announce & a = 1 : min(net[1] + 1, 7); step in {deliver, lose} & at = 1 : max(net[1] - 1, 0); TRUE : net[1]; esac;
+  init(net[2]) := 0; next(net[2]) := case step = announce & a = 2 : min(net[2] + 1, 7); step in {deliver, lose} & at = 2 : max(net[2] - 1, 0); TRUE : net[2]; esac;
+  init(net[3]) := 0; next(net[3]) := case step = announce & a = 0 : min(net[3] + 1, 7); step in {deliver, lose} & at = 3 : max(net[3] - 1, 0); TRUE : net[3]; esac;
+  init(net[4]) := 0; next(net[4]) := net[4];
+  init(net[5]) := 0; next(net[5]) := case step = announce & a = 2 : min(net[5] + 1, 7); step in {deliver, lose} & at = 5 : max(net[5] - 1, 0); TRUE : net[5]; esac;
+  init(net[6]) := 0; next(net[6]) := case step = announce & a = 0 : min(net[6] + 1, 7); step in {deliver, lose} & at = 6 : max(net[6] - 1, 0); TRUE : net[6]; esac;
+  init(net[7]) := 0; next(net[7]) := case step = announce & a = 1 : min(net[7] + 1, 7); step in {deliver, lose} & at = 7 : max(net[7] - 1, 0); TRUE : net[7]; esac;
+  init(net[8]) := 0; next(net[8]) := net[8];
+  init(faults) := 0;
+  next(faults) := step in {lose, restart} ? min(faults + 1, 7) : faults;
+TRANS
+  case
+    step = announce : !announced[a] & acts[a] < REPEATS;
+    step = deliver : a != b & net[at] > 0;
+    step = lose : a != b & faults < FAULTS & net[at] > 0;
+    step = restart : faults < FAULTS;
+    step = none : TRUE;
+  esac
+DEFINE
+  quiet := net[1] + net[2] + net[3] + net[5] + net[6] + net[7] = 0;
+  everyoneIn := announced[0] & announced[1] & announced[2];
+  agreed := leader[0] = leader[1] & leader[1] = leader[2];
+INVARSPEC NAME bounded := acts[0] < 7 & acts[1] < 7 & acts[2] < 7 & faults < 7 & net[1] < 7 & net[2] < 7 & net[3] < 7 & net[5] < 7 & net[6] < 7 & net[7] < 7
+INVARSPEC NAME agreeOnceQuiet := (quiet & everyoneIn) -> agreed
+-- Feynman's fairness: every announcement in flight is delivered; announcing, losing and
+-- restarting are not fair.
+JUSTICE net[1] = 0 | (step = deliver & at = 1)
+JUSTICE net[2] = 0 | (step = deliver & at = 2)
+JUSTICE net[3] = 0 | (step = deliver & at = 3)
+JUSTICE net[5] = 0 | (step = deliver & at = 5)
+JUSTICE net[6] = 0 | (step = deliver & at = 6)
+JUSTICE net[7] = 0 | (step = deliver & at = 7)
+LTLSPEC NAME agree := G (everyoneIn -> F agreed)

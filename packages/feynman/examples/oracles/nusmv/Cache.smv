@@ -1,0 +1,102 @@
+-- An independent model of examples/cache.ts, for NuSMV. An app reads through a cache and
+-- writes to a database, which invalidates the cache with the new version. On a miss the cache
+-- loads from the database; buggy, it fills with whatever comes back; fixed, not with a value
+-- older than an invalidation it has seen. Every actor is a singleton, so the only faults are
+-- lost messages. The network is a bag: a count of copies of each message. Values are 1 (a),
+-- 2 (b) and 3 (c); an entry of value 0 is empty. The step taken, its value v and its version
+-- n are inputs, not state; `none` changes nothing, possible anywhere, as in TLA+. The harness
+-- defines BUGGY, FAULTS and REPEATS.
+MODULE main
+VAR
+  value : 1..3;
+  version : 0..7;
+  entryValue : 0..3;
+  entryVersion : 0..7;
+  invalidated : 0..7;
+  loading : boolean;
+  reads : 0..7;
+  writes : 0..7;
+  faults : 0..7;
+  get : 0..7;
+  load : 0..7;
+  -- Loaded at (value - 1) * 3 + version; Update by value - 2; Invalidate by version - 1.
+  loaded : array 0..8 of 0..7;
+  update : array 0..1 of 0..7;
+  invalidate : array 0..1 of 0..7;
+IVAR
+  step : {read, write, onGet, onLoad, onLoaded, onUpdate, onInvalidate, getLost, loadLost, loadedLost, updateLost, invalidateLost, none};
+  v : 1..3;
+  n : 0..2;
+DEFINE
+  at := (v - 1) * 3 + n;
+  fills := step = onLoaded & !(!BUGGY & n < invalidated);
+  lost := step in {getLost, loadLost, loadedLost, updateLost, invalidateLost};
+ASSIGN
+  init(value) := 1; init(version) := 0; init(entryValue) := 0; init(entryVersion) := 0; init(invalidated) := 0;
+  init(loading) := FALSE; init(reads) := 0; init(writes) := 0; init(faults) := 0; init(get) := 0; init(load) := 0;
+  next(value) := step = onUpdate ? v : value;
+  next(version) := step = onUpdate ? min(version + 1, 7) : version;
+  next(entryValue) := case fills : v; step = onInvalidate : 0; TRUE : entryValue; esac;
+  next(entryVersion) := case fills : n; step = onInvalidate : 0; TRUE : entryVersion; esac;
+  next(invalidated) := step = onInvalidate & n > invalidated ? n : invalidated;
+  next(loading) := case step = onGet & entryValue = 0 & !loading : TRUE; step = onLoaded : FALSE; TRUE : loading; esac;
+  next(reads) := step = read ? min(reads + 1, 7) : reads;
+  next(writes) := step = write ? min(writes + 1, 7) : writes;
+  next(faults) := lost ? min(faults + 1, 7) : faults;
+  next(get) := case step = read : min(get + 1, 7); step in {onGet, getLost} : max(get - 1, 0); TRUE : get; esac;
+  next(load) := case step = onGet & entryValue = 0 & !loading : min(load + 1, 7); step in {onLoad, loadLost} : max(load - 1, 0); TRUE : load; esac;
+  init(loaded[0]) := 0; next(loaded[0]) := case step = onLoad & (value - 1) * 3 + version = 0 : min(loaded[0] + 1, 7); step in {onLoaded, loadedLost} & at = 0 : max(loaded[0] - 1, 0); TRUE : loaded[0]; esac;
+  init(loaded[1]) := 0; next(loaded[1]) := case step = onLoad & (value - 1) * 3 + version = 1 : min(loaded[1] + 1, 7); step in {onLoaded, loadedLost} & at = 1 : max(loaded[1] - 1, 0); TRUE : loaded[1]; esac;
+  init(loaded[2]) := 0; next(loaded[2]) := case step = onLoad & (value - 1) * 3 + version = 2 : min(loaded[2] + 1, 7); step in {onLoaded, loadedLost} & at = 2 : max(loaded[2] - 1, 0); TRUE : loaded[2]; esac;
+  init(loaded[3]) := 0; next(loaded[3]) := case step = onLoad & (value - 1) * 3 + version = 3 : min(loaded[3] + 1, 7); step in {onLoaded, loadedLost} & at = 3 : max(loaded[3] - 1, 0); TRUE : loaded[3]; esac;
+  init(loaded[4]) := 0; next(loaded[4]) := case step = onLoad & (value - 1) * 3 + version = 4 : min(loaded[4] + 1, 7); step in {onLoaded, loadedLost} & at = 4 : max(loaded[4] - 1, 0); TRUE : loaded[4]; esac;
+  init(loaded[5]) := 0; next(loaded[5]) := case step = onLoad & (value - 1) * 3 + version = 5 : min(loaded[5] + 1, 7); step in {onLoaded, loadedLost} & at = 5 : max(loaded[5] - 1, 0); TRUE : loaded[5]; esac;
+  init(loaded[6]) := 0; next(loaded[6]) := case step = onLoad & (value - 1) * 3 + version = 6 : min(loaded[6] + 1, 7); step in {onLoaded, loadedLost} & at = 6 : max(loaded[6] - 1, 0); TRUE : loaded[6]; esac;
+  init(loaded[7]) := 0; next(loaded[7]) := case step = onLoad & (value - 1) * 3 + version = 7 : min(loaded[7] + 1, 7); step in {onLoaded, loadedLost} & at = 7 : max(loaded[7] - 1, 0); TRUE : loaded[7]; esac;
+  init(loaded[8]) := 0; next(loaded[8]) := case step = onLoad & (value - 1) * 3 + version = 8 : min(loaded[8] + 1, 7); step in {onLoaded, loadedLost} & at = 8 : max(loaded[8] - 1, 0); TRUE : loaded[8]; esac;
+  init(update[0]) := 0; next(update[0]) := case step = write & v = 2 : min(update[0] + 1, 7); step in {onUpdate, updateLost} & v = 2 : max(update[0] - 1, 0); TRUE : update[0]; esac;
+  init(invalidate[0]) := 0; next(invalidate[0]) := case step = onUpdate & version = 0 : min(invalidate[0] + 1, 7); step in {onInvalidate, invalidateLost} & n = 1 : max(invalidate[0] - 1, 0); TRUE : invalidate[0]; esac;
+  init(update[1]) := 0; next(update[1]) := case step = write & v = 3 : min(update[1] + 1, 7); step in {onUpdate, updateLost} & v = 3 : max(update[1] - 1, 0); TRUE : update[1]; esac;
+  init(invalidate[1]) := 0; next(invalidate[1]) := case step = onUpdate & version = 1 : min(invalidate[1] + 1, 7); step in {onInvalidate, invalidateLost} & n = 2 : max(invalidate[1] - 1, 0); TRUE : invalidate[1]; esac;
+TRANS
+  case
+    step = read : reads < REPEATS;
+    step = write : writes < REPEATS & v >= 2;
+    step = onGet : get > 0;
+    step = onLoad : load > 0;
+    step = onLoaded : loaded[at] > 0;
+    step = onUpdate : v >= 2 & update[v - 2] > 0;
+    step = onInvalidate : n >= 1 & invalidate[n - 1] > 0;
+    step = getLost : faults < FAULTS & get > 0;
+    step = loadLost : faults < FAULTS & load > 0;
+    step = loadedLost : faults < FAULTS & loaded[at] > 0;
+    step = updateLost : faults < FAULTS & v >= 2 & update[v - 2] > 0;
+    step = invalidateLost : faults < FAULTS & n >= 1 & invalidate[n - 1] > 0;
+    step = none : TRUE;
+  esac
+DEFINE
+  quiet := get + load + loaded[0] + loaded[1] + loaded[2] + loaded[3] + loaded[4] + loaded[5] + loaded[6] + loaded[7] + loaded[8]
+    + update[0] + update[1] + invalidate[0] + invalidate[1] = 0;
+  consistent := entryValue = 0 | entryValue = value;
+-- Loaded is counted by the version it carries, which stays within 0..2: writes are bounded.
+INVARSPEC NAME bounded := version <= 2 & reads < 7 & writes < 7 & faults < 7 & get < 7 & load < 7
+  & loaded[0] < 7 & loaded[1] < 7 & loaded[2] < 7 & loaded[3] < 7 & loaded[4] < 7 & loaded[5] < 7 & loaded[6] < 7 & loaded[7] < 7 & loaded[8] < 7
+  & update[0] < 7 & update[1] < 7 & invalidate[0] < 7 & invalidate[1] < 7
+INVARSPEC NAME consistentOnceQuiet := quiet -> consistent
+-- Feynman's fairness: every message in flight is delivered; reads, writes and losses are not fair.
+JUSTICE get = 0 | step = onGet
+JUSTICE load = 0 | step = onLoad
+JUSTICE loaded[0] = 0 | (step = onLoaded & at = 0)
+JUSTICE loaded[1] = 0 | (step = onLoaded & at = 1)
+JUSTICE loaded[2] = 0 | (step = onLoaded & at = 2)
+JUSTICE loaded[3] = 0 | (step = onLoaded & at = 3)
+JUSTICE loaded[4] = 0 | (step = onLoaded & at = 4)
+JUSTICE loaded[5] = 0 | (step = onLoaded & at = 5)
+JUSTICE loaded[6] = 0 | (step = onLoaded & at = 6)
+JUSTICE loaded[7] = 0 | (step = onLoaded & at = 7)
+JUSTICE loaded[8] = 0 | (step = onLoaded & at = 8)
+JUSTICE update[0] = 0 | (step = onUpdate & v = 2)
+JUSTICE invalidate[0] = 0 | (step = onInvalidate & n = 1)
+JUSTICE update[1] = 0 | (step = onUpdate & v = 3)
+JUSTICE invalidate[1] = 0 | (step = onInvalidate & n = 2)
+LTLSPEC NAME converges := F G consistent

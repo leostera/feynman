@@ -19,7 +19,7 @@
     "feynman": "bun bin/feynman.ts",
     "build": "vite build --config src/view/vite.config.ts && rm -rf dist/types && tsc -p tsconfig.types.json",
     "test": "bun test --timeout 60000",
-    "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/alloy.oracle.ts ./test/examples/spin.oracle.ts ./test/examples/p.oracle.ts ./test/wild/wild.oracle.ts",
+    "oracles": "bun test ./test/examples/tla.oracle.ts ./test/examples/alloy.oracle.ts ./test/examples/spin.oracle.ts ./test/examples/nusmv.oracle.ts ./test/examples/p.oracle.ts ./test/wild/wild.oracle.ts",
     "bench": "bun bench/suite.ts",
     "fuzz": "bun test/fuzz/run.ts",
     "typecheck": "tsc --noEmit -p .",

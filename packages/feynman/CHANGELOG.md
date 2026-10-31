@@ -19,9 +19,10 @@ Faster, and checked against more. Nothing changes for spec authors.
   duplicated event arriving late gets past. It is the first to use `duplicate`.
 - **More oracles.** The examples' liveness verdicts are checked against TLC under the same
   fairness. Ten examples are checked against Alloy 6, which finds counterexamples by SAT over
-  traces rather than by enumerating states, and eight against SPIN, an explicit-state checker
-  in C: the same verdicts, counterexamples just as short, and with SPIN the same number of
-  states.
+  traces rather than by enumerating states, eight against SPIN, an explicit-state checker in
+  C, and five against NuSMV, which works on sets of states as BDDs: the same verdicts,
+  counterexamples just as short, and with SPIN and NuSMV the same number of states. NuSMV also
+  checks liveness under the same fairness, a second opinion beside TLC's.
 
 ## 0.15.0
 

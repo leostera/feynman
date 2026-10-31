@@ -91,6 +91,19 @@ events, breadth first. SPIN's optimisations are off when it counts: it would hid
 only ever written. It needs SPIN and a C compiler (`brew install spin`), and is skipped
 without.
 
+### NuSMV
+
+`oracles/nusmv/` models some of the systems for NuSMV, which computes with sets of states as
+BDDs rather than one state at a time. A model's variables are the state; the step taken is an
+input variable (`IVAR`), so it is not, and a `none` step that changes nothing is possible
+anywhere, as stuttering is in TLA+. Feynman's fairness is a `JUSTICE` constraint per message:
+it is delivered, or not in flight, infinitely often. `test/examples/nusmv.oracle.ts` checks the
+reachable states (exactly the checker's), each `INVARSPEC` (counterexamples just as short), and
+each `LTLSPEC` liveness verdict. Counts saturate rather than overflow, and every model's
+`bounded` invariant, that none reaches the top, must hold. It needs NuSMV (`NUSMV`, on `PATH`,
+or built from source into `~/.local/opt/nusmv`: the macOS binary is x86-64 only), and is
+skipped without.
+
 ### P
 
 `oracles/p/` models some of the systems in P (see `test/examples/corpus.ts`). P delivers each machine's messages in order, so every message goes through a
@@ -103,4 +116,4 @@ own assertion) exactly when the checker does. It needs .NET 8 and `dotnet tool i
 --global P`, and is skipped without.
 
 Run them all with `bun run oracles` (TLC and P take about fifteen minutes, Alloy about as
-long, SPIN about one); `bun run test` leaves them out.
+long, SPIN and NuSMV about a minute together); `bun run test` leaves them out.
