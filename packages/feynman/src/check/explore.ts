@@ -215,11 +215,14 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
   // The search goes first, leaving random runs their share of the time. When it explores every
   // world there is, they would find nothing it did not, and are skipped; else they run, and a
-  // search stopped at its share goes on, up to the time limit.
+  // search stopped at its share goes on, up to the time limit. A search that merged renamed
+  // worlds by symmetry has seen one of each, not every world: the random runs, which merge
+  // nothing, are what catch a symmetry claim it could not refute, so they always run then.
   search.run(b.walks > 0 ? started + b.timeLimit * (1 - WALK_SHARE) : undefined);
   if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
+  const merged = roots.some((r) => r.symmetry.classes.length > 0);
   let walked = NO_WALKS;
-  if (b.walks > 0 && !search.complete && !search.allBroken) {
+  if (b.walks > 0 && (merged || !search.complete) && !search.allBroken) {
     walked = search.walk(walkVerdicts, Math.min(Date.now() + b.timeLimit * WALK_SHARE, started + b.timeLimit));
     if (search.stoppedBy === "timeLimit") search.run();
     if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);

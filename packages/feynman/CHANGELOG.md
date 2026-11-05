@@ -15,6 +15,9 @@ Faster, and checked against more. Nothing changes for spec authors.
   when the search has seen every world. The CLI starts faster: the explorer's dependencies
   load only for `dev`, `build` and `open`, and `tsc` runs alongside the first check.
 - **A mistyped option** says which, and where to look, instead of reporting a crash.
+- **Random runs still run after a symmetric search.** Skipping them when the search saw every
+  world was wrong when it had merged worlds by symmetry: it had seen one of each, and the random
+  runs are what catch a false symmetry claim the search could not refute.
 - **A new example**, `webhooks.ts`: deduplicating events by the last id seen, which a
   duplicated event arriving late gets past. It is the first to use `duplicate`.
 - **More oracles.** The examples' liveness verdicts are checked against TLC under the same

@@ -295,3 +295,48 @@ test("setup: the checker explores from the world a scenario sets up, and a prope
   expect(ce.from).toEqual({ scenario: "Nine published", at: "start" });
   expect(ce.events.map((e) => e.key)).toEqual(["publish", "publish"]);
 });
+
+test("random runs still run after a search that merged worlds by symmetry: they catch a false claim it could not refute", async () => {
+  const { defineSpec, atMost } = await import("../../src/spec/index.ts");
+  const Enter = defineMessage("Enter", {});
+  const zone = defineZone({ name: "z" });
+  // The draw sorts ids, so people are not interchangeable; the claim says they are. "A entered
+  // first" and "B entered first" merge, and only the draw, later, tells them apart.
+  const Office = defineActor({
+    name: "Office",
+    zone,
+    singleton: true,
+    initialState: () => ({ entrants: [] as string[], first: null as string | null, winner: null as string | null }),
+    transitions: {
+      enter: {
+        on: Enter,
+        description: "Adds the sender to the ballot.",
+        run(state, _msg, ctx) {
+          if (state.winner || state.entrants.includes(ctx.from.id)) return;
+          state.entrants.push(ctx.from.id);
+          state.first ??= ctx.from.id;
+        },
+      },
+      draw: {
+        description: "Draws the entrant whose id sorts first.",
+        when: (s) => s.entrants.length >= 2 && s.winner === null,
+        run: (state) => void (state.winner = [...state.entrants].sort()[0]!),
+      },
+    },
+  });
+  const Person = defineActor({
+    name: "Person",
+    zone,
+    symmetric: true,
+    initialState: () => ({}),
+    actions: { enter: { with: [atMost(1)], label: "Enter", description: "Enters.", sends: [Enter], run: (_s, _i, ctx) => ctx.send(ctx.the(Office), Enter, {}) } },
+  });
+  const firstWins = defineProperty("firstWins", {
+    description: "Whoever entered first wins.",
+    always: (w) => w.the(Office).state.winner === null || w.the(Office).state.winner === w.the(Office).state.first,
+  });
+  const spec = defineSpec({ name: "Ballot", actors: [Office, Person], properties: [firstWins], finalState: { description: "Anything.", when: () => true } });
+  const bounds = { instances: { Person: 2 }, timeLimit: 600_000 };
+  expect((await check(spec, { ...bounds, walks: 0 })).properties[0]!.holds).toBe(true);
+  expect((await check(spec, bounds)).properties[0]!.holds).toBe(false);
+});
