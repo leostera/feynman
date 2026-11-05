@@ -10,7 +10,7 @@
     },
     "packages/feynman": {
       "name": "@leostera/feynman",
-      "version": "0.11.0",
+      "version": "0.15.0",
       "bin": {
         "feynman": "bin/feynman.ts",
       },
