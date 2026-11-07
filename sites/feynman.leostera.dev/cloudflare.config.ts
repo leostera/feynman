@@ -18,7 +18,7 @@ export default defineConfig({
     domains: ["feynman.leostera.dev"],
     env: { ...shareBindings() },
     exports: { ...shareExports },
-    observability: { enabled: true, traces: { enabled: true } },
+    observability: { enabled: true, headSamplingRate: 0.01, logs: { enabled: true, headSamplingRate: 0.01 }, traces: { enabled: true, headSamplingRate: 0.01 } },
   },
   containers: [shareContainer],
 });
