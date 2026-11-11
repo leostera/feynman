@@ -69,7 +69,11 @@ export function replay(spec: Spec, initial: World, choices: Choice[]): Counterex
   return { initial, choices, events, worlds };
 }
 
-/** Values to try for each input: its examples, or a small set per type. At most 12 combinations. */
+/**
+ * Values to try for each input: its examples, or a small set per type (0 and 1 for a number,
+ * "" and "x" for text), and every combination of them. All of them: a combination left out is
+ * an action the checker never takes, which a ✓ would not say.
+ */
 export function inputCombinations(spec: Spec, world: World, inputs: Record<string, { type: string; values?: string[]; examples?: (w: never) => unknown[] }>): Record<string, unknown>[] {
   let combos: Record<string, unknown>[] = [{}];
   for (const [name, input] of Object.entries(inputs)) {
@@ -82,7 +86,7 @@ export function inputCombinations(spec: Spec, world: World, inputs: Record<strin
           : input.type === "boolean"
             ? [true, false]
             : ["", "x"];
-    combos = combos.flatMap((combo) => values.map((value) => ({ ...combo, [name]: value }))).slice(0, 12);
+    combos = combos.flatMap((combo) => values.map((value) => ({ ...combo, [name]: value })));
   }
   return combos;
 }
