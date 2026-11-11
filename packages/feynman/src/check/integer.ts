@@ -827,14 +827,27 @@ export class IntegerSearch {
   }
 
   /**
-   * The worlds one step away, each up to symmetry: renamed twins must agree on them.
+   * The worlds one step away, each up to symmetry, and the properties each breaks: renamed twins
+   * must agree on them. The claim is about the properties as much as the steps: one that names
+   * an instance ("B never wins") tells twins apart, and judged on one of each merged pair it
+   * would never be judged on the worlds where it breaks.
    */
   private successorsKey(vector: Int32Array, L: Layout, symmetry: Symmetry): string {
     const here = this.here(vector, L);
-    const out = new Set<string>();
-    for (const choice of this.choicesOf(here, this.tupleOf(vector, L))) {
+    const tuple = this.tupleOf(vector, L);
+    const unbroken = (ids: string[]) => ids.filter((id) => !this.broken.has(id));
+    const out = new Set<string>([`fails ${unbroken(this.failingAt(tuple, vector, L)).join(",")}`]);
+    for (const choice of this.choicesOf(here, tuple)) {
       const step = this.step(here, choice);
-      out.add(step.effect.error ? `error:${step.effect.error}` : this.symmetricPrint(this.applied(vector, step), L, symmetry).world.join(","));
+      if (step.effect.error) {
+        out.add(`error:${step.effect.error}`);
+        continue;
+      }
+      const child = this.applied(vector, step);
+      const childTuple = this.tupleOf(child, L);
+      const breaks = unbroken(this.failingAt(childTuple, child, L));
+      if (this.everySteps.length) breaks.push(...this.stepBreaks(tuple, childTuple, step.effect.event, 0, () => this.instancesOf(vector, L), () => this.instancesOf(child, L)));
+      out.add(`${this.symmetricPrint(child, L, symmetry).world.join(",")} breaks ${breaks.sort().join(",")}`);
     }
     return [...out].sort().join("\n");
   }

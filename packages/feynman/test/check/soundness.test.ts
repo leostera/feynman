@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, runScenario, type Property, type Spec } from "../../src/spec/index.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
@@ -93,4 +93,26 @@ test("a never property counts a scenario's steps when the search starts from its
   expect(await verdict(spec)).toEqual({ answersNeedQuestions: "holds" });
   // With random runs too, which start from the scenario's end as the search does.
   expect((await check(spec, {}, scenarioSeeds(spec))).properties[0]!.holds).toBe(true);
+});
+
+test("symmetry is refuted by a property that tells interchangeable instances apart", async () => {
+  const P = defineActor({
+    name: "P",
+    zone,
+    symmetric: true,
+    initialState: () => ({ x: 0 }),
+    actions: { inc: { label: "Inc", description: "Adds one.", when: (s) => s.x < 2, run: (s) => void (s.x += 1) } },
+  });
+  const x = (w: WorldView, label: string) => w.all(P).find((p) => p.label === label)?.state.x ?? 0;
+  // The steps are symmetric; the properties name B. The worlds where only B is at two are
+  // renamings of the one where only A is, which is the one the search keeps.
+  const state = defineProperty("onlyBAtTwo", { description: "B is never alone at two.", always: (w) => !(x(w, "P A") === 0 && x(w, "P B") === 2 && x(w, "P C") === 0) });
+  const step = defineProperty("bNeverFirstToTwo", { description: "B is never first to two.", everyStep: (b, a) => !(x(b, "P B") === 1 && x(a, "P B") === 2 && x(a, "P A") === 0 && x(a, "P C") === 0) });
+  for (const property of [state, step]) {
+    const spec = defineSpec({ name: "Three", actors: [P], properties: [property], finalState: ANY });
+    const report = await check(spec, { ...SEARCH, instances: { P: 3 } });
+    expect(report.reductions.refuted).toEqual(["P"]);
+    expect(report.properties[0]!.holds).toBe(false);
+    expect(!report.properties[0]!.holds && report.properties[0]!.counterexample.events.length).toBe(2);
+  }
 });
