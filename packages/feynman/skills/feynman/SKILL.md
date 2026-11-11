@@ -812,7 +812,8 @@ feynman run [spec] [--scenario NAME | --all] [--without RULE]
 feynman check [spec] [--depth N] [--set faults=1] [--instances Actor=N] [--max-states N] [--time-limit S]
               [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
               [--only P,Q] [--without RULE,RULE] [--no-rules] [--brief | --json | --as-scenario]
-feynman conform <spec> <log.jsonl> [--gap 4] [--unlogged A,B] [--logs-faults] [--instances Actor=N] [--set k=v] [--json | --as-scenario]
+feynman conform <spec> <log.jsonl | trace.json> [--gap 4] [--unlogged A,B] [--logs-faults] [--instances Actor=N] [--set k=v]
+              [--map map.ts] [--trace ID] [--order causal|time] [--json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
@@ -864,8 +865,21 @@ of `--unlogged` actors. The answer is the reading with the fewest of them, plus 
 properties it breaks, judged along the run. Otherwise it gives the line where the log leaves
 the spec, with what the instance could do there instead (`near`) and what else could
 happen. A log the spec rejects means the spec and the system disagree. Triage it as you
-would a counterexample: read the code around that line. Make the log from a test run or a
-production trace, mapping its events to the spec's step keys and instance labels.
+would a counterexample: read the code around that line. A line may list `after: [lines]`,
+the lines that must come before it. The log is then a partial order, and it conforms when
+some order that keeps it is a run.
+
+Traces work directly: OTLP JSON (the Collector's file exporter, Tempo's API), Jaeger JSON, and
+Zipkin v2. A span is a step when it has `feynman.step`, or when a `--map` module
+(`defineTraceMapping` from `@leostera/feynman/config`) returns a line for it. The instance is
+`feynman.instance`, else the resource's `service.instance.id`, else its `service.name`.
+Replicas of a service that are not singletons say `feynman.actor` on the span or the resource.
+The sender is found up the parents or across the links, skipping services the spec doesn't
+have. Inputs, payload and state can be given as JSON (`feynman.payload`) or field by field
+(`feynman.payload.value`). Clocks are not trusted: a step comes after its instance's previous
+step and after the steps it descends from or links to, and nothing else is assumed.
+`--order time` trusts the clocks. When asked to check production against a spec, prefer a
+mapping over adding attributes: read the spans the system already emits.
 
 When `check` stops at a limit (states, time, or memory), it says so, and how far it got:
 a safety property "held on every path of up to N events". It also says what the states

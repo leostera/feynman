@@ -192,6 +192,27 @@ test("a log is parsed into events, or refused with its line and what is wrong", 
     { line: 4, instance: "Coordinator", key: "vote", message: "message:Vote", from: "A", payload: { yes: true } },
   ]);
   // Names are checked against the world the log starts in.
-  expect(() => conform(spec, parseLog('{"instance":"Z","key":"vote"}', spec))).toThrow("line 1 is about Z, who is not there: the instances are Coordinator; spawn the others first, or pass --instances");
+  expect(() => conform(spec, parseLog('{"instance":"Z","key":"vote"}', spec))).toThrow("line 1 is about Z, who is not there: the instances are Coordinator; spawn the others first (in a trace, give a span of theirs feynman.actor), or pass --instances");
   expect(() => conform(spec, parseLog('{"instance":"Coordinator","key":"fly"}', spec))).toThrow("line 1 has Coordinator take fly, which Coordinator has no action or step named");
+});
+
+test("a log may be a partial order: it is a run when some order that keeps it is", () => {
+  const spec = orderedWrites("buggy");
+  const log = (afterPut: number[], afterSet: number[]) =>
+    jsonl([
+      { instance: "Client", key: "set", inputs: { value: "a" } },
+      // Written before the write it applies: on another machine, whose clock ran ahead.
+      { instance: "Store", key: "put", payload: { value: "b" }, after: afterPut },
+      { instance: "Client", key: "set", inputs: { value: "b" }, after: afterSet },
+    ]);
+  const r = conform(spec, parseLog(log([], [1]), spec));
+  if (!r.conforms) throw new Error("does not conform");
+  expect(r.run.events.map((e) => `${e.key} ${JSON.stringify(e.inputs ?? e.payload)}`)).toEqual(['set {"value":"a"}', 'set {"value":"b"}', 'put {"value":"b"}']);
+  expect(r.lines).toEqual([1, 3, 2]);
+  // In the order written, or with the put before the second set, it is not.
+  expect(conform(spec, parseLog(log([], [1]).replaceAll(/,"after":\[[\d,]*\]/g, ""), spec)).conforms).toBe(false);
+  const before = conform(spec, parseLog(log([1], [1, 2]), spec));
+  if (before.conforms || before.stop.kind !== "mismatch") throw new Error("conforms");
+  expect(before.stop.line.line).toBe(2);
+  expect(() => parseLog(jsonl([{ instance: "Client", key: "set", after: [1] }]), spec)).toThrow("line 1 has after that is not a list of the lines before it");
 });

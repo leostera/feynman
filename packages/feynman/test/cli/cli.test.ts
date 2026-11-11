@@ -474,3 +474,54 @@ test("conform reads a log against a spec: the run it is, where it leaves the spe
   expect(bad.status).toBe(1);
   expect(bad.out).toContain("bad.jsonl: line 1 is about Ann, who is not there");
 }, 60_000);
+
+test("conform reads an OpenTelemetry trace: spans that say their step, and spans a mapping reads", async () => {
+  const { root } = repo();
+  writeFileSync(join(root, "specs/shop.ts"), SHOP);
+  const attrs = (o: Record<string, string>) => Object.entries(o).map(([key, v]) => ({ key, value: { stringValue: v } }));
+  // Ann's phone, a gateway, and the shop: the gateway's span is between Ann's and the shop's.
+  const otlp = (shop: Record<string, string>, ann: Record<string, string>, annAfter: Record<string, string>) => ({
+    resourceSpans: [
+      { resource: { attributes: attrs({ "service.name": "phone", "service.instance.id": "Ann", "feynman.actor": "Buyer" }) }, scopeSpans: [{ spans: [
+        { traceId: "ab", spanId: "0000000000000001", name: "tap buy", startTimeUnixNano: "1000", endTimeUnixNano: "9000", attributes: attrs(ann) },
+        { traceId: "ab", spanId: "0000000000000004", parentSpanId: "0000000000000003", name: "show result", startTimeUnixNano: "7000", endTimeUnixNano: "8000", attributes: attrs(annAfter) },
+      ] }] },
+      { resource: { attributes: attrs({ "service.name": "gateway" }) }, scopeSpans: [{ spans: [{ traceId: "ab", spanId: "0000000000000002", parentSpanId: "0000000000000001", name: "proxy", startTimeUnixNano: "2000", endTimeUnixNano: "6000", attributes: [] }] }] },
+      // The shop's clock runs behind: its span starts before Ann's.
+      { resource: { attributes: attrs({ "service.name": "Shop" }) }, scopeSpans: [{ spans: [{ traceId: "ab", spanId: "0000000000000003", parentSpanId: "0000000000000002", name: "POST /buy", startTimeUnixNano: "500", endTimeUnixNano: "5000", attributes: attrs(shop) }] }] },
+    ],
+  });
+  writeFileSync(join(root, "trace.json"), JSON.stringify(otlp({ "feynman.step": "buy" }, { "feynman.step": "buy" }, { "feynman.step": "sold" })));
+  const ok = await capture(["conform", "shop", "trace.json"], root);
+  expect(ok.status).toBe(0);
+  expect(ok.out).toContain("specs/shop.ts, against trace.json (OpenTelemetry)");
+  expect(ok.out).toContain("✓ the log is a run of the spec: 3 logged event(s)");
+  expect(ok.out).toContain('   2  Shop (Shop)  buy  {}  from Ann  span "POST /buy" (Shop, 0000000000000003)');
+  // Trusting the clocks, a span still comes after the one it descends from: the shop's skew does not matter.
+  expect((await capture(["conform", "shop", "trace.json", "--order", "time"], root)).status).toBe(0);
+  // The same spans, as the system has them, read by a mapping.
+  writeFileSync(join(root, "plain.json"), JSON.stringify(otlp({ "http.route": "/buy" }, { "ui.tap": "buy" }, { "ui.shown": "sold" })));
+  writeFileSync(
+    join(root, "map.ts"),
+    `import { defineTraceMapping } from "@leostera/feynman/config";
+export default defineTraceMapping((span) => {
+  if (span.attributes["http.route"] === "/buy") return { key: "buy" };
+  if (span.attributes["ui.tap"] === "buy") return { key: "buy" };
+  if (span.attributes["ui.shown"] === "sold") return { key: "sold" };
+  return undefined;
+});
+`,
+  );
+  const unmapped = await capture(["conform", "shop", "plain.json"], root);
+  expect(unmapped.status).toBe(1);
+  expect(unmapped.out).toContain("plain.json: has no span that is a step of the spec: mark them with a feynman.step attribute, or map them with --map");
+  const mapped = await capture(["conform", "shop", "plain.json", "--map", "map.ts", "--json"], root);
+  expect(mapped.status).toBe(0);
+  const json = JSON.parse(mapped.out);
+  expect(json.events.map((e: { key: string; span: string }) => [e.key, e.span])).toEqual([
+    ["buy", 'span "tap buy" (Ann, 0000000000000001)'],
+    ["buy", 'span "POST /buy" (Shop, 0000000000000003)'],
+    ["sold", 'span "show result" (Ann, 0000000000000004)'],
+  ]);
+  expect(capture(["conform", "shop", "trace.json", "--order", "sideways"], root)).rejects.toThrow("--order is causal or time, not sideways");
+}, 60_000);

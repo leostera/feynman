@@ -4,7 +4,7 @@
 - Status: Accepted
 - Author: `leostera`
 - Start Date: `2026-11-21`
-- Updated: `2026-11-21`
+- Updated: `2026-11-22`
 - Discussion PR: `TBD`
 - Tracking Issue: `TBD`
 
@@ -30,6 +30,12 @@ the properties it breaks. When none does, it gives the first line no run can mat
 the spec could have done there instead. Up to `--gap` (4) steps the log doesn't show may come
 between two it does: faults, and the steps of actors that don't log.
 
+A trace works too: OpenTelemetry's OTLP JSON, Jaeger's JSON, or Zipkin's. A span is a step
+when it has a `feynman.step` attribute, or when a mapping module (`--map`) says it is one.
+The trace gives who took each step, who sent its message, and what caused what. Machines'
+clocks disagree, so a trace is a partial order, and it conforms when some order that keeps
+it is a run.
+
 ## Motivation
 
 A check answers one question: does everything the spec allows keep the properties? It can't
@@ -53,14 +59,19 @@ second model.
 - When the log is a run: the run, and the properties it breaks, judged as a monitor would
   judge the live system.
 - When it isn't: the line, and what the spec could have done there. A bare "no" is no use.
-- An oracle: TLC must agree on which logs are runs.
+- Production traces, as tracing systems store them, with no rewriting: OpenTelemetry first,
+  since everything else can be converted to it, plus Jaeger and Zipkin, which their UIs
+  download.
+- No trust in clocks across machines.
+- An oracle: TLC must agree on which logs are runs, in order and as partial orders.
 
 ## Non-goals
 
-- Reading a system's native log format. Mapping its events to step keys and instance labels
-  is the system's job: a few lines of `jq` or a logging adapter.
-- Timestamps, and the order of events on different machines. The log is one sequence. Merging
-  per-machine logs into one, consistently with causality, comes before `conform`.
+- Reading a system's own log format. Mapping its lines to step keys and instance labels is
+  the system's job: a few lines of `jq` or a logging adapter. Traces are the exception, since
+  their format is standard.
+- Vector clocks and other causality metadata beyond what traces carry (parents and links).
+- OTLP protobuf. The Collector converts it to JSON.
 - Liveness. A log is finite. `eventually` and `leadsTo` have nothing to judge on it.
 - Streaming. `conform` reads a whole file.
 
@@ -86,6 +97,50 @@ second model.
 A line that is not JSON, names something the spec doesn't have, or has a field the format
 doesn't know is a `LogError` that gives its line number. A log and a spec that don't fit each
 other in their names is a broken input, not a log that doesn't conform.
+
+### Traces
+
+`readSpans(text)` reads any of three formats into one span shape: trace, span and parent ids,
+links, name, kind, start and end in nanoseconds, attributes, and the resource's attributes.
+`traceFormat` tells them apart:
+- OTLP JSON: an export request with `resourceSpans`, or JSON Lines of them as the file
+  exporter writes. Tempo's `{trace: {resourceSpans}}` and `{batches}` are read too.
+  Attribute values are unwrapped, with `intValue` (a string) read as a number, and base64
+  ids converted to hex.
+- Jaeger: `{data: [{spans, processes}]}`, with `CHILD_OF` as the parent and other
+  references as links.
+- Zipkin v2: a list of spans, or a list of traces.
+
+`traceLog(spans, spec, { map, traceId, order })` turns spans into log events:
+
+- **Which spans.** A span with `feynman.step` stands for the line its `feynman.*` attributes
+  make: `instance`, `actor`, `kind`, `message`, `from`, and `inputs`, `payload` and `state`,
+  each either as JSON or field by field (`feynman.payload.value`). Otherwise the mapping, a
+  module whose default export (`defineTraceMapping`) takes a span and returns a line or
+  `undefined`, decides. Every other span is skipped.
+- **Who.** `feynman.instance`, else the resource's `service.instance.id`, else its
+  `service.name`. An instance that isn't a singleton is spawned from `feynman.actor`, set on
+  the span or on the resource.
+- **The sender**, for a step on a message that doesn't say who sent it: the nearest span up
+  the parents whose instance is another of the spec's. Spans of services the spec doesn't
+  know, like gateways, are passed over. Failing that, the same search runs across the
+  links, as a queue's consumer span links to its producer's.
+- **The order.** By default, a step comes after the step before it on its own instance (by
+  that instance's clock, ties broken by depth) and after the nearest step it descends from
+  or links to. The steps are written in an order that keeps those constraints, earliest
+  first, and each one lists them as `after`. With `order: "time"`, the steps are in one
+  order: by start time, but never before a span they descend from. A cycle is an error.
+
+A step's `at` names its span (`span "POST /hold" (Box office, 6d52743cd3587feb)`), and reports
+use it in place of a line number.
+
+### Partial orders
+
+Any log, from a trace or a JSON Lines file, may give a step `after: [lines]`. If any step does,
+the log is a partial order. A step may then be matched once every step it lists has been, and
+the log conforms when some order that keeps all the `after` constraints is a run. The search
+node holds the set of steps matched, one bit each, in place of a count. For a log in order,
+the only step ready is the next one, as before.
 
 ### The search
 
@@ -128,10 +183,24 @@ each step giving its line, or saying the log doesn't show it.
 - Random runs of five examples, with some lines giving the state, must conform, with no more
   unlogged steps than the run had faults.
 - `test/examples/conform.oracle.ts` writes a TLA+ trace module over the independent
-  `OrderedWrites.tla` for each log. A logged step must match the log's next line, a loss may
-  happen anywhere, and TLC reaches the end of the log exactly when the log is a run. On 80
-  logs, 10 accepted and 10 rejected per configuration, TLC and `conform` agree. A mutation
-  that ignores values in the trace module makes them disagree.
+  `OrderedWrites.tla` for each log. A logged step matches a line once every line before it
+  has been matched, a loss may happen anywhere, and TLC reaches the end of the log exactly
+  when the log is a run. The logs number 160, and half are partial orders that keep only
+  each machine's order, with the store's lines written first, so the written order is
+  never a run. Per configuration, TLC and `conform` agree on 10 accepted and 10 rejected
+  logs of each kind. Two mutations make them disagree: one ignores values in the trace
+  module, the other reads a partial order as written.
+- `test/check/trace.test.ts` renders random runs of four examples as OTLP, Jaeger and Zipkin
+  traces. Spans are shuffled, each machine's clock is off by up to 50ms (steps are 1ms
+  apart), and gateway spans sit between sender and receiver. Each trace must name every
+  step of its run, never put a step after one the run took later, and conform. With
+  agreeing clocks, `order: "time"` must read the run back exactly. With skewed clocks it
+  gets the order wrong for most runs, which is why the default ignores clocks.
+- The same file has the OpenTelemetry SDK's own export of a traced ordered-writes system:
+  the run it reads, the property it breaks, and on an ordered channel the span where it
+  leaves the spec. Mappings, links, `--trace` and refused spans are covered too.
+- The fuzzer writes random runs as partial orders, shuffled, with faults left out, and
+  checks that they conform. A mutation that reads them as written is caught.
 
 ## Drawbacks
 
@@ -142,6 +211,12 @@ each step giving its line, or saying the log doesn't show it.
   property and this one doesn't, `conform` doesn't say so.
 - Names must be the spec's: step keys and instance labels. A system whose logs are named
   otherwise needs a mapping, and the mapping can be wrong.
+- A partial order accepts more than the system did: any order consistent with the clocks of
+  each machine and with causality. Two requests on two machines with no causal link may be
+  read in either order. That is what the trace can actually show. `--order time` is
+  stricter, and it is wrong when clocks are.
+- A large trace with much concurrency has many orders. The search merges equal worlds, but
+  `--max-states` can still be reached. `--trace ID` keeps the problem small.
 
 ## Rationale and alternatives
 
@@ -152,6 +227,11 @@ each step giving its line, or saying the log doesn't show it.
 - **Depth-first search, stopping at the first reading.** Faster on a log that conforms, but its
   reading may be full of unlogged steps. Breadth first gives the simplest explanation, and on
   a log that doesn't conform it finds the furthest line anyway.
+- **Trust timestamps by default.** Simple, and right on one machine. Across machines, a 40ms
+  skew reorders a request and its reply in the book's own example. Causality is the only
+  cross-machine order a trace really records.
+- **A mapping language (YAML rules on span names and attributes).** A TypeScript function is
+  as short for the common case, and handles the rest without a new language.
 - **A monitor only: judge the properties on the log, without the spec's steps.** That is
   PObserve's model. It can't tell when the system does something the spec doesn't allow,
   and that question is the one this command exists for.
@@ -166,9 +246,9 @@ each step giving its line, or saying the log doesn't show it.
 
 ## Future possibilities
 
-- Merging per-machine logs into one, using vector clocks or the spec's causality: any
-  interleaving consistent with each machine's order.
+- Per-machine JSON Lines logs given as separate files, read as one partial order, as traces
+  are.
 - Reporting every reading's broken properties, not just the simplest reading's.
-- A mapping file from a service's log events to the spec's names, so `conform` can read
-  OpenTelemetry spans directly.
+- Span events (OTel's in-span logs) as steps, for systems that log several steps in one span.
+- Pulling traces straight from a backend (`--from tempo://…`) rather than a file.
 - Showing a log in the explorer, as a flow, with the line it leaves the spec at marked.

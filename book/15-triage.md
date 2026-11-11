@@ -178,6 +178,66 @@ spec allows, and we ask whether the code can do it. A rejected log is something 
 and the spec says it can't happen. Either way, the spec and the system disagree, and one of
 them is wrong.
 
+### From a trace
+
+A test server is one thing. Production is where the interesting orders happen, and production
+is traced. `conform` reads traces too: OpenTelemetry's OTLP JSON (what the Collector's file
+exporter writes, and what Tempo's API returns), Jaeger's JSON, and Zipkin's. A span is a step
+of the spec when it has a `feynman.step` attribute:
+
+```ts
+const span = tracer.startSpan("POST /hold", { attributes: { "feynman.step": "hold" } }, ctx);
+```
+
+Everything else comes from the trace itself:
+- **The instance** is the span's service: `service.instance.id`, else `service.name`. The two
+  phones are replicas of one `phone` service, so their resources also say
+  `"feynman.actor": "Person"`.
+- **The sender** of a message is the nearest span up the parents, or across the links, that
+  belongs to another of the spec's instances. Spans in between, like a gateway's, are skipped.
+- **Inputs, payloads and state** may be given as `feynman.inputs`, `feynman.payload` and
+  `feynman.state` (JSON), or field by field (`feynman.payload.value`).
+
+[`specs/15-triage/two-holds.otlp.json`](specs/15-triage/two-holds.otlp.json) is the same
+race, traced with the OpenTelemetry SDK, with the box office's clock 40ms behind the phones':
+
+```text
+book/specs/15-triage/1-the-agents-draft.ts, against book/specs/15-triage/two-holds.otlp.json (OpenTelemetry)
+✗ the log leaves the spec at span "show held" (Alice, 47582cd9312f09c8): Alice held  from Box office
+  it fits up to there:
+   1  Alice (Person)  hold  span "tap hold" (Alice, a649fd09361d4162)
+  …
+   4  Box office (Box office)  hold the seat  {}  from Bob  span "POST /hold" (Box office, 6d52743cd3587feb)
+      Looks the seat up, and if it is free, goes on to claim it.
+      → Box office: claim {"by":"person-bob"}
+```
+
+The span id is what we paste into the tracing UI to find the request.
+
+By the clocks, the box office took both requests before either phone sent one. Two machines' clocks
+never quite agree, so `conform` doesn't trust them. It keeps only two orders: each instance's
+own, and cause before effect. The trace is a run when some order of its steps that keeps both
+is a run of the spec. `--order time` trusts the clocks instead.
+
+Most systems' spans don't say `feynman.step`, and we don't have to add it. A mapping reads the
+spans they already have:
+
+```ts
+import { defineTraceMapping } from "@leostera/feynman/config";
+
+export default defineTraceMapping((span) => {
+  if (span.attributes["http.route"] === "/hold") return { key: "hold" };
+  if (span.name === "show held") return { key: "held" };
+  return undefined; // the rest are the system's own detail
+});
+```
+
+```sh
+feynman conform specs/15-triage/2-one-statement.ts trace.json --map trace-map.ts
+```
+
+A trace file often has many traces. `--trace ID` checks one of them.
+
 Logs don't show everything. By default, a fault (a lost message, a crash) leaves no line, and
 up to four unlogged steps may come between two logged ones (`--gap`). The steps of an actor
 that doesn't log anything, a phone with no telemetry, say, can be left out with

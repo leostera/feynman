@@ -45,6 +45,12 @@ Commands:
       --logs-faults              the log records faults too (by default, a loss leaves no line)
       --instances, --set, --max-states, --json as for check
       --as-scenario              the run the log is, as defineScenario code
+    A trace works too: OpenTelemetry (OTLP JSON, as the collector's file exporter writes and
+    Tempo answers), Jaeger's JSON, or Zipkin's. A span with a feynman.step attribute is a step.
+      --map map.ts               a module mapping the other spans to steps (defineTraceMapping)
+      --trace ID                 only this trace, of the ones in the file
+      --order time               trust the clocks; by default, only each instance's order and
+                                 what caused what, and any order of the steps that keeps both
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
   dev [--port N]           Serve the explorer on the first free port from N (default: 4321).
@@ -82,6 +88,9 @@ const ARGS = {
     gap: { type: "string" },
     unlogged: { type: "string" },
     "logs-faults": { type: "boolean" },
+    map: { type: "string" },
+    trace: { type: "string" },
+    order: { type: "string" },
   },
 } as const;
 
@@ -127,7 +136,7 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       if (out === "brief") throw new Error("--brief is for check; conform's text is brief already");
       const gap = values.gap === undefined ? undefined : Number(values.gap);
       if (gap !== undefined && (!Number.isInteger(gap) || gap < 0)) throw new Error(`--gap takes a whole number, not ${values.gap}`);
-      return conformCommand(ctx, positionals, { instances: b.instances, maxStates: b.maxStates, gap, unlogged: ids(values.unlogged), logsFaults: values["logs-faults"] === true, set: settings(values.set), output: out });
+      return conformCommand(ctx, positionals, { instances: b.instances, maxStates: b.maxStates, gap, unlogged: ids(values.unlogged), logsFaults: values["logs-faults"] === true, set: settings(values.set), output: out, map: values.map, trace: values.trace, order: orderOf(values.order) });
     }
     case "lock":
       return lockCommand(ctx);
@@ -209,3 +218,8 @@ function bounds(values: Record<string, string | string[] | boolean | undefined>)
 
 /** The explorer's commands, loaded when one runs: they bring Vite, compression and a file watcher, which check and run do without. */
 const serve = () => import("./serve.ts");
+
+function orderOf(value: string | undefined): "causal" | "time" | undefined {
+  if (value === undefined || value === "causal" || value === "time") return value;
+  throw new Error(`--order is causal or time, not ${value}`);
+}

@@ -31,6 +31,13 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
   it says on which line the log leaves the spec, and what the spec could have done there.
   `--as-scenario` writes the run as a scenario. TLC's trace validation agrees on which logs
   are runs. Chapter 15 of the book uses it to triage.
+- **`conform` reads traces: OpenTelemetry, Jaeger and Zipkin.** A span with a `feynman.step`
+  attribute is a step, and `--map map.ts` (`defineTraceMapping`) reads the spans a system
+  already has. The instance is the span's service, and the sender is found up its parents or
+  links. Clocks are not trusted: a trace is a partial order (each instance's order, causes
+  before effects), and it conforms when some order that keeps both is a run. `--order time`
+  trusts the clocks instead, and `--trace ID` picks one trace. A JSON Lines log can be a
+  partial order too, with `after`.
 - **A crash changes the calls it orphans where they are**, as the engine does, not at the end
   of what is in flight. No verdict changes; on an ordered channel, it keeps the order.
 

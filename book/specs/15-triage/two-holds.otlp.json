@@ -1,0 +1,248 @@
+{
+ "resourceSpans": [
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "phone"
+      }
+     },
+     {
+      "key": "service.instance.id",
+      "value": {
+       "stringValue": "Alice"
+      }
+     },
+     {
+      "key": "feynman.actor",
+      "value": {
+       "stringValue": "Person"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeSpans": [
+    {
+     "scope": {
+      "name": "box-office"
+     },
+     "spans": [
+      {
+       "traceId": "faba1f57120f252db1c166c1e77302b4",
+       "spanId": "a649fd09361d4162",
+       "name": "tap hold",
+       "kind": 1,
+       "startTimeUnixNano": "1795284000000000000",
+       "endTimeUnixNano": "1795284000003000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "hold"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      },
+      {
+       "traceId": "faba1f57120f252db1c166c1e77302b4",
+       "spanId": "47582cd9312f09c8",
+       "parentSpanId": "92496d44e01d0d4e",
+       "name": "show held",
+       "kind": 1,
+       "startTimeUnixNano": "1795284000020000000",
+       "endTimeUnixNano": "1795284000023000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "held"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "phone"
+      }
+     },
+     {
+      "key": "service.instance.id",
+      "value": {
+       "stringValue": "Bob"
+      }
+     },
+     {
+      "key": "feynman.actor",
+      "value": {
+       "stringValue": "Person"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeSpans": [
+    {
+     "scope": {
+      "name": "box-office"
+     },
+     "spans": [
+      {
+       "traceId": "4e1f44782f863e3c03605407b17a6a04",
+       "spanId": "d3751b42c1b59bfa",
+       "name": "tap hold",
+       "kind": 1,
+       "startTimeUnixNano": "1795284000002000000",
+       "endTimeUnixNano": "1795284000005000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "hold"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      },
+      {
+       "traceId": "4e1f44782f863e3c03605407b17a6a04",
+       "spanId": "5c27eac7cf178217",
+       "parentSpanId": "6d52743cd3587feb",
+       "name": "show unavailable",
+       "kind": 1,
+       "startTimeUnixNano": "1795284000021000000",
+       "endTimeUnixNano": "1795284000024000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "unavailable"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "resource": {
+    "attributes": [
+     {
+      "key": "service.name",
+      "value": {
+       "stringValue": "Box office"
+      }
+     }
+    ],
+    "droppedAttributesCount": 0
+   },
+   "scopeSpans": [
+    {
+     "scope": {
+      "name": "box-office"
+     },
+     "spans": [
+      {
+       "traceId": "faba1f57120f252db1c166c1e77302b4",
+       "spanId": "92496d44e01d0d4e",
+       "parentSpanId": "a649fd09361d4162",
+       "name": "POST /hold",
+       "kind": 2,
+       "startTimeUnixNano": "1795283999970000000",
+       "endTimeUnixNano": "1795283999973000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "hold"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      },
+      {
+       "traceId": "4e1f44782f863e3c03605407b17a6a04",
+       "spanId": "6d52743cd3587feb",
+       "parentSpanId": "d3751b42c1b59bfa",
+       "name": "POST /hold",
+       "kind": 2,
+       "startTimeUnixNano": "1795283999972000000",
+       "endTimeUnixNano": "1795283999975000000",
+       "attributes": [
+        {
+         "key": "feynman.step",
+         "value": {
+          "stringValue": "hold"
+         }
+        }
+       ],
+       "droppedAttributesCount": 0,
+       "events": [],
+       "droppedEventsCount": 0,
+       "status": {
+        "code": 0
+       },
+       "links": [],
+       "droppedLinksCount": 0,
+       "flags": 257
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

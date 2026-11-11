@@ -11,6 +11,7 @@ Everything the book uses, on one page, with the chapter that explains it.
 | `feynman run <spec> --scenario NAME` | one scenario's trace; `--all` for every one | 6 |
 | `feynman check <spec>` | explore every order of events within the bounds, and judge every property | 1, 5 |
 | `feynman conform <spec> <log.jsonl>` | whether a log of what the system did is a run of the spec; `--gap N`, `--unlogged A`, `--logs-faults`, `--as-scenario` | 15 |
+| `feynman conform <spec> <trace.json>` | the same for an OpenTelemetry, Jaeger or Zipkin trace; `--map map.ts`, `--trace ID`, `--order time` | 15 |
 | `feynman lock` | record what the code each source points at looks like | 13 |
 | `feynman diff <spec> --base REF` | every scenario's flow, on REF and now, compared | 13 |
 | `feynman dev` | the explorer, reloading on save | 14 |

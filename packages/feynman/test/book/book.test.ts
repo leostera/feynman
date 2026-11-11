@@ -62,6 +62,16 @@ test("chapter 15's log is not a run of the agent's draft, and is one of the fix"
   };
   expect(await read("1-the-agents-draft")).toEqual({ conforms: false, line: 7 });
   expect(await read("2-one-statement")).toEqual({ conforms: true, broken: 0 });
+  // And as an OpenTelemetry trace, the box office's clock behind the phones'.
+  const { readSpans, traceLog } = await import("../../src/check/trace.ts");
+  const trace = await Bun.file(join(ROOT, "book/specs/15-triage/two-holds.otlp.json")).text();
+  const traced = async (step: string) => {
+    const spec = await loadSpec(join(ROOT, `book/specs/15-triage/${step}.ts`));
+    const r = conform(spec, traceLog(readSpans(trace), spec));
+    return r.conforms ? { conforms: true, broken: r.broken.length } : { conforms: false, span: r.stop.kind === "mismatch" ? r.stop.line.at : null };
+  };
+  expect(await traced("1-the-agents-draft")).toEqual({ conforms: false, span: 'span "show held" (Alice, 47582cd9312f09c8)' });
+  expect(await traced("2-one-statement")).toEqual({ conforms: true, broken: 0 });
 });
 
 test("the book has specs", () => {

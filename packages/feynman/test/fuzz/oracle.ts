@@ -175,6 +175,38 @@ function logConforms(spec: Spec, desc: SpecDesc, id: string | undefined, ce: Cou
     const end = (c: Counterexample) => worldOnly(c.worlds.at(-1) ?? c.initial);
     if (id && end(r.run) === end(ce) && !r.broken.some((b) => b.id === id) && spec.properties.find((x) => x.id === id)!.kind === "always") find(`log: ${id}`, `the counterexample, ${what}, ends where it breaks, but conform does not say so`);
   }
+  partialLogConforms(spec, instances, ce, lines.map((l) => l.line), lines.map((l) => l.fault), find, id);
+}
+
+/**
+ * The run as a partial order, as a trace from machines whose clocks disagree gives it: each
+ * step after the one before it on its instance and after the step that sent its message,
+ * written in a random order that keeps that, faults left out. It conforms.
+ */
+function partialLogConforms(spec: Spec, instances: Record<string, number>, ce: Counterexample, lines: string[], faults: boolean[], find: (check: string, detail: string) => void, id: string | undefined): void {
+  const random = seededRandom(lines.length * 31 + ce.events.length);
+  const sentBy = new Map<number, number>();
+  const after: Set<number>[] = ce.events.map(() => new Set());
+  const last = new Map<string, number>();
+  ce.events.forEach((e, i) => {
+    const before = i === 0 ? ce.initial : ce.worlds[i - 1]!;
+    const choice = ce.choices[i]!;
+    if (choice.kind === "fire" && sentBy.has(choice.pending)) after[i]!.add(sentBy.get(choice.pending)!);
+    if (last.has(e.instance!)) after[i]!.add(last.get(e.instance!)!);
+    if (!faults[i]) last.set(e.instance!, i);
+    const had = new Set(before.pending.map((p) => p.id));
+    for (const p of ce.worlds[i]!.pending) if (!had.has(p.id) && !faults[i]) sentBy.set(p.id, i);
+  });
+  const kept = ce.events.map((_, i) => i).filter((i) => !faults[i]);
+  const order: number[] = [];
+  while (order.length < kept.length) {
+    const ready = kept.filter((i) => !order.includes(i) && [...after[i]!].every((j) => faults[j] || order.includes(j)));
+    order.push(ready[Math.floor(random() * ready.length)]!);
+  }
+  const lineOf = new Map(order.map((i, n) => [i, n + 1]));
+  const text = order.map((i) => JSON.stringify({ ...JSON.parse(lines[i]!), after: [...after[i]!].filter((j) => !faults[j]).map((j) => lineOf.get(j)!) })).join("\n");
+  const r = conform(spec, parseLog(text, spec), { instances, gap: faults.filter(Boolean).length });
+  if (!r.conforms) find(`log: ${id ?? "a random run"}`, `as a partial order, it is not a run of the spec: ${r.stop.kind === "mismatch" ? `line ${r.stop.line.line}` : "limit"}`);
 }
 
 /** A random run from the initial world, of up to the depth bound's steps, without failed ones. */

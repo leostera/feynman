@@ -4,8 +4,9 @@
 // A log is the events it recorded, in order. Logs do not record everything: a lost message
 // leaves no line, and an actor nobody instruments leaves none at all. So between two logged
 // events, up to `gap` steps the log does not show may happen: faults, and the steps of actors
-// it does not log. The search is breadth first over (world, events matched, unlogged steps
-// since the last), so the reading it finds has the fewest unlogged steps; along it, the spec's
+// it does not log. A trace is a partial order (each step after the ones it names), and the
+// log is a run when some order it allows is. The search is breadth first over (world, events
+// matched, unlogged steps since the last), so the reading it finds has the fewest unlogged steps; along it, the spec's
 // properties are judged, as a monitor would judge the running system. A log that no reading
 // fits leaves the spec at its first line that none can match, and the report says what the
 // spec could have done there instead.
@@ -21,7 +22,10 @@ import { apply, branches, inputCombinations, QUIET, replay, type Choice } from "
 export type LogEvent = LogSpawn | LogStep;
 
 export interface LogSpawn {
+  /** Its place in the log, from 1. */
   line: number;
+  /** Where it came from, when not a line of a file: a span, for a trace (trace.ts). */
+  at?: string;
   kind: "spawn";
   actor: string;
   label: string;
@@ -29,6 +33,7 @@ export interface LogSpawn {
 
 export interface LogStep {
   line: number;
+  at?: string;
   /** What kind of step, if the log says: an action, a delivery, a timer or a guarded step. */
   kind?: "action" | "deliver" | "timer" | "guard";
   /** Who took it: an instance's id or label. */
@@ -44,6 +49,12 @@ export interface LogStep {
   payload?: unknown;
   /** Fields of the instance's state after the step, which must be as given. */
   state?: Record<string, unknown>;
+  /**
+   * The lines of the steps that must come before it, when the log is a partial order (a trace,
+   * whose machines' clocks disagree). When no step says, the log is in order: each line after
+   * the one before.
+   */
+  after?: number[];
 }
 
 export interface ConformOptions {
@@ -117,7 +128,18 @@ export function parseLog(text: string, spec: Spec): LogEvent[] {
   return out;
 }
 
-function parseEvent(v: Record<string, unknown>, line: number, spec: Spec): LogEvent {
+/** One event, from a log line or (trace.ts) a span, `at` saying where it came from. */
+export function parseEvent(v: Record<string, unknown>, line: number, spec: Spec, at?: string): LogEvent {
+  try {
+    const event = eventOf(v, line, spec);
+    return at ? { ...event, at } : event;
+  } catch (error) {
+    if (error instanceof LogError && at) throw new LogError(line, error.what, at);
+    throw error;
+  }
+}
+
+function eventOf(v: Record<string, unknown>, line: number, spec: Spec): LogEvent {
   const kinds = ["spawn", "action", "deliver", "timer", "guard"];
   if (v.kind !== undefined && !kinds.includes(v.kind as string)) throw new LogError(line, `has kind ${JSON.stringify(v.kind)}: a kind is ${kinds.join(", ")}`);
   if (v.kind === "spawn") {
@@ -134,9 +156,13 @@ function parseEvent(v: Record<string, unknown>, line: number, spec: Spec): LogEv
   if (v.from !== undefined) step.from = text(v.from, line, "from");
   if ("payload" in v) step.payload = v.payload;
   if (v.state !== undefined) step.state = record(v.state, line, "state");
-  const known = new Set(["kind", "instance", "key", "inputs", "message", "from", "payload", "state", "line"]);
+  if (v.after !== undefined) {
+    if (!Array.isArray(v.after) || !v.after.every((n) => Number.isInteger(n) && n > 0 && n < line)) throw new LogError(line, "has after that is not a list of the lines before it");
+    step.after = v.after as number[];
+  }
+  const known = new Set(["kind", "instance", "key", "inputs", "message", "from", "payload", "state", "after", "line"]);
   const odd = Object.keys(v).find((k) => !known.has(k));
-  if (odd) throw new LogError(line, `has ${JSON.stringify(odd)}, which a log event does not: it has instance, key, and maybe kind, inputs, message, from, payload, state`);
+  if (odd) throw new LogError(line, `has ${JSON.stringify(odd)}, which a log event does not: it has instance, key, and maybe kind, inputs, message, from, payload, state, after`);
   return step;
 }
 
@@ -161,12 +187,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+/** A log the spec cannot read: at a line (`line 3 …`), at a span, or (`at` empty) about the whole. */
 export class LogError extends Error {
   constructor(
     readonly line: number,
-    what: string,
+    readonly what: string,
+    at?: string,
   ) {
-    super(`line ${line} ${what}`);
+    super(at === "" ? what : `${at ?? `line ${line}`} ${what}`);
   }
 }
 
@@ -174,6 +202,8 @@ export class LogError extends Error {
 
 interface Node {
   world: World;
+  /** The steps matched, one bit each, by their place among the log's steps. */
+  done: bigint;
   matched: number;
   gap: number;
   parent: number;
@@ -196,7 +226,20 @@ export function conform(spec: Spec, log: LogEvent[], options: ConformOptions = {
   for (const s of steps) checkNames(spec, initial, s);
 
   const hidden = (world: World, c: Choice) => isHidden(spec, world, c, options.logsFaults === true, unlogged);
-  const nodes: Node[] = [{ world: initial, matched: 0, gap: 0, parent: -1 }];
+  // What must come before each step: the one before it, or (a partial order) the ones it names.
+  const partial = steps.some((s) => s.after !== undefined);
+  const placeOf = new Map(steps.map((s, i) => [s.line, i]));
+  const before = steps.map((s, i): number[] => (partial ? (s.after ?? []).map((line) => placeOf.get(line)!).filter((j) => j !== undefined) : i > 0 ? [i - 1] : []));
+  const bit = (i: number) => 1n << BigInt(i);
+  /** The steps that may be matched next: not yet, and everything before them has been. */
+  const ready = (done: bigint, matched: number) => {
+    // In order, the next is the one after those matched.
+    if (!partial) return matched < steps.length ? [matched] : [];
+    const out: number[] = [];
+    for (let i = 0; i < steps.length; i++) if (!(done & bit(i)) && before[i]!.every((j) => done & bit(j))) out.push(i);
+    return out;
+  };
+  const nodes: Node[] = [{ world: initial, done: 0n, matched: 0, gap: 0, parent: -1 }];
   const seen = new Set<string>([`0|0|${canonical(initial)}`]);
   let furthest = 0;
   let done = -1;
@@ -208,24 +251,26 @@ export function conform(spec: Spec, log: LogEvent[], options: ConformOptions = {
       break;
     }
     if (nodes.length > maxStates) break;
-    const add = (world: World, matched: number, g: number, choice: Choice, line?: number) => {
-      const key = `${matched}|${g}|${canonical(world)}`;
+    const add = (world: World, done: bigint, matched: number, g: number, choice: Choice, line?: number) => {
+      const key = `${done.toString(36)}|${g}|${canonical(world)}`;
       if (seen.has(key)) return;
       seen.add(key);
-      nodes.push({ world, matched, gap: g, parent: at, choice, line });
+      nodes.push({ world, done, matched, gap: g, parent: at, choice, line });
     };
-    const want = steps[node.matched]!;
-    for (const c of candidates(spec, node.world, want)) {
-      const step = safely(() => apply(spec, node.world, c, QUIET));
-      if (!step || step.event.error) continue;
-      if (matches(spec, node.world, want, step.event, step.world)) add(step.world, node.matched + 1, 0, c, want.line);
+    for (const i of ready(node.done, node.matched)) {
+      const want = steps[i]!;
+      for (const c of candidates(spec, node.world, want)) {
+        const step = safely(() => apply(spec, node.world, c, QUIET));
+        if (!step || step.event.error) continue;
+        if (matches(spec, node.world, want, step.event, step.world)) add(step.world, node.done | bit(i), node.matched + 1, 0, c, want.line);
+      }
     }
     if (node.gap < gap)
       for (const c of branches(spec, node.world)) {
         if (!hidden(node.world, c)) continue;
         const step = safely(() => apply(spec, node.world, c, QUIET));
         if (!step || step.event.error) continue;
-        add(step.world, node.matched, node.gap + 1, c);
+        add(step.world, node.done, node.matched, node.gap + 1, c);
       }
   }
 
@@ -245,17 +290,18 @@ export function conform(spec: Spec, log: LogEvent[], options: ConformOptions = {
   const { run, lines } = runOf(furthest);
   if (nodes.length > maxStates) return { conforms: false, stop: { kind: "limit", states: nodes.length }, run, lines, states: nodes.length };
   const world = run.worlds.at(-1) ?? run.initial;
-  const want = steps[nodes[furthest]!.matched]!;
+  // Of the steps that could come next, the first in the log: the one a person reads on to.
+  const want = steps[ready(nodes[furthest]!.done, nodes[furthest]!.matched)[0]!]!;
   return { conforms: false, stop: { kind: "mismatch", line: want, ...whatCould(spec, world, want) }, run, lines, states: nodes.length };
 }
 
 /** A log step's names must be ones the spec has: an instance, and an action or step of its actor. */
 function checkNames(spec: Spec, world: World, s: LogStep): void {
   const instance = world.instances.find((i) => i.id === s.instance || i.label === s.instance);
-  if (!instance) throw new LogError(s.line, `is about ${s.instance}, who is not there: the instances are ${world.instances.map((i) => i.label).join(", ")}; spawn the others first, or pass --instances`);
+  if (!instance) throw new LogError(s.line, `is about ${s.instance}, who is not there: the instances are ${world.instances.map((i) => i.label).join(", ")}; spawn the others first (in a trace, give a span of theirs feynman.actor), or pass --instances`, s.at);
   const actor = actorNamed(spec, instance.actor);
-  if (!actor.actions[s.key] && !actor.transitions[s.key]) throw new LogError(s.line, `has ${instance.label} take ${s.key}, which ${actor.name} has no action or step named: it has ${[...Object.keys(actor.actions), ...Object.keys(actor.transitions)].join(", ")}`);
-  if (s.from && !world.instances.some((i) => i.id === s.from || i.label === s.from)) throw new LogError(s.line, `has a message from ${s.from}, who is not there`);
+  if (!actor.actions[s.key] && !actor.transitions[s.key]) throw new LogError(s.line, `has ${instance.label} take ${s.key}, which ${actor.name} has no action or step named: it has ${[...Object.keys(actor.actions), ...Object.keys(actor.transitions)].join(", ")}`, s.at);
+  if (s.from && !world.instances.some((i) => i.id === s.from || i.label === s.from)) throw new LogError(s.line, `has a message from ${s.from}, who is not there`, s.at);
 }
 
 /** The choices that may be a log step: its instance taking its action or step, the ones that can be taken now. */
