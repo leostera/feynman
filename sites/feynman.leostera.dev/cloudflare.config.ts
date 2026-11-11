@@ -16,6 +16,9 @@ export default defineConfig({
     entrypoint: "./worker/index.ts",
     assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page", runWorkerFirst: ["/s/*"] },
     domains: ["feynman.leostera.dev"],
+    // Served on its domain alone: no workers.dev URL, for the Worker or its previews.
+    workersDev: false,
+    previewUrls: false,
     env: { ...shareBindings() },
     exports: { ...shareExports },
     observability: { enabled: true, headSamplingRate: 0.01, logs: { enabled: true, headSamplingRate: 0.01 }, traces: { enabled: true, headSamplingRate: 0.01 } },
