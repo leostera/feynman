@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { asCommit, type Commit, parseAdvertisement, parseLsRefs, resolveRef } from "../src/refs.ts";
+import { pageResponse } from "../src/pages.ts";
 import { parseRepository } from "../src/repository.ts";
 
 const A = "a".repeat(40) as Commit;
@@ -113,5 +114,19 @@ describe("FEYNMAN_VERSION", () => {
     const parsed = parseRepository("github.com/leostera/feynman");
     if (!parsed.ok) throw new Error(parsed.reason);
     expect(pageKey(parsed.repository, "a".repeat(40) as Commit)).toBe(`pages/${FEYNMAN_VERSION}/github.com/leostera/feynman/${"a".repeat(40)}.html`);
+  });
+});
+
+describe("pageResponse", () => {
+  test("a page runs sandboxed, in an origin that is not the site's", () => {
+    // What R2 hands back for a stored page, as far as pageResponse reads it.
+    const object = { body: "<!doctype html>", httpEtag: '"abc"', writeHttpMetadata: (headers: Headers) => headers.set("content-type", "text/html; charset=utf-8") } as unknown as R2ObjectBody;
+    const response = pageResponse(object, "a".repeat(40) as Commit, { immutable: true });
+    const policy = response.headers.get("content-security-policy") ?? "";
+    expect(policy.split(" ")[0]).toBe("sandbox");
+    expect(policy).toContain("allow-scripts");
+    // The one thing that would give the page the site's origin back.
+    expect(policy).not.toContain("allow-same-origin");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });

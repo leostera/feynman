@@ -12,6 +12,7 @@ import { Playground } from "./Playground";
 import { SettingsPage } from "./Settings";
 import { freshSession, replay, runScenarioSession, sessionFromRun, type Session } from "./sessions";
 import { href, NEW_SCENARIO, parsePlaygroundUrlState, parseRoute, sessionKey, writePlaygroundUrlState, type Page, type Route } from "./url";
+import { store, stored } from "./storage";
 import { ExplorerProvider, type Loaded } from "./ui";
 
 const PAGES: { page: Page; label: string; icon: typeof PlayCircleIcon }[] = [
@@ -215,8 +216,8 @@ function SidebarToggle() {
 
 /** Whether the sidebar is expanded, kept across reloads; it starts collapsed to icons. */
 function useSidebarOpen(): [boolean, (open: boolean) => void] {
-  const [open, setOpen] = useState(() => localStorage.getItem("feynman.sidebar") === "open");
-  return [open, (next) => (setOpen(next), localStorage.setItem("feynman.sidebar", next ? "open" : "closed"))];
+  const [open, setOpen] = useState(() => stored("feynman.sidebar") === "open");
+  return [open, (next) => (setOpen(next), store("feynman.sidebar", next ? "open" : "closed"))];
 }
 
 /** Restore the playground from its scenario path and optional serialized operation timeline. */

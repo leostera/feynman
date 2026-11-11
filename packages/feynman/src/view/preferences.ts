@@ -2,6 +2,7 @@
 // playing, and whether things move. Applied to the page as data attributes (data-mode,
 // data-reduce-motion) so CSS and Kumo follow; read in components with useSettings().
 import { useSyncExternalStore } from "react";
+import { store, stored } from "./storage";
 
 export type Theme = "light" | "dark" | "system";
 
@@ -37,7 +38,7 @@ function parse(text: string | null): Settings {
   }
 }
 
-let current: Settings = parse(localStorage.getItem(KEY));
+let current: Settings = parse(stored(KEY));
 const listeners = new Set<() => void>();
 
 /** Put the settings on the page: the colour mode Kumo reads, and whether motion is reduced. */
@@ -50,7 +51,7 @@ export function applySettings(settings: Settings = current) {
 
 export function saveSettings(change: Partial<Settings>) {
   current = { ...current, ...change };
-  localStorage.setItem(KEY, JSON.stringify(current));
+  store(KEY, JSON.stringify(current));
   applySettings(current);
   for (const listener of listeners) listener();
 }

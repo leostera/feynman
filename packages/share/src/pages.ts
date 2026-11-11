@@ -61,12 +61,20 @@ function isFailure(value: unknown): value is Failure {
   return (status === 404 || status === 422) && typeof message === "string" && typeof log === "string";
 }
 
+/** What a shared page may do: run its scripts and open links, in an origin that is not this site's. */
+export const PAGE_SANDBOX = "sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads";
+
 /** A stored page as the response to a share URL. */
 export function pageResponse(object: R2ObjectBody, commit: Commit, options: { immutable: boolean }): Response {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("x-feynman-commit", commit);
+  // The page runs the repository's specs, which is anyone's JavaScript. Sandboxed, it runs in
+  // an origin of its own: it cannot read what this site stores, or ask this site for anything
+  // as the visitor. Its links still open, in tabs that are not sandboxed.
+  headers.set("content-security-policy", PAGE_SANDBOX);
+  headers.set("x-content-type-options", "nosniff");
   // A branch moves, so its page is the latest commit's for a minute; a commit's page is forever.
   headers.set("cache-control", options.immutable ? "public, max-age=31536000, immutable" : "public, max-age=60");
   return new Response(object.body, { headers });
