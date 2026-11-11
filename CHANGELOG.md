@@ -10,6 +10,14 @@ The site and the explorer are deployed, not released, so entries are dated.
 `@leostera/feynman` has its own changelog, release by release, in
 [`packages/feynman/CHANGELOG.md`](packages/feynman/CHANGELOG.md).
 
+## 2026-11-11
+
+### Explorer of any repository
+
+- A shared page runs sandboxed, in an origin of its own (a CSP `sandbox` without
+  `allow-same-origin`). It runs the repository's specs, which is anyone's JavaScript, and
+  until now ran it in the site's origin. Not deployed yet.
+
 ## 2026-10-30
 
 ### Site

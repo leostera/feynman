@@ -6,7 +6,59 @@ after.
 
 ## Unreleased
 
-Faster, and checked against more. Nothing changes for spec authors.
+Faster, checked against more, and corrected where a review found the checker saying more than
+it knew. Some verdicts change: each change below is a wrong answer put right.
+
+### A ✓ that was not one
+
+- **`never` properties that ask a question only sometimes.** `t.some(a) && t.count(b) > 1`
+  never counts b before an a, so paths that differed only in their b were merged, and a break
+  down one of them missed. Such a property is now searched remembering whole paths (slower:
+  read each count first, then combine them).
+- **Symmetry and properties that name an instance.** `symmetric: true` is a claim about the
+  properties too. One that tells instances apart ("B never wins") was judged on one world of
+  each merged pair. Merged worlds must now agree on what they break, or the claim is refuted
+  and the search runs again without it.
+- **Inputs past the twelfth combination** were never tried. All are now.
+- **`ctx.random()`** gives each draw one value, so only one outcome was explored. What holds
+  where a step drew now reads `~`, naming the step. Make a real choice an input or two steps.
+- **Scenarios** were judged on `always` properties only. One that breaks an `everyStep` or a
+  `never` property now says so, in `run` and `check`, and is no place to search from.
+
+### A ✗ that was not one
+
+- **`never` from a scenario's end** forgot the scenario's steps, so "never more answers than
+  questions" broke on the answer to a question the scenario had asked. The scenario's steps
+  are now the start of every path from its end.
+- **A rule only a scenario shows is needed** was reported not needed (#5). A scenario that
+  breaks the property without the rule now counts. And a rule is no longer "not needed, in
+  every state" when the depth bound cut the search off: that reads `~`.
+
+### Faults
+
+- **A call made before a crash fails into nobody.** `crash` dropped the failures already in
+  flight, but a call lost after the crash still failed into the restarted process, where a
+  retry could hide a missing resume. A reset now orphans its instance's calls in flight
+  (`Delivery.orphaned`). Verdicts in the book and examples are unchanged; state counts grow
+  where a spec has both a crash and a call.
+
+### Sources
+
+- **A definition's extent is scanned, not guessed** (#2, #4): strings, comments and brackets
+  are told apart. Definitions that resolved to their signature alone, so a change to the
+  body never went stale, now resolve whole: wrapped TypeScript and Rust signatures, Python
+  defs and classes with wrapped headers, braces in a regex or a comment, Ruby defs. A
+  definition with a body is preferred to a call, a local variable or an overload of the same
+  name, and Go methods are found by receiver (`Server.Handle`). Sources whose extent grew
+  read as changed once: run `feynman lock` again.
+
+### CLI
+
+- `--instances` refuses an actor the spec does not have, a singleton, and a count that is not
+  a whole number, instead of ignoring it under a header that named it. `--set` refuses a
+  value of another kind than the variable starts with.
+
+### Faster
 
 - **Faster checks.** `feynman check` over the 28 examples takes 1.3 s, from 4 s in 0.15.0; a
   single spec about half as long (payments 628 → 259 ms), and the search 30–75% less on the

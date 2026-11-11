@@ -17,8 +17,10 @@ moment, within the budget:
 ```
 
 A crash puts the instance back to its `initialState`, cancels its timers, and drops any call
-failures on their way to it (the code that would have caught them is gone). Messages in
-flight to it stay in flight. The network doesn't know it restarted.
+failures on their way to it (the code that would have caught them is gone). The calls it had
+made are orphaned for the same reason: if one is lost after the crash, or its answer is, no
+failure comes back, because nobody is waiting for one. Messages in flight to it stay in
+flight. The network doesn't know it restarted.
 
 ([`specs/09-restarts/1-forgets.ts`](specs/09-restarts/1-forgets.ts))
 

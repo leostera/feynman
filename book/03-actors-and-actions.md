@@ -117,7 +117,9 @@ The engine also holds steps to a few rules that keep exploration honest:
 - **Steps are deterministic.** They see the world only through `ctx`, the third argument.
   No `Date.now()`, no `Math.random()`, no `await`, no I/O, no module-level variables that
   change. Need a fresh id? `ctx.fresh("order")`. A hash? `ctx.hash(secret)`. A random number?
-  `ctx.random()`, which is seeded.
+  `ctx.random()`, which is seeded: each draw gives one value, so the checker follows one
+  outcome and says `~`, not `✓`, of what held there. For a choice the checker should try
+  both ways, use an input or two steps.
 - **State is plain data:** strings, numbers, booleans, `null`, arrays, plain objects, `Set`s,
   `Map`s and dates. No class instances, no functions.
 - **A step changes only its own actor's state.** To affect another actor, it sends a message.

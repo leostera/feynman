@@ -398,7 +398,8 @@ a named type for `initialState`.
 
 - **Determinism.** Handlers see the world only through `ctx`:
   - `id`, `label`;
-  - `fresh(prefix)` for ids, `hash(value)` and `random()`;
+  - `fresh(prefix)` for ids, `hash(value)` and `random()` (seeded: one value per draw, so
+    what holds where a step drew reads `~`; make a real choice an input or two steps);
   - `send`, `reply`, `start(label)` and `cancel(label)`;
   - `the(Actor)`/`all(Actor)` to find instances, and `note(text)`;
   - for steps that build faults: `delivery` (the message taken, and whom from),
@@ -650,7 +651,8 @@ Members of an interface or a type are not definitions: point at their lines
   Losing its reply fails it too, when the lost reply says so:
   `lose(Charged, { fails: Charge, spend: faults })`. The caller cannot tell which was lost,
   as the code cannot: a retry after a lost reply runs the call twice, so that is where to
-  look for duplicates. A crash drops the failures on their way to the instance. A
+  look for duplicates. A crash drops the failures on their way to the instance, and orphans
+  the calls it had made: lost after the crash, they fail into nobody. A
   counterexample that ends with someone waiting on a lost message is the code having no
   answer for it (a finding), or the model missing the one it has (often: it is a call).
 - **Time.** Specs have no clock: a run is an order of events, and anything pending may go
@@ -700,7 +702,11 @@ Members of an interface or a type are not definitions: point at their lines
   is a safety property (`always: (w) => !w.quiet || …`), cheaper and sharper than liveness
   when what you mean is "after everything has arrived".
 - **Never.** A `never` property sees the path through `trace.count` and `trace.some`; prefer
-  those to reading `trace.events`, which makes every path its own state.
+  those to reading `trace.events`, which makes every path its own state. Ask the same
+  questions of every path: read each count into a `const` first, then combine them. A property
+  that asks one only sometimes (`t.some(a) && t.count(b) > 1`) is still judged rightly, but by
+  remembering whole paths, which is slow. From a scenario's end, the path includes the
+  scenario's steps.
 - **Liveness.** `eventually`, `leadsTo`, `infinitelyOften` and `eventuallyAlways` hold in
   every fair behaviour, as in TLA+. Fair: a message in flight is delivered, a timer that stays
   set fires, a guard that stays true runs (weak fairness; `fair: "strong"` on a step for steps

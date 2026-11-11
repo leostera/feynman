@@ -189,7 +189,9 @@ a call in flight, and on its reply.
 - **Failures are never lost.** They happen in the caller's own process. `lose` doesn't offer
   them, and they don't count as a fault.
 - **A restart of the caller drops its failures**, as it drops its timers. The promise that
-  would have thrown is gone, along with its memory.
+  would have thrown is gone, along with its memory. The calls it has in flight are orphaned,
+  and the answers on their way to it answer nothing: lost after the restart, neither sends a
+  failure, since nobody is waiting for one (`ctx.reset`, `Delivery.orphaned`).
 - **A restart of the callee** leaves requests in flight to it, as today. A spec that wants
   "the callee restarted mid-call" can restart it before the request is delivered, then lose
   the request. That is two faults, and honest about it.
