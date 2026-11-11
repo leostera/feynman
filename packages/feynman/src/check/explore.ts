@@ -118,6 +118,11 @@ export interface Report {
   seeds: ScenarioPlace[];
   /** Whether every state within the bounds was explored. */
   exhaustive: boolean;
+  /**
+   * Whether the depth bound cut paths off: the search met new worlds at the bound, and did not
+   * go on from them. What held, held on every path of up to `bounds.depth` events.
+   */
+  cutAtDepth?: boolean;
   /** Why the search stopped early, when it did. */
   stoppedBy?: StopReason;
   /** When the search stopped early: what its states differ in, most first (integer engine). */
@@ -212,6 +217,7 @@ async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], op
     exhaustive: a.exhaustive && b.exhaustive,
     ...(a.chance || b.chance ? { chance: [...new Set([...(a.chance ?? []), ...(b.chance ?? [])])].sort() } : {}),
     stoppedBy: a.stoppedBy ?? b.stoppedBy,
+    ...(a.cutAtDepth || b.cutAtDepth ? { cutAtDepth: true } : {}),
     ...(a.variety || b.variety ? { variety: a.variety ?? b.variety, mostInFlight: a.mostInFlight ?? b.mostInFlight } : {}),
     depthReached: Math.max(a.depthReached, b.depthReached),
     durationMs: Date.now() - started,
@@ -305,6 +311,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: I
     states: search.states,
     exhaustive: !search.stoppedBy && !search.allBroken,
     stoppedBy: search.stoppedBy,
+    ...(!search.stoppedBy && !search.allBroken && !search.complete ? { cutAtDepth: true } : {}),
     ...(search.stoppedBy ? { variety: search.variety(), mostInFlight: search.mostInFlight } : {}),
     depthReached: search.depthReached,
     durationMs: Date.now() - started,

@@ -154,7 +154,7 @@ function RuleCard({ rule }: { rule: RuleVerdict }) {
                 ? ` · not needed by ${held.map((n) => n.property).join(", ")}: it held without the rule. The rule does nothing here, or the property is too weak to see what it prevents.`
                 : open.length
                   ? ` · needed by ${open.map((n) => n.property).join(", ")}? It held without the rule, but the search stopped early.`
-                  : ` · without it, ${rule.neededBy.map((n) => `${n.property} breaks in ${n.events} events`).join(", ")}`}
+                  : ` · without it, ${rule.neededBy.map((n) => `${n.property} breaks in ${n.events} events${n.scenario ? ` of the scenario “${n.scenario}”` : ""}`).join(", ")}`}
             </span>
           </p>
         </div>

@@ -218,7 +218,7 @@ function formatRules(rules: RuleVerdict[]): string[] {
     const open = rule.neededBy.filter((n) => n.verdict === "unfinished");
     if (held.length) lines.push(red(`    ✗ ${name}  not needed by ${held.map((n) => n.property).join(", ")}: held without the rule, in every state. The rule does nothing here, or the property is too weak to see what it prevents.`));
     else if (open.length) lines.push(yellow(`    ~ ${name}  needed by ${open.map((n) => n.property).join(", ")}? held without the rule, but the search stopped before exploring everything`));
-    else lines.push(green(`    ✓ ${name}`) + dim(`  needed: without it, ${rule.neededBy.map((n) => `${n.property} breaks (${n.events} events)`).join(", ")}`));
+    else lines.push(green(`    ✓ ${name}`) + dim(`  needed: without it, ${rule.neededBy.map((n) => `${n.property} breaks (${n.events} events${n.scenario ? `, in scenario "${n.scenario}"` : ""})`).join(", ")}`));
   }
   if (rules.some((r) => r.neededBy.some((n) => n.verdict === "breaks"))) lines.push(dim(`  See what a rule prevents: feynman check <spec> --without RULE`));
   return lines;

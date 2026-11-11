@@ -1,10 +1,10 @@
 // Ways the checker once said more than it knew, each found by review and kept from coming back:
 // a wrong ✓ (a break it could not see), or a wrong ✗ (a break that is not one).
 import { expect, test } from "bun:test";
-import { check } from "../../src/check/index.ts";
+import { check, checkRules } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { verdictOf } from "../../src/check/verdict.ts";
-import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
@@ -150,4 +150,23 @@ test("a property that held where a step drew a random number is not proved", asy
   const held = reports.find((r) => r.properties[0]!.holds)!;
   expect(held.chance).toEqual(["A.flip"]);
   expect(verdictOf(held.properties[0]!, { report: held, brokenBy: new Map() })).toBe("unfinished");
+});
+
+test("a rule is needed when only a scenario shows it: one that breaks the property without the rule", async () => {
+  const cap = defineRule("cap", { description: "Counting stops at thirty." });
+  const Counter = defineActor({
+    name: "Counter",
+    zone,
+    singleton: true,
+    initialState: () => ({ n: 0 }),
+    actions: { up: { label: "Up", description: "Adds one, up to the cap.", run: (s) => void (!cap.on || s.n < 30 ? (s.n += 1) : undefined) } },
+  });
+  const below = defineProperty("atMostThirty", { description: "Never past thirty.", needs: [cap], always: (w) => w.the(Counter).state.n <= 30 });
+  // Thirty-one ups: past the search's depth from the start, and no place to search from without
+  // the rule, since it breaks the property there.
+  const many = defineScenario("Thirty-one ups", { run: (s) => { for (let i = 0; i < 31; i++) s.act(s.the(Counter), "up"); } });
+  const spec = defineSpec({ name: "Capped", actors: [Counter], properties: [below], scenarios: [many], finalState: ANY });
+  expect(await checkRules(spec, { ...SEARCH, depth: 5 })).toEqual([
+    { name: "cap", description: "Counting stops at thirty.", neededBy: [{ property: "atMostThirty", verdict: "breaks", events: 31, scenario: "Thirty-one ups" }] },
+  ]);
 });
