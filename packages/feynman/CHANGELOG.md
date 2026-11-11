@@ -17,6 +17,15 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
   explored and none gets there, and `~` when the search was cut off first. A spec that does
   nothing keeps every safety property; these say it must do something. The TLC, NuSMV and
   Alloy oracles agree on the shortest way there, and on never.
+- **Ordered channels.** `defineMessage(id, schema, { ordered: true })` (and `defineCall`):
+  messages one instance sends another over one connection arrive in the order they were sent.
+  A step takes only the oldest in flight; `lose` takes any, leaving the rest in order (a step
+  says `outOfOrder: true` to). `ctx.forward()` and `duplicate` refuse an ordered message. The
+  playground says what a waiting message is behind, and a scenario that delivers past one is
+  an error. New examples: `ordered-writes`, and the alternating bit protocol on an ordered
+  link, where it holds; TLC and P agree.
+- **A crash changes the calls it orphans where they are**, as the engine does, not at the end
+  of what is in flight. No verdict changes; on an ordered channel, it keeps the order.
 
 ### A ✓ that was not one
 
@@ -61,6 +70,8 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
 - **A reply that is itself a call**, answering one, kept its caller's crash from orphaning it:
   the checker took the orphaned reply and the other for one state, and a loss after the
   crash failed into the restarted process. Found by the fuzzer; the two are apart now.
+- **A message whose one step spends a budget** was offered to that step when the budget was
+  spent, and failed there. A lone step's bound is now checked like any other's.
 
 ### Sources
 

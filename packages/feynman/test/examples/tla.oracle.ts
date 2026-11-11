@@ -11,7 +11,7 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
     for (const c of o.configs) {
       test(`${example.name}, ${c.variant}, ${c.faults} fault(s)`, async () => {
         const constants = { Buggy: c.variant === "buggy", Faults: c.faults, Repeats: c.repeats, ...(o.depth ? { Depth: o.depth } : {}) };
-        const view = o.depth ? { view: "view" } : {};
+        const view = o.depth || o.view ? { view: "view" } : {};
         const { spec, bounds } = configured(example.spec(c.variant), { faults: c.faults, instances: example.instances ?? {}, ...(o.depth ? { depth: o.depth } : {}) });
         const ours = await feynman(spec, bounds);
         expect(ours.report.errors.map((e) => e.message)).toEqual([]);

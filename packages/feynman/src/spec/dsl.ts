@@ -146,6 +146,8 @@ export interface Message<Id extends string = string, P = unknown> {
   readonly tone: Tone;
   /** A reply to it carries the request it answers (`ctx.delivery.answers`); see `MessageOptions`. */
   readonly correlate: boolean;
+  /** It travels on an ordered channel; see `MessageOptions`. */
+  readonly ordered: boolean;
   readonly schema: Fields;
   readonly seq: number;
   /** Phantom: the payload type. */
@@ -169,6 +171,15 @@ interface MessageOptions {
    * payload.
    */
   correlate?: boolean;
+  /**
+   * It travels on an ordered channel, as over a TCP connection: of the ordered messages one
+   * instance sends another, whatever their kind, each arrives after those sent before it. A
+   * step on it can take it only once none is ahead of it, except one that says `outOfOrder`,
+   * as `lose` does: a lossy channel loses any message, and keeps the others in order. It is
+   * never put back in flight (`ctx.forward()`, `duplicate`): it would arrive behind the ones
+   * sent after it.
+   */
+  ordered?: boolean;
 }
 
 function makeMessage(id: string, schema: unknown, options: MessageOptions | undefined, what: string): Message<string, unknown> {
@@ -184,6 +195,7 @@ function makeMessage(id: string, schema: unknown, options: MessageOptions | unde
     over: options?.over,
     tone: options?.tone ?? "request",
     correlate: options?.correlate === true,
+    ordered: options?.ordered === true,
     schema: fields as Fields,
     seq: ++defined,
   }) as Message<string, unknown>;
@@ -334,6 +346,11 @@ export interface StepDef<S, On, Sends extends AnyMessage> {
   uses?: readonly Variable<any>[];
   /** Strings the core keeps and never reads, for libraries and reports: a fault is tagged `fault`. */
   tags?: readonly string[];
+  /**
+   * For a step on an ordered message: it may take one with others ahead of it on its channel.
+   * A loss on the network is such a step (`lose` says so); a delivery is not.
+   */
+  outOfOrder?: boolean;
   /** Parts that bound it, from a library: `with: [atMost(repeats)]`. See `Part`. */
   with?: readonly Part[];
   /**
@@ -893,7 +910,7 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
     name,
     description: parts.description,
     messages: Object.fromEntries(
-      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, ...(m.correlate ? { correlate: true } : {}), schema: m.schema }]),
+      [...messages.values()].sort(bySeq).map((m) => [m.key, { key: m.key, id: m.id, name: m.name, over: m.over, tone: m.tone, ...(m.correlate ? { correlate: true } : {}), ...(m.ordered ? { ordered: true as const } : {}), schema: m.schema }]),
     ),
     zones: [...zones.values()].sort(bySeq).map((z) => ({ name: z.name, description: (z as unknown as ZoneInfo).description, place: (z as unknown as ZoneInfo).place })),
     limits: (parts.limits ?? []).map((l) => l as unknown as LimitInfo),
@@ -1005,6 +1022,7 @@ interface RawStep {
   bound?: (model: ModelView) => boolean;
   after?: string;
   fair?: Fairness | false;
+  outOfOrder?: boolean;
   run: (...args: never[]) => void;
   say?: (state: unknown, payload: unknown) => string;
   routine?: boolean;
@@ -1060,6 +1078,8 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     const on = step.on;
     if (on !== undefined && on?.kind !== "message") throw new Error(`${where}: on is a message from defineMessage, not ${describe(on)}`);
     if (on && step.after !== undefined) throw new Error(`${where}: a step on a message is not a timer: leave out after`);
+    if (step.outOfOrder !== undefined && typeof step.outOfOrder !== "boolean") throw new Error(`${where}: outOfOrder is true or false`);
+    if (step.outOfOrder && !on) throw new Error(`${where}: outOfOrder is for a step on a message, which may take it with others ahead of it`);
     // A timer or a guard receives nothing: its run is (state, _, ctx), like every step's;
     // written (state, ctx), ctx would get the nothing, and fail when it first runs.
     if (!on && step.run.length === 2) throw new Error(`${where}: a timer or a guard receives nothing, and its run is (state, _, ctx), not (state, ctx)`);
@@ -1077,6 +1097,7 @@ function actorInfo(spec: Spec, raw: RawDef, scope: Scope): ActorInfo {
     transitions[name] = {
       key: name,
       message: on?.key,
+      ...(step.outOfOrder ? { outOfOrder: true as const } : {}),
       description: step.description,
       sources: step.sources ?? [],
       sends: keysOf(step.sends, where),

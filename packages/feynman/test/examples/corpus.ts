@@ -5,6 +5,7 @@
 import type { Bounds } from "../../src/check/index.ts";
 import type { Spec } from "../../src/spec/index.ts";
 import { alternatingBit } from "../../examples/alternating-bit.ts";
+import { orderedWrites } from "../../examples/ordered-writes.ts";
 import { barrier } from "../../examples/barrier.ts";
 import { cache } from "../../examples/cache.ts";
 import { changRoberts } from "../../examples/chang-roberts.ts";
@@ -75,6 +76,8 @@ export interface TlaOracle {
   invariants: string[];
   /** For systems that never run out of things to do: both sides stop at this depth, and the model has a `view`. */
   depth?: number;
+  /** The model has a `view` without a depth: what TLC tells states apart by (a sequence seen as a bag). */
+  view?: true;
   /** Reachable properties both sides check: the model's invariant `<id>Never`, whose shortest counterexample is the shortest way there. */
   reachable?: string[];
   /**
@@ -260,6 +263,31 @@ export const corpus: Example[] = [
     tla: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
     alloy: { module: "AlternatingBit", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
     p: { project: "AlternatingBit", property: "inOrder", assertion: "the receiver kept an item out of order", depth: 9 },
+  },
+  {
+    // The same two writes over a network that reorders (buggy) and over one connection
+    // (fixed): the order is what the store ends with.
+    name: "ordered writes",
+    spec: orderedWrites,
+    cases: [
+      { variant: "buggy", bounds: { faults: 0 }, expect: { lastWriteWins: { events: 4, faults: 0 } } },
+      { variant: "fixed", bounds: { faults: 0 }, expect: { lastWriteWins: "holds" } },
+      { variant: "fixed", bounds: { faults: 1 }, expect: { lastWriteWins: { events: 2, faults: 1 } } },
+    ],
+    // Three writes: a, b, a and b, a, a are one bag, and the same last write, in two orders.
+    tla: { module: "OrderedWrites", invariants: ["lastWriteWins"], view: true, configs: BOTH_WAYS.map((c) => ({ ...c, repeats: 3 })) },
+  },
+  {
+    // One alternating bit, on a link that reorders (buggy) and on one that keeps order
+    // (fixed): the protocol is right only where it was meant to run, losses and all.
+    name: "alternating bit, on an ordered link",
+    spec: (variant) => alternatingBit("buggy", variant === "fixed" ? "ordered" : "reorders"),
+    cases: [
+      { variant: "buggy", bounds: { depth: 9, faults: 1 }, expect: { inStep: "holds", inOrder: { events: 6, faults: 0 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 1 }, expect: { inStep: "holds", inOrder: "holds" } },
+    ],
+    tla: { module: "AlternatingBitOrdered", invariants: ["inStep", "inOrder"], depth: 9, configs: BOTH_WAYS },
+    p: { project: "AlternatingBitOrdered", property: "inOrder", assertion: "the receiver kept an item out of order", depth: 9 },
   },
   {
     name: "raft vote",

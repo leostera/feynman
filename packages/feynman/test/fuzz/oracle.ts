@@ -4,7 +4,7 @@ import { check, faultsIn, initialWorld, replay, type Bounds, type Counterexample
 import { stepBreaks } from "../../src/check/judge.ts";
 import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, worldView, type Spec, type World } from "../../src/spec/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { whenHolds } from "../../src/spec/engine.ts";
+import { stepsTaking, whenHolds } from "../../src/spec/engine.ts";
 import { explore, worldKey } from "../check/reference.ts";
 import { build, describe, type Size, type SpecDesc } from "./spec.ts";
 
@@ -42,10 +42,12 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
   try {
     // The search (the integer core), and the worlds it reaches.
     const worlds = new Set<string>();
-    const plain = await check(spec, { ...bounds, symmetry: false }, [], { watch: { state: (w) => worlds.add(worldKey(w)) } });
+    const timed = new Set<string>();
+    const timersInOrder = (w: World) => JSON.stringify(w.pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id).map((p) => `${p.to}|${p.timer}`));
+    const plain = await check(spec, { ...bounds, symmetry: false }, [], { watch: { state: (w) => (worlds.add(worldKey(w)), timed.add(`${worldKey(w)}\n${timersInOrder(w)}`)) } });
     if (!plain.exhaustive) return { findings, states: plain.states, skipped: "too big" };
 
-    againstReference(spec, desc, plain, worlds, find);
+    againstReference(spec, desc, plain, worlds, timed, find);
     for (const p of plain.properties) if (!p.holds && !p.unreached) counterexampleHolds(spec, p, find);
     if (plain.stuck) stuckHolds(spec, plain.stuck.counterexample, find);
 
@@ -76,13 +78,16 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
 }
 
 /** The plain search against the reference explorer: the same worlds, `always` breaks, errors, coverage, stuck world and liveness verdicts. */
-function againstReference(spec: Spec, desc: SpecDesc, plain: Report, worlds: Set<string>, find: (check: string, detail: string) => void): void {
+function againstReference(spec: Spec, desc: SpecDesc, plain: Report, worlds: Set<string>, timed: Set<string>, find: (check: string, detail: string) => void): void {
   const ref = explore(spec, desc.bounds);
   if (worlds.size !== ref.worlds.size || [...worlds].some((w) => !ref.worlds.has(w))) {
     const extra = [...worlds].filter((w) => !ref.worlds.has(w)).length;
     const missing = [...ref.worlds].filter((w) => !worlds.has(w)).length;
     find("reference: worlds", `checker ${worlds.size}, reference ${ref.worlds.size}: ${extra} only in the checker, ${missing} only in the reference`);
   }
+  // Without never properties, which remember the path, a state is a world with its timers in
+  // the order they were set (the reference keeps them as a set): no more states than those.
+  if (!spec.properties.some((p) => p.kind === "never") && plain.states !== timed.size) find("reference: states", `checker ${plain.states} states, ${timed.size} worlds with their timers in order`);
   for (const p of plain.properties.filter((p) => p.kind === "always")) {
     const theirs = ref.broken.get(p.id);
     const ours = p.holds || p.unreached ? undefined : p.counterexample.events.length;
@@ -198,9 +203,10 @@ function stays(spec: Spec, world: World): boolean {
   const { guards, pending } = choices(spec, world);
   const actorOf = (instance: string) => actorNamed(spec, world.instances.find((i) => i.id === instance)!.actor);
   const fair = (instance: string, step: string) => actorOf(instance).transitions[step]?.fair !== false;
-  // A message is taken fairly when one of the steps on it is fair.
-  const fairlyTaken = (instance: string, message: string) => (actorOf(instance).stepsOn[message] ?? []).some((step) => fair(instance, step));
-  return !guards.some((g) => fair(g.instance, g.key)) && !pending.some((p) => (p.kind === "deliver" ? fairlyTaken(p.to, p.message) : fair(p.to, p.timer)));
+  // A message is taken fairly when one of the steps that can take it now is fair: behind
+  // another on an ordered channel, only a loss can, which is not.
+  const fairlyTaken = (p: Extract<World["pending"][number], { kind: "deliver" }>) => stepsTaking(spec, world, p).some((step) => fair(p.to, step));
+  return !guards.some((g) => fair(g.instance, g.key)) && !pending.some((p) => (p.kind === "deliver" ? fairlyTaken(p) : fair(p.to, p.timer)));
 }
 
 /** Each property's verdict, with a counterexample's length; and the stuck world and errors. */

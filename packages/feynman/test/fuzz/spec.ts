@@ -67,6 +67,8 @@ export interface SpecDesc {
   bounds: { depth: number; faults: number; repeats: number; instances: Record<string, number> };
   /** A scenario whose setup spawns instances (with `a` set) other than the bounds': a root with a layout of its own. */
   scenario?: { spawns: { actor: number; a: number }[] };
+  /** Messages on ordered channels. */
+  ordered?: number[];
   /** Messages that are calls (RFD0009), and what each actor does when one it sent fails. */
   calls?: { messages: number[]; failures: Op[][] };
   /** A reachable property: some world where this holds. */
@@ -164,13 +166,16 @@ export function describe(seed: number, size: Size = "small"): SpecDesc {
   // a goal of a value of a above 0, or b set, takes steps to get to, if any get there at all.
   const goal = (actor: number): WorldCond => ({ actor, every: chance(0.4), cond: chance(0.5) ? { kind: "aIs", k: 1 + int(actors[actor].cap - 1) } : { kind: "b", is: true } });
   const reach = chance(0.6) ? { reach: goal(int(actorCount)) } : {};
-  return { seed, messages, actors, properties, ...final, bounds, ...scenario, ...calls, ...reach };
+  // Drawn last, for the same reason: messages on ordered channels.
+  const orderedMessages = chance(0.4) ? Array.from({ length: messages }, (_, m) => m).filter(() => chance(0.7)) : [];
+  const ordered = orderedMessages.length ? { ordered: orderedMessages } : {};
+  return { seed, messages, actors, properties, ...final, bounds, ...scenario, ...calls, ...reach, ...ordered };
 }
 
 /** The spec a description stands for. */
 export function build(desc: SpecDesc): Spec {
   const isCall = (m: number) => desc.calls?.messages.includes(m) ?? false;
-  const messages: AnyMessage[] = Array.from({ length: desc.messages }, (_, m) => (isCall(m) ? defineCall : defineMessage)(`M${m}`, { v: Number }, { name: `m${m}` }));
+  const messages: AnyMessage[] = Array.from({ length: desc.messages }, (_, m) => (isCall(m) ? defineCall : defineMessage)(`M${m}`, { v: Number }, { name: `m${m}`, ...(desc.ordered?.includes(m) ? { ordered: true } : {}) }));
   const zone = defineZone({ name: "Zone" });
   // The faults and bounds a description asks for, declared (RFD0012): any message may be lost
   // and any instance that is not a singleton may crash, within one budget; each action runs at

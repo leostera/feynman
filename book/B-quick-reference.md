@@ -60,7 +60,7 @@ export default defineConfig({ specs: ["specs/*.ts"], check: { maxStates: 500_000
 | actor | `defineActor({ name, zone, singleton?, symmetric?, initialState, display, actions, transitions })` | 3 |
 | action (what a person does) | `actions: { key: { label, description, with?, when?, inputs?, sends?, run } }` | 3 |
 | input | `inputs: { seat: oneOf("A1", "A2") }`, `input(String, { examples })` | 3 |
-| message | `defineMessage("Name", { field: Type }, { name?, over?, tone? })` | 4 |
+| message | `defineMessage("Name", { field: Type }, { name?, over?, tone?, ordered? })` | 4, 8 |
 | transition on a message | `transitions: { key: { on: Message, description, sends?, run(state, msg, ctx) } }` | 4 |
 | guarded transition | `{ description, when: (state) => …, run }` | 9 |
 | timer | `{ description, after: "10 minutes", run }`, set with `ctx.start(key)` | 7 |

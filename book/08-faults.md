@@ -372,6 +372,91 @@ Box office: explored 741 states (…, faults=2) in 143ms
 The idempotency key covers it too, as it should: a duplicate and a retry look the same to the
 bank. Without the key, the duplicate alone would charge twice with no lost message at all.
 
+## Step 6: in order, or not
+
+Losing and duplicating are two things networks do. The third is reordering, which Feynman
+does by default: any message in flight may arrive next. Most of the time that is right. Two
+HTTPS requests are two connections, and nothing keeps the second from arriving first.
+
+Here is a smaller box office, where a person picks a seat and may change their mind. Each
+choice is a request, and the box office keeps the last one it got:
+
+```ts
+const Choose = defineMessage("Choose", { seat }, { name: "choose a seat", over: "https" });
+```
+
+```ts
+const lastChoiceWins = defineProperty("lastChoiceWins", {
+  description: "Once nothing is in flight, the box office has each person's last choice.",
+  always: (w) => !w.quiet || w.all(Person).every((p) => w.the(BoxOffice).state.chosen[p.id] === (p.state.choice ?? undefined)),
+});
+```
+
+```text
+Box office: explored 19 states (1 of each actor, faults=0) in 6ms
+  ✗ lastChoiceWins  Once nothing is in flight, the box office has each person's last choice.
+    shortest counterexample, 4 event(s), needs no faults:
+       1  Person (Person)  choose  {"seat":"A1"}
+          …
+       2  Person (Person)  choose  {"seat":"A2"}
+          …
+       3  Box office (Box office)  choose a seat  {"seat":"A2"}  from Person
+          Keeps the seat the person chose.
+          chosen["person-person"]: — → "A2"
+       4  Box office (Box office)  choose a seat  {"seat":"A1"}  from Person
+          Keeps the seat the person chose.
+          chosen["person-person"]: "A2" → "A1"
+          ✗ breaks lastChoiceWins
+```
+
+The person chose A2 last, and the box office keeps A1. The spec is
+[`specs/08-faults/6-choices.ts`](specs/08-faults/6-choices.ts).
+
+## Step 7: one connection
+
+Now send the choices over one WebSocket. A TCP connection delivers what was sent in the order
+it was sent. `ordered: true` says so:
+
+```ts
+const Choose = defineMessage("Choose", { seat }, { name: "choose a seat", over: "websocket", ordered: true });
+```
+
+```text
+Box office: explored 15 states (1 of each actor, faults=0) in 6ms
+  ✓ lastChoiceWins  Once nothing is in flight, the box office has each person's last choice.
+```
+
+An ordered message travels on a **channel**: a sender and a receiver, like a connection
+between two processes. Of the ordered messages one instance sends another, of every kind, a
+step takes only the oldest still in flight. The others wait behind it. In the playground, a
+message that waits says what it is behind. In a scenario, `s.deliver` of one that is behind
+is an error.
+
+Order says nothing about loss. A connection can drop, and what was in flight goes with it.
+The step already declares `lose(Choose, { spend: faults })`, with a budget of 0. Raise it:
+
+```text
+Box office: explored 25 states (1 of each actor, faults=1) in 7ms
+  ✗ lastChoiceWins  Once nothing is in flight, the box office has each person's last choice.
+    shortest counterexample, 2 event(s), needs 1 fault(s):
+       1  Person (Person)  choose  {"seat":"A1"}
+          …
+       2  Box office (Box office)  choose a seat → chooseLost  {"seat":"A1"}  from Person
+          Choose a seat is lost on the way.
+          @faults: 1 → 0
+          ✗ breaks lastChoiceWins
+```
+
+A loss may take any message on a channel, the oldest or one behind it, and the rest stay in
+order. That is a lossy FIFO channel, the network the alternating bit protocol was designed
+for. `duplicate` and `ctx.forward()` are errors on an ordered message: put back in flight, it
+would arrive behind the ones sent after it. To make one wait, give the step on it a `when`.
+The spec is [`specs/08-faults/7-one-connection.ts`](specs/08-faults/7-one-connection.ts).
+
+Declare `ordered` only where something keeps the order: one TCP connection, one WebSocket, a
+queue with one partition and one consumer. Two requests on two connections, a retry on a new
+connection, and a load balancer in between all reorder.
+
 ## The faults library
 
 Everything in it is built from ordinary steps, and a fault it lacks is a step you write.
@@ -386,6 +471,10 @@ Everything in it is built from ordinary steps, and a fault it lacks is a step yo
 | `defineCall(id, schema)`, `failed(Call)` | messages | A message whose failure reaches the caller, and that failure. |
 | `atMost(n)` | on an action, `with: [atMost(n)]` | Each instance takes the action at most `n` times on any path. |
 
+Order is not a fault. It belongs to the message: `defineMessage(id, schema, { ordered: true })`
+(and `defineCall`), and a step that may take one out of order says `outOfOrder: true`, as
+`lose` does.
+
 Every fault step is unfair, tagged `fault`, and counted: each counterexample says how many it
 needs, and whether a shorter one needs more.
 
@@ -395,7 +484,8 @@ How to choose what to declare:
   services: `lose` on the request and on the answer, with `fails`. A queue with at-least-once
   delivery: `duplicate`. A process that restarts: `crash`.
 - **Don't declare what can't happen.** A message on one open WebSocket isn't lost on its own
-  while the socket lives. A database's commit isn't undone after it returns.
+  while the socket lives, and isn't overtaken: declare it `ordered`. A database's commit isn't
+  undone after it returns.
 - **Start with a budget of one.** Most fault bugs need one. Raise it when the system has
   defences that need two failures to beat, and check that they hold.
 - **Read "needs N faults" before you file a finding.** "Needs no faults" means it happens in
@@ -410,3 +500,6 @@ How to choose what to declare:
    it mean about the code?
 3. The person's phone can lose the ticket. Add `lose(Ticket, { spend: faults })` to `Person`.
    What happens, and what should the phone do about it?
+4. In step 7, the connection drops and the phone reconnects: its next choice goes on a new
+   connection, which may overtake what was still in flight on the old one. How would you
+   model that? (Hint: a channel is a pair of instances.)

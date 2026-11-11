@@ -1,6 +1,7 @@
 // State identity for deduplication: when two worlds behave the same from here on.
 //
-// - Ids are left out. Messages in flight are a bag: any may arrive next (RFD0004). Timers
+// - Ids are left out. Messages in flight are a bag: any may arrive next (RFD0004), but for
+//   ordered ones, which are a sequence on each channel (a sender and a receiver). Timers
 //   that are set are a sequence, oldest first: any may fire next too, but the system left
 //   alone fires the oldest (judge.ts), so how old each is decides what it does from here.
 // - Instances of one actor that are interchangeable (symmetry) are renamed to a canonical
@@ -26,6 +27,8 @@ function textOf(value: unknown): string {
 /** A key line after renaming: names that were object keys may now be out of order, so sort them again. */
 function resorted(line: string, renamedLine: string): string {
   if (line === renamedLine) return line;
+  // A channel line is its messages' lines, in order.
+  if (renamedLine.startsWith(CHANNEL)) return CHANNEL + renamedLine.slice(CHANNEL.length).split(IN_CHANNEL).map((m) => resorted("", m)).join(IN_CHANNEL);
   // Instance lines are `id=json`; message lines `d|to|from|message|json` (`o|…` for an orphaned
   // call), and replies to a call `r|to|from|message|json` (the JSON holding the call too; `ro|…`
   // orphaned, when the reply is itself a call); timer lines hold no JSON.
@@ -62,10 +65,24 @@ function restLine(world: World): string {
   return world.variables ? `${JSON.stringify(world.fresh)}|${world.rng}|${sortedJson(world.variables)}` : `${JSON.stringify(world.fresh)}|${world.rng}`;
 }
 
-/** The lines a world's key is made of, before renaming and sorting: timers make one line, in age order. */
+/** Ordered messages on one channel make one line, in the order they were sent: `q ` and their lines, joined by IN_CHANNEL. */
+const CHANNEL = "q ";
+const IN_CHANNEL = " \u241e ";
+
+/**
+ * The lines a world's key is made of, before renaming and sorting: timers make one line, in
+ * age order, and so do the ordered messages on each channel.
+ */
 function keyParts(world: World): { instances: string[]; pending: string[]; rest: string } {
   const timers = world.pending.filter((p) => p.kind === "timer").sort((a, b) => a.id - b.id);
-  const messages = world.pending.filter((p) => p.kind === "deliver").map(pendingText);
+  const channels = new Map<string, Pending[]>();
+  const messages: string[] = [];
+  for (const p of world.pending) {
+    if (p.kind !== "deliver") continue;
+    if (!p.ordered) messages.push(pendingText(p));
+    else channels.set(`${p.from}|${p.to}`, [...(channels.get(`${p.from}|${p.to}`) ?? []), p]);
+  }
+  for (const queue of channels.values()) messages.push(CHANNEL + queue.sort((a, b) => a.id - b.id).map(pendingText).join(IN_CHANNEL));
   return {
     instances: world.instances.map(instanceLine),
     pending: timers.length ? [...messages, `timers ${timers.map(pendingText).join(" ")}`] : messages,

@@ -8,7 +8,7 @@
 import { Button, DropdownMenu, Select, Tabs } from "@cloudflare/kumo";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowsDownUpIcon, ArrowsLeftRightIcon, CheckIcon, CopyIcon, HandPointingIcon, PauseIcon, PlayIcon, PlusIcon, SkipBackIcon, SkipForwardIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { choices, dropsFor, labelled, leftAloneStep as fairStepOn, pendingInOrder, stepsTaking, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
+import { aheadOf, choices, dropsFor, labelled, leftAloneStep as fairStepOn, pendingInOrder, stepsTaking, type Drop, type Event, type GroupInfo, type Pending, type Spec, type Token, type World } from "../spec/index.ts";
 import { groupsOf, iconFor, TONES, toneColor } from "../play/index.ts";
 import { isFault, labelOf, messageName, ordinal } from "./format";
 import { ActionBar, actionsOf, InputsDialog, STACK_FROM, startAction, words, type Asking, type Choosing } from "./playground/Actions";
@@ -854,6 +854,8 @@ function PacketMenu({ pending, world, onClose, onRun }: { pending: Extract<Pendi
   const { spec } = useExplorer();
   const receiver = spec.actors.find((a) => a.name === world.instances.find((i) => i.id === pending.to)?.actor);
   const leftAlone = receiver && fairStepOn(receiver, pending.message);
+  // On an ordered channel, a message behind another waits for it.
+  const ahead = aheadOf(world, pending);
   return (
     <div className="absolute bottom-20 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full bg-kumo-elevated py-1 pl-4 pr-1 shadow-xl ring ring-kumo-line" onClick={(e) => e.stopPropagation()}>
       <span className="text-[13px]">
@@ -861,6 +863,7 @@ function PacketMenu({ pending, world, onClose, onRun }: { pending: Extract<Pendi
         <span className="text-kumo-subtle">
           {" "}
           from {labelOf(world, pending.from)} to {labelOf(world, pending.to)}
+          {ahead && `, behind ${messageName(spec, ahead.message)}`}
         </span>
       </span>
       {/* Every step that can take it now (RFD0012): the one left alone delivers it, faults and others by name. */}

@@ -54,6 +54,8 @@ export interface MessageInfo {
   tone: "request" | "reply" | "refused" | "stream";
   /** A reply to it records the request it answers, as `answers` on the reply in flight. */
   correlate?: boolean;
+  /** It travels on an ordered channel: see `Pending.ordered`. */
+  ordered?: true;
   /** Its payload's schema (RFD0011): every payload sent is checked against it. */
   schema: Fields;
 }
@@ -138,6 +140,8 @@ export interface ActionInfo extends StepInfo {
 export interface TransitionInfo extends StepInfo {
   /** The message key, for a step on a message or a call's failure; otherwise a timer or a guard. */
   message?: string;
+  /** It may take an ordered message with others ahead of it on its channel: a loss, not a delivery (`Pending.ordered`). */
+  outOfOrder?: true;
   /** For a timer or a guard, `received` is undefined. */
   run: (state: any, received: any, ctx: any) => void;
 }
@@ -256,6 +260,12 @@ export type Pending =
       answers?: { message: string; payload: unknown };
       /** A call whose caller has started again since making it (`ctx.reset`): nobody waits for its answer, or for its failure. */
       orphaned?: true;
+      /**
+       * Its message is ordered: of the ordered messages from one instance to another, a step
+       * takes only the oldest in flight, unless the step is `outOfOrder`. A channel is a pair
+       * of instances, as a TCP connection is, whatever the messages on it.
+       */
+      ordered?: true;
     }
   | {
       id: number;

@@ -31,7 +31,8 @@ what you know onto what this book uses.
 | `Init` | `initialState`, a scenario's `setup` |
 | an action, `Next == A \/ B` | a step: an action, a transition `on` a message, a guarded transition (`when`), or a timer (`after`) |
 | `UNCHANGED` | implicit: a step changes only what its `run` assigns |
-| a message set or channel variable | built in: `ctx.send`, and what's pending |
+| a message set or channel variable | built in: `ctx.send`, and what's pending, a bag |
+| a sequence per channel (FIFO) | `defineMessage(…, { ordered: true })`: the oldest from one sender to one receiver goes first |
 | `INVARIANT` | `defineProperty({ always })` |
 | an invariant `~P`, written to get a trace to P | `defineProperty({ reachable: P })`: a shortest way there, or ✗ if no world gets there |
 | `[][A => B]_v` (action property) | `defineProperty({ everyStep: (before, after) => … })` |
@@ -74,6 +75,7 @@ behavioural chapters model, the two line up closely.
 | `state` and `on e do` | state in `initialState` (often a tagged union) and `transitions: { … on: E }` |
 | `event` with payload | `defineMessage("E", { field: Type })` |
 | `send m, e, payload` | `ctx.send(to, E, payload)`; `ctx.reply` to answer |
+| P's in-order delivery between two machines | `defineMessage(…, { ordered: true })`; Feynman reorders unless told |
 | `goto` | assign the state field |
 | `defer` and `ignore` | a guard that leaves it for later, or a `run` that returns early |
 | `spec` monitor machine (safety) | `defineProperty({ always })` or `everyStep` |

@@ -15,7 +15,8 @@ another person's request may arrive first, and replies may arrive in any order.
 Feynman has no clock. A run is an order of events, and at every moment, anything pending may
 go next: any message in flight, any action someone could take. A message sent first does not
 have to arrive first. This is how networks behave once you allow them to be slow, and it is
-where the interesting bugs live.
+where the interesting bugs live. (Messages on one connection do keep their order: chapter 8
+says how to declare that.)
 
 ## Step 1: asking for a seat
 

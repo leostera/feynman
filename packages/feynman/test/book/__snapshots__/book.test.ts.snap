@@ -1122,3 +1122,27 @@ exports[`05-properties/7-someone-gets-a-seat.ts 1`] = `
   "typeErrors": 0,
 }
 `;
+
+exports[`08-faults/6-choices.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lastChoiceWins": "broken",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`08-faults/7-one-connection.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "lastChoiceWins": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;

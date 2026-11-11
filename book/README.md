@@ -28,7 +28,7 @@ One system, built up a chapter at a time: a theatre selling its last seat.
 5. [What must stay true](05-properties.md): properties, reading a counterexample, and what must be possible.
 6. [Showing that it happens](06-scenarios.md): scenarios, the flows a reader should see.
 7. [When the timer fires first](07-timers.md): timers, without a clock.
-8. [When the answer never comes](08-faults.md): lost messages, failed calls, and retries.
+8. [When the answer never comes](08-faults.md): lost messages, failed calls, retries, and order.
 9. [When it restarts right here](09-restarts.md): crashes, and what's on disk.
 10. [Does it ever finish?](10-liveness.md): liveness and fairness.
 11. [Which part does the work?](11-rules.md): rules, and checking that each safeguard is needed.

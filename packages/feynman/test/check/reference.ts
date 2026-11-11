@@ -43,6 +43,8 @@ type GraphNode = { world: World; faults: number; depth: number; edges: { to: num
 /**
  * What a world is, for this explorer: states and variables, messages in flight as a bag (a
  * reply with the request it answers, which a lost reply's failure carries), which timers are set.
+ * Ordered messages are a bag too, and also, on each channel (sender and receiver), a list in
+ * the order they were sent.
  */
 export function worldKey(world: World): string {
   return sortedJson({
@@ -50,9 +52,21 @@ export function worldKey(world: World): string {
     variables: world.variables ?? {},
     messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload, p.answers ?? null, p.orphaned ?? false])).sort(),
     timers: world.pending.filter((p) => p.kind === "timer").map((p) => `${p.to}|${p.timer}`).sort(),
+    channels: channelsOf(world),
     fresh: world.fresh,
     rng: world.rng,
   });
+}
+
+/** Each channel's ordered messages, oldest first, as sortedJson writes them, channels sorted. */
+function channelsOf(world: World): string[] {
+  const byChannel = new Map<string, { id: number; text: string }[]>();
+  for (const p of world.pending) {
+    if (p.kind !== "deliver" || !p.ordered) continue;
+    const channel = JSON.stringify([p.from, p.to]);
+    byChannel.set(channel, [...(byChannel.get(channel) ?? []), { id: p.id, text: sortedJson([p.message, p.payload, p.answers ?? null, p.orphaned ?? false]) }]);
+  }
+  return [...byChannel].map(([channel, queue]) => `${channel} ${queue.sort((a, b) => a.id - b.id).map((m) => m.text).join(" ")}`).sort();
 }
 
 export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {

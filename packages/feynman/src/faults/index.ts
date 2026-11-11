@@ -37,7 +37,7 @@ const failureKeys = new Set<string>();
  * the caller `failed(Charge)`, as an RPC or a `fetch` throws. Its replies carry the request
  * they answer, so a lost reply knows which call it fails.
  */
-export function defineCall<const Id extends string, F extends Fields = {}>(id: Id, schema?: F, options?: { name?: string; over?: string }): Call<Id, TypeOf<F>> {
+export function defineCall<const Id extends string, F extends Fields = {}>(id: Id, schema?: F, options?: { name?: string; over?: string; ordered?: boolean }): Call<Id, TypeOf<F>> {
   const call = defineMessage(id, schema, { ...options, correlate: true });
   const failure = defineMessage(`${id}.failed`, { payload: (schema ?? {}) as F, to: { id: String } }, { name: `${call.name} failed`, tone: "refused" });
   failures.set(call, failure as Message<string, unknown>);
@@ -110,6 +110,8 @@ interface FaultOptions {
 interface FaultStep<On> {
   on?: On;
   fair: false;
+  /** A loss takes any message on an ordered channel, and leaves the others in order. */
+  outOfOrder?: true;
   tags: readonly string[];
   with: readonly Part[];
   sends?: readonly AnyMessage[];
@@ -136,6 +138,7 @@ export function lose<M extends AnyMessage>(message: M, options?: FaultOptions & 
   return fault<M>(
     {
       on: message,
+      outOfOrder: true,
       sends,
       description: options?.description ?? `${capital(message.name)} is lost on the way.`,
       run(_state: unknown, payload: PayloadOf<M>, ctx: ReplyCtx) {

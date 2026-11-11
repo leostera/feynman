@@ -20,7 +20,8 @@ bun run feynman dev                # every example in the simulator
 | `cache.ts` | A stale fill overtaking an invalidation | `eventually`, a lost message versions cannot fix |
 | `leader-election.ts` | Adopting the last leader heard instead of the highest | a false symmetry claim the checker must refute |
 | `job-queue.ts` | Redelivery doing a job's side effect twice | `never` over the trace, guarded transitions |
-| `alternating-bit.ts` | The alternating bit protocol over a network that reorders: a stale copy passes for the next item | retransmission timers, a protocol correct only on FIFO links |
+| `alternating-bit.ts` | The alternating bit protocol over a network that reorders: a stale copy passes for the next item. `ordered` runs it on a link that keeps order, where it holds | retransmission timers, a protocol correct only on FIFO links, `ordered: true` |
+| `ordered-writes.ts` | Two writes over a network that reorders: the first lands last and wins. Over one connection, it holds, but a lost write still leaves the store behind | `ordered: true`, a loss on an ordered channel |
 | `outbox.ts` | An announcement queued in memory, lost when the shop restarts after storing the order | guarded transitions draining durable state, restarts |
 | `raft-vote.ts` | A vote not kept on disk: a node restarts, votes again in the same term, and two nodes lead | durable state, restarts |
 | `write-skew.ts` | Two doctors each check the other is on call, then both leave | check-then-act across messages, an atomic conditional write |

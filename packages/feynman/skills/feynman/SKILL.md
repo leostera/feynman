@@ -642,6 +642,14 @@ Members of an interface or a type are not definitions: point at their lines
   - `lose(Message, { spend: faults })` on the receiver: the message is lost on the way. The
     sender hears nothing, as with a queue, a datagram or a stream.
   - `duplicate(Message, { spend: faults })`: the network delivers it twice.
+  - Order is not a fault: any message in flight may arrive next, as on a network of separate
+    requests. Messages on one connection (TCP, a WebSocket, a single-partition queue) keep
+    their order: `defineMessage(id, schema, { ordered: true })`, and `defineCall` takes it
+    too. Of the ordered messages one instance sends another, of every kind, a step takes only
+    the oldest in flight; `lose` takes any (`outOfOrder: true` on a step lets it). An ordered
+    message is never put back in flight: `ctx.forward()` and `duplicate` on one are errors;
+    give the step a `when` to make it wait. Declare `ordered` only where something keeps the
+    order: two connections, a retry on a new one, or a load balancer reorder.
   - `crash({ keeps: ["codes"], spend: faults })`: the instance starts again from its
     initial state, but for the fields in `keeps` (what it wrote to disk); its timers are gone.
 

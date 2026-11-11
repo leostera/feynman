@@ -91,6 +91,8 @@ interface Renamed {
  * Messages are a bag to the fingerprint, but kept in the order they were sent, as the engine's
  * worlds are: so the choices from a vector come in the order `branches` gives them
  * (pendingInOrder), and the first counterexample found is the one the reference explorer finds.
+ * Ordered messages are also a sequence on each channel (`queueLanes`), which the vector's order
+ * is: a step adds messages last, and a reset changes them where they are.
  */
 interface Layout {
   /** Which layout, in the fingerprint: worlds with other instances are other states. */
@@ -143,6 +145,12 @@ interface Effect {
   /** Message and timer ids it adds, in the order sent and set. */
   addsMessages: Int32Array;
   addsTimers: Int32Array;
+  /**
+   * For a reset: pairs of a message it changes and what that becomes (afterReset), which are
+   * also in removesMessages and addsMessages, for the fingerprint. The vector changes them where
+   * they are, as the engine keeps their ids, so an ordered channel keeps its order.
+   */
+  replaces?: Int32Array;
   /** What a trace sees of the step's event, interned (see `TraceStep`). */
   event: number;
   /** Whether the step is tagged `fault`. */
@@ -278,6 +286,13 @@ export class IntegerSearch {
 
   private instanceStates = new Interner<Instance>();
   private pendings = new Interner<PendingTemplate>();
+  /** Whether any message is ordered: only then do vectors have channels (`queueLanes`). */
+  private readonly ordered: boolean;
+  /** By interned message: its channel (sender and receiver), interned, if it is ordered; -1 if not. */
+  private channels: number[] = [];
+  private channelIds = new Map<string, number>();
+  /** By actor, then step index: whether the step may take an ordered message out of order. */
+  private outOfOrder = new Map<string, boolean[]>();
   /** By `actor.step`: whether the step is tagged `fault`. */
   private freshes = new Interner<Record<string, number>>();
   private stepArgs = new Interner<string>();
@@ -375,6 +390,7 @@ export class IntegerSearch {
   ) {
     this.rootTrails = roots.map((r) => (r.events ?? []).filter((e) => e.kind !== "spawn" && !e.error).map(traceStep));
     this.nevers = spec.properties.filter((p) => p.kind === "never");
+    this.ordered = Object.values(spec.messages).some((m) => m.ordered);
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
     this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [{ id: p.id, everyStep: p.everyStep }] : []));
@@ -464,7 +480,7 @@ export class IntegerSearch {
       }
       if (trail && this.remember(vector[L.memory], trail, step.effect.event, step).some((id) => !this.broken.has(id))) return true;
       const child = this.applied(vector, step);
-      const print = symmetry.classes.length ? this.symmetricPrint(child, L, symmetry).print : childPrint(entry, step);
+      const print = symmetry.classes.length ? this.symmetricPrint(child, L, symmetry).print : this.ordered ? this.printOf(child, L) : childPrint(entry, step);
       if (this.seen.get(print[0], print[1]) === undefined) return true;
       if (this.everySteps.some((p) => !this.broken.has(p.id)) && this.stepBreaks(entry.tuple, this.childTuple(entry, step), vector, step, this.b.depth, () => child).length) return true;
     }
@@ -482,7 +498,7 @@ export class IntegerSearch {
       const vector = this.vectorOf(world, memory, L);
       this.rootVectors[r] = vector;
       const folded = symmetry.classes.length ? this.symmetricPrint(vector, L, symmetry) : undefined;
-      const [h1, h2] = folded ? folded.print : printOf(vector, L);
+      const [h1, h2] = folded ? folded.print : this.printOf(vector, L);
       if (this.seen.get(h1, h2) !== undefined) continue;
       const gid = this.node(-1, r, -1, -1, 0, -1);
       if (folded) this.keepForTwins(gid, vector, L, folded.plain);
@@ -657,7 +673,7 @@ export class IntegerSearch {
       lanes = this.childLanes(parent, step, symmetry);
       folded = this.symmetricPrint(child, L, symmetry, lanes);
     }
-    const print = folded ? folded.print : childPrint(parent, step);
+    const print = folded ? folded.print : this.childPrint(parent, step);
     const h1 = print[0];
     const h2 = print[1];
     const existing = this.seen.get(h1, h2);
@@ -726,7 +742,7 @@ export class IntegerSearch {
       const step = this.step(here, options[option]);
       if (step.effect.error) continue;
       if (trail) this.remember(vector[L.memory], trail, step.effect.event, step);
-      const print = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : childPrint(entry, step);
+      const print = symmetry.classes.length ? this.symmetricPrint(this.applied(vector, step), L, symmetry).print : this.childPrint(entry, step);
       const to = this.seen.get(print[0], print[1]);
       if (to === undefined) return;
       out.push(edgeOf(to, option, step.fault, this.fairOf(here, options[option])?.id));
@@ -1040,8 +1056,9 @@ export class IntegerSearch {
       timers.length = 0;
       for (let i = end; i < v.length; i++) timers.push(this.renamedPending(r, v[i]));
       const t = timersHash(timers, 0);
-      const w1 = (lanes[n * 2] + lane1(4, t, 0)) >>> 0;
-      const w2 = (lanes[n * 2 + 1] + lane2(4, t, 0)) >>> 0;
+      const [q1, q2] = this.queueLanes(v, L, (id) => this.renamedPending(r, id));
+      const w1 = (lanes[n * 2] + lane1(4, t, 0) + q1) >>> 0;
+      const w2 = (lanes[n * 2 + 1] + lane2(4, t, 0) + q2) >>> 0;
       if (r.identity) plain = [w1, w2];
       if (least1 < 0 || w1 < least1 || (w1 === least1 && w2 < least2)) (least1 = w1), (least2 = w2);
       const f1 = (w1 + extra1) >>> 0;
@@ -1374,6 +1391,7 @@ export class IntegerSearch {
     const self = L.instances[slot].id;
     let removed: number[] | undefined;
     let added: number[] | undefined;
+    let replaced: number[] | undefined;
     for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) {
       const id = vector[i];
       if (i === chosen) continue;
@@ -1401,10 +1419,16 @@ export class IntegerSearch {
       if (next >= 0) {
         (removed ??= []).push(id);
         (added ??= []).push(next);
+        (replaced ??= []).push(id, next);
       }
     }
     if (!removed) return effect;
-    return { ...effect, removesMessages: Int32Array.from([...effect.removesMessages, ...removed]), addsMessages: added ? Int32Array.from([...effect.addsMessages, ...added]) : effect.addsMessages };
+    return {
+      ...effect,
+      removesMessages: Int32Array.from([...effect.removesMessages, ...removed]),
+      addsMessages: added ? Int32Array.from([...effect.addsMessages, ...added]) : effect.addsMessages,
+      ...(replaced ? { replaces: Int32Array.from(replaced) } : {}),
+    };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
@@ -1468,6 +1492,66 @@ export class IntegerSearch {
     return steps;
   }
 
+  /** An interned message's channel, if it is ordered: its sender and receiver, interned; -1 if not. */
+  private channelOf(id: number): number {
+    let channel = this.channels[id];
+    if (channel === undefined) {
+      const p = this.pendings.values[id] as Pending;
+      if (p.kind !== "deliver" || !p.ordered) channel = -1;
+      else {
+        const key = `${p.from}|${p.to}`;
+        channel = this.channelIds.get(key) ?? this.channelIds.size;
+        this.channelIds.set(key, channel);
+      }
+      this.channels[id] = channel;
+    }
+    return channel;
+  }
+
+  /** Whether an actor's step (by index) may take an ordered message with others ahead of it. */
+  private takesOutOfOrder(actor: string, index: number): boolean {
+    let byIndex = this.outOfOrder.get(actor);
+    if (!byIndex) this.outOfOrder.set(actor, (byIndex = []));
+    return (byIndex[index] ??= actorNamed(this.spec, actor).transitions[this.stepNames.values[index]]?.outOfOrder === true);
+  }
+
+  /**
+   * What the order of ordered messages adds to a fingerprint's two lanes: for each channel, a
+   * hash of its messages in the order they are in the vector, which is the order they were
+   * sent; summed over the channels, which are in no order. `name` is what stands for a message:
+   * its intern id, or its renamed key line under symmetry.
+   */
+  private queueLanes(v: Int32Array, L: Layout, name: (id: number) => number): [number, number] {
+    if (!this.ordered) return NO_QUEUE;
+    const end = L.messages + 1 + v[L.messages];
+    const heads = QUEUES;
+    heads.clear();
+    for (let i = L.messages + 1; i < end; i++) {
+      const channel = this.channelOf(v[i]);
+      if (channel >= 0) heads.set(channel, (fmix((heads.get(channel) ?? 0x811c9dc5) ^ name(v[i])) + 0x9e3779b9) >>> 0);
+    }
+    let q1 = 0;
+    let q2 = 0;
+    for (const h of heads.values()) (q1 += lane1(7, h, 0)), (q2 += lane2(7, h, 0));
+    return [q1, q2];
+  }
+
+  /** A vector's fingerprint from scratch, with its channels' order. */
+  private printOf(v: Int32Array, L: Layout): [number, number] {
+    const [h1, h2] = printOf(v, L);
+    if (!this.ordered) return [h1, h2];
+    const [q1, q2] = this.queueLanes(v, L, (id) => id);
+    return [(h1 + q1) >>> 0, (h2 + q2) >>> 0];
+  }
+
+  /**
+   * A child's fingerprint (childPrint). With ordered messages, from the child's vector, as the
+   * order on a channel changes with every step on it.
+   */
+  private childPrint(parent: Entry, step: Step): ArrayLike<number> {
+    return this.ordered ? this.printOf(this.applied(parent.vector, step), step.layout) : childPrint(parent, step);
+  }
+
   private argOf(choice: Exclude<Choice, { kind: "fire" }>): number {
     const name = choice.kind === "act" ? `a|${choice.key}|${JSON.stringify(choice.inputs)}` : `g|${choice.key}`;
     return this.stepArgs.id(name, () => name);
@@ -1524,10 +1608,34 @@ export class IntegerSearch {
       left = Array.from(rm);
       if (chosen >= 0) left.splice(left.indexOf(vector[chosen]), 1);
     }
+    // A reset's changes go where the messages they change are, not last.
+    let tail = am;
+    let olds: number[] | undefined;
+    let news: number[] | undefined;
+    if (effect.replaces) {
+      const rep = effect.replaces;
+      olds = [];
+      news = [];
+      const last = Array.from(am);
+      for (let k = 0; k < rep.length; k += 2) {
+        olds.push(rep[k]);
+        news.push(rep[k + 1]);
+        left!.splice(left!.indexOf(rep[k]), 1);
+        last.splice(last.indexOf(rep[k + 1]), 1);
+      }
+      tail = Int32Array.from(last);
+    }
     let w = M + 1;
     for (let i = M + 1, end = M + 1 + count; i < end; i++) {
       if (i === chosen) continue;
       const id = vector[i];
+      const o = olds ? olds.indexOf(id) : -1;
+      if (o >= 0) {
+        out[w++] = news![o];
+        olds!.splice(o, 1);
+        news!.splice(o, 1);
+        continue;
+      }
       const r = left ? left.indexOf(id) : -1;
       if (r >= 0) {
         left!.splice(r, 1);
@@ -1535,8 +1643,8 @@ export class IntegerSearch {
       }
       out[w++] = id;
     }
-    out.set(am, w);
-    w += am.length;
+    out.set(tail, w);
+    w += tail.length;
     for (let i = M + 1 + count; i < vector.length; i++) if (!rt.includes(vector[i])) out[w++] = vector[i];
     out.set(at, w);
     return out;
@@ -1609,10 +1717,15 @@ export class IntegerSearch {
     }
     for (let slot = 0; slot < n; slot++) for (const c of plans[slot].guards) out.push(c);
     const pending = vector.length - L.messages - 1;
+    // The channels whose first ordered message has been met: on them, the rest wait their turn.
+    let started: Set<number> | undefined;
     for (let k = 1; k <= pending; k++) {
       const id = vector[L.messages + k];
       const slot = this.slotIn(L, id);
-      for (const step of this.takers(plans[slot], id, vector[slot], variables)) out.push(this.fireAt(k, step));
+      const channel = this.ordered && k <= vector[L.messages] ? this.channelOf(id) : -1;
+      const behind = channel >= 0 && (started ??= new Set()).has(channel);
+      if (channel >= 0) started!.add(channel);
+      for (const step of this.takers(plans[slot], id, vector[slot], variables)) if (!behind || this.takesOutOfOrder(L.instances[slot].actor, step)) out.push(this.fireAt(k, step));
     }
     return out;
   }
@@ -1850,4 +1963,8 @@ function childPrint(parent: Entry, step: Step): Uint32Array {
   return CHILD;
 }
 const CHILD = new Uint32Array(2);
+/** No ordered messages: nothing to add. */
+const NO_QUEUE: [number, number] = [0, 0];
+/** queueLanes' running hash of each channel, shared: it never runs twice at once. */
+const QUEUES = new Map<number, number>();
 

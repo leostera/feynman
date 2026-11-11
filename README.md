@@ -14,9 +14,10 @@ file you get:
 - **A simulator.** Add people and machines, press the buttons they would, watch every message
   travel, lose one, and go back to any moment to try something else.
 - **A model checker that says how sure it is.** It tries every order of events within bounds,
-  with the faults the spec declares (lost messages, duplicates, crashes), then takes long
-  random runs. Rules are safety ("never two
-  holders") or liveness ("every request is answered"), judged under fairness as in TLA+, and
+  with the faults the spec declares (lost messages, duplicates, crashes), on networks that
+  reorder or connections that keep order, then takes long random runs. Rules are safety
+  ("never two holders"), what must be possible ("a buyer can get a seat"), or liveness
+  ("every request is answered"), judged under fairness as in TLA+, and
   a world where the system is stuck is reported too. A broken rule comes with the shortest
   trace that breaks it, and for liveness the loop it repeats forever; a rule that held says
   whether every state was explored.

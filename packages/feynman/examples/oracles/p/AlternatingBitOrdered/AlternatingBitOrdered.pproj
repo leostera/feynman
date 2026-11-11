@@ -1,0 +1,12 @@
+<Project>
+<ProjectName>AlternatingBitOrdered</ProjectName>
+<InputFiles>
+  <PFile>../Network.p</PFile>
+  <PFile>../OrderedNetwork.p</PFile>
+  <PFile>../Timer.p</PFile>
+  <PFile>../AlternatingBit/PSrc/</PFile>
+  <PFile>../AlternatingBit/PSpec/</PFile>
+  <PFile>./PTst/</PFile>
+</InputFiles>
+<OutputDir>./PGenerated/</OutputDir>
+</Project>

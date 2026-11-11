@@ -256,8 +256,23 @@ export function stepsTaking(spec: Spec, world: World, pending: Pending): string[
   const instance = world.instances.find((i) => i.id === pending.to);
   if (!instance) return [];
   const actor = actorNamed(spec, instance.actor);
-  const steps = actor.stepsOn[pending.message] ?? [];
-  return steps.length === 1 && !actor.transitions[steps[0]].when ? steps : steps.filter((s) => whenHolds(spec, world, instance, actor.transitions[s]));
+  const on = actor.stepsOn[pending.message] ?? [];
+  // Behind another on its ordered channel, only a step that may take it out of order can.
+  const steps = aheadOf(world, pending) ? on.filter((s) => actor.transitions[s].outOfOrder) : on;
+  // A lone step with no when and no bound (a budget) takes it whatever the world.
+  const sure = steps.length === 1 && !actor.transitions[steps[0]].when && !actor.transitions[steps[0]].bound;
+  return sure ? steps : steps.filter((s) => whenHolds(spec, world, instance, actor.transitions[s]));
+}
+
+/**
+ * For an ordered message, the one ahead of it on its channel: the oldest ordered message in
+ * flight from the same sender to the same receiver, if that is another. None for the rest.
+ */
+export function aheadOf(world: World, pending: Pending): Extract<Pending, { kind: "deliver" }> | undefined {
+  if (pending.kind !== "deliver" || !pending.ordered) return undefined;
+  let first: Extract<Pending, { kind: "deliver" }> | undefined;
+  for (const p of world.pending) if (p.kind === "deliver" && p.ordered && p.from === pending.from && p.to === pending.to && (!first || p.id < first.id)) first = p;
+  return first && first.id !== pending.id ? first : undefined;
 }
 
 /** The step a message goes to when the system is left alone: the fair one of the steps on it. */
@@ -282,6 +297,8 @@ export function fire(spec: Spec, world: World, pendingId: number, step?: string,
   const delivery = { message: pending.message, payload: pending.payload, from: pending.from };
   if (transition && transition.message !== pending.message) throw new SpecError(`${actor.name}.${name} is not a step on ${messageName(spec, pending.message)}`);
   if (transition && !whenHolds(spec, consumed, instance, transition)) throw new SpecError(`${actor.name}.${name} cannot take ${messageName(spec, pending.message)} now: its when does not hold`);
+  const ahead = transition?.outOfOrder ? undefined : aheadOf(world, pending);
+  if (ahead) throw new SpecError(`${actor.name}.${name} cannot take ${messageName(spec, pending.message)} now: it is ordered, and ${messageName(spec, ahead.message)}, sent before it, is still in flight ahead of it`);
   if (!transition) {
     return finish(spec, world, consumed, {
       kind: "deliver",
@@ -459,7 +476,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     const odd = unstorable(payload, "payload");
     if (odd) throw new SpecError(notPlain(odd));
     const body = freeze(clone(payload));
-    world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text, ...(answers ? { answers } : {}) });
+    world.pending.push({ id, kind: "deliver", to: target.id, from: self.id, message, payload: body, text, ...(answers ? { answers } : {}), ...(info.ordered ? { ordered: true as const } : {}) });
     effects.sent.push({ id, to: target.id, message, payload: body, text });
   };
   const deliveryOf = (p: Extract<Pending, { kind: "deliver" }>) => deliveryIn(spec, world, p, onRead);
@@ -487,6 +504,8 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
      */
     forward(as?: { message: unknown; payload: unknown }) {
       if (!received) throw new SpecError("forward is only possible in a step on a message");
+      // Put back in flight, it would arrive behind the ones sent after it.
+      if (!as && received.ordered) throw new SpecError(`forwards ${messageName(spec, received.message)}, which is ordered: back in flight, it would arrive behind the ones sent after it. An ordered channel delivers each message once, in order; to make it wait, give the step on it a when`);
       const id = ++world.seq;
       if (!as) {
         world.pending.push({ ...received, id });
@@ -501,7 +520,7 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       const odd = unstorable(as.payload, "payload");
       if (odd) throw new SpecError(notPlain(odd));
       const body = freeze(clone(as.payload));
-      world.pending.push({ id, kind: "deliver", to: received.to, from: received.from, message, payload: body });
+      world.pending.push({ id, kind: "deliver", to: received.to, from: received.from, message, payload: body, ...(info?.ordered ? { ordered: true as const } : {}) });
       effects.sent.push({ id, to: received.to, message, payload: body });
     },
     /**

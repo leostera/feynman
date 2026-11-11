@@ -86,13 +86,16 @@ export function tlc(module: string, constants: Record<string, string | number | 
 
 /**
  * A world as TLA+ sees it: states with each instance's own variables (its action counters),
- * what is in flight (as a bag, no times), counters, the world's variables (the fault budget),
- * and what `never` properties remember.
+ * what is in flight (as a bag, no times; ordered messages as a sequence on each channel),
+ * counters, the world's variables (the fault budget), and what `never` properties remember.
  */
 function projection(world: World, memory: string): string {
+  const channels = new Map<string, string[]>();
+  for (const p of [...world.pending].sort((a, b) => a.id - b.id)) if (p.kind === "deliver" && p.ordered) channels.set(`${p.from}>${p.to}`, [...(channels.get(`${p.from}>${p.to}`) ?? []), pendingText(p)]);
   return [
     world.instances.map((i) => `${i.id}=${sortedJson(i.state)}${i.variables ? `@${sortedJson(i.variables)}` : ""}`).sort().join("\n"),
-    world.pending.map((p) => pendingText(p)).sort().join("\n"),
+    world.pending.filter((p) => p.kind !== "deliver" || !p.ordered).map((p) => pendingText(p)).sort().join("\n"),
+    [...channels].map(([channel, queue]) => `${channel}: ${queue.join(" ; ")}`).sort().join("\n"),
     sortedJson(world.fresh),
     sortedJson(world.variables ?? {}),
     memory,
