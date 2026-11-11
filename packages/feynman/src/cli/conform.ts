@@ -58,9 +58,9 @@ export async function conformCommand(ctx: Context, positionals: string[], option
       console.log(red(`${shown} is not a run of ${path}: there is no scenario to write. Without --as-scenario, check says where it leaves the spec.`));
       return 1;
     }
-    const notes = result.lines.map((line) => whereIs(line) ?? "not in the log");
+    const notes = result.lines.map((line) => whereIs(line) ?? `not in the ${format ? "trace" : "log"}`);
     console.log(scenarioCode(spec, { id: "log", description: `What ${shown} recorded, as a run of the spec.`, counterexample: result.run, log: shown, notes }));
-  } else console.log(textOf(spec, path, format ? `${shown} (${FORMATS[format]})` : shown, result, options.gap ?? DEFAULT_GAP, whereIs));
+  } else console.log(textOf(spec, path, format ? `${shown} (${FORMATS[format]})` : shown, result, options.gap ?? DEFAULT_GAP, whereIs, format ? "trace" : "log"));
   return fails ? 1 : 0;
 }
 
@@ -74,24 +74,25 @@ async function loadMapping(path: string): Promise<TraceMapping> {
   return mod.default as TraceMapping;
 }
 
-function textOf(spec: Spec, path: string, log: string, result: Conformance, gap: number, whereIs: (line: number | undefined) => string | undefined): string {
+/** `noun` is what was read, a log or a trace, as the report calls it. */
+function textOf(spec: Spec, path: string, log: string, result: Conformance, gap: number, whereIs: (line: number | undefined) => string | undefined, noun: "log" | "trace"): string {
   const lines = [`${path}, against ${log}`];
   const unlogged = result.lines.filter((l) => l === undefined).length;
   const logged = result.lines.length - unlogged;
   const events = result.run.events.map((e, i) => {
     const [first, ...rest] = formatEvent(spec, e, result.run.worlds[i], i + 1).split("\n");
-    const where = result.lines[i] === undefined ? yellow("  not in the log") : dim(`  ${whereIs(result.lines[i])}`);
+    const where = result.lines[i] === undefined ? yellow(`  not in the ${noun}`) : dim(`  ${whereIs(result.lines[i])}`);
     return [first + where, ...rest].join("\n");
   });
   if (result.conforms) {
-    lines.push(green(`✓ the log is a run of the spec: ${logged} logged event(s)${unlogged ? `, and ${unlogged} the log does not show` : ""}`));
+    lines.push(green(`✓ the ${noun} is a run of the spec: ${logged} logged event(s)${unlogged ? `, and ${unlogged} the ${noun} does not show` : ""}`));
     lines.push(...events);
     for (const b of result.broken) {
-      const at = b.at < 0 ? "where it starts" : `at event ${b.at + 1}${result.lines[b.at] === undefined ? ", which the log does not show" : ` (${whereIs(result.lines[b.at])})`}`;
+      const at = b.at < 0 ? "where it starts" : `at event ${b.at + 1}${result.lines[b.at] === undefined ? `, which the ${noun} does not show` : ` (${whereIs(result.lines[b.at])})`}`;
       lines.push(red(`  ✗ ${b.id}`) + dim(`  ${b.description}`) + red(`  broken ${at}`));
     }
     if (!result.broken.length) lines.push(dim("  no property breaks on it"));
-    if (unlogged) lines.push(dim(`  Of the readings that fit, this has the fewest steps the log does not show; another may differ in them.`));
+    if (unlogged) lines.push(dim(`  Of the readings that fit, this has the fewest steps the ${noun} does not show; another may differ in them.`));
     return lines.join("\n");
   }
   if (result.stop.kind === "limit") {
@@ -99,9 +100,9 @@ function textOf(spec: Spec, path: string, log: string, result: Conformance, gap:
     return lines.join("\n");
   }
   const { line, could, near, errors } = result.stop;
-  lines.push(red(`✗ the log leaves the spec at ${line.at ?? `line ${line.line}`}: ${describeLine(line)}`));
+  lines.push(red(`✗ the ${noun} leaves the spec at ${line.at ?? `line ${line.line}`}: ${describeLine(line)}`));
   if (events.length) lines.push(dim(`  it fits up to there:`), ...events);
-  const header = (what: string) => dim(`  ${what}${gap ? `, after up to ${gap} step(s) the log does not show` : ""}:`);
+  const header = (what: string) => dim(`  ${what}${gap ? `, after up to ${gap} step(s) the ${noun} does not show` : ""}:`);
   if (errors.length) lines.push(header(`there, that step fails in the spec`), ...errors.map((e) => red(`    ${e}`)));
   if (near.length) lines.push(header(`${line.instance} can take ${line.key} there, but not as logged`), ...near.map((n) => `    ${n}`));
   if (could.length) lines.push(header(`what else could happen there`), ...could.map((c) => dim(`    ${c}`)));

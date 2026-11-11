@@ -495,7 +495,7 @@ test("conform reads an OpenTelemetry trace: spans that say their step, and spans
   const ok = await capture(["conform", "shop", "trace.json"], root);
   expect(ok.status).toBe(0);
   expect(ok.out).toContain("specs/shop.ts, against trace.json (OpenTelemetry)");
-  expect(ok.out).toContain("✓ the log is a run of the spec: 3 logged event(s)");
+  expect(ok.out).toContain("✓ the trace is a run of the spec: 3 logged event(s)");
   expect(ok.out).toContain('   2  Shop (Shop)  buy  {}  from Ann  span "POST /buy" (Shop, 0000000000000003)');
   // Trusting the clocks, a span still comes after the one it descends from: the shop's skew does not matter.
   expect((await capture(["conform", "shop", "trace.json", "--order", "time"], root)).status).toBe(0);

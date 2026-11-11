@@ -203,7 +203,7 @@ race, traced with the OpenTelemetry SDK, with the box office's clock 40ms behind
 
 ```text
 book/specs/15-triage/1-the-agents-draft.ts, against book/specs/15-triage/two-holds.otlp.json (OpenTelemetry)
-✗ the log leaves the spec at span "show held" (Alice, 47582cd9312f09c8): Alice held  from Box office
+✗ the trace leaves the spec at span "show held" (Alice, 47582cd9312f09c8): Alice held  from Box office
   it fits up to there:
    1  Alice (Person)  hold  span "tap hold" (Alice, a649fd09361d4162)
   …
