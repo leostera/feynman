@@ -99,10 +99,13 @@ function projection(world: World, memory: string): string {
   ].join("\n--\n");
 }
 
-/** The checker's exhaustive search, plain, and the distinct states it reached as TLA+ sees them. */
+/**
+ * The checker's search, plain, and the distinct states it reached as TLA+ sees them. With no
+ * depth bound, as the checker runs by default and as TLC does: it finds every world there is.
+ */
 export async function feynman(spec: Spec, bounds: Partial<Bounds>): Promise<{ report: Report; distinct: number }> {
   const seen = new Set<string>();
-  const report = await check(spec, { depth: 60, maxStates: 5_000_000, timeLimit: 300_000, walks: 0, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
+  const report = await check(spec, { maxStates: 5_000_000, timeLimit: 300_000, walks: 0, symmetry: false, ...bounds }, [], { watch: { state: (w, memory) => seen.add(projection(w, memory)) } });
   return { report, distinct: seen.size };
 }
 

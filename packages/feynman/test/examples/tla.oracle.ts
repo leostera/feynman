@@ -15,7 +15,11 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
         const { spec, bounds } = configured(example.spec(c.variant), { faults: c.faults, instances: example.instances ?? {}, ...(o.depth ? { depth: o.depth } : {}) });
         const ours = await feynman(spec, bounds);
         expect(ours.report.errors.map((e) => e.message)).toEqual([]);
-        if (!o.depth) expect(ours.report.exhaustive).toBe(true);
+        // Without a depth, as by default, the search finds every world, as TLC does. With one
+        // (systems that never run out of things to do), the bound cuts paths off, and an
+        // invariant that held there is not proved: unfinished, held up to the depth.
+        expect({ exhaustive: ours.report.exhaustive, cut: ours.report.cutAtDepth === true }).toEqual({ exhaustive: true, cut: !!o.depth });
+        for (const p of ours.report.properties) if (o.depth && p.holds && o.invariants.includes(p.id)) expect({ id: p.id, upTo: p.upTo }).toEqual({ id: p.id, upTo: o.depth });
         // The same reachable states.
         expect(ours.distinct).toBe(tlc(o.module, constants, [], view).distinct);
         // The same verdict on each invariant, and counterexamples just as short.
