@@ -27,9 +27,9 @@ function textOf(value: unknown): string {
 function resorted(line: string, renamedLine: string): string {
   if (line === renamedLine) return line;
   // Instance lines are `id=json`; message lines `d|to|from|message|json` (`o|…` for an orphaned
-  // call), and replies to a call `r|to|from|message|json` (the JSON holding the call too); timer
-  // lines hold no JSON.
-  const at = renamedLine.startsWith("d|") || renamedLine.startsWith("r|") || renamedLine.startsWith("o|") ? nthIndex(renamedLine, "|", 4) : renamedLine.startsWith("timers ") || renamedLine.startsWith("t|") ? -1 : renamedLine.indexOf("=");
+  // call), and replies to a call `r|to|from|message|json` (the JSON holding the call too; `ro|…`
+  // orphaned, when the reply is itself a call); timer lines hold no JSON.
+  const at = renamedLine.startsWith("d|") || renamedLine.startsWith("r|") || renamedLine.startsWith("ro|") || renamedLine.startsWith("o|") ? nthIndex(renamedLine, "|", 4) : renamedLine.startsWith("timers ") || renamedLine.startsWith("t|") ? -1 : renamedLine.indexOf("=");
   if (at < 0) return renamedLine;
   return renamedLine.slice(0, at + 1) + sortedJson(JSON.parse(renamedLine.slice(at + 1)));
 }
@@ -45,7 +45,7 @@ const pendingTexts = new WeakMap<object, string>();
 
 export function pendingText(p: Pending): string {
   let text = pendingTexts.get(p);
-  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? (p.answers ? `r|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `${p.orphaned ? "o" : "d"}|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}`) : `t|${p.to}|${p.timer}`));
+  if (text === undefined) pendingTexts.set(p, (text = p.kind === "deliver" ? (p.answers ? `${p.orphaned ? "ro" : "r"}|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `${p.orphaned ? "o" : "d"}|${p.to}|${p.from}|${p.message}|${textOf(p.payload)}`) : `t|${p.to}|${p.timer}`));
   return text;
 }
 

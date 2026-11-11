@@ -234,3 +234,40 @@ test("symmetric callers: a reply to a call is renamed like any message", async (
   expect(symmetric.exhaustive).toBe(true);
   expect(symmetric.states).toBeLessThan(plain.states);
 });
+
+test("a reply that is itself a call is orphaned when its sender crashes, and fails into nobody if lost", async () => {
+  // The server answers a Ping with a Ping, a call of its own, then may crash. Its answer in
+  // flight is then a call whose caller has gone: lost, it fails into nobody. The checker once
+  // keyed such a reply without its orphaned flag, so the two were one state, and the failure
+  // went to the restarted server.
+  const Ping = defineCall("Ping", {});
+  const zone = defineZone({ name: "z" });
+  const faults = budget("faults", 2);
+  const Server = defineActor({
+    name: "Server",
+    zone,
+    initialState: () => ({ failures: 0 }),
+    transitions: {
+      ping: { on: Ping, description: "Answers with a ping.", sends: [Ping], run: (_s, _m, ctx) => ctx.reply(Ping, {}) },
+      pingFailed: { on: failed(Ping), description: "Counts a failure.", run: (s) => void (s.failures += 1) },
+      crash: crash({ spend: faults }),
+    },
+  });
+  const Client = defineActor({
+    name: "Client",
+    zone,
+    singleton: true,
+    initialState: () => ({ answered: false }),
+    actions: { ask: { label: "Ask", description: "Pings the server.", sends: [Ping], run: (_s, _i, ctx) => ctx.send(ctx.all(Server)[0]!, Ping, {}) } },
+    transitions: {
+      ping: { on: Ping, description: "Hears the answer.", run: (s) => void (s.answered = true) },
+      pingLost: lose(Ping, { spend: faults }),
+    },
+  });
+  const answerNeverFails = defineProperty("answerNeverFails", { description: "The server never hears that its answer failed.", always: (w) => w.all(Server).every((s) => s.state.failures === 0) });
+  const spec = defineSpec({ name: "Ping", actors: [Client, Server], properties: [answerNeverFails] });
+  // The same worlds as the reference: the orphaned answer and the other are two states.
+  const report = await agreesWithReference(spec, { depth: 6, instances: {} });
+  // Lost before a crash, the answer fails into the server.
+  expect(report.properties[0]!.holds).toBe(false);
+});

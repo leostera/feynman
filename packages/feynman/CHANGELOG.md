@@ -58,6 +58,9 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
   retry could hide a missing resume. A reset now orphans its instance's calls in flight
   (`Delivery.orphaned`). Verdicts in the book and examples are unchanged; state counts grow
   where a spec has both a crash and a call.
+- **A reply that is itself a call**, answering one, kept its caller's crash from orphaning it:
+  the checker took the orphaned reply and the other for one state, and a loss after the
+  crash failed into the restarted process. Found by the fuzzer; the two are apart now.
 
 ### Sources
 
