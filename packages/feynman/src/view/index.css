@@ -92,3 +92,60 @@ body,
   animation: none !important;
   transition: none !important;
 }
+
+/* An explainer's prose (RFD0013): markdown, rendered by feynman explain. */
+.explainer-prose { font-size: 1.0625rem; line-height: 1.7; color: var(--text-color-kumo-default); }
+.explainer-prose > * + * { margin-top: 1.1em; }
+.explainer-prose:first-child, h2 + .explainer-prose { margin-top: 1.25rem; }
+.explainer-prose { margin-top: 1.1em; }
+.explainer-prose h3 { margin-top: 2em; font-size: 1.125rem; font-weight: 600; }
+.explainer-prose a { color: var(--text-color-kumo-brand); text-decoration: underline; text-underline-offset: 3px; }
+.explainer-prose strong { font-weight: 600; }
+.explainer-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; padding: 0.1em 0.35em; border-radius: 0.3em; background: var(--color-kumo-tint, rgba(127,127,127,0.12)); }
+.explainer-prose pre { padding: 1em; border-radius: 0.75em; overflow-x: auto; background: var(--color-kumo-base); box-shadow: inset 0 0 0 1px var(--color-kumo-hairline); }
+.explainer-prose pre code { padding: 0; background: none; }
+.explainer-prose ul { list-style: disc; padding-left: 1.4em; }
+.explainer-prose ol { list-style: decimal; padding-left: 1.4em; }
+.explainer-prose li + li { margin-top: 0.35em; }
+.explainer-prose blockquote { padding: 0.9em 1.2em; border-left: 3px solid var(--color-kumo-brand); border-radius: 0 0.6em 0.6em 0; background: var(--color-kumo-base); }
+.explainer-prose table { width: 100%; font-size: 0.9em; border-collapse: collapse; }
+.explainer-prose th, .explainer-prose td { text-align: left; padding: 0.45em 0.6em; border-bottom: 1px solid var(--color-kumo-hairline); }
+
+/* The explain kit's palette: strokes that read on both modes; fills are mixed from them. */
+:root {
+  --explain-blue: #3b76e1;
+  --explain-green: #1f9d68;
+  --explain-orange: #dd7a28;
+  --explain-purple: #8160d8;
+  --explain-red: #d44c4c;
+  --explain-grey: #a8a396;
+  --explain-arrow: #8a877f;
+}
+[data-mode="dark"] {
+  --explain-blue: #6d9cf0;
+  --explain-green: #45c08a;
+  --explain-orange: #ee9a52;
+  --explain-purple: #a58bf0;
+  --explain-red: #ee7474;
+  --explain-grey: #77736a;
+  --explain-arrow: #8f8b82;
+}
+
+/* Callouts (:::decision, :::finding, :::incident, :::note): a lead in bold, then the point. */
+.explain-callout { border-left: 4px solid var(--callout); border-radius: 0 0.6rem 0.6rem 0; padding: 0.9rem 1.2rem; background: color-mix(in oklab, var(--callout) 13%, var(--color-kumo-canvas)); font-size: 1.0625rem; line-height: 1.65; }
+.explain-callout > * + * { margin-top: 0.6em; }
+.explain-callout .lead { font-weight: 650; }
+.explain-callout[data-tone="decision"] { --callout: var(--explain-orange); }
+.explain-callout[data-tone="finding"] { --callout: var(--explain-green); }
+.explain-callout[data-tone="finding"] .lead { color: var(--explain-green); }
+.explain-callout[data-tone="incident"] { --callout: var(--explain-purple); }
+.explain-callout[data-tone="note"] { --callout: var(--explain-blue); }
+.explain-callout code, .explainer-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; padding: 0.1em 0.35em; border-radius: 0.3em; background: color-mix(in oklab, var(--explain-grey) 22%, transparent); }
+.explainer-prose h3 { margin-top: 2.2em; font-size: 1.15rem; font-weight: 650; letter-spacing: -0.01em; }
+.explainer-prose th { font-weight: 550; color: var(--text-color-kumo-subtle); }
+.explainer-prose td:first-child { font-weight: 600; }
+.explainer-prose th[align="right"], .explainer-prose td[align="right"] { text-align: right; font-variant-numeric: tabular-nums; }
+.explain-caption code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; padding: 0.05em 0.3em; border-radius: 0.3em; background: color-mix(in oklab, var(--explain-grey) 22%, transparent); }
+.explain-callout > p:first-child > strong:first-child { font-weight: 650; }
+.explain-callout[data-tone="finding"] > p:first-child > strong:first-child { color: var(--explain-green); }
+.explain-callout[data-tone="incident"] > p:first-child > strong:first-child { color: var(--explain-purple); }

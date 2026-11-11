@@ -154,7 +154,7 @@ export function Flows({ tree, selection, onSelect, onOpen }: { tree: SpecNode[];
   );
 }
 
-interface Row {
+export interface Row {
   status: StepStatus;
   event: Event;
   /** The event as it happens now; absent for a step that no longer happens. */
@@ -243,11 +243,11 @@ function TreeRow({ depth, open, active, onClick, children }: { depth: number; op
   );
 }
 
-function positionIn(run: Run, event: Event): number {
+export function positionIn(run: Run, event: Event): number {
   return run.events.indexOf(event) + 1;
 }
 
-function worldAfter(run: Run, event: Event): World {
+export function worldAfter(run: Run, event: Event): World {
   const i = run.events.indexOf(event);
   return i >= 0 ? run.worlds[i] : run.initial;
 }
@@ -256,7 +256,7 @@ const ROW = 46;
 const COL = 196;
 const LEFT = 76;
 
-function Sequence({ rows, run, actorOrder, chosen, onChoose }: { rows: Row[]; run: Run; actorOrder: string[]; chosen: number | null; onChoose: (i: number) => void }) {
+export function Sequence({ rows, run, actorOrder, chosen, onChoose }: { rows: Row[]; run: Run; actorOrder: string[]; chosen: number | null; onChoose: (i: number) => void }) {
   const { spec } = useExplorer();
   // A lifeline for each instance the rows involve: those present from the start first, in
   // their order, then the rest as they appear.

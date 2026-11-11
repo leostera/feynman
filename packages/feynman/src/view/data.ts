@@ -1,6 +1,8 @@
 // What the CLI hands the explorer: `feynman.json` next to the page, and one browser
 // module per spec (and per spec at the base commit, when comparing).
 import type { Report } from "../check/index.ts";
+import type { At, RunSource } from "../explain/index.ts";
+import type { Event, World } from "../spec/index.ts";
 
 /**
  * What `feynman build` writes into its single page, in `<script type="application/json"
@@ -9,7 +11,54 @@ import type { Report } from "../check/index.ts";
 export interface Embedded {
   bundle: Bundle;
   modules: Record<string, string>;
+  /** When the page is an explainer (RFD0013): the story, told around figures of the bundle's one spec. */
+  explainer?: Explainer;
 }
+
+/** An explainer, as `feynman explain` resolved it: prose rendered, and every figure recorded from a run. */
+export interface Explainer {
+  title: string;
+  lede: string;
+  blocks: ExplainerBlock[];
+  /** Page-relative URL of the explainer's own figures (`<spec>.explainer.tsx`), if it has some. */
+  module: string | null;
+  /** For each rule some property needs: the shortest way the design breaks without it. */
+  runs: Record<string, BrokenRun>;
+  /** What the figures were made from. */
+  provenance: { commit: string; dirty: boolean; depth: number };
+}
+
+export interface BrokenRun {
+  property: string;
+  initial: World;
+  events: Event[];
+  worlds: World[];
+  /** The event that broke the property, 1-based; for liveness, the last before it went wrong for good. */
+  brokeAt: number;
+  /** How a liveness counterexample ends: going round a loop, or stuck where it is. */
+  ending: "loops" | "stays" | "breaks";
+}
+
+/** A run a figure draws from (src/explain/index.ts). */
+export type FigureRun = RunSource;
+
+export type ExplainerBlock =
+  | { kind: "section"; id: string; number: number; title: string }
+  | { kind: "prose"; html: string }
+  | { kind: "callout"; tone: "decision" | "finding" | "incident" | "note"; html: string }
+  /** The world at the start: the spec's, or after a scenario's setup, which adds who takes part. */
+  | { kind: "map"; scenario?: string }
+  /** The stage frozen at a moment of a run. */
+  | { kind: "still"; run: FigureRun; at?: At }
+  /** A run told in the events that matter, one line each. */
+  | { kind: "steps"; run: FigureRun; at: At[] }
+  /** The whole playground, to play with. */
+  | { kind: "play"; run: FigureRun }
+  | { kind: "flow"; run: FigureRun }
+  /** A component the explainer file exports. */
+  | { kind: "figure"; name: string }
+  | { kind: "verdicts" }
+  | { kind: "rules" };
 
 export interface Bundle {
   generatedAt: string;

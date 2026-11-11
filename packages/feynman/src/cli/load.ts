@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Spec } from "../spec/index.ts";
 import { CONFIG_FILE, type Config } from "./config.ts";
-import { CONFIG_NAMES, exactly, PLAY_NAMES, SPEC_NAMES } from "./names.ts";
+import { CONFIG_NAMES, exactly, EXPLAIN_EXPORTS, EXPLAIN_NAMES, PLAY_NAMES, SPEC_NAMES } from "./names.ts";
 
 const PLAY = Bun.resolveSync("../play/index.ts", import.meta.dir);
 const PLAY_DIR = dirname(PLAY);
@@ -20,17 +20,20 @@ export const ALIASES: Record<string, string> = {
   ...Object.fromEntries(SPEC_NAMES.map((n) => [n, Bun.resolveSync("../spec/index.ts", import.meta.dir)])),
   ...Object.fromEntries(CONFIG_NAMES.map((n) => [n, Bun.resolveSync("./index.ts", import.meta.dir)])),
   ...Object.fromEntries(PLAY_NAMES.map((n) => [n, PLAY])),
+  ...Object.fromEntries(EXPLAIN_NAMES.map((n) => [n, Bun.resolveSync("../explain/index.ts", import.meta.dir)])),
   ...Object.fromEntries(LIBRARIES.map((n) => [n, Bun.resolveSync(n, PLAY_DIR)])),
 };
 
 /** What the page shares with playground modules: the libraries, and the kit as `play`. */
-export const SHARED = exactly([...LIBRARIES, ...PLAY_NAMES]);
+export const SHARED = exactly([...LIBRARIES, ...PLAY_NAMES, ...EXPLAIN_NAMES]);
 
 /** A module that reads an import from the page's global, with every export the real one has. */
 export async function sharedShim(name: string): Promise<string> {
   const real = name === "react/jsx-dev-runtime" ? "react/jsx-runtime" : name;
-  const key = (PLAY_NAMES as readonly string[]).includes(real) ? "play" : real;
-  const keys = Object.keys(await import(ALIASES[real])).filter((k) => k !== "default" && /^[A-Za-z_$][\w$]*$/.test(k));
+  const explain = (EXPLAIN_NAMES as readonly string[]).includes(real);
+  const key = (PLAY_NAMES as readonly string[]).includes(real) ? "play" : explain ? "explain" : real;
+  // The explain kit is declarations here; its real exports are the page's.
+  const keys = (explain ? [...EXPLAIN_EXPORTS] : Object.keys(await import(ALIASES[real]))).filter((k) => k !== "default" && /^[A-Za-z_$][\w$]*$/.test(k));
   const lines = [`const m = globalThis.__feynman.modules[${JSON.stringify(key)}];`, `export default m.default ?? m;`];
   if (keys.length) lines.push(`export const { ${keys.join(", ")} } = m;`);
   if (name === "react/jsx-dev-runtime") lines.push(`export const jsxDEV = m.jsx;`);
