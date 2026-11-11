@@ -438,3 +438,39 @@ test("check reads out reachable properties: how far, never reached, not reached 
   expect(byId.someoneMisses).toMatchObject({ kind: "reachable", verdict: "broken" });
   expect(byId.someoneMisses.counterexample).toBeUndefined();
 }, 60_000);
+
+test("conform reads a log against a spec: the run it is, where it leaves the spec, as JSON, and as a scenario", async () => {
+  const { root } = repo();
+  writeFileSync(join(root, "specs/shop.ts"), SHOP);
+  const line = (o: unknown) => JSON.stringify(o);
+  const spawns = [line({ kind: "spawn", actor: "Buyer", label: "Ann" }), line({ kind: "spawn", actor: "Buyer", label: "Bo" })];
+  writeFileSync(
+    join(root, "sold.jsonl"),
+    [...spawns, line({ instance: "Ann", key: "buy" }), line({ instance: "Shop", key: "buy", from: "Ann" }), line({ instance: "Ann", key: "sold", state: { got: true } })].join("\n"),
+  );
+  const ok = await capture(["conform", "shop", "sold.jsonl"], root);
+  expect(ok.status).toBe(0);
+  expect(ok.out).toContain("specs/shop.ts, against sold.jsonl");
+  // The spawns make the world it starts in; the events are the steps.
+  expect(ok.out).toContain("✓ the log is a run of the spec: 3 logged event(s)");
+  expect(ok.out).toContain("   2  Shop (Shop)  buy  {}  from Ann  line 4");
+  expect(ok.out).toContain("no property breaks on it");
+  // Bo is told there are none left, with two in stock.
+  writeFileSync(join(root, "wrong.jsonl"), [...spawns, line({ instance: "Bo", key: "buy" }), line({ instance: "Bo", key: "soldOut" })].join("\n"));
+  const wrong = await capture(["conform", "shop", "wrong.jsonl"], root);
+  expect(wrong.status).toBe(1);
+  expect(wrong.out).toContain("✗ the log leaves the spec at line 4: Bo soldOut");
+  expect(wrong.out).toContain("what else could happen there, after up to 4 step(s) the log does not show:");
+  expect(wrong.out).toContain("    Shop buy  Buy {} from Bo");
+  const json = JSON.parse((await capture(["conform", "shop", "wrong.jsonl", "--json"], root)).out);
+  expect(json).toMatchObject({ spec: "specs/shop.ts", log: "wrong.jsonl", conforms: false, stop: { line: 4 } });
+  expect(json.events.map((e: { key: string; line: number }) => [e.key, e.line])).toEqual([["buy", 3]]);
+  const scenario = await capture(["conform", "shop", "sold.jsonl", "--as-scenario"], root);
+  expect(scenario.out).toContain('const theLog = defineScenario("The log sold.jsonl", {');
+  expect(scenario.out).toContain('s.act(ann, "buy"); // line 3');
+  // A line the log cannot mean is refused with its number.
+  writeFileSync(join(root, "bad.jsonl"), line({ instance: "Ann", key: "fly" }));
+  const bad = await capture(["conform", "shop", "bad.jsonl"], root);
+  expect(bad.status).toBe(1);
+  expect(bad.out).toContain("bad.jsonl: line 1 is about Ann, who is not there");
+}, 60_000);

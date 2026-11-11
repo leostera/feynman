@@ -24,6 +24,13 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
   playground says what a waiting message is behind, and a scenario that delivers past one is
   an error. New examples: `ordered-writes`, and the alternating bit protocol on an ordered
   link, where it holds; TLC and P agree.
+- **`feynman conform`: is a log a run of the spec?** Give it a log of what the system did,
+  one JSON event per line, and it finds the run of the spec that the log is, allowing up to
+  `--gap` (4) steps the log does not show: faults, and the steps of `--unlogged` actors.
+  It judges the spec's properties along that run, as a monitor would. When no run fits,
+  it says on which line the log leaves the spec, and what the spec could have done there.
+  `--as-scenario` writes the run as a scenario. TLC's trace validation agrees on which logs
+  are runs. Chapter 15 of the book uses it to triage.
 - **A crash changes the calls it orphans where they are**, as the engine does, not at the end
   of what is in flight. No verdict changes; on an ordered channel, it keeps the order.
 

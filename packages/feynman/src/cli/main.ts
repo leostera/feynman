@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import type { Bounds } from "../check/index.ts";
 import { checkCommand, type CheckOptions } from "./check.ts";
 import { context, diffCommand, list, lockCommand, runCommand } from "./commands.ts";
+import { conformCommand } from "./conform.ts";
 import { red } from "./format.ts";
 import manifest from "../../package.json" with { type: "json" };
 
@@ -35,6 +36,15 @@ Commands:
       --brief                    verdicts and counterexample sizes, without traces
       --json                     the whole result as JSON, for scripts and agents
       --as-scenario              with --only P: P's counterexample as defineScenario code
+  conform <spec> <log.jsonl>
+                           Whether a log of what the system did is a run of the spec: the
+                           reading that fits, and the properties it breaks; or the line
+                           where it leaves the spec. One JSON event per line (RFD0016).
+      --gap N                    steps the log does not show, between two it does (4)
+      --unlogged A,B             actors whose steps the log does not record
+      --logs-faults              the log records faults too (by default, a loss leaves no line)
+      --instances, --set, --max-states, --json as for check
+      --as-scenario              the run the log is, as defineScenario code
   lock                     Record the code each source stands for in feynman.lock.
   diff [spec] [--base REF] Compare every scenario's trace with REF (default: main).
   dev [--port N]           Serve the explorer on the first free port from N (default: 4321).
@@ -69,6 +79,9 @@ const ARGS = {
     brief: { type: "boolean" },
     json: { type: "boolean" },
     "as-scenario": { type: "boolean" },
+    gap: { type: "string" },
+    unlogged: { type: "string" },
+    "logs-faults": { type: "boolean" },
   },
 } as const;
 
@@ -108,6 +121,14 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       return runCommand(ctx, positionals, values.scenario, values.all === true, ids(values.without), settings(values.set));
     case "check":
       return checkCommand(ctx, positionals, { bounds: bounds(values), only: ids(values.only), output: output(values), without: ids(values.without), set: settings(values.set), rules: values["no-rules"] !== true });
+    case "conform": {
+      const b = bounds(values);
+      const out = output(values);
+      if (out === "brief") throw new Error("--brief is for check; conform's text is brief already");
+      const gap = values.gap === undefined ? undefined : Number(values.gap);
+      if (gap !== undefined && (!Number.isInteger(gap) || gap < 0)) throw new Error(`--gap takes a whole number, not ${values.gap}`);
+      return conformCommand(ctx, positionals, { instances: b.instances, maxStates: b.maxStates, gap, unlogged: ids(values.unlogged), logsFaults: values["logs-faults"] === true, set: settings(values.set), output: out });
+    }
     case "lock":
       return lockCommand(ctx);
     case "diff":

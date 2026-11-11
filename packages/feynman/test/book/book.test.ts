@@ -51,6 +51,19 @@ function verdicts(json: CheckJson) {
   };
 }
 
+test("chapter 15's log is not a run of the agent's draft, and is one of the fix", async () => {
+  const { conform, parseLog } = await import("../../src/check/conform.ts");
+  const { loadSpec } = await import("../../src/cli/load.ts");
+  const log = await Bun.file(join(ROOT, "book/specs/15-triage/two-holds.jsonl")).text();
+  const read = async (step: string) => {
+    const spec = await loadSpec(join(ROOT, `book/specs/15-triage/${step}.ts`));
+    const r = conform(spec, parseLog(log, spec));
+    return r.conforms ? { conforms: true, broken: r.broken.length } : { conforms: false, line: r.stop.kind === "mismatch" ? r.stop.line.line : null };
+  };
+  expect(await read("1-the-agents-draft")).toEqual({ conforms: false, line: 7 });
+  expect(await read("2-one-statement")).toEqual({ conforms: true, broken: 0 });
+});
+
 test("the book has specs", () => {
   expect(SPECS.length).toBeGreaterThan(50);
 });

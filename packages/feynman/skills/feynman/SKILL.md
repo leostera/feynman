@@ -812,6 +812,7 @@ feynman run [spec] [--scenario NAME | --all] [--without RULE]
 feynman check [spec] [--depth N] [--set faults=1] [--instances Actor=N] [--max-states N] [--time-limit S]
               [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
               [--only P,Q] [--without RULE,RULE] [--no-rules] [--brief | --json | --as-scenario]
+feynman conform <spec> <log.jsonl> [--gap 4] [--unlogged A,B] [--logs-faults] [--instances Actor=N] [--set k=v] [--json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
 feynman diff [spec] [--base main]
 feynman dev [--port 4321] [--base REF]
@@ -850,6 +851,21 @@ Read check's output with its own flags, not with grep:
 - `--only P --as-scenario`: P's counterexample as `defineScenario` code that replays
   it step by step. Paste it into the spec to keep the bug as a flow, and use it as the
   outline of a regression test in the system's own test suite.
+
+`conform` checks the other direction: is a log of what the system did a run of the spec?
+The log is JSON Lines. Spawn lines come first, `{"kind":"spawn","actor":"Person","label":"Alice"}`,
+for every instance that is not a singleton. Then there is one line per step:
+`{"instance":"Alice","key":"hold"}` for an action, or
+`{"instance":"Box office","key":"hold","from":"Alice","payload":{…}}` for a message. A step
+line may add `inputs`, `message`, and the `state` the instance was left in, and the spec's
+step must match whatever the line gives. Between two logged steps, up to `--gap` (4) steps
+the log does not show may happen. These are the faults, unless `--logs-faults`, and the steps
+of `--unlogged` actors. The answer is the reading with the fewest of them, plus the
+properties it breaks, judged along the run. Otherwise it gives the line where the log leaves
+the spec, with what the instance could do there instead (`near`) and what else could
+happen. A log the spec rejects means the spec and the system disagree. Triage it as you
+would a counterexample: read the code around that line. Make the log from a test run or a
+production trace, mapping its events to the spec's step keys and instance labels.
 
 When `check` stops at a limit (states, time, or memory), it says so, and how far it got:
 a safety property "held on every path of up to N events". It also says what the states

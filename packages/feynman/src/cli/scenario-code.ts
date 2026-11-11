@@ -10,23 +10,30 @@ import { sortedJson } from "../spec/json.ts";
  * starts from a scenario's world gets a `setup` putting every instance in the state it had
  * there, when that is all the world holds (nothing in flight, no fresh ids handed out).
  */
-/** What a scenario replays: a counterexample, or (`reached`) a reachable property's way there. */
-export type Replayed = Pick<PropertyBroken, "id" | "description" | "counterexample" | "loop"> & { reached?: boolean };
+/**
+ * What a scenario replays: a counterexample, (`reached`) a reachable property's way there, or
+ * (`log`) the run a log is, named by its file, with a note for each event (`notes`) that says
+ * where it came from.
+ */
+export type Replayed = Pick<PropertyBroken, "id" | "description" | "counterexample" | "loop"> & { reached?: boolean; log?: string; notes?: (string | undefined)[] };
 
 export function scenarioCode(spec: Spec, property: Replayed): string {
   const { counterexample: ce, loop } = property;
   const what = property.reached ? "reached" : "broken";
+  const note = (i: number) => (property.notes?.[i] ? ` // ${property.notes[i]}` : "");
   const names = new Names();
   const body: string[] = [];
   const setUp = ce.from ? setupOf(spec, ce.initial) : [];
   if (ce.from && !setUp) body.push(`// Starts from ${placeText(ce.from)}: copy its setup and steps here first.`);
   body.push(...instances(spec, ce.initial, names, ce.from !== undefined));
-  ce.events.forEach((event, i) => body.push(line(spec, event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
+  ce.events.forEach((event, i) => body.push(line(spec, event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names) + note(i)));
   if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(spec, event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
   else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
-  body.push(`// ${property.id} is ${what} here: ${property.description}`);
+  body.push(property.log ? `// The log ends here.` : `// ${property.id} is ${what} here: ${property.description}`);
+  const variable = property.log ? "theLog" : `${property.id.replace(/[^\w]/g, "_")}Is${property.reached ? "Reached" : "Broken"}`;
+  const name = property.log ? `The log ${property.log}` : `${property.id} is ${what}`;
   return [
-    `const ${property.id.replace(/[^\w]/g, "_")}Is${property.reached ? "Reached" : "Broken"} = defineScenario(${JSON.stringify(`${property.id} is ${what}`)}, {`,
+    `const ${variable} = defineScenario(${JSON.stringify(name)}, {`,
     `  description: ${JSON.stringify(property.description)},`,
     ...(setUp?.length ? [`  // ${ce.from!.at === "end" ? `The world where scenario ${JSON.stringify(ce.from!.scenario)} ends.` : `The world scenario ${JSON.stringify(ce.from!.scenario)} sets up.`}`, `  setup(w) {`, ...setUp.map((l) => `    ${l}`), `  },`] : []),
     `  run(s) {`,

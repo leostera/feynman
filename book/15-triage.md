@@ -118,6 +118,73 @@ Box office: explored 13,661 states (1 of each actor, …, faults=2) in 355ms
 events later. And `paymentsEnd` changed: it needed no faults before (another consequence of the
 split), and now needs one.
 
+### Holding the spec up to a log
+
+Reading the sources settled it here. When the sources are less plain, ask the system. Run Alice
+and Bob against a test server, log what each process does, one JSON object per line, and ask
+whether the log is a run of the spec. [`specs/15-triage/two-holds.jsonl`](specs/15-triage/two-holds.jsonl)
+is what the box office and the two phones logged:
+
+```jsonl
+{"kind":"spawn","actor":"Person","label":"Alice"}
+{"kind":"spawn","actor":"Person","label":"Bob"}
+{"instance":"Alice","key":"hold"}
+{"instance":"Bob","key":"hold"}
+{"instance":"Box office","key":"hold","from":"Alice"}
+{"instance":"Box office","key":"hold","from":"Bob"}
+{"instance":"Alice","key":"held"}
+{"instance":"Bob","key":"unavailable"}
+```
+
+The first two lines say who is there. Each line after them is a step: who took it, which step,
+and for a message, who sent it. A line can say more, the `inputs`, the `payload`, or the
+`state` the instance was left in, and then the spec's step must match that too.
+
+```sh
+feynman conform specs/15-triage/1-the-agents-draft.ts specs/15-triage/two-holds.jsonl
+```
+
+```text
+book/specs/15-triage/1-the-agents-draft.ts, against book/specs/15-triage/two-holds.jsonl
+✗ the log leaves the spec at line 7: Alice held
+  it fits up to there:
+  …
+   4  Box office (Box office)  hold the seat  {}  from Bob  line 6
+      Looks the seat up, and if it is free, goes on to claim it.
+      → Box office: claim {"by":"person-bob"}
+  what else could happen there, after up to 4 step(s) the log does not show:
+    Box office crash  → {"answering":null,"calling":false,"expiring":false,"seat":{"kind":"free"}}
+    Box office claim  Claim {"by":"person-alice"} from Box office  → {…,"seat":{"by":"person-alice","kind":"held","order":"order-1"}}
+    Box office claim  Claim {"by":"person-bob"} from Box office  → {…,"seat":{"by":"person-bob","kind":"held","order":"order-1"}}
+```
+
+In the spec, the box office has to claim the seat before anyone hears back, and the log never
+shows a claim. The system answered Alice straight after it looked the seat up. The fixed spec
+reads the same log as a run:
+
+```text
+book/specs/15-triage/2-one-statement.ts, against book/specs/15-triage/two-holds.jsonl
+✓ the log is a run of the spec: 6 logged event(s)
+  …
+   4  Box office (Box office)  hold the seat  {}  from Bob  line 6
+      Holds the seat for ten minutes, if it is free, and opens an order for it.
+      → Bob: unavailable {}
+  …
+  no property breaks on it
+```
+
+A log the spec rejects is the opposite of a counterexample. A counterexample is something the
+spec allows, and we ask whether the code can do it. A rejected log is something the code did,
+and the spec says it can't happen. Either way, the spec and the system disagree, and one of
+them is wrong.
+
+Logs don't show everything. By default, a fault (a lost message, a crash) leaves no line, and
+up to four unlogged steps may come between two logged ones (`--gap`). The steps of an actor
+that doesn't log anything, a phone with no telemetry, say, can be left out with
+`--unlogged Person`. Along the way, `conform` judges the spec's properties on the run it
+found, as a monitor would, and `--as-scenario` writes that run as a scenario, with the steps
+the log doesn't show marked.
+
 ## The second finding
 
 ```text
@@ -375,3 +442,6 @@ When an agent hands you a spec and its findings:
    the book's specs where a message reaches an instance that, in the code, could not receive it.
 4. Ask an agent to write a spec for a small piece of code you know well, then triage its findings
    with the checklist.
+5. Write a log in which Bob holds the seat and Alice is told it is unavailable. Does it conform
+   to `2-one-statement.ts`? Now add `"state":{"phone":"done"}` to Bob's `held` line. Which line
+   does `conform` stop at, and why?

@@ -44,7 +44,8 @@ a book that builds every spec step by step, from a first race condition to two-p
 
 `feynman check --brief` gives one line per property; `--only P` shows one property's
 counterexample, `--json` the whole result, and `--only P --as-scenario` the counterexample
-as a scenario you can paste into the spec.
+as a scenario you can paste into the spec. `feynman conform <spec> <log.jsonl>` asks the other
+way: whether what the system logged is a run of the spec, and if not, the line where they part.
 
 Specs live in `specs/*.ts` and import `@leostera/feynman`:
 

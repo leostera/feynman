@@ -1,0 +1,8 @@
+{"kind":"spawn","actor":"Person","label":"Alice"}
+{"kind":"spawn","actor":"Person","label":"Bob"}
+{"instance":"Alice","key":"hold"}
+{"instance":"Bob","key":"hold"}
+{"instance":"Box office","key":"hold","from":"Alice"}
+{"instance":"Box office","key":"hold","from":"Bob"}
+{"instance":"Alice","key":"held"}
+{"instance":"Bob","key":"unavailable"}

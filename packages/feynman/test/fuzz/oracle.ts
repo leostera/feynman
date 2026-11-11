@@ -1,11 +1,14 @@
 // What every random spec is checked against. Each check that fails is a finding: a seed, which
 // check, and what differed. See spec.ts for the specs.
-import { check, faultsIn, initialWorld, replay, type Bounds, type Counterexample, type PropertyBroken, type PropertyResult, type Report } from "../../src/check/index.ts";
+import { apply, branches, check, faultsIn, initialWorld, QUIET, replay, type Bounds, type Choice, type Counterexample, type PropertyBroken, type PropertyResult, type Report } from "../../src/check/index.ts";
 import { stepBreaks } from "../../src/check/judge.ts";
 import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, worldView, type Spec, type World } from "../../src/spec/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { stepsTaking, whenHolds } from "../../src/spec/engine.ts";
 import { explore, worldKey } from "../check/reference.ts";
+import { conform, parseLog } from "../../src/check/conform.ts";
+import { seeded as seededRandom } from "../../src/check/walk.ts";
+import { sortedJson } from "../../src/spec/json.ts";
 import { build, describe, type Size, type SpecDesc } from "./spec.ts";
 
 export interface Finding {
@@ -49,6 +52,9 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
 
     againstReference(spec, desc, plain, worlds, timed, find);
     for (const p of plain.properties) if (!p.holds && !p.unreached) counterexampleHolds(spec, p, find);
+    for (const p of plain.properties) if (!p.holds && !p.unreached && !p.loop) logConforms(spec, desc, p.id, p.counterexample, find);
+    // Shortest counterexamples seldom need a fault; random runs, a third of whose steps are faults when one can happen, do.
+    for (let n = 0; n < 3; n++) logConforms(spec, desc, undefined, randomRun(spec, desc, seed * 7 + n), find);
     if (plain.stuck) stuckHolds(spec, plain.stuck.counterexample, find);
 
     const folded = await check(spec, { ...bounds, symmetry: true });
@@ -139,6 +145,54 @@ function counterexampleHolds(spec: Spec, p: PropertyBroken, find: (check: string
       if (!p.loop.events.length && !stays(spec, end)) find(`counterexample: ${p.id}`, "an empty loop where something fair can happen");
     }
   }
+}
+
+/**
+ * A counterexample, written as the log it would leave, is a run of the spec: with every step
+ * logged, faults too, and with faults left out and a gap as long as their count. When the
+ * reading ends in the counterexample's world, it breaks the property too.
+ */
+function logConforms(spec: Spec, desc: SpecDesc, id: string | undefined, ce: Counterexample, find: (check: string, detail: string) => void): void {
+  if (ce.events.some((e) => e.error)) return;
+  const before = (i: number) => (i === 0 ? ce.initial : ce.worlds[i - 1]!);
+  const label = (w: World, id?: string) => w.instances.find((i) => i.id === id)?.label;
+  const lines = ce.events.map((e, i) => ({
+    line: JSON.stringify({ kind: e.kind, instance: label(before(i), e.instance), key: e.key, ...(e.kind === "action" ? { inputs: e.inputs ?? {} } : {}), ...(e.kind === "deliver" ? { message: e.message, from: label(before(i), e.from), payload: e.payload } : {}), state: JSON.parse(sortedJson(ce.worlds[i]!.instances.find((x) => x.id === e.instance)!.state)) }),
+    fault: e.tags?.includes("fault") === true,
+  }));
+  const instances = desc.bounds.instances ?? {};
+  if (worldKey(initialWorld(spec, { instances })) !== worldKey(ce.initial)) return;
+  const faults = lines.filter((l) => l.fault).length;
+  for (const [what, text, options] of [
+    ["every step logged", lines.map((l) => l.line).join("\n"), { instances, gap: 0, logsFaults: true }],
+    ["faults unlogged", lines.filter((l) => !l.fault).map((l) => l.line).join("\n"), { instances, gap: faults }],
+  ] as const) {
+    const r = conform(spec, parseLog(text, spec), options);
+    if (!r.conforms) {
+      find(`log: ${id ?? "a random run"}`, `${what}, it is not a run of the spec: ${r.stop.kind === "mismatch" ? `line ${r.stop.line.line}` : "limit"}`);
+      continue;
+    }
+    const end = (c: Counterexample) => worldOnly(c.worlds.at(-1) ?? c.initial);
+    if (id && end(r.run) === end(ce) && !r.broken.some((b) => b.id === id) && spec.properties.find((x) => x.id === id)!.kind === "always") find(`log: ${id}`, `the counterexample, ${what}, ends where it breaks, but conform does not say so`);
+  }
+}
+
+/** A random run from the initial world, of up to the depth bound's steps, without failed ones. */
+function randomRun(spec: Spec, desc: SpecDesc, seed: number): Counterexample {
+  const random = seededRandom(seed);
+  const initial = initialWorld(spec, { instances: desc.bounds.instances ?? {} });
+  const picked: Choice[] = [];
+  let world = initial;
+  for (let n = 0; n < desc.bounds.depth; n++) {
+    const ok = branches(spec, world).map((c) => ({ c, step: apply(spec, world, c, QUIET) })).filter(({ step }) => !step.event.error);
+    if (!ok.length) break;
+    const faults = ok.filter(({ step }) => step.event.tags?.includes("fault"));
+    const from = faults.length && random() < 1 / 3 ? faults : ok;
+    const { c, step } = from[Math.floor(random() * from.length)]!;
+    picked.push(c);
+    world = step.world;
+  }
+  return replay(spec, initial, picked);
 }
 
 /**

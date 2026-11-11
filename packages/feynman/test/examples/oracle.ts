@@ -52,6 +52,8 @@ export interface TlcOptions {
   dir?: string;
   /** Check these temporal properties under this specification (with its fairness), not Init and Next. */
   temporal?: { specification: string; properties: string[] };
+  /** Other modules it instantiates or extends, from examples/oracles. */
+  modules?: string[];
 }
 
 /** Run TLC on an oracle with these constants, checking the given invariants (none: just count states). */
@@ -59,6 +61,7 @@ export function tlc(module: string, constants: Record<string, string | number | 
   const dir = mkdtempSync(join(tmpdir(), "feynman-tlc-"));
   try {
     copyFileSync(join(options.dir ?? join(import.meta.dir, "..", "..", "examples", "oracles"), `${module}.tla`), join(dir, `${module}.tla`));
+    for (const other of options.modules ?? []) copyFileSync(join(import.meta.dir, "..", "..", "examples", "oracles", `${other}.tla`), join(dir, `${other}.tla`));
     const constantLines = Object.entries(constants).map(([k, v]) => `  ${k} = ${typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : v}`);
     const behaviour = options.temporal ? [`SPECIFICATION ${options.temporal.specification}`, ...(options.temporal.properties.length ? ["PROPERTIES", ...options.temporal.properties.map((p) => `  ${p}`)] : [])] : ["INIT Init", "NEXT Next"];
     const cfg = [...(constantLines.length ? ["CONSTANTS", ...constantLines] : []), ...behaviour, ...(options.view ? [`VIEW ${options.view}`] : []), ...(invariants.length ? ["INVARIANTS", ...invariants.map((i) => `  ${i}`)] : [])];
