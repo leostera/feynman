@@ -3,8 +3,8 @@
 - Feature Name: `conform`
 - Status: Accepted
 - Author: `leostera`
-- Start Date: `2026-11-21`
-- Updated: `2026-11-22`
+- Start Date: `2026-11-11`
+- Updated: `2026-11-11`
 - Discussion PR: `TBD`
 - Tracking Issue: `TBD`
 

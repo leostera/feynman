@@ -4,10 +4,29 @@ What changed in each release of `@leostera/feynman`, newest first. A release tha
 how specs are written has a **Migrating** section: what to change in a spec, before and
 after.
 
-## Unreleased
+## 0.16.0
 
-Faster, checked against more, and corrected where a review found the checker saying more than
-it knew. Some verdicts change: each change below is a wrong answer put right.
+Feynman now checks the system as well as the design. `feynman conform` takes a log, or a
+production trace from OpenTelemetry, Jaeger or Zipkin, and says whether it is a run of the
+spec. If it isn't, it gives the span where the system did something the spec says can't
+happen (RFD0016). Specs can also say what must be possible (`reachable`, RFD0014), and that
+messages on one connection keep their order (`ordered`, RFD0015). The search no longer
+stops at a depth bound by default. A review corrected the places where the checker claimed
+more than it knew, so some verdicts change: each change below is a wrong answer put right.
+
+### Migrating
+
+Specs need no changes. What can change for a check:
+
+- **No depth bound by default.** A spec that only finished because of the old 14-event bound
+  now runs until it has every world, or meets its state limit. That usually takes about a
+  second, and gives `~` where it used to give `✓`. A field that only grows (a log, a counter,
+  ids) is the usual cause, and `check` names it. Bound that field. If you really want a depth
+  bound, set `--depth 14`, or `check: { depth: 14 }` in `feynman.config.ts`, and expect `~`.
+- **What held only up to the depth bound reads `~`, not `✓`.** `~` doesn't fail a check, but
+  JSON consumers that read `holds` for these will now see `unfinished`.
+- **Run `feynman lock` again.** Sources whose definitions now resolve whole (see Sources)
+  read as changed once.
 
 ### New
 

@@ -3,8 +3,8 @@
 - Feature Name: `ordered`
 - Status: Accepted
 - Author: `leostera`
-- Start Date: `2026-11-20`
-- Updated: `2026-11-20`
+- Start Date: `2026-11-11`
+- Updated: `2026-11-11`
 - Discussion PR: `TBD`
 - Tracking Issue: `TBD`
 
