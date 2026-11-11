@@ -2,7 +2,7 @@
 // without it. Each claimed rule is checked on that variant, built again from the spec's
 // definition, restricted to the properties that need it, until every one of them has broken.
 import { runScenario, type Spec } from "../spec/index.ts";
-import { check, type Bounds, type CheckOptions } from "./explore.ts";
+import { check, type Bounds, type CheckOptions, type Report } from "./explore.ts";
 import { scenarioSeeds } from "./seeds.ts";
 
 /** What became of one property that needs a rule, in the design without the rule. */
@@ -20,6 +20,12 @@ export interface RuleVerdict {
   name: string;
   description: string;
   neededBy: NeededBy[];
+}
+
+/** A spec's check from its scenarios, and each rule some property needs: what the explorer's checks page shows. */
+export async function checkWithRules(spec: Spec, bounds: Partial<Bounds>): Promise<Report> {
+  const report = await check(spec, bounds, scenarioSeeds(spec));
+  return spec.rules.some((r) => r.neededBy.length) ? { ...report, rules: await checkRules(spec, bounds) } : report;
 }
 
 /** Each rule some property needs, checked in the design without it. */

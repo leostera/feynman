@@ -4,4 +4,4 @@ export { budgetsOf, faultsIn, hasFaults, withFewestFaults } from "./faults.ts";
 export { startBreaks } from "./judge.ts";
 export { canonical, pendingText, symmetricKey, symmetryOf, type Symmetry } from "./keys.ts";
 export { scenarioSeeds } from "./seeds.ts";
-export { checkRules, type NeededBy, type RuleVerdict } from "./rules.ts";
+export { checkRules, checkWithRules, type NeededBy, type RuleVerdict } from "./rules.ts";

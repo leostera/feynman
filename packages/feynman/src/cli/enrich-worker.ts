@@ -7,14 +7,13 @@
 // unchanged: the commit, and every uncommitted file's modification time.
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { check, type Report } from "../check/index.ts";
+import { checkWithRules, type Report } from "../check/index.ts";
 import type { Spec } from "../spec/index.ts";
 import { callTrees, git, type CallNode } from "../code/index.ts";
 import type { FunctionCode } from "../view/data.ts";
 import { context, specSources } from "./commands.ts";
 import { functionCode } from "./functions.ts";
 import { loadSpec } from "./load.ts";
-import { scenarioSeeds } from "../check/seeds.ts";
 
 declare const self: Worker;
 
@@ -71,7 +70,7 @@ self.onmessage = async (event: MessageEvent<EnrichRequest>) => {
     for (const [i, { path, spec }] of specs.entries()) {
       say({ kind: "progress", message: `checking [${i + 1}/${specs.length}] ${path}` });
       // On this thread only: it is a worker already, and the server's checks are small.
-      reports[path] = await check(spec, { ...ctx.config.check }, scenarioSeeds(spec));
+      reports[path] = await checkWithRules(spec, { ...ctx.config.check });
     }
     say({ kind: "reports", reports });
 
