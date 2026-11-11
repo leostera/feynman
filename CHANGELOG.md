@@ -12,6 +12,22 @@ The site and the explorer are deployed, not released, so entries are dated.
 
 ## 2026-11-11
 
+### Site
+
+- "Hold the model up to production": `feynman conform` on an OpenTelemetry trace, with a
+  `feynman.step` attribute and a trace mapping, quoting chapter 15's real run. It has a
+  link in the header.
+- The verdicts say that the search has no depth bound, that a depth bound gives `~`, and
+  what `reachable` properties read.
+- The payments, retried-call and rules snippets show what `check` prints now. Each is rerun
+  on the variant it shows.
+- `llms.txt` describes `conform` and traces, reachable properties, ordered messages and the
+  new verdicts. `SKILL.md` is the 0.16.0 skill.
+
+### Explorer
+
+- Built with Feynman 0.16.0.
+
 ### Explorer of any repository
 
 - A shared page runs sandboxed, in an origin of its own (a CSP `sandbox` without

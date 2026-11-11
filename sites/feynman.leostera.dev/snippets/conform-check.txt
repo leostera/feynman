@@ -1,0 +1,12 @@
+$ bunx feynman conform box-office trace.json
+specs/box-office.ts, against trace.json (OpenTelemetry)
+✗ the trace leaves the spec at span "show held" (Alice, 47582cd9312f09c8): Alice held  from Box office
+  it fits up to there:
+   1  Alice (Person)  hold  span "tap hold" (Alice, a649fd09361d4162)
+   2  Box office (Box office)  hold the seat  {}  from Alice  span "POST /hold" (Box office, 92496d44e01d0d4e)
+   3  Bob (Person)  hold  span "tap hold" (Bob, d3751b42c1b59bfa)
+   4  Box office (Box office)  hold the seat  {}  from Bob  span "POST /hold" (Box office, 6d52743cd3587feb)
+  what else could happen there, after up to 4 step(s) the trace does not show:
+    Box office crash  → {…,"seat":{"kind":"free"}}
+    Box office claim  Claim {"by":"person-alice"} from Box office  → {…,"seat":{"by":"person-alice","kind":"held","order":"order-1"}}
+    Box office claim  Claim {"by":"person-bob"} from Box office  → {…,"seat":{"by":"person-bob","kind":"held","order":"order-1"}}

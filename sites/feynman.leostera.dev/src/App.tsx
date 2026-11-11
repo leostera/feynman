@@ -8,6 +8,8 @@ import faultsCheck from "../snippets/faults-check.txt?highlight";
 import prompt from "../snippets/prompt.txt?highlight";
 import rules from "../snippets/rules.ts?highlight";
 import rulesCheck from "../snippets/rules-check.txt?highlight";
+import conformSnippet from "../snippets/conform.ts?highlight";
+import conformCheck from "../snippets/conform-check.txt?highlight";
 
 type Showcase = {
   id: string;
@@ -134,9 +136,9 @@ const FOUND = [
 ];
 
 const VERDICTS: { mark: string; name: string; text: string; tone: string }[] = [
-  { mark: "✗", name: "Broken", text: "A scenario, search, or random walk found a trace that breaks the property.", tone: "text-kumo-danger" },
-  { mark: "✓", name: "Holds", text: "The bounded search explored every state it was configured to reach and found no violation.", tone: "text-kumo-success" },
-  { mark: "~", name: "Held so far", text: "A limit stopped the search first. It says how far it got (\u201cheld on every path of up to 9 events\u201d) and what to make smaller.", tone: "text-kumo-warning" },
+  { mark: "✗", name: "Broken", text: "A scenario, search, or random walk found a trace that breaks the property. For what must be possible, every state was explored and none gets there.", tone: "text-kumo-danger" },
+  { mark: "✓", name: "Holds", text: "The search explored every state the spec can reach and found no violation. Or, for what must be possible, it found the shortest way there.", tone: "text-kumo-success" },
+  { mark: "~", name: "Held so far", text: "A limit or a depth bound stopped the search first. It says how far it got (\u201cheld on every path of up to 9 events\u201d) and what to make smaller.", tone: "text-kumo-warning" },
   { mark: "?", name: "Not tested", text: "The explored states never reached a case where this property could be judged.", tone: "text-kumo-subtle" },
 ];
 
@@ -154,6 +156,9 @@ export function App() {
             </LinkButton>
             <LinkButton href="#model" variant="ghost" size="sm">
               How it works
+            </LinkButton>
+            <LinkButton href="#production" variant="ghost" size="sm">
+              In production
             </LinkButton>
             <LinkButton href="#agents" variant="ghost" size="sm">
               For agents
@@ -262,6 +267,24 @@ export function App() {
             <div className="space-y-3 lg:sticky lg:top-6">
               <CodeBlock snippet={rulesCheck} label="bunx feynman check" />
               <p className="text-kumo-subtle">Without the idempotency key, a lost answer and a retry charge the customer twice.</p>
+            </div>
+          </div>
+        </Section>
+
+        <Section
+          id="production"
+          title="Hold the model up to production"
+          lead="A check asks whether everything the spec allows is safe. A trace asks the other question: does the spec allow what the system did? Give feynman conform an OpenTelemetry, Jaeger or Zipkin trace, and it finds the run of the spec the trace is, judging every property along it, or the span where the system did something the spec says can't happen."
+        >
+          <div className="grid gap-4">
+            <div className="max-w-2xl">
+              <CodeBlock snippet={conformSnippet} label="trace-map.ts" />
+            </div>
+            <div className="space-y-3">
+              <CodeBlock snippet={conformCheck} label="bunx feynman conform" />
+              <p className="text-kumo-subtle text-pretty">
+                The spec has the box office claim the seat in a second step, and the trace never shows one: the code holds it in one statement. Clocks across machines are not trusted; only each service's order, and what caused what.
+              </p>
             </div>
           </div>
         </Section>
