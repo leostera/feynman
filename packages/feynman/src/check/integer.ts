@@ -70,6 +70,15 @@ interface Renamed {
   /** By state and pending id: the renamed line's id. */
   states: number[];
   pendings: number[];
+  /**
+   * By state and by message id: what the renamed line adds to each lane of a fingerprint. A
+   * symmetric search hashes every world once for each renaming, so these are kept, not worked
+   * out again: 0 while not known (a lane that is 0 is worked out each time, which is right too).
+   */
+  state1: number[];
+  state2: number[];
+  message1: number[];
+  message2: number[];
 }
 
 /**
@@ -175,6 +184,8 @@ interface Entry {
   vector: Int32Array;
   h1: number;
   h2: number;
+  /** With symmetry: for each renaming, the two lanes of its renamed states and messages (`symmetricLanes`), from which a child's follow. */
+  lanes?: Int32Array;
 }
 
 /**
@@ -322,7 +333,9 @@ export class IntegerSearch {
    * tuple, interned. Their answers are kept by tuple, and by pairs of tuples for step
    * properties: most states differ from others only in what is in flight.
    */
-  private tuples = new Map<string, number>();
+  /** Tuples, interned: for each layout and whether anything is pending, a trie over the instance states, then the variables. */
+  private tupleRoots: TupleNode[] = [];
+  private tupleCount = 0;
   /** By parent tuple: its children's tuples (childTuple). */
   private tupleSteps: Map<number, number>[] = [];
   /** By tuple: the `always` properties that fail there, and which liveness predicates hold. */
@@ -331,7 +344,7 @@ export class IntegerSearch {
   /** Each node's tuple, for liveness; -1 for shadow nodes. */
   private tupleOfNode: number[] = [];
   /** By (tuple before, tuple after, trace step): each step property's answer, HOLDS or BREAKS, if known. */
-  private stepAnswers = new Map<string, Uint8Array>();
+  private stepAnswers: Map<number, Uint8Array>[] = [];
   private expanded: boolean[] = [];
   private shadow: boolean[] = [];
   private option: number[] = [];
@@ -491,7 +504,7 @@ export class IntegerSearch {
         const nevers = this.nevers.length ? this.remember(vector[L.memory], () => trail, effect.event, step) : NO_IDS;
         if (this.varied.size) return out;
         const child = this.applied(vector, step);
-        const childTuple = this.childTuple({ vector, tuple }, step, child);
+        const childTuple = this.childTuple({ vector, tuple }, step);
         const findings = [...this.failingAt(childTuple, child, L), ...nevers].filter((id) => !v.broken.has(id));
         if (this.everySteps.length && this.everySteps.some((p) => !v.broken.has(p.id))) {
           const before = vector;
@@ -603,10 +616,12 @@ export class IntegerSearch {
     // A property asked something of this path it did not ask of others: what was merged so far cannot be trusted.
     if (this.varied.size) return false;
     let child: Int32Array | undefined;
+    let lanes: Int32Array | undefined;
     let folded: ReturnType<IntegerSearch["symmetricPrint"]> | undefined;
     if (symmetry.classes.length) {
       child = this.applied(parent.vector, step);
-      folded = this.symmetricPrint(child, L, symmetry);
+      lanes = this.childLanes(parent, step, symmetry);
+      folded = this.symmetricPrint(child, L, symmetry, lanes);
     }
     const print = folded ? folded.print : childPrint(parent, step);
     const h1 = print[0];
@@ -618,9 +633,9 @@ export class IntegerSearch {
     let breaks = NO_IDS;
     let tuple: number | undefined;
     if (this.everySteps.length && this.everySteps.some((p) => !this.broken.has(p.id))) {
-      const after = (child ??= this.applied(parent.vector, step));
-      tuple = this.childTuple(parent, step, after);
-      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf(after, L));
+      // The child is made only if a property has yet to judge this step: most land on a known state.
+      tuple = this.childTuple(parent, step);
+      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf((child ??= this.applied(parent.vector, step)), L));
     }
     if (existing !== undefined) {
       if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
@@ -645,12 +660,12 @@ export class IntegerSearch {
     if (child[L.messages] > this.mostInFlight) this.mostInFlight = child[L.messages];
     if (this.watch.state) this.watch.state(this.materialize(child, L), this.memoryText(child, L));
     const state = child;
-    tuple ??= this.childTuple(parent, step, state);
+    tuple ??= this.childTuple(parent, step);
     if (this.always.length) this.judge(tuple, state, gid, L);
     for (const id of nevers) if (!this.broken.has(id)) this.breaks(id, gid);
     this.judgeStuck(state, gid, L);
     if (this.keepsEdges) this.judgeTruths(tuple, () => this.instancesOf(state, L), gid);
-    this.queue({ gid, layout: L, tuple, vector: state, h1, h2 }, depth + 1, next, open);
+    this.queue({ gid, layout: L, tuple, vector: state, h1, h2, ...(lanes ? { lanes } : {}) }, depth + 1, next, open);
     for (const id of breaks) if (!this.broken.has(id)) this.breaks(id, gid);
     return true;
   }
@@ -689,24 +704,45 @@ export class IntegerSearch {
 
   /** A world as properties see it: its layout, instance states, the world's variables, and whether anything is pending. */
   private tupleOf(vector: Int32Array, L: Layout): number {
-    let key = `${L.index}|${vector.length > L.messages + 1 ? 1 : 0}|${vector[L.variables]}`;
-    for (let slot = 0; slot < L.instances.length; slot++) key += `,${vector[slot]}`;
-    let id = this.tuples.get(key);
-    if (id === undefined) this.tuples.set(key, (id = this.tuples.size));
+    return this.tupleWith(L, vector, -1, 0, vector[L.variables], vector.length > L.messages + 1);
+  }
+
+  /**
+   * The tuple of a vector with one instance's state replaced (`slot`, or -1 for none), these
+   * variables, and something pending or not. Tuples are interned in a trie of integers, one
+   * level for each part: a search makes a tuple for nearly every step, and a key written out
+   * as text was a large part of its time.
+   */
+  private tupleWith(L: Layout, vector: Int32Array, slot: number, state: number, variables: number, pending: boolean): number {
+    let node = (this.tupleRoots[L.index * 2 + (pending ? 1 : 0)] ??= new Map());
+    for (let s = 0, n = L.instances.length; s < n; s++) {
+      const part = s === slot ? state : vector[s];
+      let next = node.get(part) as TupleNode | undefined;
+      if (next === undefined) node.set(part, (next = new Map()));
+      node = next;
+    }
+    let id = node.get(variables) as number | undefined;
+    if (id === undefined) node.set(variables, (id = this.tupleCount++));
     return id;
   }
 
   /**
-   * A child's tuple: its parent's, but for the stepping instance's state and whether anything
-   * is pending, kept by those for each parent tuple; worked out afresh when the variables change.
+   * A child's tuple, from its parent and the step, without making the child: its parent's, but
+   * for the stepping instance's state, the variables, and whether anything is pending. Kept by
+   * those for each parent tuple.
    */
-  private childTuple(parent: { vector: Int32Array; tuple: number }, step: Step, child: Int32Array): number {
-    const L = step.layout;
-    if (child[L.variables] !== parent.vector[L.variables]) return this.tupleOf(child, L);
-    const key = (child[step.slot] * L.instances.length + step.slot) * 2 + (child.length > L.messages + 1 ? 1 : 0);
+  private childTuple(parent: { vector: Int32Array; tuple: number }, step: Step): number {
+    const { layout: L, slot, effect } = step;
+    const v = parent.vector;
+    const state = effect.apart ? v[slot] : effect.state;
+    const variables = effect.variables ?? v[L.variables];
+    // What is pending after the step, as `applied` leaves it.
+    const pending = v.length - L.messages - 1 - effect.removesMessages.length - effect.removesTimers.length + effect.addsMessages.length + effect.addsTimers.length > 0;
+    if (variables !== v[L.variables]) return this.tupleWith(L, v, slot, state, variables, pending);
+    const key = (state * L.instances.length + slot) * 2 + (pending ? 1 : 0);
     const byKey = (this.tupleSteps[parent.tuple] ??= new Map());
     let tuple = byKey.get(key);
-    if (tuple === undefined) byKey.set(key, (tuple = this.tupleOf(child, L)));
+    if (tuple === undefined) byKey.set(key, (tuple = this.tupleWith(L, v, slot, state, variables, pending)));
     return tuple;
   }
 
@@ -725,28 +761,34 @@ export class IntegerSearch {
    * not in the key.
    */
   private stepBreaks(before: number, after: number, event: number, index: number, beforeWorld: () => World, afterWorld: () => World, broken: Set<string> = this.broken): string[] {
-    const key = `${before},${after},${event}`;
-    let known = this.stepAnswers.get(key);
-    if (!known) this.stepAnswers.set(key, (known = new Uint8Array(this.everySteps.length)));
+    const byAfter = (this.stepAnswers[before] ??= new Map());
+    const key = after * STEP_EVENTS + event;
+    let known = byAfter.get(key);
+    if (!known) byAfter.set(key, (known = new Uint8Array(this.everySteps.length)));
     let views: { before: ReturnType<typeof worldView>; after: ReturnType<typeof worldView> } | undefined;
-    const out: string[] = [];
-    this.everySteps.forEach((p, i) => {
-      if (broken.has(p.id)) return;
-      if (known[i] === UNKNOWN) {
-        views ??= { before: worldView(this.spec, beforeWorld()), after: worldView(this.spec, afterWorld()) };
-        let readsIndex = false;
-        const view = traceView([this.eventAt(event, index)]).events[0];
-        const watched = Object.defineProperty({ ...view }, "index", {
-          get: () => {
-            readsIndex = true;
-            return index;
-          },
-        });
-        const answer = holdsSafely(() => p.everyStep(views!.before, views!.after, watched)) ? HOLDS : BREAKS;
-        if (answer === BREAKS) out.push(p.id);
-        if (!readsIndex) known[i] = answer;
-      } else if (known[i] === BREAKS) out.push(p.id);
-    });
+    let out = NO_IDS;
+    for (let i = 0; i < known.length; i++) {
+      // Nearly every step is one already judged, on which every property holds.
+      if (known[i] === HOLDS) continue;
+      const p = this.everySteps[i];
+      if (broken.has(p.id)) continue;
+      if (known[i] === BREAKS) {
+        (out === NO_IDS ? (out = []) : out).push(p.id);
+        continue;
+      }
+      views ??= { before: worldView(this.spec, beforeWorld()), after: worldView(this.spec, afterWorld()) };
+      let readsIndex = false;
+      const view = traceView([this.eventAt(event, index)]).events[0];
+      const watched = Object.defineProperty({ ...view }, "index", {
+        get: () => {
+          readsIndex = true;
+          return index;
+        },
+      });
+      const answer = holdsSafely(() => p.everyStep(views!.before, views!.after, watched)) ? HOLDS : BREAKS;
+      if (answer === BREAKS) (out === NO_IDS ? (out = []) : out).push(p.id);
+      if (!readsIndex) known[i] = answer;
+    }
     return out;
   }
 
@@ -879,13 +921,10 @@ export class IntegerSearch {
    * worlds, so the same least one. Also the world's own fingerprint (no renaming, no budget),
    * and its least without the budget, for twin checks.
    */
-  private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry): { print: [number, number]; plain: [number, number]; world: [number, number] } {
-    const M = L.messages;
-    const end = M + 1 + v[M];
-    let base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]) + lane1(1, L.variables, v[L.variables]);
-    let base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]) + lane2(1, L.variables, v[L.variables]);
-    let extra1 = lane1(1, L.memory, v[L.memory]);
-    let extra2 = lane2(1, L.memory, v[L.memory]);
+  private symmetricPrint(v: Int32Array, L: Layout, symmetry: Symmetry, lanes = this.symmetricLanes(v, L, symmetry)): { print: [number, number]; plain: [number, number]; world: [number, number] } {
+    const end = L.messages + 1 + v[L.messages];
+    const extra1 = lane1(1, L.memory, v[L.memory]);
+    const extra2 = lane2(1, L.memory, v[L.memory]);
     // The least over the renamings, of the world with and without the memory: as numbers, compared hi then lo.
     let best1 = -1;
     let best2 = 0;
@@ -893,36 +932,96 @@ export class IntegerSearch {
     let least2 = 0;
     let plain: [number, number] = [0, 0];
     const timers: number[] = [];
-    for (const renaming of symmetry.renamings) {
-      const r = this.renamed(renaming);
-      let h1 = base1;
-      let h2 = base2;
-      for (let s = 0; s < L.instances.length; s++) {
-        const line = this.renamedState(r, v[s]);
-        (h1 += lane1(6, line, 0)), (h2 += lane2(6, line, 0));
-      }
-      for (let i = M + 1; i < end; i++) {
-        const line = this.renamedPending(r, v[i]);
-        (h1 += lane1(3, line, 0)), (h2 += lane2(3, line, 0));
-      }
+    for (let n = 0; n < symmetry.renamings.length; n++) {
+      const r = this.renamed(symmetry.renamings[n]);
       timers.length = 0;
       for (let i = end; i < v.length; i++) timers.push(this.renamedPending(r, v[i]));
       const t = timersHash(timers, 0);
-      (h1 += lane1(4, t, 0)), (h2 += lane2(4, t, 0));
-      const w1 = h1 >>> 0;
-      const w2 = h2 >>> 0;
+      const w1 = (lanes[n * 2] + lane1(4, t, 0)) >>> 0;
+      const w2 = (lanes[n * 2 + 1] + lane2(4, t, 0)) >>> 0;
       if (r.identity) plain = [w1, w2];
       if (least1 < 0 || w1 < least1 || (w1 === least1 && w2 < least2)) (least1 = w1), (least2 = w2);
-      const f1 = (h1 + extra1) >>> 0;
-      const f2 = (h2 + extra2) >>> 0;
+      const f1 = (w1 + extra1) >>> 0;
+      const f2 = (w2 + extra2) >>> 0;
       if (best1 < 0 || f1 < best1 || (f1 === best1 && f2 < best2)) (best1 = f1), (best2 = f2);
     }
     return { print: [best1, best2], plain, world: [least1, least2] };
   }
 
+  /**
+   * For each renaming, the two lanes of a world's fingerprint but for its timers and memory:
+   * the counters and variables as they are, and each state and message as the renaming has it.
+   * Sums, so a child's follow from its parent's by what the step changed (`childLanes`).
+   */
+  private symmetricLanes(v: Int32Array, L: Layout, symmetry: Symmetry): Int32Array {
+    const end = L.messages + 1 + v[L.messages];
+    const base1 = lane1(5, L.index, 0) + lane1(1, L.fresh, v[L.fresh]) + lane1(1, L.rng, v[L.rng]) + lane1(1, L.variables, v[L.variables]);
+    const base2 = lane2(5, L.index, 0) + lane2(1, L.fresh, v[L.fresh]) + lane2(1, L.rng, v[L.rng]) + lane2(1, L.variables, v[L.variables]);
+    const out = new Int32Array(symmetry.renamings.length * 2);
+    for (let n = 0; n < symmetry.renamings.length; n++) {
+      const r = this.renamed(symmetry.renamings[n]);
+      let h1 = base1;
+      let h2 = base2;
+      for (let s = 0; s < L.instances.length; s++) (h1 += this.stateLane1(r, v[s])), (h2 += r.state2[v[s]]);
+      for (let i = L.messages + 1; i < end; i++) (h1 += this.messageLane1(r, v[i])), (h2 += r.message2[v[i]]);
+      out[n * 2] = h1;
+      out[n * 2 + 1] = h2;
+    }
+    return out;
+  }
+
+  /** A child's lanes from its parent's: what the step changed, taken out and put back, for each renaming. */
+  private childLanes(parent: Entry, step: Step, symmetry: Symmetry): Int32Array {
+    const { layout: L, slot, effect: e } = step;
+    const v = parent.vector;
+    const from = (parent.lanes ??= this.symmetricLanes(v, L, symmetry));
+    // The counters and variables read the same under every renaming.
+    let d1 = 0;
+    let d2 = 0;
+    if (e.fresh !== undefined && e.fresh !== v[L.fresh]) (d1 += lane1(1, L.fresh, e.fresh) - lane1(1, L.fresh, v[L.fresh])), (d2 += lane2(1, L.fresh, e.fresh) - lane2(1, L.fresh, v[L.fresh]));
+    if (e.rng !== undefined && e.rng !== v[L.rng]) (d1 += lane1(1, L.rng, e.rng) - lane1(1, L.rng, v[L.rng])), (d2 += lane2(1, L.rng, e.rng) - lane2(1, L.rng, v[L.rng]));
+    if (e.variables !== undefined && e.variables !== v[L.variables]) (d1 += lane1(1, L.variables, e.variables) - lane1(1, L.variables, v[L.variables])), (d2 += lane2(1, L.variables, e.variables) - lane2(1, L.variables, v[L.variables]));
+    const was = v[slot];
+    const now = e.apart ? was : e.state;
+    const out = new Int32Array(from.length);
+    for (let n = 0; n < symmetry.renamings.length; n++) {
+      const r = this.renamed(symmetry.renamings[n]);
+      let h1 = from[n * 2] + d1;
+      let h2 = from[n * 2 + 1] + d2;
+      if (now !== was) (h1 += this.stateLane1(r, now) - this.stateLane1(r, was)), (h2 += r.state2[now] - r.state2[was]);
+      for (let i = 0; i < e.removesMessages.length; i++) (h1 -= this.messageLane1(r, e.removesMessages[i])), (h2 -= r.message2[e.removesMessages[i]]);
+      for (let i = 0; i < e.addsMessages.length; i++) (h1 += this.messageLane1(r, e.addsMessages[i])), (h2 += r.message2[e.addsMessages[i]]);
+      out[n * 2] = h1;
+      out[n * 2 + 1] = h2;
+    }
+    return out;
+  }
+
+  /** What a state adds to lane 1 under a renaming, which also fills what it adds to lane 2 (`r.state2`). */
+  private stateLane1(r: Renamed, state: number): number {
+    let a = r.state1[state];
+    if (!a) {
+      const line = this.renamedState(r, state);
+      a = r.state1[state] = lane1(6, line, 0);
+      r.state2[state] = lane2(6, line, 0);
+    }
+    return a;
+  }
+
+  /** As `stateLane1`, for a message in flight. */
+  private messageLane1(r: Renamed, message: number): number {
+    let a = r.message1[message];
+    if (!a) {
+      const line = this.renamedPending(r, message);
+      a = r.message1[message] = lane1(3, line, 0);
+      r.message2[message] = lane2(3, line, 0);
+    }
+    return a;
+  }
+
   private renamed(renaming: Map<string, string>): Renamed {
     let r = this.renamedBy.get(renaming);
-    if (!r) this.renamedBy.set(renaming, (r = { renaming, identity: [...renaming].every(([from, to]) => from === to), states: [], pendings: [] }));
+    if (!r) this.renamedBy.set(renaming, (r = { renaming, identity: [...renaming].every(([from, to]) => from === to), states: [], pendings: [], state1: [], state2: [], message1: [], message2: [] }));
     return r;
   }
 
@@ -1278,6 +1377,7 @@ export class IntegerSearch {
     const sent = e.sent.map((s) => ({ message: s.message }));
     const traced: TraceStep = { actor: e.actor, key: e.key, sent: sent as Event["sent"], ...(e.error ? { error: e.error } : {}) };
     const event = this.traceSteps.id(`${stepKey}|${e.error ?? ""}|${sent.map((s) => s.message).join(",")}`, () => traced);
+    if (event >= STEP_EVENTS) throw new Error(`a spec with more than ${STEP_EVENTS} kinds of event`);
     const fault = e.tags?.includes(FAULT) === true;
     const error = e.error;
     if (error) return { error, reached, event, fault, state: 0, removesMessages: NONE, removesTimers: NONE, addsMessages: NONE, addsTimers: NONE };
@@ -1514,7 +1614,9 @@ type Fire = Extract<Choice, { kind: "fire" }> & { index: number };
 /** Distinct step names the step cache tells apart in a key. */
 const STEPS = 4096;
 /** A step property's answer, as kept: not known yet, holds, breaks. */
-const UNKNOWN = 0;
+/** More kinds of event than a spec has steps and things they send: a step's answers are kept by `after * STEP_EVENTS + event`. */
+const STEP_EVENTS = 2 ** 20;
+/** A step's answer for a property: 0 while it has not been judged. */
 const HOLDS = 1;
 const BREAKS = 2;
 
@@ -1523,6 +1625,9 @@ function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undef
   return { to, option, fault, fair };
 }
 const NO_IDS: string[] = [];
+
+/** A node of the tuple trie: by the next part, the node below it, or at the last level the tuple's id. */
+type TupleNode = Map<number, unknown>;
 
 /**
  * A step's cached effect for an argument: up to its first use of the world's variables, a step

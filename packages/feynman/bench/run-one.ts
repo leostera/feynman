@@ -5,7 +5,8 @@ import { modelNamed } from "./models.ts";
 
 const model = modelNamed(process.argv[2]);
 const loaded: Spec = (await import(`../examples/${model.file}.ts`))[model.export ?? "default"];
-const spec = loaded.setting(model.set);
+const set = loaded.setting(model.set);
+const spec = model.only ? { ...set, properties: set.properties.filter((p) => model.only!.includes(p.id)) } : set;
 const started = performance.now();
 const report = await check(spec, { walks: 0, maxStates: 5_000_000, timeLimit: 600_000, ...model.bounds });
 const ms = performance.now() - started;

@@ -8,6 +8,8 @@ export interface Model {
   file: string;
   export?: string;
   bounds: Partial<Bounds>;
+  /** The properties checked, when not all of them (`--only`). */
+  only?: string[];
   /** The model variables set (`--set`): the fault budget. */
   set: Record<string, unknown>;
   /** What the model exercises. */
@@ -23,6 +25,9 @@ export const MODELS: Model[] = [
   { name: "or-set-fault", file: "or-set", export: "fixed", set: { faults: 1 }, bounds: { depth: 60, instances: { Replica: 2 }, ...PLAIN }, why: "the biggest: 129k states" },
   { name: "leader-election", file: "leader-election", set: { faults: 0 }, bounds: { depth: 16, instances: { Node: 4 } }, why: "liveness, broken, 4 nodes" },
   { name: "two-phase-commit", file: "two-phase-commit", set: { faults: 1 }, bounds: { depth: 16, instances: { Participant: 3 } }, why: "liveness and stuck worlds, a fault" },
+  // The book's box office with three people (chapter 12): what a spec of a real system grows to.
+  { name: "box-office-3", file: "../../../book/specs/11-rules/3-the-payer", set: {}, bounds: { depth: 60, instances: { Person: 3 } }, why: "liveness on 400k states, two faults, calls and a crash" },
+  { name: "box-office-3-safe", file: "../../../book/specs/11-rules/3-the-payer", only: ["chargedOnce", "oneTicket", "holdsAreRespected"], set: {}, bounds: { depth: 40, instances: { Person: 3 } }, why: "symmetry on three instances, step properties" },
   { name: "job-queue", file: "job-queue", set: { faults: 1 }, bounds: { depth: 16 }, why: "liveness unfinished at the bound, a fault" },
 ];
 

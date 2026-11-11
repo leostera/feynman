@@ -1,8 +1,10 @@
 // The kit: what the playground draws with, and what playground files compose. Small and
 // quiet on purpose: thin rings, 12px names, 10px detail, colour only where it says
 // something. Kumo tokens only, so light and dark both work.
-import { cn } from "@cloudflare/kumo";
-import { TicketIcon, XIcon } from "@phosphor-icons/react";
+// `cn` and each icon from their own modules, not the packages' entries: see display.tsx.
+import { cn } from "@cloudflare/kumo/utils";
+import { TicketIcon } from "@phosphor-icons/react/dist/csr/Ticket";
+import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import type { Icon as IconName, Mood, Row, Shape } from "../spec/index.ts";
 import { iconFor, labelInside, moodColor, telling } from "./display.tsx";

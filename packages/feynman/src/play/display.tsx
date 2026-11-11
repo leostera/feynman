@@ -1,42 +1,42 @@
 // Icons, shapes and moods: how the spec's presentation vocabulary is drawn, with Kumo tokens only.
-import {
-  BellIcon,
-  BrowserIcon,
-  CameraIcon,
-  ChatCircleIcon,
-  ClockIcon,
-  CloudIcon,
-  CodeIcon,
-  CpuIcon,
-  CubeIcon,
-  DatabaseIcon,
-  DesktopIcon,
-  DeviceMobileIcon,
-  EnvelopeIcon,
-  EyeIcon,
-  FileIcon,
-  FlowArrowIcon,
-  FolderIcon,
-  GearIcon,
-  GlobeIcon,
-  HardDriveIcon,
-  HardDrivesIcon,
-  IdentificationCardIcon,
-  KeyIcon,
-  LaptopIcon,
-  LockIcon,
-  PlugIcon,
-  QueueIcon,
-  RobotIcon,
-  ShieldCheckIcon,
-  TableIcon,
-  TerminalWindowIcon,
-  UserIcon,
-  UsersIcon,
-  VideoCameraIcon,
-  WifiHighIcon,
-  type Icon as PhosphorIcon,
-} from "@phosphor-icons/react";
+// Each icon from its own module: the package's entry loads all three thousand, which takes a
+// second, and `feynman check` loads this kit for every spec with a playground file.
+import { BellIcon } from "@phosphor-icons/react/dist/csr/Bell";
+import { BrowserIcon } from "@phosphor-icons/react/dist/csr/Browser";
+import { CameraIcon } from "@phosphor-icons/react/dist/csr/Camera";
+import { ChatCircleIcon } from "@phosphor-icons/react/dist/csr/ChatCircle";
+import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
+import { CloudIcon } from "@phosphor-icons/react/dist/csr/Cloud";
+import { CodeIcon } from "@phosphor-icons/react/dist/csr/Code";
+import { CpuIcon } from "@phosphor-icons/react/dist/csr/Cpu";
+import { CubeIcon } from "@phosphor-icons/react/dist/csr/Cube";
+import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
+import { DesktopIcon } from "@phosphor-icons/react/dist/csr/Desktop";
+import { DeviceMobileIcon } from "@phosphor-icons/react/dist/csr/DeviceMobile";
+import { EnvelopeIcon } from "@phosphor-icons/react/dist/csr/Envelope";
+import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
+import { FileIcon } from "@phosphor-icons/react/dist/csr/File";
+import { FlowArrowIcon } from "@phosphor-icons/react/dist/csr/FlowArrow";
+import { FolderIcon } from "@phosphor-icons/react/dist/csr/Folder";
+import { GearIcon } from "@phosphor-icons/react/dist/csr/Gear";
+import { GlobeIcon } from "@phosphor-icons/react/dist/csr/Globe";
+import { HardDriveIcon } from "@phosphor-icons/react/dist/csr/HardDrive";
+import { HardDrivesIcon } from "@phosphor-icons/react/dist/csr/HardDrives";
+import { IdentificationCardIcon } from "@phosphor-icons/react/dist/csr/IdentificationCard";
+import { KeyIcon } from "@phosphor-icons/react/dist/csr/Key";
+import { LaptopIcon } from "@phosphor-icons/react/dist/csr/Laptop";
+import { LockIcon } from "@phosphor-icons/react/dist/csr/Lock";
+import { PlugIcon } from "@phosphor-icons/react/dist/csr/Plug";
+import { QueueIcon } from "@phosphor-icons/react/dist/csr/Queue";
+import { RobotIcon } from "@phosphor-icons/react/dist/csr/Robot";
+import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
+import { TableIcon } from "@phosphor-icons/react/dist/csr/Table";
+import { TerminalWindowIcon } from "@phosphor-icons/react/dist/csr/TerminalWindow";
+import { UserIcon } from "@phosphor-icons/react/dist/csr/User";
+import { UsersIcon } from "@phosphor-icons/react/dist/csr/Users";
+import { VideoCameraIcon } from "@phosphor-icons/react/dist/csr/VideoCamera";
+import { WifiHighIcon } from "@phosphor-icons/react/dist/csr/WifiHigh";
+import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
 import { appearance, type Icon, type Mood, type Shape, type Spec, type World } from "../spec/index.ts";
 
 export const ICONS: Record<Icon, PhosphorIcon> = {
