@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main } from "../../src/cli/main.ts";
+import { budget, crash, defineActor, defineSpec, defineZone } from "../../src/spec/index.ts";
 
 const SPEC = (refuseEmpty: boolean) => `import { defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, input } from "@leostera/feynman";
 
@@ -331,4 +332,32 @@ test("--help after a command prints the usage", async () => {
   const help = await capture(["build", "--help"], root);
   expect(help.status).toBe(0);
   expect(help.out).toContain("Usage: feynman <command>");
+});
+
+test("check: --instances and --set that name nothing, or give the wrong kind of value, are refused", async () => {
+  const { root, commit } = repo();
+  writeFileSync(join(root, "specs/echo.ts"), SPEC(true));
+  commit("spec");
+  const refused = (argv: string[]) => main(["check", ...argv], root).then(
+    () => "accepted",
+    (e: Error) => e.message,
+  );
+  // A mistyped actor was ignored, under a header that named it as if it had been used.
+  expect(await refused(["--instances", "Clinet=3"])).toBe("--instances: no actor named Clinet; actors there can be several of: Client");
+  expect(await refused(["--instances", "Server=2"])).toBe("--instances: Server is a singleton, so there is exactly one; actors there can be several of: Client");
+  expect(await refused(["--instances", "Client=-1"])).toContain("--instances takes Actor=N pairs, N a whole number");
+  expect(await refused(["--instances", "Client=two"])).toContain("--instances takes Actor=N pairs, N a whole number");
+  const two = await capture(["check", "--instances", "Client=2", "--brief"], root);
+  expect(two.out).toContain("2 Client");
+}, 60_000);
+
+test("a model variable is set to the kind of value it starts with", () => {
+  const faults = budget("faults", 1);
+  const zone = defineZone({ name: "z" });
+  const A = defineActor({ name: "A", zone, singleton: true, initialState: () => ({}), transitions: { crash: crash({ spend: faults }) } });
+  const spec = defineSpec({ name: "Budgeted", actors: [A], finalState: { description: "Anything.", when: () => true } });
+  expect(spec.setting({ faults: 3 }).variables.find((v) => v.name === "faults")?.initial).toBe(3);
+  expect(() => spec.setting({ faults: "lots" })).toThrow('Budgeted: faults is a number (it starts at 1), not "lots"');
+  expect(() => spec.setting({ faults: -1 })).toThrow("Budgeted: faults is a whole number (it starts at 1), not -1");
+  expect(() => spec.setting({ fualts: 2 })).toThrow('Budgeted has no variable named "fualts"');
 });

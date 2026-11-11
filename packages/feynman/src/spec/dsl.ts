@@ -856,6 +856,11 @@ function assemble(parts: SpecParts, without: string[], values: Record<string, un
   }
   for (const [n, value] of Object.entries(values)) {
     if (!variables.has(n)) throw new Error(`${parts.name} has no variable named "${n}"; its variables: ${[...variables.keys()].join(", ") || "none"}`);
+    // A variable starts as one kind of value, and its steps compute with that kind: `faults=lots` would make `faults - 1` NaN.
+    const initial = variables.get(n)!.initial;
+    const kind = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "a list" : typeof v === "object" ? "an object" : `a ${typeof v}`);
+    if (kind(values[n]) !== kind(initial)) throw new Error(`${parts.name}: ${n} is ${kind(initial)} (it starts at ${JSON.stringify(initial)}), not ${JSON.stringify(values[n])}`);
+    if (typeof initial === "number" && Number.isInteger(initial) && initial >= 0 && !(Number.isInteger(values[n]) && (values[n] as number) >= 0)) throw new Error(`${parts.name}: ${n} is a whole number (it starts at ${initial}), not ${JSON.stringify(values[n])}`);
     const odd = unstorable(value, "value");
     if (odd) throw new Error(`Variable ${n}: ${odd}: a variable holds plain data`);
   }

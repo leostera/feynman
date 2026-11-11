@@ -71,6 +71,14 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
     const unknown = options.only.filter((id) => !known.has(id));
     if (unknown.length) throw new Error(`No property named ${unknown.join(", ")}; properties: ${[...known].join(", ") || "none"}`);
   }
+  // An actor --instances names must be one there can be several of, in some spec checked: a
+  // mistyped name would be ignored, and the check would report bounds it never used.
+  for (const name of Object.keys(options.bounds.instances ?? {})) {
+    const actors = selected.flatMap(({ spec }) => spec.actors.filter((a) => a.name === name));
+    const many = [...new Set(selected.flatMap(({ spec }) => spec.actors.filter((a) => !a.singleton).map((a) => a.name)))];
+    if (!actors.length) throw new Error(`--instances: no actor named ${name}; actors there can be several of: ${many.join(", ") || "none"}`);
+    if (actors.every((a) => a.singleton)) throw new Error(`--instances: ${name} is a singleton, so there is exactly one; actors there can be several of: ${many.join(", ") || "none"}`);
+  }
   if (options.output === "scenario" && options.only.length !== 1) throw new Error("--as-scenario replays one counterexample: name its property with --only");
 
   const plays = selected.map((s) => playgroundFor(ctx.repository.root, s.path)).filter((p): p is string => p !== null);

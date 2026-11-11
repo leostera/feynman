@@ -178,7 +178,7 @@ function bounds(values: Record<string, string | string[] | boolean | undefined>)
     out.instances = Object.fromEntries(
       values.instances.split(",").map((pair) => {
         const [actor, n] = pair.split("=");
-        if (!actor || !Number.isInteger(Number(n))) throw new Error(`--instances takes Actor=N pairs, not ${pair}`);
+        if (!actor?.trim() || n === undefined || n.trim() === "" || !Number.isInteger(Number(n)) || Number(n) < 0) throw new Error(`--instances takes Actor=N pairs, N a whole number, like --instances Person=3: not ${pair}`);
         return [actor.trim(), Number(n)];
       }),
     );
