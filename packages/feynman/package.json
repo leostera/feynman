@@ -11,6 +11,7 @@
   "exports": {
     ".": { "types": "./dist/types/spec/index.d.ts", "default": "./src/spec/index.ts" },
     "./play": { "types": "./dist/types/play/index.d.ts", "default": "./src/play/index.ts" },
+    "./explain": { "types": "./dist/types/explain/index.d.ts", "default": "./src/explain/index.ts" },
     "./config": { "types": "./dist/types/cli/index.d.ts", "default": "./src/cli/index.ts" }
   },
   "files": ["bin", "src", "!src/view", "src/view/data.ts", "dist/view", "dist/types", "examples", "!examples/oracles", "skills", "README.md"],

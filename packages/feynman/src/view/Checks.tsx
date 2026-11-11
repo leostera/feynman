@@ -14,7 +14,7 @@ import { Section, Sources, useExplorer } from "./ui";
 type Open = (ce: Counterexample, origin: string) => void;
 
 /** Properties a scenario breaks, by id, with the first scenario that does. */
-function brokenByScenarios(spec: Spec): Map<string, string> {
+export function brokenByScenarios(spec: Spec): Map<string, string> {
   const out = new Map<string, string>();
   for (const scenario of spec.scenarios) {
     const run = runScenario(spec, scenario);
@@ -137,7 +137,7 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
 
 /** One property: its verdict, and how it breaks, if it does. */
 /** A rule of the design (RFD0010): whether each property that needs it broke without it. */
-function RuleCard({ rule }: { rule: RuleVerdict }) {
+export function RuleCard({ rule }: { rule: RuleVerdict }) {
   const held = rule.neededBy.filter((n) => n.verdict === "holds");
   const open = rule.neededBy.filter((n) => n.verdict === "unfinished");
   const verdict: Verdict = held.length ? "broken" : open.length ? "unfinished" : "holds";
@@ -163,7 +163,7 @@ function RuleCard({ rule }: { rule: RuleVerdict }) {
   );
 }
 
-function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: PropertyResult; verdict: Verdict; scenario?: string; onOpen: Open; onScenario: (name: string) => void }) {
+export function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: PropertyResult; verdict: Verdict; scenario?: string; onOpen: Open; onScenario: (name: string) => void }) {
   // Broken while exploration found it holding: a scenario broke it.
   const byScenario = (verdict === "broken" || verdict === "known") && p.holds ? scenario : undefined;
   const broken = p.holds ? undefined : p;

@@ -11,7 +11,7 @@ import { check, checkRules, type Report as CheckReport } from "../check/index.ts
 import { scenarioSeeds } from "../check/seeds.ts";
 import { callTrees, checkSources, git, withWorktree, type CallNode } from "../code/index.ts";
 import type { Spec } from "../spec/index.ts";
-import type { Bundle, Embedded, SourceEntry, SpecEntry } from "../view/data.ts";
+import type { Bundle, Embedded, Explainer, SourceEntry, SpecEntry } from "../view/data.ts";
 import { specSources, type Context } from "./commands.ts";
 import { dim, green, red, yellow } from "./format.ts";
 import { playgroundFor } from "./discover.ts";
@@ -241,11 +241,11 @@ async function sourceEntries(ctx: Context, spec: Spec): Promise<Record<string, S
  * The explorer as one HTML file: the view's script and stylesheet inlined, and the bundle and
  * every module embedded as JSON, which the page imports through blob URLs. It opens from disk.
  */
-export function singlePage(prepared: Prepared): string {
+export function singlePage(prepared: Prepared, explainer?: Explainer): string {
   const dist = DIST;
   const page = readFileSync(join(dist, "index.html"), "utf8");
   const asset = (href: string) => readFileSync(join(dist, href.replace(/^\.\//, "")), "utf8");
-  const embedded: Embedded = { bundle: prepared.bundle, modules: Object.fromEntries(prepared.modules) };
+  const embedded: Embedded = { bundle: prepared.bundle, modules: Object.fromEntries(prepared.modules), ...(explainer ? { explainer } : {}) };
   // Inside a <script>, "</script" or "<!--" would end or confuse it; both escape harmlessly in JS and JSON strings.
   const inScript = (code: string) => code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
   const data = JSON.stringify(embedded).replace(/<\//g, "<\\/").replace(/<!--/g, "<\\u0021--");

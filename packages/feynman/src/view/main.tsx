@@ -7,6 +7,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Spec } from "../spec/index.ts";
 import { App } from "./App";
+import { ExplainerPage } from "./Explainer";
+import { EXPLAIN_KIT } from "./explainKit";
+import type { ComponentType } from "react";
 import type { Bundle, Embedded } from "./data";
 import type { Loaded } from "./ui";
 import "./index.css";
@@ -38,7 +41,7 @@ async function importSpec(url: string | null): Promise<Spec | null> {
  * there is one React, and the kit's classes are in the page's stylesheet.
  */
 (globalThis as { __feynman?: unknown }).__feynman = {
-  modules: { react: React, "react/jsx-runtime": JsxRuntime, "@cloudflare/kumo": Kumo, play: Play },
+  modules: { react: React, "react/jsx-runtime": JsxRuntime, "@cloudflare/kumo": Kumo, play: Play, explain: EXPLAIN_KIT },
 };
 
 async function importPlayground(url: string | null): Promise<Playground | null> {
@@ -64,11 +67,17 @@ async function start() {
       }
     }),
   );
-  document.title = `${loaded[0]?.spec?.name ?? "Specs"} · Feynman`;
+  document.title = embedded?.explainer ? embedded.explainer.title : `${loaded[0]?.spec?.name ?? "Specs"} · Feynman`;
+  // An explainer's own figures: every component its module exports, by name.
+  const figures: Record<string, ComponentType> = {};
+  if (embedded?.explainer?.module) {
+    const module = (await importModule(embedded.explainer.module)) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(module)) if (typeof value === "function") figures[name] = value as ComponentType;
+  }
   if (bundle.dev) new EventSource("./__feynman/events").addEventListener("reload", () => location.reload());
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
-      <App bundle={bundle} loaded={loaded} />
+      {embedded?.explainer ? <ExplainerPage explainer={embedded.explainer} bundle={bundle} loaded={loaded[0] ?? null} figures={figures} /> : <App bundle={bundle} loaded={loaded} />}
     </StrictMode>,
   );
 }

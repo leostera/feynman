@@ -42,6 +42,8 @@ Commands:
                            and .br next to it (default: .feynman/index.html; a directory
                            gets index.html).
   open                     Build, then open that file.
+  explain <spec>           Tell how a spec's system works and breaks, as one HTML page, from
+                           <spec>.explainer.md; without one, print how to write it (RFD0013).
 `;
 
 const ARGS = {
@@ -116,6 +118,8 @@ export async function main(argv: string[], cwd = process.cwd()): Promise<number>
       return (await serve()).devCommand(ctx, { port: Number(values.port ?? 4321), base: values.base });
     case "build":
       return (await serve()).buildCommand(ctx, { out: values.out, base: values.base });
+    case "explain":
+      return (await import("./explain.ts")).explainCommand(ctx, positionals, { out: values.out });
     case "open":
       return (await serve()).buildCommand(ctx, { out: values.out, base: values.base, open: true });
     default:

@@ -22,6 +22,7 @@ interface Explorer {
 }
 
 const ExplorerContext = createContext<Explorer | null>(null);
+/** An explainer with no spec provides none: only figures that don't read it work there. */
 export const ExplorerProvider = ExplorerContext.Provider;
 
 export function useExplorer(): Explorer & { spec: Spec; playground: Playground | null } {
