@@ -145,3 +145,178 @@ test("call trees come from calldiff, keyed by source", () => {
   const labels = (node: { label: string; children: { label: string; children: never[] }[] }): string[] => [node.label.split("(")[0], ...node.children.flatMap((c) => labels(c as never))];
   expect(labels(tree as never)).toEqual(expect.arrayContaining(["handle", "helper", "inner"]));
 }, 60_000);
+
+// Each a way a definition's extent once stopped short, or was not found: the lock hashes the
+// extent, so a definition resolved to its signature alone never goes stale when its body changes.
+const EXTENTS: [name: string, path: string, symbol: string, text: string, lines: [number, number]][] = [
+  ["ts: wrapped params with an object type", "x.ts", "f", `export function f(
+  opts: { a: string },
+  n: number,
+) {
+  return opts.a + n;
+}`, [1, 6]],
+  ["ts: wrapped params with a default object", "x.ts", "f", `export function f(
+  opts = {},
+) {
+  return opts;
+}`, [1, 5]],
+  ["ts: method with wrapped params and object type", "x.ts", "A.m", `class A {
+  m(
+    opts: { a: string },
+  ): void {
+    this.x = opts.a;
+  }
+}`, [2, 6]],
+  ["ts: arrow const with wrapped object param", "x.ts", "f", `export const f = async (
+  { a, b }: Args,
+): Promise<void> => {
+  await a(b);
+};`, [1, 5]],
+  ["ts: return type object literal", "x.ts", "f", `function f(): { a: number } {
+  return { a: 1 };
+}`, [1, 3]],
+  ["ts: wrapped return type object", "x.ts", "f", `function f(x: number): {
+  a: number;
+} {
+  return { a: x };
+}`, [1, 5]],
+  ["ts: template string with a brace", "x.ts", "f", "function f() {\n  const s = `${a} }`;\n  return s;\n}", [1, 4]],
+  ["ts: regex with a brace", "x.ts", "f", `function f(s: string) {
+  const m = /\\{/.test(s);
+  return m;
+}`, [1, 4]],
+  ["ts: string with a quote char and brace", "x.ts", "f", `function f() {
+  const q = "'";
+  const b = "{";
+  return q + b;
+}`, [1, 5]],
+  ["ts: block comment with a brace", "x.ts", "f", `function f() {
+  /* } */
+  return 1;
+}`, [1, 4]],
+  ["rust: long signature", "x.rs", "long", `pub fn long(
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+    e: E,
+    f: F,
+) -> R {
+    body()
+}`, [1, 10]],
+  ["rust: where clause", "x.rs", "f", `pub fn f<T>(x: T) -> R
+where
+    T: Clone,
+{
+    x.clone()
+}`, [1, 6]],
+  ["rust: char literal brace", "x.rs", "f", `fn f() -> char {
+    let c = '}';
+    c
+}`, [1, 4]],
+  ["go: method with receiver", "x.go", "Handle", `func (s *Server) Handle(w http.ResponseWriter, r *http.Request) {
+	s.n++
+}`, [1, 3]],
+  ["go: function", "x.go", "Run", `func Run(ctx context.Context) error {
+	return nil
+}`, [1, 3]],
+  ["python: decorator", "x.py", "f", `@app.route("/")
+def f():
+    return 1
+`, [2, 3]],
+  ["python: dict literal early", "x.py", "f", `def f():
+    d = {"a": 1}
+    return d
+`, [1, 3]],
+  ["python: multi-line string dedent", "x.py", "f", `def f():
+    s = """
+text
+"""
+    return s
+`, [1, 5]],
+  ["swift: func with wrapped params", "x.swift", "link", `func link(
+    code: String,
+    to mac: Mac
+) async throws -> Account {
+    try await relay.redeem(code)
+}`, [1, 6]],
+  ["ruby: def end", "x.rb", "pay", `def pay(order)
+  charge(order)
+end`, [1, 3]],
+  ["ts: overloads then implementation", "x.ts", "f", `function f(a: string): string;
+function f(a: number): number;
+function f(a: any): any {
+  return a;
+}`, [3, 5]],
+  ["ts: symbol name in a call before the definition", "x.ts", "run", `it("x", () => {
+  run(1, 2
+  );
+});
+function run(a: number, b: number) {
+  return a + b;
+}`, [5, 7]],
+  ["ts: object method shorthand in export default", "x.ts", "fetch", `export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return new Response("ok");
+  },
+};`, [2, 4]],
+  ["ts: interface member picked instead of implementation", "x.ts", "A.m", `interface A {
+  m(x: number): void;
+}
+class A {
+  m(x: number): void {
+    work(x);
+  }
+}`, [5, 7]],
+  ["ts: a signature with an inline object type and semicolons", "x.ts", "A.resolve", `export class A {
+  async resolve(keys: readonly string[], payloads: readonly { route: string; token: number }[]): Promise<void> {
+    await this.send(keys, payloads);
+  }
+}`, [2, 4]],
+  ["python: a class with a wrapped header", "x.py", "A", `class A(
+    Base,
+):
+    def m(self):
+        pass
+
+class B:
+    pass`, [1, 5]],
+  ["python: a method of a class with a wrapped header", "x.py", "A.m", `class A(
+    Base,
+):
+    def m(self):
+        pass
+`, [4, 5]],
+  ["python: a def with a wrapped header", "x.py", "B.m", `class B:
+    def m(
+        self,
+    ):
+        pass
+
+x = 1`, [2, 5]],
+  ["python: wrapped type parameters", "x.py", "A", `class A[
+    T,
+](Base):
+    x = 1
+`, [1, 4]],
+  ["go: a method named by its type", "x.go", "Server.Handle", `type Server struct {
+	n int
+}
+
+func (s *Server) Handle(w http.ResponseWriter, r *http.Request) {
+	s.n++
+}`, [5, 7]],
+  ["swift: a protocol requirement has no body", "x.swift", "Store.load", `protocol Store {
+    func load() -> Data
+    func save(_ data: Data)
+}`, [2, 2]],
+  ["ts: a constant without a semicolon", "x.ts", "LIMIT", `const LIMIT = 10
+const OTHER = {
+  a: 1,
+}`, [1, 1]],
+  ["ts: a multi-line constant", "x.ts", "SOURCE", "export const SOURCE = `\nline {\n`;\nconst after = 1;", [1, 3]],
+];
+
+test.each(EXTENTS)("a definition's extent: %s", (_name, path, symbol, text, lines) => {
+  expect(findSymbol(text.split("\n"), symbol, path)).toEqual(lines);
+});
