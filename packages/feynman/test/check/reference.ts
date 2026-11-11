@@ -6,12 +6,13 @@
 //
 // It answers, within the same bounds as the checker: which worlds are reachable, which
 // `always` properties break and in how few steps, which errors a step can hit, which steps
-// ever run, where the system gets stuck, and the verdict on each liveness property (by a
+// ever run, where the system gets stuck, how few steps reach each reachable property's world,
+// and the verdict on each liveness property (by a
 // fixpoint over sets of its own, not the checker's components). `never` and `everyStep`
 // properties are left to the checker.
 import { initialWorld } from "../../src/check/explore.ts";
 import { inputCombinations } from "../../src/check/steps.ts";
-import { act, actorNamed, choices, FAULT, fire, guard, holdsIn, isLiveness, stepsTaking, whenHolds, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
+import { act, actorNamed, choices, FAULT, fire, guard, holdsIn, isLiveness, stepsTaking, whenHolds, worldView, type LivenessProperty, type Spec, type Step, type World } from "../../src/spec/index.ts";
 import { sortedJson } from "../../src/spec/json.ts";
 
 export interface ReferenceBounds {
@@ -26,6 +27,8 @@ export interface ReferenceResult {
   worlds: Set<string>;
   /** For each `always` property that breaks, the fewest steps to a world where it does. */
   broken: Map<string, number>;
+  /** For each reachable property some world gets to, the fewest steps there. */
+  reachable: Map<string, number>;
   errors: Set<string>;
   reached: Set<string>;
   /** The world where nothing can happen, short of the final state, with the fewest faults, then steps. */
@@ -54,7 +57,8 @@ export function worldKey(world: World): string {
 
 export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
   const always = spec.properties.filter((p) => p.kind === "always");
-  const result: ReferenceResult = { worlds: new Set(), broken: new Map(), errors: new Set(), reached: new Set(), liveness: new Map() };
+  const reachable = spec.properties.filter((p) => p.kind === "reachable");
+  const result: ReferenceResult = { worlds: new Set(), broken: new Map(), reachable: new Map(), errors: new Set(), reached: new Set(), liveness: new Map() };
   const graph: GraphNode[] = [];
   const index = new Map<string, number>();
   const add = (node: Node, depth: number) => {
@@ -68,6 +72,14 @@ export function explore(spec: Spec, bounds: ReferenceBounds): ReferenceResult {
   type Node = { world: World; faults: number };
   const judge = (node: Node, depth: number) => {
     for (const p of always) if (!result.broken.has(p.id) && !holdsIn(spec, node.world, p.always)) result.broken.set(p.id, depth);
+    // A predicate that throws (no such instance yet) is not a world it looks for.
+    for (const p of reachable) {
+      let there = false;
+      try {
+        there = p.reachable(worldView(spec, node.world)) === true;
+      } catch {}
+      if (there && !result.reachable.has(p.id)) result.reachable.set(p.id, depth);
+    }
   };
 
   // Every root at depth 0, as the checker starts from all of them at once.

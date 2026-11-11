@@ -1,5 +1,5 @@
 // Text output: what agents and people read in a terminal.
-import { faultsIn, hasFaults, placeText, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
+import { faultsIn, hasFaults, placeText, type Counterexample, type PropertyBroken, type PropertyResult, type Report } from "../check/index.ts";
 import type { SourceStatus } from "../code/index.ts";
 import { deliveryName, FAULT, messageName, type Event, type RunDiff, type Spec, type World } from "../spec/index.ts";
 import { verdictOf, type Verdict } from "../check/verdict.ts";
@@ -97,6 +97,8 @@ export interface ReportOptions {
   verdict?: (p: PropertyResult) => Verdict;
   /** The command that checked this spec, to say how to see one counterexample. */
   command?: string;
+  /** Show the way to each reachable property's world, not only its length (`--only`). */
+  witnesses?: boolean;
 }
 
 /**
@@ -120,7 +122,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
     const scenario = brokenBy.get(p.id);
     const v = verdict(p);
     if (v === "fixed") {
-      lines.push(red(`  ✓ ${p.id}`) + `  ${p.description}` + red(`  marked known ("${p.known}"), but holds now: remove known`));
+      lines.push(red(`  ✓ ${p.id}`) + `  ${p.description}` + red(`  marked known ("${p.known}"), but ${p.kind === "reachable" ? "reached" : "holds"} now: remove known`));
       continue;
     }
     if (v === "untested") {
@@ -132,10 +134,16 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
       continue;
     }
     if (v === "holds") {
-      lines.push(green(`  ✓ ${p.id}`) + dim(`  ${p.description}`));
+      lines.push(green(`  ✓ ${p.id}`) + dim(`  ${p.description}${p.holds && p.witness ? `  ${reachedText(p.witness, p.witnessBy, options)}` : ""}`));
+      if (p.holds && p.witness?.events.length && options.witnesses && !options.brief) lines.push(indent(formatEvents(spec, p.witness.events, p.witness.worlds), 4));
       continue;
     }
     const mark = v === "known" ? yellow(`  ✗ ${p.id}`) + `  ${p.description}` + yellow(`  known bug: ${p.known}`) : red(`  ✗ ${p.id}`) + `  ${p.description}`;
+    if (!p.holds && p.unreached) {
+      lines.push(mark + dim(`  never reached: no world within the bounds gets there, of the ${thousands(report.states)} explored`));
+      if (v === "broken" && !options.brief) lines.push(yellow(`    A guard too strict, a step that can never run, or bounds too small for it: more instances, a bigger budget, a scenario that sets the stage.`));
+      continue;
+    }
     // Broken, or known, yet held: a scenario broke it (any other held verdict is handled above).
     if (p.holds) {
       lines.push(mark + dim(`  broken by scenario "${scenario}"; exploration did not reach it within these bounds`));
@@ -195,9 +203,24 @@ function depthText(depth: number): string[] {
   return Number.isFinite(depth) ? [`depth ${depth}`] : [];
 }
 
+/** How a reachable property got there: "reached in 4 event(s), from the end of scenario …". */
+function reachedText(witness: Counterexample, by: "search" | "walk" | undefined, options: ReportOptions): string {
+  // Where the search starts is there already: the initial world, or a scenario's end. No way to show.
+  if (!witness.events.length) return witness.from ? `reached at ${placeText(witness.from)}` : "reached in the initial world";
+  const how = by === "walk" ? `reached in ${witness.events.length} event(s), by a random run past the search's depth` : `reached in ${witness.events.length} event(s)`;
+  const from = witness.from ? `, from ${placeText(witness.from)}` : "";
+  return `${how}${from}${options.witnesses || !options.command ? "" : `; see the way there with ${options.command} --only <property>`}`;
+}
+
 /** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
 function unfinishedWhy(report: Report, p: Report["properties"][number]): string {
   const limit = limitName(report.stoppedBy);
+  if (!p.holds && p.unreached) {
+    if (report.stoppedBy && p.upTo !== undefined) return `not reached on any path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
+    if (report.stoppedBy) return `not reached in the ${thousands(report.states)} states explored before the ${limit} limit, not all of them`;
+    if (report.chance?.length) return `not reached with the random numbers ${report.chance.join(", ")} drew, which are seeded: other values were not tried`;
+    return `not reached by depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may be reached further on`;
+  }
   if (report.stoppedBy && p.holds && p.upTo !== undefined) return `held on every path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
   if (report.stoppedBy) return `held in the ${thousands(report.states)} states explored before the ${limit} limit, not all of them`;
   if (report.chance?.length && !(p.holds && p.unfinished)) return `held with the random numbers ${report.chance.join(", ")} drew, which are seeded: other values were not tried`;

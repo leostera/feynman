@@ -16,7 +16,9 @@ describe.skipIf(!NUSMV)("NuSMV oracles", () => {
         const ours = await feynman(spec, bounds);
         expect(ours.report.errors.map((e) => e.message)).toEqual([]);
         expect(ours.report.exhaustive).toBe(true);
-        const theirs = nusmv(o.model, { Buggy: c.variant === "buggy", Faults: c.faults, Repeats: c.repeats }, o.invariants, o.liveness);
+        // A reachable property is checked as the invariant that it is never reached: NuSMV's shortest counterexample is the shortest way there.
+        const never = (o.reachable ?? []).map((id) => `${id}Never`);
+        const theirs = nusmv(o.model, { Buggy: c.variant === "buggy", Faults: c.faults, Repeats: c.repeats }, [...o.invariants, ...never], o.liveness);
         expect(ours.distinct).toBe(theirs.states);
         const property = (id: string) => {
           const p = ours.report.properties.find((x) => x.id === id);
@@ -25,7 +27,11 @@ describe.skipIf(!NUSMV)("NuSMV oracles", () => {
         };
         for (const invariant of o.invariants) {
           const p = property(invariant);
-          expect({ invariant, events: p.holds ? undefined : p.counterexample.events.length }).toEqual({ invariant, events: theirs.violated[invariant] });
+          expect({ invariant, events: p.holds || p.unreached ? undefined : p.counterexample.events.length }).toEqual({ invariant, events: theirs.violated[invariant] });
+        }
+        for (const id of o.reachable ?? []) {
+          const p = property(id);
+          expect({ id, reached: p.holds && p.witness ? p.witness.events.length : undefined }).toEqual({ id, reached: theirs.violated[`${id}Never`] });
         }
         for (const id of o.liveness ?? []) {
           const p = property(id);

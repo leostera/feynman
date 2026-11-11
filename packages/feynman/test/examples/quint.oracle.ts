@@ -20,7 +20,7 @@ describe.skipIf(!HAS_QUINT)("Quint oracles", () => {
         for (const invariant of o.invariants) {
           const p = ours.report.properties.find((x) => x.id === invariant);
           if (!p) throw new Error(`${example.name} has no property ${invariant}`);
-          expect({ invariant, events: p.holds ? undefined : p.counterexample.events.length }).toEqual({ invariant, events: theirs[invariant] });
+          expect({ invariant, events: p.holds || p.unreached ? undefined : p.counterexample.events.length }).toEqual({ invariant, events: theirs[invariant] });
         }
       }, 300_000);
     }

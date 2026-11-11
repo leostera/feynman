@@ -25,7 +25,7 @@ One system, built up a chapter at a time: a theatre selling its last seat.
 2. [Getting set up](02-getting-set-up.md): install, the commands, and where specs live.
 3. [Things and what they hold](03-actors-and-actions.md): actors, state and actions.
 4. [Telling each other](04-messages.md): messages, and the race they make possible.
-5. [What must stay true](05-properties.md): properties, and reading a counterexample.
+5. [What must stay true](05-properties.md): properties, reading a counterexample, and what must be possible.
 6. [Showing that it happens](06-scenarios.md): scenarios, the flows a reader should see.
 7. [When the timer fires first](07-timers.md): timers, without a clock.
 8. [When the answer never comes](08-faults.md): lost messages, failed calls, and retries.

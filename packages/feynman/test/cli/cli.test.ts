@@ -363,3 +363,78 @@ test("a model variable is set to the kind of value it starts with", () => {
   expect(() => spec.setting({ faults: -1 })).toThrow("Budgeted: faults is a whole number (it starts at 1), not -1");
   expect(() => spec.setting({ fualts: 2 })).toThrow('Budgeted has no variable named "fualts"');
 });
+
+/** A shop with two of something, buyers who each ask once, and two reachable properties. */
+const SHOP = `import { atMost, defineActor, defineMessage, defineProperty, defineSpec, defineZone } from "@leostera/feynman";
+
+const Buy = defineMessage("Buy", {});
+const Sold = defineMessage("Sold", {}, { tone: "reply" });
+const SoldOut = defineMessage("SoldOut", {}, { tone: "reply" });
+const zone = defineZone({ name: "Everywhere" });
+
+const Shop = defineActor({
+  name: "Shop",
+  zone,
+  singleton: true,
+  initialState: () => ({ stock: 2 }),
+  transitions: {
+    buy: {
+      on: Buy,
+      description: "Sells one, if there is one left.",
+      sends: [Sold, SoldOut],
+      run(state, _msg, ctx) {
+        if (state.stock === 0) return ctx.reply(SoldOut, {});
+        state.stock -= 1;
+        ctx.reply(Sold, {});
+      },
+    },
+  },
+});
+
+const Buyer = defineActor({
+  name: "Buyer",
+  zone,
+  initialState: () => ({ got: false, missed: false }),
+  actions: { buy: { label: "Buy", description: "Asks for one.", with: [atMost(1)], sends: [Buy], run: (_s, _i, ctx) => ctx.send(ctx.the(Shop), Buy, {}) } },
+  transitions: {
+    sold: { on: Sold, description: "Gets one.", run: (s) => void (s.got = true) },
+    soldOut: { on: SoldOut, description: "Is told there are none left.", run: (s) => void (s.missed = true) },
+  },
+});
+
+const someoneGetsOne = defineProperty("someoneGetsOne", { description: "A buyer gets one.", reachable: (w) => w.all(Buyer).some((b) => b.state.got) });
+const someoneMisses = defineProperty("someoneMisses", { description: "A buyer is told there are none left.", reachable: (w) => w.all(Buyer).some((b) => b.state.missed) });
+
+export default defineSpec({ name: "Shop", actors: [Shop, Buyer], properties: [someoneGetsOne, someoneMisses], finalState: { description: "Anything.", when: () => true } });
+`;
+
+test("check reads out reachable properties: how far, never reached, not reached yet, the way there, and as a scenario", async () => {
+  const { root } = repo();
+  writeFileSync(join(root, "specs/shop.ts"), SHOP);
+  // Two buyers, two in stock: nobody misses out, and every world was explored, so that is a ✗.
+  const two = await capture(["check", "shop", "--instances", "Buyer=2", "--walks", "0"], root);
+  expect(two.status).toBe(1);
+  expect(two.out).toContain("✓ someoneGetsOne  A buyer gets one.  reached in 3 event(s); see the way there with feynman check specs/shop.ts --only <property>");
+  expect(two.out).toMatch(/✗ someoneMisses {2}A buyer is told there are none left\. {2}never reached: no world within the bounds gets there, of the \d+ explored/);
+  expect(two.out).toContain("A guard too strict, a step that can never run, or bounds too small for it");
+  // A depth bound that cuts the search off before the third buyer misses out: not reached yet.
+  const cut = await capture(["check", "shop", "--instances", "Buyer=3", "--depth", "4", "--walks", "0"], root);
+  expect(cut.status).toBe(0);
+  expect(cut.out).toContain("~ someoneMisses  A buyer is told there are none left.  not reached by depth 4, but paths that had not got there yet were cut off at that depth: it may be reached further on");
+  // --only shows the way there.
+  const only = await capture(["check", "shop", "--instances", "Buyer=3", "--only", "someoneMisses", "--walks", "0"], root);
+  expect(only.out).toContain("✓ someoneMisses  A buyer is told there are none left.  reached in 7 event(s)");
+  expect(only.out).toContain("7  Buyer C (Buyer)  sold out  {}  from Shop");
+  // --as-scenario writes it out.
+  const scenario = await capture(["check", "shop", "--instances", "Buyer=3", "--only", "someoneMisses", "--as-scenario", "--walks", "0"], root);
+  expect(scenario.out).toContain('const someoneMissesIsReached = defineScenario("someoneMisses is reached", {');
+  const unreached = await capture(["check", "shop", "--instances", "Buyer=2", "--only", "someoneMisses", "--as-scenario", "--walks", "0"], root);
+  expect(unreached.out).toContain("someoneMisses is never reached within these bounds: there is no path to replay.");
+  // --json: the verdicts, the way there, and how far a search that stopped got.
+  const json = JSON.parse((await capture(["check", "shop", "--instances", "Buyer=2", "--walks", "0", "--json"], root)).out);
+  const [spec] = json.specs;
+  const byId = Object.fromEntries(spec.properties.map((p: { id: string }) => [p.id, p]));
+  expect(byId.someoneGetsOne).toMatchObject({ kind: "reachable", verdict: "holds", witness: { foundBy: "search", events: [{}, {}, {}] } });
+  expect(byId.someoneMisses).toMatchObject({ kind: "reachable", verdict: "broken" });
+  expect(byId.someoneMisses.counterexample).toBeUndefined();
+}, 60_000);

@@ -8,10 +8,13 @@ const zone = defineZone({ name: "Z" });
 const lone = () => defineActor({ name: "A", zone, singleton: true, initialState: () => ({ on: false }), transitions: { flip: { description: "Flips.", when: () => true, run: (s) => void (s.on = !s.on) } } });
 
 test("a property declares exactly one kind, with a function", () => {
-  expect(() => defineProperty("p", { description: "Two at once.", always: () => true, eventually: () => true } as never)).toThrow('Property "p": say what it checks with one of always, everyStep, never, eventually, leadsTo, infinitelyOften, eventuallyAlways, not always and eventually');
+  expect(() => defineProperty("p", { description: "Two at once.", always: () => true, eventually: () => true } as never)).toThrow('Property "p": say what it checks with one of always, everyStep, never, reachable, eventually, leadsTo, infinitelyOften, eventuallyAlways, not always and eventually');
   expect(() => defineProperty("p", { description: "None." } as never)).toThrow('Property "p": say what it checks with one of');
   expect(() => defineProperty("p", { description: "Half.", leadsTo: { whenever: () => true } } as never)).toThrow('Property "p": leadsTo.then is a function');
   expect(() => defineProperty("p", { description: "Not a function.", always: true } as never)).toThrow('Property "p": always is a function');
+  // Without a rule, a property should break (RFD0010); nothing makes a world unreachable on purpose.
+  const rule = defineRule("r", { description: "A rule." });
+  expect(() => defineProperty("p", { description: "Needs one.", reachable: () => true, needs: [rule] })).toThrow('Property "p": a reachable property needs no rules');
 });
 
 test("names are unique within a spec", () => {

@@ -143,6 +143,10 @@ pred quiet { all p: P | W.prepare[p] = 0 and (all a: Answer | W.voteMsg[p][a] = 
 
 pred atomic { not (some p, q: P | W.outcome[p] = Commit and W.outcome[q] = Abort) }
 pred decidedOnceQuiet { (quiet and (all p: P | some W.vote[p])) implies some W.decided }
+// Reachable properties, as the invariant that they are not: the shortest trace that breaks it
+// is the shortest way there.
+pred everyoneCommitsNever { not (all p: P | W.outcome[p] = Commit) }
+pred everyoneAbortsNever { not (all p: P | W.outcome[p] = Abort) }
 
 -- Every integer the model keeps: the harness checks none comes near overflowing.
 fun counts: set Int { univ.(W.voted) + W.begins + univ.(W.prepare) + univ.(univ.(W.voteMsg)) + univ.(univ.(W.decide)) + W.faults }

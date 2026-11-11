@@ -1,8 +1,8 @@
 // What every random spec is checked against. Each check that fails is a finding: a seed, which
 // check, and what differed. See spec.ts for the specs.
-import { check, faultsIn, initialWorld, replay, type Bounds, type Counterexample, type PropertyResult, type Report } from "../../src/check/index.ts";
+import { check, faultsIn, initialWorld, replay, type Bounds, type Counterexample, type PropertyBroken, type PropertyResult, type Report } from "../../src/check/index.ts";
 import { stepBreaks } from "../../src/check/judge.ts";
-import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, type Spec, type World } from "../../src/spec/index.ts";
+import { actorNamed, choices, holdsIn, LIVENESS_KINDS, traceView, violatedAlways, worldView, type Spec, type World } from "../../src/spec/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { whenHolds } from "../../src/spec/engine.ts";
 import { explore, worldKey } from "../check/reference.ts";
@@ -46,7 +46,7 @@ export async function fuzz(seed: number, options: FuzzOptions = {}): Promise<{ f
     if (!plain.exhaustive) return { findings, states: plain.states, skipped: "too big" };
 
     againstReference(spec, desc, plain, worlds, find);
-    for (const p of plain.properties) if (!p.holds) counterexampleHolds(spec, p, find);
+    for (const p of plain.properties) if (!p.holds && !p.unreached) counterexampleHolds(spec, p, find);
     if (plain.stuck) stuckHolds(spec, plain.stuck.counterexample, find);
 
     const folded = await check(spec, { ...bounds, symmetry: true });
@@ -85,8 +85,14 @@ function againstReference(spec: Spec, desc: SpecDesc, plain: Report, worlds: Set
   }
   for (const p of plain.properties.filter((p) => p.kind === "always")) {
     const theirs = ref.broken.get(p.id);
-    const ours = p.holds ? undefined : p.counterexample.events.length;
+    const ours = p.holds || p.unreached ? undefined : p.counterexample.events.length;
     if (theirs !== ours) find("reference: always", `${p.id}: checker ${ours ?? "holds"}, reference ${theirs ?? "holds"}`);
+  }
+  for (const p of plain.properties.filter((p) => p.kind === "reachable")) {
+    const theirs = ref.reachable.get(p.id);
+    const ours = p.holds && p.witness ? p.witness.events.length : undefined;
+    if (theirs !== ours) find("reference: reachable", `${p.id}: checker ${ours ?? "never reached"}, reference ${theirs ?? "never reached"}`);
+    if (p.holds && p.witness) witnessHolds(spec, p.id, p.witness, find);
   }
   same("reference: errors", [...new Set(plain.errors.map((e) => e.message))].sort(), [...ref.errors].sort(), find);
   // Coverage is of the spec's steps: a message delivered where nobody handles it is an error, not a step.
@@ -97,7 +103,7 @@ function againstReference(spec: Spec, desc: SpecDesc, plain: Report, worlds: Set
 }
 
 /** A counterexample replays to the same events, and breaks its property where it ends. */
-function counterexampleHolds(spec: Spec, p: Extract<PropertyResult, { holds: false }>, find: (check: string, detail: string) => void): void {
+function counterexampleHolds(spec: Spec, p: PropertyBroken, find: (check: string, detail: string) => void): void {
   const ce = p.counterexample;
   const again = replay(spec, ce.initial, ce.choices);
   const names = (c: Counterexample) => c.events.map((e) => `${e.actor}.${e.key}${e.error ? "!" : ""}`);
@@ -137,15 +143,43 @@ function counterexampleHolds(spec: Spec, p: Extract<PropertyResult, { holds: fal
 async function walksAgree(spec: Spec, desc: SpecDesc, plain: Report, find: (check: string, detail: string) => void): Promise<void> {
   const walked = await check(spec, { ...desc.bounds, depth: 0, walks: 300, walkDepth: desc.bounds.depth + 4, timeLimit: 60_000 });
   for (const p of walked.properties) {
-    if (p.holds || p.foundBy !== "walk") continue;
+    // A reachable property a run got to: the way there replays and gets there, and when it fits
+    // the search's bounds, the search got there too.
+    if (p.holds && p.witness && p.witnessBy === "walk") {
+      witnessHolds(spec, p.id, p.witness, (check, detail) => find(`walks: ${check}`, detail));
+      const searched = plain.properties.find((q) => q.id === p.id)!;
+      if (fitsBounds(p.witness, desc) && !searched.holds) find("walks: reached what the search missed", `${p.id} is reached in ${p.witness.events.length} steps within the bounds, and the search says never`);
+      continue;
+    }
+    if (p.holds || p.unreached || p.foundBy !== "walk") continue;
     counterexampleHolds(spec, p, (check, detail) => find(`walks: ${check}`, detail));
     const ce = p.counterexample;
-    const acts = new Map<string, number>();
-    for (const c of ce.choices) if (c.kind === "act") acts.set(`${c.instance}.${c.key}`, (acts.get(`${c.instance}.${c.key}`) ?? 0) + 1);
-    const fits = ce.events.length <= desc.bounds.depth && [...acts.values()].every((n) => n <= desc.bounds.repeats) && shape(ce).faults <= desc.bounds.faults;
+    const fits = fitsBounds(ce, desc);
     const searched = plain.properties.find((q) => q.id === p.id)!;
     if (fits && searched.holds) find("walks: found what the search missed", `${p.id} breaks in ${ce.events.length} steps within the bounds, and the search says it holds`);
   }
+}
+
+/** Whether a path found by a random run is one the search's bounds allow: as deep, as many repeats and as many faults at most. */
+function fitsBounds(ce: Counterexample, desc: SpecDesc): boolean {
+  const acts = new Map<string, number>();
+  for (const c of ce.choices) if (c.kind === "act") acts.set(`${c.instance}.${c.key}`, (acts.get(`${c.instance}.${c.key}`) ?? 0) + 1);
+  return ce.events.length <= desc.bounds.depth && [...acts.values()].every((n) => n <= desc.bounds.repeats) && shape(ce).faults <= desc.bounds.faults;
+}
+
+/** A reachable property's way there replays to the same events, takes no failed step, and ends where the property looks for. */
+function witnessHolds(spec: Spec, id: string, witness: Counterexample, find: (check: string, detail: string) => void): void {
+  const again = replay(spec, witness.initial, witness.choices);
+  const names = (c: Counterexample) => c.events.map((e) => `${e.actor}.${e.key}${e.error ? "!" : ""}`);
+  same(`replay: ${id}`, names(again), names(witness), find);
+  if (witness.events.some((e) => e.error)) find(`witness: ${id}`, "the way there takes a failed step");
+  const property = spec.properties.find((x) => x.id === id)!;
+  if (property.kind !== "reachable") return;
+  let there = false;
+  try {
+    there = property.reachable(worldView(spec, witness.worlds.at(-1) ?? witness.initial)) === true;
+  } catch {}
+  if (!there) find(`witness: ${id}`, "where the way there ends is not a world it looks for");
 }
 
 /** A stuck world: nothing pending, no action and no fair guard (past the model's bounds, such as atMost), and the spec does not call it final. */
@@ -171,7 +205,8 @@ function stays(spec: Spec, world: World): boolean {
 
 /** Each property's verdict, with a counterexample's length; and the stuck world and errors. */
 function signature(r: Report): Record<string, unknown> {
-  return { ...Object.fromEntries(r.properties.map((p) => [p.id, verdictOf(p) === "broken" && !p.holds ? `broken in ${p.counterexample.events.length}` : verdictOf(p)])), stuck: r.stuck ? shape(r.stuck.counterexample) : undefined, errors: r.errors.map((e) => `${e.message} in ${e.counterexample.events.length}`).sort() };
+  const said = (p: PropertyResult) => (p.holds && p.witness ? `reached in ${p.witness.events.length}` : verdictOf(p) === "broken" && !p.holds && !p.unreached ? `broken in ${p.counterexample.events.length}` : verdictOf(p));
+  return { ...Object.fromEntries(r.properties.map((p) => [p.id, said(p)])), stuck: r.stuck ? shape(r.stuck.counterexample) : undefined, errors: r.errors.map((e) => `${e.message} in ${e.counterexample.events.length}`).sort() };
 }
 
 function verdictOf(p: PropertyResult): "holds" | "broken" | "unfinished" {

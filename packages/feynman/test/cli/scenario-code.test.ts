@@ -2,26 +2,11 @@
 // instances, ending where the property breaks. Checked on every bug in the corpus.
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
-import { actorVariable, scenarioCode } from "../../src/cli/scenario-code.ts";
+import { scenarioCode } from "../../src/cli/scenario-code.ts";
+import { compile } from "./compile.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { runScenario, type ScenarioInfo, type Script, type Setup, type Spec } from "../../src/spec/index.ts";
+import { runScenario } from "../../src/spec/index.ts";
 import { caseName, corpus } from "../examples/corpus.ts";
-
-/** The scenario the code defines, its setup and run compiled with the spec's actors and messages in scope. */
-function compile(spec: Spec, name: string, code: string): ScenarioInfo {
-  // The code is TypeScript (`find(…)!`): transpile it, with the spec's actors in scope.
-  const scope = (body: string, param: string) => {
-    const js = new Bun.Transpiler({ loader: "ts" }).transformSync(`const f = (${param}) => {${body}};`);
-    // A call's failure (`Charge.failed`) is written failed(Charge), so it is not a name in scope.
-    const messages = Object.values(spec.messages).filter((m) => !m.id.includes("."));
-    const names = [...spec.actors.map((a) => actorVariable(a.name)), ...messages.map((m) => m.id), "failed"];
-    const values = [...spec.actors.map((a) => ({ name: a.name })), ...messages.map((m) => ({ kind: "message", key: m.key })), (m: { key: string }) => ({ kind: "message", key: `${m.key}.failed` })];
-    return new Function(...names, `${js}\nreturn f;`)(...values);
-  };
-  const run = code.slice(code.indexOf("run(s) {") + "run(s) {".length, code.lastIndexOf("},"));
-  const setup = code.includes("setup(w) {") ? code.slice(code.indexOf("setup(w) {") + "setup(w) {".length, code.indexOf("\n  },\n  run(s) {")) : null;
-  return { name, run: scope(run, "s") as (s: Script) => void, ...(setup ? { setup: scope(setup, "w") as (w: Setup) => void } : {}) };
-}
 
 for (const example of corpus)
   for (const c of example.cases) {
@@ -30,7 +15,7 @@ for (const example of corpus)
     test(`${caseName(example, c)}: counterexamples replay as scenarios`, async () => {
       const spec = example.spec(c.variant);
       const report = await check(spec, { ...c.bounds, instances: example.instances ?? {}, walks: 0 }, scenarioSeeds(spec));
-      for (const p of report.properties.filter((x) => !x.holds)) {
+      for (const p of report.properties.filter((x) => !x.holds && !x.unreached)) {
         const code = scenarioCode(spec, p);
         // From a scenario world a setup cannot build (messages in flight, fresh ids): the code says to copy the scenario.
         if (p.counterexample.from && !code.includes("setup(w) {")) continue;

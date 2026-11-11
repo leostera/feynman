@@ -12,7 +12,7 @@ import { agreesWithReference } from "./agree.ts";
 const PLAIN = { walks: 0, maxStates: 2_000_000, timeLimit: 120_000, symmetry: false } as const;
 
 /** What a verdict says, without the path: held, or broken in so many events. */
-const said = (p: PropertyResult) => [p.id, p.holds ? (p.unfinished ? "unfinished" : "holds") : p.counterexample.events.length + (p.loop?.events.length ?? 0)];
+const said = (p: PropertyResult) => [p.id, p.holds ? (p.unfinished ? "unfinished" : "holds") : p.unreached ? "unreached" : p.counterexample.events.length + (p.loop?.events.length ?? 0)];
 
 for (const example of corpus) for (const c of example.cases) {
   const { spec } = configured(example.spec(c.variant), { faults: c.bounds.faults ?? 0 });
@@ -79,7 +79,7 @@ test("cut off by maxStates: it stops there, and what it found broken is broken a
       const cut = await check(spec, { ...bounds, maxStates: Math.max(1, Math.floor(full.states / 3)) });
       expect(cut.stoppedBy).toBe("maxStates");
       // Breadth first: a break found before the cut is the full search's shortest one.
-      for (const p of cut.properties.filter((q) => !q.holds && !q.loop)) expect(said(full.properties.find((q) => q.id === p.id)!)).toEqual(said(p));
+      for (const p of cut.properties.filter((q) => !q.holds && !q.unreached && !q.loop)) expect(said(full.properties.find((q) => q.id === p.id)!)).toEqual(said(p));
     }
   }
 }, 300_000);

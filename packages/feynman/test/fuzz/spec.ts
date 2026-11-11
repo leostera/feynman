@@ -69,6 +69,8 @@ export interface SpecDesc {
   scenario?: { spawns: { actor: number; a: number }[] };
   /** Messages that are calls (RFD0009), and what each actor does when one it sent fails. */
   calls?: { messages: number[]; failures: Op[][] };
+  /** A reachable property: some world where this holds. */
+  reach?: WorldCond;
 }
 
 /** Small specs check quickly; big ones have deeper bounds, more instances and more steps, so more interleavings. */
@@ -158,7 +160,11 @@ export function describe(seed: number, size: Size = "small"): SpecDesc {
   // Drawn after the scenario, for the same reason. A failure is handled like a timer: no message to read or answer.
   const callMessages = chance(0.4) ? Array.from({ length: messages }, (_, m) => m).filter(() => chance(0.5)) : [];
   const calls = callMessages.length ? { calls: { messages: callMessages, failures: actors.map((_, i) => ops(i, "timer")) } } : {};
-  return { seed, messages, actors, properties, ...final, bounds, ...scenario, ...calls };
+  // Drawn after the calls, for the same reason. Every instance starts with a = 0 and b unset, so
+  // a goal of a value of a above 0, or b set, takes steps to get to, if any get there at all.
+  const goal = (actor: number): WorldCond => ({ actor, every: chance(0.4), cond: chance(0.5) ? { kind: "aIs", k: 1 + int(actors[actor].cap - 1) } : { kind: "b", is: true } });
+  const reach = chance(0.6) ? { reach: goal(int(actorCount)) } : {};
+  return { seed, messages, actors, properties, ...final, bounds, ...scenario, ...calls, ...reach };
 }
 
 /** The spec a description stands for. */
@@ -313,6 +319,7 @@ export function build(desc: SpecDesc): Spec {
         break;
     }
   });
+  if (desc.reach) define(`p${desc.properties.length}_reachable`, { reachable: (w: any) => worldHolds(desc.reach!, w) });
   const spawns = desc.scenario?.spawns;
   return defineSpec({
     name: `Fuzz ${desc.seed}`,

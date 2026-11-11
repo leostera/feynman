@@ -43,6 +43,16 @@ export function startBreaks(spec: Spec, world: World, before: readonly Event[] =
   return [...violatedAlways(spec, world), ...nevers];
 }
 
+/** The reachable properties a world gets to, where a path starts. Kept apart from startBreaks: getting there breaks nothing. */
+export function startReached(spec: Spec, world: World): string[] {
+  return spec.properties.filter((p) => p.kind === "reachable" && reachedIn(spec, world, p.reachable)).map((p) => p.id);
+}
+
+/** Whether a world is one a reachable property looks for. A predicate that cannot be evaluated there (no such instance yet) is not. */
+export function reachedIn(spec: Spec, world: World, reachable: (world: WorldView) => boolean): boolean {
+  return safely(() => reachable(worldView(spec, world))) === true;
+}
+
 /** The `everyStep` properties a step breaks, of those not yet broken. A predicate that cannot be evaluated holds, as an `always` one does. */
 export function stepBreaks(spec: Spec, before: World, after: World, event: Event, broken: Set<string>): string[] {
   const out: string[] = [];

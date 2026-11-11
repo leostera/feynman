@@ -657,6 +657,14 @@ export type PropertyDef = (
   /** Of every step: the world before it, the world after, and the event. */
   | { description: string; everyStep: (before: World, after: World, event: TraceEvent) => boolean }
   | { description: string; never: (trace: Trace) => boolean }
+  /**
+   * Some world the system can get to is like this: a sale completes, a refund happens. It holds
+   * when the checker finds one, with the path there, and breaks when it has explored every world
+   * within the bounds and none is: a guard too strict, a step that can never run, a design that
+   * rules out what it was for. Safety properties hold trivially in a spec where nothing happens;
+   * this is how a spec says something does.
+   */
+  | { description: string; reachable: (world: World) => boolean }
   /** From the start, this happens at least once. */
   | { description: string; eventually: (world: World) => boolean }
   /** Every time `whenever` holds, `then` holds then or later. */
@@ -685,7 +693,7 @@ export interface Property {
 
 /**
  * A property: of every state (`always`), every step (`everyStep`), every path so far (`never`),
- * or of every fair infinite behaviour (`eventually`, `leadsTo`, `infinitelyOften`,
+ * of some state (`reachable`), or of every fair infinite behaviour (`eventually`, `leadsTo`, `infinitelyOften`,
  * `eventuallyAlways`). See RFD0006 for what each means, and fairness.
  */
 export function defineProperty(id: string, def: PropertyDef): Property {
@@ -953,7 +961,7 @@ type Scope = ReturnType<typeof scoped>;
 
 function scopeProperty(p: PropertyInfo, scope: Scope): PropertyInfo {
   const out = { ...p } as Record<string, unknown>;
-  for (const key of ["always", "everyStep", "never", "eventually", "whenever", "then", "infinitelyOften", "eventuallyAlways"]) if (typeof out[key] === "function") out[key] = scope(out[key]);
+  for (const key of ["always", "everyStep", "never", "reachable", "eventually", "whenever", "then", "infinitelyOften", "eventuallyAlways"]) if (typeof out[key] === "function") out[key] = scope(out[key]);
   return out as PropertyInfo;
 }
 
@@ -1137,7 +1145,7 @@ function fairnessOf(step: string, fair: unknown): { fair?: Fairness | false } {
 }
 
 /** Every kind of property, by the key a definition declares it with: a Record, so the compiler keeps it complete. */
-const PROPERTY_KINDS = Object.keys({ always: 0, everyStep: 0, never: 0, eventually: 0, leadsTo: 0, infinitelyOften: 0, eventuallyAlways: 0 } satisfies Record<PropertyInfo["kind"], 0>);
+const PROPERTY_KINDS = Object.keys({ always: 0, everyStep: 0, never: 0, reachable: 0, eventually: 0, leadsTo: 0, infinitelyOften: 0, eventuallyAlways: 0 } satisfies Record<PropertyInfo["kind"], 0>);
 
 /** A property definition, read into the one kind it declares; a definition with none, several, or a predicate that is not a function is a mistake. */
 function propertyInfo(id: string, def: PropertyDef): PropertyInfo {
@@ -1151,6 +1159,11 @@ function propertyInfo(id: string, def: PropertyDef): PropertyInfo {
   if ("always" in def) return { ...base, kind: "always", always: predicate(def.always, "always") };
   if ("everyStep" in def) return { ...base, kind: "everyStep", everyStep: predicate(def.everyStep, "everyStep") };
   if ("never" in def) return { ...base, kind: "never", never: predicate(def.never, "never") };
+  if ("reachable" in def) {
+    // A rule a property needs is one it breaks without (RFD0010); nothing makes a world unreachable on purpose.
+    if (def.needs?.length) throw new Error(`Property "${id}": a reachable property needs no rules; say what the rule keeps true with an always, everyStep or never property`);
+    return { ...base, kind: "reachable", reachable: predicate(def.reachable, "reachable") };
+  }
   if ("eventually" in def) return { ...base, kind: "eventually", eventually: predicate(def.eventually, "eventually") };
   if ("leadsTo" in def) return { ...base, kind: "leadsTo", whenever: predicate(def.leadsTo?.whenever, "leadsTo.whenever"), then: predicate(def.leadsTo?.then, "leadsTo.then") };
   if ("infinitelyOften" in def) return { ...base, kind: "infinitelyOften", infinitelyOften: predicate(def.infinitelyOften, "infinitelyOften") };

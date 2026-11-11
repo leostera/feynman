@@ -55,12 +55,13 @@ export async function checkRules(spec: Spec, bounds: Partial<Bounds>, options: C
       name: rule.name,
       description: rule.description,
       neededBy: report.properties.map((p): NeededBy => {
-        if (!p.holds) return { property: p.id, verdict: "breaks", events: p.counterexample.events.length + (p.loop?.events.length ?? 0) };
+        // Reachable properties need no rules (dsl.ts), so every one here has a counterexample when it breaks.
+        if (!p.holds && !p.unreached) return { property: p.id, verdict: "breaks", events: p.counterexample.events.length + (p.loop?.events.length ?? 0) };
         const shown = byScenario.get(p.id);
         if (shown) return { property: p.id, verdict: "breaks", ...shown };
         // Held on every path there is: a search the depth bound cut off has not seen them all, and
         // "the rule is not needed" would be a claim about paths it never took.
-        return { property: p.id, verdict: report.exhaustive && !report.cutAtDepth && !p.unfinished && !report.chance?.length ? "holds" : "unfinished" };
+        return { property: p.id, verdict: report.exhaustive && !report.cutAtDepth && !(p.holds && p.unfinished) && !report.chance?.length ? "holds" : "unfinished" };
       }),
     });
   }

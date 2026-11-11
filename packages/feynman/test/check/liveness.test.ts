@@ -12,6 +12,7 @@ const BOUNDS = { depth: 20, walks: 0, maxStates: 100_000, timeLimit: 30_000 };
 function verdict(report: Report, id: string) {
   const p = report.properties.find((x) => x.id === id)!;
   if (p.holds) return p.unfinished ? "unfinished" : "holds";
+  if (p.unreached) throw new Error(`${id} is a reachable property`);
   const keys = (events: Event[]) => events.map((e) => e.key.replace("message:", ""));
   return { events: keys(p.counterexample.events), loop: keys(p.loop!.events) };
 }

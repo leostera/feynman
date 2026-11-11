@@ -12,6 +12,9 @@ describe.skipIf(!TLA_JAR)("TLC on specs from the wild", () => {
       expect((await feynman(w.spec(), {})).distinct).toBe(w.states);
       const theirs = Object.fromEntries(Object.entries(properties).map(([id, name]) => [id, tlc(module, constants, [], { dir, temporal: { specification, properties: [name] } }).temporal ? "broken" : "holds"]));
       expect(theirs).toEqual(w.expect);
+      // Reachable properties: TLC's shortest counterexample to the invariant that one is never reached is the shortest way there.
+      const reached = Object.fromEntries(Object.entries(w.tla.never).map(([id, name]) => [id, tlc(module, constants, [name], { dir }).violated?.events ?? "never"]));
+      expect(reached).toEqual(w.reachable);
     }, 300_000);
   }
 });

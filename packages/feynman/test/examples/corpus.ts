@@ -37,11 +37,12 @@ import { webhooks } from "../../examples/webhooks.ts";
 export type Variant = "buggy" | "fixed";
 
 /**
- * A property's expected verdict: holds; unfinished (liveness whose loop may lie past the depth
- * bound); or broken by a shortest path of this many events (for liveness, to its loop), with
- * this many faults.
+ * A property's expected verdict: holds; unfinished (held, or not reached, where the search was
+ * cut off); broken by a shortest path of this many events (for liveness, to its loop), with
+ * this many faults; for a reachable property, reached by a shortest path of this many events,
+ * or never reached in a search that explored every world.
  */
-export type Expected = "holds" | "unfinished" | { events: number; faults: number };
+export type Expected = "holds" | "unfinished" | { events: number; faults: number } | { reached: number } | "never";
 
 /**
  * A case's bounds: the checker's, and the fault budget the example declares (RFD0012),
@@ -74,6 +75,8 @@ export interface TlaOracle {
   invariants: string[];
   /** For systems that never run out of things to do: both sides stop at this depth, and the model has a `view`. */
   depth?: number;
+  /** Reachable properties both sides check: the model's invariant `<id>Never`, whose shortest counterexample is the shortest way there. */
+  reachable?: string[];
   /**
    * Liveness properties both sides check, by the same name: TLC under the model's `FairSpec`,
    * which makes fair what Feynman does (delivering what is in flight). Only for models without
@@ -91,6 +94,8 @@ export interface AlloyOracle {
   module: string;
   /** Safety invariants both sides check, by the same name (a pred in the model). */
   invariants: string[];
+  /** Reachable properties both sides check: the model's pred `<id>Never`, whose shortest counterexample is the shortest way there. */
+  reachable?: string[];
   /** Events a trace may have: Alloy's verdict that an invariant holds is only up to this many. */
   depth: number;
   configs: { variant: Variant; faults: number; repeats: number }[];
@@ -109,6 +114,8 @@ export interface NusmvOracle {
   model: string;
   /** Safety invariants both sides check, by the same name (an INVARSPEC NAME in the model). */
   invariants: string[];
+  /** Reachable properties both sides check: the model's INVARSPEC `<id>Never`, whose shortest counterexample is the shortest way there. */
+  reachable?: string[];
   /** Liveness properties both sides check, by the same name (an LTLSPEC NAME, under the model's JUSTICE). */
   liveness?: string[];
   configs: { variant: Variant; faults: number; repeats: number }[];
@@ -176,16 +183,19 @@ export const corpus: Example[] = [
     spec: twoPhaseCommit,
     instances: { Participant: 2 },
     cases: [
-      { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { atomic: { events: 7, faults: 0 } } },
-      { variant: "fixed", bounds: { depth: 9, faults: 0 }, expect: { atomic: "holds", decidedOnceQuiet: "holds", decides: "holds" } },
+      // Committing everywhere: the buggy coordinator commits on the first yes, and tells both (6);
+      // the fixed one waits for both votes (9). Aborting: both vote no (5).
+      { variant: "buggy", bounds: { depth: 9, faults: 0 }, expect: { atomic: { events: 7, faults: 0 }, everyoneCommits: { reached: 6 }, everyoneAborts: { reached: 5 } } },
+      { variant: "fixed", bounds: { depth: 9, faults: 0 }, expect: { atomic: "holds", decidedOnceQuiet: "holds", everyoneCommits: { reached: 9 }, everyoneAborts: { reached: 5 }, decides: "holds" } },
       // Blocking: once everyone has voted and a vote is lost, it never decides (6); quiet needs the other vote delivered too (7).
-      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, decides: { events: 7, faults: 1 } }, stuck: { events: 5, faults: 1 } },
+      // Committing everywhere takes 9 events, past this depth: not reached yet, which is not never.
+      { variant: "fixed", bounds: { depth: 8, faults: 1 }, expect: { atomic: "holds", decidedOnceQuiet: { events: 7, faults: 1 }, everyoneCommits: "unfinished", everyoneAborts: { reached: 5 }, decides: { events: 7, faults: 1 } }, stuck: { events: 5, faults: 1 } },
     ],
-    tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
-    alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
+    tla: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], reachable: ["everyoneCommits", "everyoneAborts"], liveness: ["decides"], configs: BOTH_WAYS },
+    alloy: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], reachable: ["everyoneCommits", "everyoneAborts"], depth: 9, configs: BOTH_WAYS },
     quint: { module: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], depth: 9, configs: BOTH_WAYS },
     spin: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], configs: BOTH_WAYS },
-    nusmv: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], liveness: ["decides"], configs: BOTH_WAYS },
+    nusmv: { model: "TwoPhaseCommit", invariants: ["atomic", "decidedOnceQuiet"], reachable: ["everyoneCommits", "everyoneAborts"], liveness: ["decides"], configs: BOTH_WAYS },
     p: { project: "TwoPhaseCommit", property: "atomic", assertion: "one participant committed while another aborted", depth: 9 },
   },
   {

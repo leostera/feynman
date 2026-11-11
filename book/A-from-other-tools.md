@@ -33,6 +33,7 @@ what you know onto what this book uses.
 | `UNCHANGED` | implicit: a step changes only what its `run` assigns |
 | a message set or channel variable | built in: `ctx.send`, and what's pending |
 | `INVARIANT` | `defineProperty({ always })` |
+| an invariant `~P`, written to get a trace to P | `defineProperty({ reachable: P })`: a shortest way there, or ✗ if no world gets there |
 | `[][A => B]_v` (action property) | `defineProperty({ everyStep: (before, after) => … })` |
 | `P ~> Q` | `defineProperty({ leadsTo: { whenever, then } })` |
 | `WF_vars(A)`, `SF_vars(A)` | deliveries, timers and guarded transitions are weakly fair; `fair: "strong"` for strong; `fair: false` for steps that may never happen, as faults are; actions (what people do) are never fair |
@@ -56,7 +57,7 @@ one of them next to its oracle is the fastest way across.
 | `fact` | a guard (`when`), or a `setup`: Feynman specs are built forwards, not constrained |
 | `pred` with `pre`/`post` (Alloy 6 `'`) | a step's `when` and `run` |
 | `assert` + `check` | `defineProperty` + `feynman check` |
-| `run` to find an instance | `defineScenario`, or the playground |
+| `run` to find an instance | `defineProperty({ reachable })` finds a shortest way to one; `defineScenario` scripts one |
 | scope (`for 3`) | `--instances`, `atMost`, `--depth` |
 | the visualiser and themes | the playground and `display` (chapter 14) |
 | `always`, `eventually`, `after` (Alloy 6) | `always`, `eventually`, `leadsTo`, `everyStep` |
@@ -76,6 +77,7 @@ behavioural chapters model, the two line up closely.
 | `goto` | assign the state field |
 | `defer` and `ignore` | a guard that leaves it for later, or a `run` that returns early |
 | `spec` monitor machine (safety) | `defineProperty({ always })` or `everyStep` |
+| a test that asserts a goal is reached | `defineProperty({ reachable })` |
 | `hot` states (liveness) | `leadsTo` and the other liveness kinds |
 | `test` and its driver | `defineScenario`, a `setup`, and `feynman check` |
 | failure injector | `lose`, `duplicate`, `crash`, `defineCall` + `failed`, with a `budget` |

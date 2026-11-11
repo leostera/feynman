@@ -38,7 +38,7 @@ test("without faults, every redemption gets its answer and the property holds", 
 
 test("counterexamples replay: the same choices give the same events", async () => {
   const report = await withOneFault();
-  const example = report.properties.find((p) => !p.holds)!.counterexample;
+  const example = report.properties.find((p) => !p.holds && !p.unreached)!.counterexample;
   expect(example.events.length).toBe(example.choices.length);
   expect(example.worlds.length).toBe(example.choices.length);
   expect(example.events.every((e) => !e.error)).toBe(true);

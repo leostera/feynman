@@ -66,6 +66,7 @@ export default defineConfig({ specs: ["specs/*.ts"], check: { maxStates: 500_000
 | timer | `{ description, after: "10 minutes", run }`, set with `ctx.start(key)` | 7 |
 | safety property | `defineProperty(id, { description, always: (w) => … })` | 5 |
 | step property | `defineProperty(id, { description, everyStep: (before, after) => … })` | 5 |
+| must be possible | `defineProperty(id, { description, reachable: (w) => … })` | 5 |
 | liveness property | `defineProperty(id, { description, leadsTo: { whenever, then } })`, `eventually` | 10 |
 | scenario | `defineScenario(name, { description, setup?, run(s) })` | 6 |
 | rule | `defineRule(id, { description })`, read as `rule.on`, named in `needs` | 11 |

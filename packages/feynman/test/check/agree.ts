@@ -22,7 +22,7 @@ export async function agreesWithReference(spec: Spec, bounds: AgreeBounds, seeds
   expect(ours.exhaustive).toBe(true);
   expect(worlds.size).toBe(theirs.worlds.size);
   expect([...worlds].filter((w) => !theirs.worlds.has(w))).toEqual([]);
-  const broken = Object.fromEntries(ours.properties.filter((p) => !p.holds && p.kind === "always").map((p) => [p.id, p.holds ? 0 : p.counterexample.events.length]));
+  const broken = Object.fromEntries(ours.properties.filter((p) => !p.holds && !p.unreached && p.kind === "always").map((p) => [p.id, p.holds || p.unreached ? 0 : p.counterexample.events.length]));
   expect(broken).toEqual(Object.fromEntries(theirs.broken));
   expect(ours.errors.map((e) => e.message).sort()).toEqual([...theirs.errors].sort());
   expect([...ours.coverage.reached].sort()).toEqual([...theirs.reached].sort());

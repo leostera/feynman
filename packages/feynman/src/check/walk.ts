@@ -7,7 +7,7 @@
 // they pick, and the shrinking.
 import { actorNamed, choices as enabled, stepsTaking, traceView, type Event, type Spec, type World } from "../spec/index.ts";
 import { pendingText } from "./keys.ts";
-import { safely, stepBreaks } from "./judge.ts";
+import { reachedIn, safely, stepBreaks } from "./judge.ts";
 import { apply, type Choice, type Counterexample } from "./steps.ts";
 
 export interface WalkFinding {
@@ -86,6 +86,8 @@ function stillBreaks(spec: Spec, id: string, path: Counterexample, before: reado
   // A failed step breaks no property (see judge).
   if (property.kind === "always") return path.events.some((e) => !e.error && e.violations.includes(id));
   if (property.kind === "never") return !!safely(() => property.never(traceView([...before, ...path.events])));
+  // For a reachable property, "breaks" is getting there: a shorter path that still does.
+  if (property.kind === "reachable") return [path.initial, ...path.worlds].some((w, i) => (i === 0 || !path.events[i - 1]!.error) && reachedIn(spec, w, property.reachable));
   if (property.kind === "everyStep") return path.events.some((e, i) => !e.error && stepBreaks(spec, path.worlds[i - 1] ?? path.initial, path.worlds[i], e, new Set()).includes(id));
   return false;
 }

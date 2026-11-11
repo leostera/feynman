@@ -174,6 +174,7 @@ export type PropertyInfo = (
   | { kind: "always"; always: (world: WorldView) => boolean }
   | { kind: "everyStep"; everyStep: (before: WorldView, after: WorldView, event: TraceEvent) => boolean }
   | { kind: "never"; never: (trace: Trace) => boolean }
+  | { kind: "reachable"; reachable: (world: WorldView) => boolean }
   | { kind: "eventually"; eventually: (world: WorldView) => boolean }
   | { kind: "leadsTo"; whenever: (world: WorldView) => boolean; then: (world: WorldView) => boolean }
   | { kind: "infinitelyOften"; infinitelyOften: (world: WorldView) => boolean }

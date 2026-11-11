@@ -14,7 +14,9 @@ function verdicts(report: Report, expected: Record<string, Expected>): Record<st
   return Object.fromEntries(
     Object.keys(expected).map((id) => {
       const p = report.properties.find((x) => x.id === id)!;
+      if (p.holds && p.witness) return [id, { reached: p.witness.events.length }];
       if (p.holds) return [id, p.unfinished ? "unfinished" : "holds"];
+      if (p.unreached) return [id, report.exhaustive && !report.cutAtDepth ? "never" : "unfinished"];
       return [id, shape(p.counterexample)];
     }),
   );
@@ -46,7 +48,7 @@ for (const example of corpus) for (const c of example.cases) {
     });
 
     test("counterexamples replay to the same events", async () => {
-      for (const p of plain.properties.filter((p) => !p.holds)) {
+      for (const p of plain.properties.filter((p) => !p.holds && !p.unreached)) {
         const again = replay(spec, p.counterexample.initial, p.counterexample.choices);
         expect(again.events.map((e) => `${e.actor}.${e.key}`)).toEqual(p.counterexample.events.map((e) => `${e.actor}.${e.key}`));
       }
@@ -69,8 +71,15 @@ for (const example of corpus) for (const c of example.cases) {
       const walked = await check(spec, { ...bounds, depth: 0, walks: 3_000, walkDepth: 40, timeLimit: 60_000 });
       for (const [id, expected] of safety) {
         const p = walked.properties.find((x) => x.id === id)!;
+        // A reachable property: a run gets there, or none does. One the search's depth cut off
+        // ("unfinished") may be got to by runs, which go deeper, or not.
+        if (p.kind === "reachable") {
+          if (expected !== "unfinished") expect({ id, reached: p.holds }).toEqual({ id, reached: expected !== "never" });
+          if (p.holds) expect(p.witnessBy).toBe("walk");
+          continue;
+        }
         expect(p.holds).toBe(expected === "holds");
-        if (!p.holds) expect(p.foundBy).toBe("walk");
+        if (!p.holds && !p.unreached) expect(p.foundBy).toBe("walk");
       }
       expect(walked.stuck?.foundBy).toBe(c.stuck ? "walk" : undefined);
     });

@@ -1078,3 +1078,47 @@ exports[`19-counters/4-gossip.ts 1`] = `
   "typeErrors": 0,
 }
 `;
+
+exports[`05-properties/5-sells-nothing.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "soldSeatsStaySold": "holds",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/6-can-anyone-buy.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "soldSeatsStaySold": "holds",
+    "someoneGetsASeat": "broken",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;
+
+exports[`05-properties/7-someone-gets-a-seat.ts 1`] = `
+{
+  "errors": 0,
+  "properties": {
+    "oneOwnerPerSeat": "holds",
+    "soldSeatsStaySold": "holds",
+    "someoneGetsASeat": "holds",
+    "ticketsMatchTheBooks": "holds",
+  },
+  "rules": {},
+  "stuck": false,
+  "typeErrors": 0,
+}
+`;

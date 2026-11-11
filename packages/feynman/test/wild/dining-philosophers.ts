@@ -49,9 +49,14 @@ export function diningPhilosophers(fair: "weak" | "strong") {
   const noLivelock = defineProperty("noLivelock", { description: "Someone eats, again and again.", infinitelyOften: (w) => P.some((p) => w.the(Table).state.philosophers[p].size === 2) });
   const noStarvation = P.map((p) => defineProperty(`noStarvation${p}`, { description: `Philosopher ${p} eats, again and again.`, infinitelyOften: (w) => w.the(Table).state.philosophers[p].size === 2 }));
 
+  // Two who share no fork can eat at once; two neighbours, who share one, never can.
+  const eating = (w: { the: (a: typeof Table) => { state: Table } }, p: number) => w.the(Table).state.philosophers[p].size === 2;
+  const apartEat = defineProperty("apartEat", { description: "Philosophers 1 and 3 eat at once.", reachable: (w) => eating(w, 1) && eating(w, 3) });
+  const neighboursEat = defineProperty("neighboursEat", { description: "Philosophers 1 and 2 eat at once.", reachable: (w) => eating(w, 1) && eating(w, 2) });
+
   return defineSpec({
     name: `Dining philosophers (tlaplus/Examples, ${fair} fairness)`,
     actors: [Table],
-    properties: [noLivelock, ...noStarvation],
+    properties: [noLivelock, ...noStarvation, apartEat, neighboursEat],
   });
 }

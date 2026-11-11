@@ -107,6 +107,10 @@ Alias ==
 -----------------------------------------------------------------------------
 
 
+\* Added for Feynman's oracle: reachable properties, as the invariant that they are not.
+ApartEatNever == ~(IsEating(1) /\ IsEating(3))
+NeighboursEatNever == ~(IsEating(1) /\ IsEating(2))
+
 Starve1 == []<>IsEating(1)
 Starve2 == []<>IsEating(2)
 Starve3 == []<>IsEating(3)

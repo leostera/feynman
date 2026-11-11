@@ -108,6 +108,10 @@ INVARSPEC NAME bounded := voted[0] < 7 & voted[1] < 7 & begins < 7 & faults < 7 
   & voteMsg[0] < 7 & voteMsg[1] < 7 & voteMsg[2] < 7 & voteMsg[3] < 7 & decide[0] < 7 & decide[1] < 7 & decide[2] < 7 & decide[3] < 7
 INVARSPEC NAME atomic := !((outcome[0] = 1 & outcome[1] = 2) | (outcome[0] = 2 & outcome[1] = 1))
 INVARSPEC NAME decidedOnceQuiet := (quiet & vote[0] != 0 & vote[1] != 0) -> decided != 0
+-- Reachable properties, as the invariant that they are not: NuSMV's shortest counterexample
+-- is the shortest way there.
+INVARSPEC NAME everyoneCommitsNever := !(outcome[0] = 1 & outcome[1] = 1)
+INVARSPEC NAME everyoneAbortsNever := !(outcome[0] = 2 & outcome[1] = 2)
 
 -- Feynman's fairness: every message in flight is delivered. Voting, beginning, losses and
 -- restarts are not fair.

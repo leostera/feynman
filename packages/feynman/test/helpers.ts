@@ -5,6 +5,7 @@ import type { PropertyBroken, PropertyResult, Report } from "../src/check/index.
 export function broken(property: PropertyResult | undefined): PropertyBroken {
   if (!property) throw new Error("no such property");
   if (property.holds) throw new Error(`${property.id} holds; expected it broken`);
+  if (property.unreached) throw new Error(`${property.id} is a reachable property no world got to; expected a counterexample`);
   return property;
 }
 

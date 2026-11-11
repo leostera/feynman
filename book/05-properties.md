@@ -388,6 +388,82 @@ The website still asks "is it free?" first, which now only saves a write when th
 no. The guarantee comes from the database's conditional write. The full spec is
 [`specs/05-properties/4-fixed.ts`](specs/05-properties/4-fixed.ts).
 
+## Step 5: a fix too good to be true
+
+Every property we have says something must never happen. A box office that never sells a
+seat keeps all of them. Say the condition on the write is wrong, so the database refuses
+every reservation:
+
+```ts
+    reserve: {
+      on: Reserve,
+      description: "Refuses: the condition on the write is wrong, and always fails.",
+      sends: [Taken],
+      run: (_state, msg, ctx) => ctx.reply(Taken, msg),
+    },
+```
+
+```text
+Box office: explored 132 states (1 of each actor, and from the end of 1 scenario(s)) in 41ms
+  ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
+  ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
+  ✓ soldSeatsStaySold  Once a seat is sold, it stays sold to the same person.
+  never ran: Person.ticket, Website.reserved
+  ! Website reserved is on Reserved, which no step sends: it never runs
+```
+
+Three ✓, and nobody can buy a ticket. Coverage hints at it: two steps never ran. But coverage
+only notices a step that never runs. It can't notice a step that runs and never does its job.
+The spec is [`specs/05-properties/5-sells-nothing.ts`](specs/05-properties/5-sells-nothing.ts).
+
+## Step 6: what must be possible
+
+A safety property says what must never happen. A `reachable` property says what must be
+able to happen: some world, on some path, where it's true.
+
+```ts
+const someoneGetsASeat = defineProperty("someoneGetsASeat", {
+  description: "Someone can buy a ticket.",
+  reachable: (w) => ticketsHeld(w).length > 0,
+});
+```
+
+The check finds no such world:
+
+```text
+Box office: explored 132 states (1 of each actor, and from the end of 1 scenario(s)) in 46ms
+  ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
+  ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
+  ✓ soldSeatsStaySold  Once a seat is sold, it stays sold to the same person.
+  ✗ someoneGetsASeat  Someone can buy a ticket.  never reached: no world within the bounds gets there, of the 132 explored
+    A guard too strict, a step that can never run, or bounds too small for it: more instances, a bigger budget, a scenario that sets the stage.
+```
+
+A ✗ here has no counterexample, because nothing went wrong on any path. The checker
+explored every world and none of them sells a seat. If the search had stopped early, at a
+depth bound or the state limit, the verdict would be `~`: not reached yet, which is not the
+same as never. The spec is [`specs/05-properties/6-can-anyone-buy.ts`](specs/05-properties/6-can-anyone-buy.ts).
+
+Put the real database of step 4 back:
+
+```text
+Box office: explored 216 states (1 of each actor, and from the end of 1 scenario(s)) in 42ms
+  ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
+  ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
+  ✓ soldSeatsStaySold  Once a seat is sold, it stays sold to the same person.
+  ✓ someoneGetsASeat  Someone can buy a ticket.  reached at the end of scenario "Both want A1"
+```
+
+The search starts from the initial world and from the end of each scenario (chapter 6).
+"Both want A1" ends with Alice holding A1, so the checker got there in no steps at all.
+Without a scenario, it says how many events the shortest way takes. `--only someoneGetsASeat`
+prints the way, and `--as-scenario` writes it out as a scenario. The spec is
+[`specs/05-properties/7-someone-gets-a-seat.ts`](specs/05-properties/7-someone-gets-a-seat.ts).
+
+Write a `reachable` property for each thing the system is for: an order goes through, a
+leader is elected, a payment settles. They're cheap, and they catch a spec, or a fix, that
+keeps its promises by doing nothing. Alloy users know this as `run`, next to `check`.
+
 ## Writing good properties
 
 - **Write the property before the fix.** If you write it after, you'll write the property
@@ -399,6 +475,8 @@ no. The guarantee comes from the database's conditional write. The full spec is
   property that catches the angry customer.
 - **Read your properties against the buggy design.** If a property holds there, it isn't
   checking what you think.
+- **Say what must be possible, too.** A system that does nothing keeps every safety
+  property. A `reachable` property for each thing it is for catches that.
 - **Keep property-only state honest.** If a property needs history the system doesn't keep
   (what was promised, what was paid out), it's fine to add it to an actor's state, but say
   in a comment that only properties read it.
@@ -412,3 +490,6 @@ no. The guarantee comes from the database's conditional write. The full spec is
    What if there are two web servers?
 3. `noMoreTicketsThanSeats` needed a third ticket to notice. Using `t.count` and `e.sent`,
    can you write a `never` property that notices at the second ticket for one seat?
+4. Write a `reachable` property "both seats are sold". Now let each person buy once
+   (`atMost(1)`). Is it reached with one person? With `--instances Person=2`? When it isn't,
+   why is the verdict a ✗ and not a `~`?

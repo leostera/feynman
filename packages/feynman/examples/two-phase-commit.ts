@@ -126,6 +126,18 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
     always: (w) => !(w.quiet && w.all(Participant).every((p) => p.state.vote !== null)) || w.the(Coordinator).state.decided !== null,
   });
 
+  // What the protocol is for: an order can go through everywhere, or be called off everywhere.
+  // A coordinator too cautious to ever commit keeps `atomic` too; these say it does not.
+  const everyoneCommits = defineProperty("everyoneCommits", {
+    description: "Every participant can commit.",
+    reachable: (w) => w.all(Participant).every((p) => p.state.outcome === "commit"),
+  });
+
+  const everyoneAborts = defineProperty("everyoneAborts", {
+    description: "Every participant can abort.",
+    reachable: (w) => w.all(Participant).every((p) => p.state.outcome === "abort"),
+  });
+
   const decides = defineProperty("decides", {
     description: "Once everyone has voted, the coordinator decides.",
     leadsTo: {
@@ -181,7 +193,7 @@ export function twoPhaseCommit(variant: "buggy" | "fixed") {
   return defineSpec({
     name: `Two-phase commit (${variant})`,
     actors: [Participant, Coordinator],
-    properties: [atomic, decidedOnceQuiet, decides],
+    properties: [atomic, decidedOnceQuiet, everyoneCommits, everyoneAborts, decides],
     finalState: {
       description: "Every participant knows the outcome.",
       when: (w) => w.all(Participant).every((p) => p.state.outcome !== null),

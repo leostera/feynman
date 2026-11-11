@@ -24,7 +24,7 @@ import { afterReset, deliveryIn } from "../spec/engine.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Root, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
-import { startBreaks, stuck, type Verdicts } from "./judge.ts";
+import { reachedIn, startBreaks, startReached, stuck, type Verdicts } from "./judge.ts";
 import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { fairness } from "./fairness.ts";
@@ -379,7 +379,15 @@ export class IntegerSearch {
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
     this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [{ id: p.id, everyStep: p.everyStep }] : []));
     this.stepMemos = this.everySteps.map(() => new Map());
-    this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
+    // A reachable property is judged as an `always` one of its negation: the world that "breaks"
+    // it is one that gets there, and the search keeps the shortest way, as for any break.
+    this.always = spec.properties.flatMap((p) =>
+      p.kind === "always"
+        ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }]
+        : p.kind === "reachable"
+          ? [{ id: p.id, holds: (w: World) => !reachedIn(spec, w, p.reachable) }]
+          : [],
+    );
   }
 
   /** Steps that ran, as `actor.key`. */
@@ -481,7 +489,7 @@ export class IntegerSearch {
       this.seen.set(h1, h2, gid);
       this.states++;
       this.watch.state?.(world, this.memoryText(vector, L));
-      for (const id of startBreaks(this.spec, world, this.rootTrails[r] as Event[])) if (!this.broken.has(id)) this.breaks(id, gid);
+      for (const id of [...startBreaks(this.spec, world, this.rootTrails[r] as Event[]), ...startReached(this.spec, world)]) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid, L);
       const tuple = this.tupleOf(vector, L);
       if (this.keepsEdges) this.judgeTruths(tuple, () => world, gid);
@@ -500,7 +508,7 @@ export class IntegerSearch {
     const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
     if (this.b.walks <= 0) return out;
     for (const [root, { world }] of this.roots.entries()) {
-      for (const id of startBreaks(this.spec, world, this.rootTrails[root] as Event[]).filter((id) => !v.broken.has(id))) {
+      for (const id of [...startBreaks(this.spec, world, this.rootTrails[root] as Event[]), ...startReached(this.spec, world)].filter((id) => !v.broken.has(id))) {
         v.broken.add(id);
         out.findings.push({ id, root, choices: [] });
       }

@@ -9,6 +9,15 @@ after.
 Faster, checked against more, and corrected where a review found the checker saying more than
 it knew. Some verdicts change: each change below is a wrong answer put right.
 
+### New
+
+- **`reachable` properties: what must be possible.** `defineProperty(id, { reachable: (w) =>
+  … })` holds when some world on some path gets there, and check shows the shortest way
+  (`--only`, or `--as-scenario` to keep it). It reads `✗ never reached` when every world was
+  explored and none gets there, and `~` when the search was cut off first. A spec that does
+  nothing keeps every safety property; these say it must do something. The TLC, NuSMV and
+  Alloy oracles agree on the shortest way there, and on never.
+
 ### A ✓ that was not one
 
 - **What held up to the depth bound** read `✓`, though the paths the bound cut off could break

@@ -337,6 +337,9 @@ const codesOnlyShrink = defineProperty("codesOnlyShrink", {
   description: "Only issuing a code adds one.",
   everyStep: (before, after, e) => e.is(Relay, "newCode") || Object.keys(after.the(Relay).state.codes).length <= Object.keys(before.the(Relay).state.codes).length,
 });
+// reachable: some world on some path gets there. Check gives the shortest way, or ✗ when no
+// world does. A spec, or a fix, that does nothing keeps every safety property; these catch it.
+const someoneLinks = defineProperty("someoneLinks", { description: "A Mac can be linked.", reachable: (w) => w.all(Mac).some((m) => m.state.account !== null) });
 // leadsTo: whenever the first holds, the second holds then or later, in every fair behaviour.
 // Also: eventually (holds at some point), infinitelyOften, eventuallyAlways (holds from some point on).
 const pendingResolves = defineProperty("pendingResolves", {
@@ -380,7 +383,7 @@ export default defineSpec({
   description: "How a Mac gets linked to an account with a one-time pairing code.",
   actors: [Relay, Person, Mac],
   limits: [codeLifetime],
-  properties: [codesAreHashed, codesOnlyShrink, pendingResolves, redeemedOnce],
+  properties: [codesAreHashed, codesOnlyShrink, someoneLinks, pendingResolves, redeemedOnce],
   scenarios: [linkAMac],
 });
 ```
@@ -707,6 +710,12 @@ Members of an interface or a type are not definitions: point at their lines
   that asks one only sometimes (`t.some(a) && t.count(b) > 1`) is still judged rightly, but by
   remembering whole paths, which is slow. From a scenario's end, the path includes the
   scenario's steps.
+- **Possible.** A `reachable` property needs one world where it holds, on any path: `✓ …
+  reached in N event(s)`, with the way there under `--only` and as a scenario under
+  `--as-scenario`. `✗ never reached` only when every world was explored; a search cut off by a
+  bound or a limit reads `~`, not reached yet. Write one for each thing the system is for: it
+  catches a guard too strict, a step that can never run, and bounds too small to get there.
+  It takes no `needs`.
 - **Liveness.** `eventually`, `leadsTo`, `infinitelyOften` and `eventuallyAlways` hold in
   every fair behaviour, as in TLA+. Fair: a message in flight is delivered, a timer that stays
   set fires, a guard that stays true runs (weak fairness; `fair: "strong"` on a step for steps

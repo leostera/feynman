@@ -33,7 +33,8 @@ export function budgetsOf(spec: Spec): { name: string; initial: number }[] {
 export async function withFewestFaults(spec: Spec, report: Report, seeds: Seed[] = [], options: CheckOptions = {}): Promise<Report> {
   const budgets = budgetsOf(spec);
   if (!budgets.length) return report;
-  const faultsOf = (p: PropertyResult) => (p.holds ? 0 : faultsIn(p.counterexample.events));
+  // A witness (a reachable property's way there) is not a counterexample: any path will do.
+  const faultsOf = (p: PropertyResult) => (p.holds || p.unreached ? 0 : faultsIn(p.counterexample.events));
   const top = Math.max(0, ...report.properties.map(faultsOf));
   const settled = new Set<string>();
   let properties = report.properties;
@@ -43,8 +44,8 @@ export async function withFewestFaults(spec: Spec, report: Report, seeds: Seed[]
     const lowered = Object.fromEntries(budgets.map((b) => [b.name, Math.min(b.initial, faults)]));
     const again = await check(spec.setting(lowered), report.bounds, seeds, options);
     properties = properties.map((p) => {
-      const found = open.has(p.id) ? again.properties.find((q): q is PropertyBroken => q.id === p.id && !q.holds) : undefined;
-      if (!found || p.holds) return p;
+      const found = open.has(p.id) ? again.properties.find((q): q is PropertyBroken => q.id === p.id && !q.holds && !q.unreached) : undefined;
+      if (!found || p.holds || p.unreached) return p;
       settled.add(p.id);
       const shortest = p.counterexample.events;
       const shorter = shortest.length < found.counterexample.events.length ? { shorter: { events: shortest.length, faults: faultsIn(shortest) } } : {};

@@ -171,7 +171,7 @@ test("with no faults left, a call is a message: nothing fails", async () => {
 test("a retry after a lost reply applies the write twice; an idempotency key stops it; the reference agrees", async () => {
   const buggy = await report(false, 1);
   const broken = buggy.properties.find((p) => p.id === "appliedOnce")!;
-  if (broken.holds) throw new Error("appliedOnce should break");
+  if (broken.holds || broken.unreached) throw new Error("appliedOnce should break");
   // The shortest way: write, the store applies it, its reply is lost, the client writes it again.
   expect(broken.counterexample.events.map((e) => `${e.actor}.${e.key}`)).toEqual(["Client.write", "Store.write", "Client.okLost", "Client.writeFailed", "Store.write"]);
   const fixed = await report(true, 1);
@@ -195,7 +195,7 @@ test("a scenario takes a lost reply by its step, and --as-scenario delivers the 
   expect(run.events.map((e) => e.key)).toEqual(["pay", "charge", "chargedLost", "chargeFailed", "charge", "charged"]);
   const report = await check(spec, PLAIN);
   const broken = report.properties.find((p) => p.id === "chargedOnce")!;
-  if (broken.holds) throw new Error("chargedOnce should break");
+  if (broken.holds || broken.unreached) throw new Error("chargedOnce should break");
   const code = scenarioCode(spec, broken);
   expect(code).toContain('s.step(client, "chargedLost"); // from bank');
   expect(code).toContain("s.deliver(client, failed(Charge)); // from bank");

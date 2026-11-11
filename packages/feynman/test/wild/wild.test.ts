@@ -14,11 +14,14 @@ describe("specs from the wild", () => {
       expect(report.exhaustive).toBe(true);
       expect(report.states).toBe(w.states);
       expect(report.stuck).toBeUndefined();
-      const verdicts = Object.fromEntries(report.properties.map((p) => [p.id, p.holds && !p.unfinished ? "holds" : p.holds ? "unfinished" : "broken"]));
+      const temporal = report.properties.filter((p) => p.kind !== "reachable");
+      const verdicts = Object.fromEntries(temporal.map((p) => [p.id, p.holds && !p.unfinished ? "holds" : p.holds ? "unfinished" : "broken"]));
       expect(verdicts).toEqual(w.expect);
+      const reached = Object.fromEntries(report.properties.filter((p) => p.kind === "reachable").map((p) => [p.id, p.holds && p.witness ? p.witness.events.length : !p.holds && p.unreached && report.exhaustive && !report.cutAtDepth ? "never" : "unfinished"]));
+      expect(reached).toEqual(w.reachable);
       expect(Object.fromEntries(explore(spec, { depth: 60, instances: {} }).liveness)).toEqual(w.expect);
       // Each counterexample replays: a way in, then a loop back to where it started.
-      for (const p of report.properties.filter((x) => !x.holds)) {
+      for (const p of temporal.filter((x) => !x.holds && !x.unreached)) {
         expect(p.loop!.events.length).toBeGreaterThan(0);
         expect(p.loop!.initial).toEqual(p.counterexample.worlds.at(-1) ?? p.counterexample.initial);
       }

@@ -27,7 +27,15 @@ describe.skipIf(!TLA_JAR)("TLC oracles", () => {
           const theirs = tlc(o.module, constants, [invariant], view).violated;
           const p = ours.report.properties.find((x) => x.id === invariant);
           if (!p) throw new Error(`${example.name} has no property ${invariant}`);
-          expect({ invariant, broken: !p.holds, events: p.holds ? undefined : p.counterexample.events.length }).toEqual({ invariant, broken: !!theirs, events: theirs?.events });
+          expect({ invariant, broken: !p.holds, events: p.holds || p.unreached ? undefined : p.counterexample.events.length }).toEqual({ invariant, broken: !!theirs, events: theirs?.events });
+        }
+        // The same verdict on each reachable property, and a way there just as short: TLC's
+        // shortest counterexample to the invariant that it is never reached.
+        for (const id of o.reachable ?? []) {
+          const theirs = tlc(o.module, constants, [`${id}Never`], view).violated;
+          const p = ours.report.properties.find((x) => x.id === id);
+          if (!p || p.kind !== "reachable") throw new Error(`${example.name} has no reachable property ${id}`);
+          expect({ id, reached: p.holds && p.witness ? p.witness.events.length : undefined }).toEqual({ id, reached: theirs?.events });
         }
         // The same verdict on each liveness property, under the same fairness.
         for (const property of o.liveness ?? []) {

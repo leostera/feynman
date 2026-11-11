@@ -169,7 +169,10 @@ function RuleCard({ rule }: { rule: RuleVerdict }) {
 function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: PropertyResult; verdict: Verdict; scenario?: string; onOpen: Open; onScenario: (name: string) => void }) {
   // Broken while exploration found it holding: a scenario broke it.
   const byScenario = (verdict === "broken" || verdict === "known") && p.holds ? scenario : undefined;
-  const broken = p.holds ? undefined : p;
+  const broken = p.holds || p.unreached ? undefined : p;
+  // A reachable property's way there, which opens in the playground like a counterexample.
+  const witness = p.holds ? p.witness : undefined;
+  const unreached = !p.holds && p.unreached;
   const bad = verdict === "broken" || verdict === "fixed";
   return (
     <div className={cn("rounded-lg px-4 py-3 ring-1", bad ? "ring-kumo-danger/40" : "ring-kumo-hairline")}>
@@ -180,15 +183,22 @@ function PropertyCard({ p, verdict, scenario, onOpen, onScenario }: { p: Propert
           <p className="font-mono text-[11px] text-kumo-subtle">
             {p.kind} · {p.id}
             {byScenario && <span className="font-sans text-kumo-danger"> · broken by the scenario “{byScenario}”; exploration did not reach it</span>}
-            {verdict === "unfinished" && <span className="font-sans"> · held in the states explored</span>}
+            {witness && <span className="font-sans"> · {witness.events.length ? `reached in ${witness.events.length} steps` : witness.from ? "reached where a scenario ends" : "reached in the initial world"}</span>}
+            {verdict === "unfinished" && <span className="font-sans"> · {unreached ? "not reached in the states explored" : "held in the states explored"}</span>}
+            {verdict === "broken" && unreached && <span className="font-sans text-kumo-danger"> · never reached: no world within the bounds gets there</span>}
             {verdict === "known" && <span className="font-sans text-kumo-warning"> · known bug: {p.known}</span>}
-            {verdict === "fixed" && <span className="font-sans text-kumo-danger"> · marked known (“{p.known}”), but holds now: remove known</span>}
+            {verdict === "fixed" && <span className="font-sans text-kumo-danger"> · marked known (“{p.known}”), but {p.kind === "reachable" ? "reached" : "holds"} now: remove known</span>}
             {verdict === "untested" && <span className="font-sans text-kumo-warning"> · never tested: exploration never reached a world where it applies</span>}
             {broken && <HowFound p={broken} />}
           </p>
         </div>
         {broken && (
           <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(withLoop(broken.counterexample, broken.loop), `Counterexample: ${p.id}`)}>
+            Open in playground
+          </Button>
+        )}
+        {witness && (
+          <Button size="xs" icon={<PlayIcon />} onClick={() => onOpen(witness, `The way there: ${p.id}`)}>
             Open in playground
           </Button>
         )}

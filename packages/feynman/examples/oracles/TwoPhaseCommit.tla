@@ -107,4 +107,8 @@ FairSpec == Spec /\ \A m \in Msgs : WF_vars(Deliver(m))
 atomic == ~(\E p, q \in P : outcome[p] = "commit" /\ outcome[q] = "abort")
 decidedOnceQuiet == (net = EmptyBag /\ \A p \in P : vote[p] # None) => decided # None
 decides == (\A p \in P : vote[p] # None) ~> decided # None
+(* Reachable properties, as the invariant that they are not: a shortest counterexample is a *)
+(* shortest way there.                                                                      *)
+everyoneCommitsNever == ~(\A p \in P : outcome[p] = "commit")
+everyoneAbortsNever == ~(\A p \in P : outcome[p] = "abort")
 =============================================================================

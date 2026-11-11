@@ -10,8 +10,12 @@ import { sortedJson } from "../spec/json.ts";
  * starts from a scenario's world gets a `setup` putting every instance in the state it had
  * there, when that is all the world holds (nothing in flight, no fresh ids handed out).
  */
-export function scenarioCode(spec: Spec, property: PropertyBroken): string {
+/** What a scenario replays: a counterexample, or (`reached`) a reachable property's way there. */
+export type Replayed = Pick<PropertyBroken, "id" | "description" | "counterexample" | "loop"> & { reached?: boolean };
+
+export function scenarioCode(spec: Spec, property: Replayed): string {
   const { counterexample: ce, loop } = property;
+  const what = property.reached ? "reached" : "broken";
   const names = new Names();
   const body: string[] = [];
   const setUp = ce.from ? setupOf(spec, ce.initial) : [];
@@ -20,9 +24,9 @@ export function scenarioCode(spec: Spec, property: PropertyBroken): string {
   ce.events.forEach((event, i) => body.push(line(spec, event, i === 0 ? ce.initial : ce.worlds[i - 1], ce.choices[i], names)));
   if (loop?.events.length) body.push(`// From here this repeats forever, and it never gets there:`, ...loop.events.map((event, i) => line(spec, event, i === 0 ? loop.initial : loop.worlds[i - 1], loop.choices[i], names)));
   else if (loop) body.push(`// From here nothing fair can happen: it stays here forever, and never gets there.`);
-  body.push(`// ${property.id} is broken here: ${property.description}`);
+  body.push(`// ${property.id} is ${what} here: ${property.description}`);
   return [
-    `const ${property.id.replace(/[^\w]/g, "_")}IsBroken = defineScenario(${JSON.stringify(`${property.id} is broken`)}, {`,
+    `const ${property.id.replace(/[^\w]/g, "_")}Is${property.reached ? "Reached" : "Broken"} = defineScenario(${JSON.stringify(`${property.id} is ${what}`)}, {`,
     `  description: ${JSON.stringify(property.description)},`,
     ...(setUp?.length ? [`  // ${ce.from!.at === "end" ? `The world where scenario ${JSON.stringify(ce.from!.scenario)} ends.` : `The world scenario ${JSON.stringify(ce.from!.scenario)} sets up.`}`, `  setup(w) {`, ...setUp.map((l) => `    ${l}`), `  },`] : []),
     `  run(s) {`,

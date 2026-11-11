@@ -116,7 +116,9 @@ export async function checkCommand(ctx: Context, named: string[], options: Check
     if (options.output === "text" || options.output === "brief") out(formatCheck(result, { brief: options.output === "brief", focused: options.only.length > 0 }));
     if (options.output === "scenario") {
       const property = result.report.properties[0];
-      if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
+      if (property.holds && property.witness) out(scenarioCode(spec, { ...property, counterexample: property.witness, reached: true }));
+      else if (property.holds) out(dim(`${property.id} holds within these bounds: there is no counterexample to replay.`));
+      else if (property.unreached) out(dim(`${property.id} is never reached within these bounds: there is no path to replay.`));
       else out(scenarioCode(spec, property));
     }
   }
@@ -137,7 +139,7 @@ function focus(spec: Spec, only: string[]): Spec | null {
   return properties.length ? { ...spec, properties } : null;
 }
 
-function counterexampleJson(p: PropertyBroken) {
+function counterexampleJson(p: Pick<PropertyBroken, "counterexample" | "loop" | "foundBy" | "shorter">) {
   const { counterexample: ce, loop } = p;
   return {
     foundBy: p.foundBy,
@@ -196,7 +198,7 @@ function formatCheck(result: SpecCheck, how: { brief: boolean; focused: boolean 
   const lines = [dim(result.path)];
   if (!how.focused)
     for (const s of result.scenarios.filter((s) => s.broken)) lines.push(s.known ? yellow(`  ✗ scenario "${s.name}": ${s.broken} (known bug)`) : red(`  ✗ scenario "${s.name}": ${s.broken}`));
-  lines.push(formatReport(spec, report, { brokenBy: result.brokenBy, brief: how.brief, verdict: (p) => verdictOf(p, result), command: `feynman check ${result.path}${spec.without.length ? ` --without ${spec.without.join(",")}` : ""}` }));
+  lines.push(formatReport(spec, report, { brokenBy: result.brokenBy, brief: how.brief, verdict: (p) => verdictOf(p, result), witnesses: how.focused, command: `feynman check ${result.path}${spec.without.length ? ` --without ${spec.without.join(",")}` : ""}` }));
   const verdicts = report.properties.map((p) => verdictOf(p, result));
   if (verdicts.includes("unfinished")) lines.push(dim(`  ${unfinishedHint(report)}`));
   if (verdicts.includes("untested")) lines.push(dim(`  "?" was never tested: add a scenario that gets there, so exploration starts from its end.`));
@@ -254,8 +256,10 @@ function toJson(result: SpecCheck) {
       verdict: verdictOf(p, result),
       ...(p.known !== undefined ? { known: p.known } : {}),
       ...(p.holds && p.upTo !== undefined ? { heldUpTo: p.upTo } : {}),
+      ...(!p.holds && p.unreached && p.upTo !== undefined ? { notReachedUpTo: p.upTo } : {}),
       ...(result.brokenBy.has(p.id) ? { brokenByScenario: result.brokenBy.get(p.id) } : {}),
-      ...(p.holds ? {} : { counterexample: counterexampleJson(p) }),
+      ...(p.holds && p.witness ? { witness: counterexampleJson({ counterexample: p.witness, foundBy: p.witnessBy ?? "search" }) } : {}),
+      ...(p.holds || p.unreached ? {} : { counterexample: counterexampleJson(p) }),
     })),
     errors: report.errors.map((e) => ({ message: e.message, events: e.counterexample.events.map((ev, i) => eventJson(ev, e.counterexample.worlds[i])) })),
     ...(report.stuck ? { stuck: { foundBy: report.stuck.foundBy, events: report.stuck.counterexample.events.map((ev, i) => eventJson(ev, report.stuck!.counterexample.worlds[i])) } } : {}),

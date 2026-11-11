@@ -65,8 +65,8 @@ export const DEFAULT_BOUNDS: Bounds = {
 /** Share of the time limit random runs may use. */
 const WALK_SHARE = 0.25;
 
-/** A property's verdict: it held, or here is how it breaks. */
-export type PropertyResult = PropertyHeld | PropertyBroken;
+/** A property's verdict: it held, here is how it breaks, or (a reachable property) no world explored got there. */
+export type PropertyResult = PropertyHeld | PropertyBroken | PropertyUnreached;
 
 interface PropertyVerdict {
   id: string;
@@ -94,10 +94,26 @@ export interface PropertyHeld extends PropertyVerdict {
    * property held on every path of up to this many events, from each world it started from.
    */
   upTo?: number;
+  /** A reachable property: the way to a world that gets there, and who found it (the search: a shortest one). */
+  witness?: Counterexample;
+  witnessBy?: "search" | "walk";
+}
+
+/**
+ * A reachable property no explored world got to. Whether that is a ✗ depends on whether every
+ * world within the bounds was explored (verdict.ts): a search that stopped early, or that a
+ * depth bound cut off, may not have got there yet.
+ */
+export interface PropertyUnreached extends PropertyVerdict {
+  holds: false;
+  unreached: true;
+  /** When the search stopped early: no path of up to this many events got there. */
+  upTo?: number;
 }
 
 export interface PropertyBroken extends PropertyVerdict {
   holds: false;
+  unreached?: undefined;
   counterexample: Counterexample;
   /** Who found the counterexample: the search (shortest), or a random run (shrunk, maybe not shortest). */
   foundBy: "search" | "walk";
@@ -297,10 +313,16 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: I
     if (live) return live;
     const base = verdictBase(property);
     const found = search.failures.get(property.id);
+    const walkedTo = found === undefined ? fromWalk(property.id) : undefined;
+    const upTo = search.stoppedBy ? { upTo: search.completeDepth } : search.complete ? {} : { upTo: b.depth };
+    if (property.kind === "reachable") {
+      if (found !== undefined) return { ...base, holds: true, witness: fromSearch(found), witnessBy: "search" };
+      if (walkedTo) return { ...base, holds: true, witness: walkedTo, witnessBy: "walk" };
+      return { ...base, holds: false, unreached: true, ...upTo };
+    }
     if (found !== undefined) return { ...base, holds: false, counterexample: fromSearch(found), foundBy: "search" };
-    const walkedTo = fromWalk(property.id);
     if (walkedTo) return { ...base, holds: false, counterexample: walkedTo, foundBy: "walk" };
-    return { ...base, holds: true, ...(search.stoppedBy ? { upTo: search.completeDepth } : search.complete ? {} : { upTo: b.depth }) };
+    return { ...base, holds: true, ...upTo };
   });
   const stuckFound =
     search.stuckAt !== undefined ? { counterexample: fromSearch(search.stuckAt), foundBy: "search" as const } : walked.stuck ? { counterexample: fromRoot(walked.stuck.root, walked.stuck.choices), foundBy: "walk" as const } : undefined;

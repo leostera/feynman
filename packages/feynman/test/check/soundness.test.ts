@@ -15,7 +15,7 @@ const SEARCH = { walks: 0, depth: 14, timeLimit: 600_000 };
 
 const verdict = async (spec: Spec, bounds = {}, seeds = scenarioSeeds(spec)) => {
   const report = await check(spec, { ...SEARCH, ...bounds }, seeds);
-  return Object.fromEntries(report.properties.map((p) => [p.id, p.holds ? "holds" : `breaks in ${p.counterexample.events.length}`]));
+  return Object.fromEntries(report.properties.map((p) => [p.id, p.holds || p.unreached ? "holds" : `breaks in ${p.counterexample.events.length}`]));
 };
 
 /** A counter a person pushes up, one step at a time: thirty ups is far past the search's depth. */
@@ -116,7 +116,7 @@ test("symmetry is refuted by a property that tells interchangeable instances apa
     const report = await check(spec, { ...SEARCH, instances: { P: 3 } });
     expect(report.reductions.refuted).toEqual(["P"]);
     expect(report.properties[0]!.holds).toBe(false);
-    expect(!report.properties[0]!.holds && report.properties[0]!.counterexample.events.length).toBe(2);
+    expect(!report.properties[0]!.holds && !report.properties[0]!.unreached && report.properties[0]!.counterexample.events.length).toBe(2);
   }
 });
 
@@ -308,7 +308,7 @@ test("a property that held only to the depth bound is unfinished, not proved; wi
   const cut = await check(spec, { walks: 0, depth: 14 });
   expect({ exhaustive: cut.exhaustive, cutAtDepth: cut.cutAtDepth, verdict: read(cut), upTo: cut.properties[0]!.holds && cut.properties[0]!.upTo }).toEqual({ exhaustive: true, cutAtDepth: true, verdict: "unfinished", upTo: 14 });
   const all = await check(spec, { walks: 0 });
-  expect({ states: all.states, cutAtDepth: all.cutAtDepth, verdict: read(all), events: !all.properties[0]!.holds && all.properties[0]!.counterexample.events.length }).toEqual({ states: 26, cutAtDepth: undefined, verdict: "broken", events: 20 });
+  expect({ states: all.states, cutAtDepth: all.cutAtDepth, verdict: read(all), events: !all.properties[0]!.holds && !all.properties[0]!.unreached && all.properties[0]!.counterexample.events.length }).toEqual({ states: 26, cutAtDepth: undefined, verdict: "broken", events: 20 });
   // A bound past the end of every path cuts nothing off: what held is proved.
   const capped = defineSpec({ name: "Capped", actors: [C], properties: [defineProperty("atMost25", { description: "At most 25.", always: (w) => w.the(C).state.n <= 25 })], finalState: ANY });
   const deep = await check(capped, { walks: 0, depth: 30 });
