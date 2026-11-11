@@ -1,5 +1,5 @@
 // Running a spec: a Runner applies steps and keeps the trace; scenarios script one.
-import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, instanceById, nextLeftAlone, spawn, SpecError, startWorld, worldView, type Step } from "./engine.ts";
+import { act, actorNamed, choices, clone, emptyWorld, freeze, notPlain, fire, guard, instanceById, nextLeftAlone, spawn, SpecError, startWorld, traceView, worldView, type Step } from "./engine.ts";
 import type { Script } from "./dsl.ts";
 import type { Event, Run, ScenarioInfo, Spec, World } from "./spec.ts";
 import { sortedJson, unstorable } from "./json.ts";
@@ -12,6 +12,8 @@ export class Runner {
   readonly worlds: World[] = [];
   readonly initial: World;
   private current: World;
+  /** The steps taken so far, as `never` properties see them: no spawns, no failed steps. */
+  private readonly trail: Event[] = [];
 
   constructor(
     readonly spec: Spec,
@@ -29,10 +31,34 @@ export class Runner {
   }
 
   apply(step: Step): Event {
+    this.judge(this.current, step);
     this.current = step.world;
     this.events.push(step.event);
     this.worlds.push(step.world);
     return step.event;
+  }
+
+  /**
+   * The engine judges `always` properties on every step. A run is a path, so it also breaks the
+   * `everyStep` properties its steps break and the `never` properties the path so far breaks: all
+   * of them are the event's violations, as a scenario's reader and the checker's seeds expect.
+   * A failed step breaks no property, and a spawn is not a step.
+   */
+  private judge(before: World, step: Step): void {
+    const { event, world } = step;
+    if (event.kind === "spawn" || event.error) return;
+    this.trail.push({ ...event, index: this.trail.length });
+    const broken: string[] = [];
+    for (const p of this.spec.properties) {
+      if (event.violations.includes(p.id)) continue;
+      try {
+        if (p.kind === "everyStep" && !p.everyStep(worldView(this.spec, before), worldView(this.spec, world), traceView([event]).events[0])) broken.push(p.id);
+        if (p.kind === "never" && p.never(traceView(this.trail))) broken.push(p.id);
+      } catch {
+        // A predicate that cannot be evaluated holds, as the checker has it.
+      }
+    }
+    if (broken.length) event.violations = [...event.violations, ...broken];
   }
 
   spawn(actor: string, label: string): Event {
