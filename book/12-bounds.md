@@ -35,7 +35,7 @@ in the spec which ones matter.
 The first line of check's output always says which bounds it used:
 
 ```text
-Box office: explored 8,661 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
+Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
 ```
 
 ## The four verdicts, again
@@ -55,29 +55,30 @@ with one person from the start, and the people its scenarios bring: two at most.
 
 ```sh
 feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=2
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3
+feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --max-states 500000
 ```
 
 ```text
-Box office: explored 16,755 states (2 Person, …, depth 40, faults=2) in 411ms
-Box office: explored 260,933 states (3 Person, …, depth 40, faults=2) in 4.23s
+Box office: explored 25,291 states (2 Person, …, depth 40, faults=2) in 557ms
+Box office: explored 397,713 states (3 Person, …, depth 40, faults=2) in 6.28s
   ~ paymentsEnd  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
   ~ holdsEnd  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
 ```
 
-Each extra person multiplies the states by about fifteen. With three, forty events is no
-longer enough for every path to finish, and the liveness verdicts are unfinished. Raise the
-depth:
+A second person doubles the states, and a third multiplies them by fifteen. Three people need more than the
+300,000 states the checker stops at by default, so the second command raises that limit too.
+With three, forty events is no longer enough for every path to finish, and the liveness
+verdicts are unfinished. Raise the depth:
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 60 --instances Person=3
+feynman check specs/11-rules/3-the-payer.ts --depth 60 --instances Person=3 --max-states 500000
 ```
 
 ```text
-Box office: explored 262,476 states (3 Person, …, depth 60, faults=2) in 4.21s
+Box office: explored 401,692 states (3 Person, …, depth 60, faults=2) in 4.95s
 ```
 
-Every verdict is `✓` now. 262,476 states, four seconds. A fourth person would take minutes.
+Every verdict is `✓` now. 401,692 states, five seconds. A fourth person would take minutes.
 For this spec, that's where to stop: nothing about the box office treats a third person
 differently from a second, and the properties held for three.
 
@@ -89,13 +90,13 @@ It applies only to safety, since liveness turns symmetry off. So compare the saf
 alone:
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --no-symmetry
+feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000
+feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000 --no-symmetry
 ```
 
 ```text
-Box office: explored 49,610 states (3 Person, …) in 799ms
-Box office: explored 260,933 states (3 Person, …) in 2.27s
+Box office: explored 75,260 states (3 Person, …) in 1.68s
+Box office: explored 397,713 states (3 Person, …) in 3.60s
 ```
 
 Five times fewer states, for the same verdicts. With three people there are six ways to name
@@ -194,11 +195,11 @@ tested nothing. A tool that rounded up would print `✓` here. Feynman says `?`,
 it: bring three people in, with a scenario's setup or `--instances`:
 
 ```sh
-feynman check specs/12-bounds/2-untested.ts --depth 60 --instances Person=3 --only crowdsHearBack
+feynman check specs/12-bounds/2-untested.ts --depth 60 --instances Person=3 --only crowdsHearBack --max-states 500000
 ```
 
 ```text
-Box office: explored 262,476 states (3 Person, …, depth 60, faults=2) in 2.61s
+Box office: explored 401,692 states (3 Person, …, depth 60, faults=2) in 2.20s
   ✓ crowdsHearBack  When three people are waiting on the box office at once, they all hear back.
 ```
 
@@ -216,14 +217,14 @@ feynman check specs/11-rules/3-the-payer.ts --depth 40 --max-states 2000
 
 ```text
 Box office: explored 2,000 states (…) in 181ms — stopped at the state limit before exploring everything
-  states differ most in: Box office.seat (18 values), Person.phone (5 values), Bank.charges (3 values), Bank.seen (3 values), message hold the seat (3 values); up to 4 message(s) in flight at once. No one field grows much: it is the orders of the steps in flight. Smaller budgets (--set faults=0, --set repeats=1), fewer instances, or fewer requests at once in the scenarios, shrink it.
-  ~ chargedOnce  No order is charged twice.  held on every path of up to 12 event(s); the state limit stopped the search before longer ones
+  states differ most in: Box office.seat (24 values), Bank.charges (5 values), Bank.seen (5 values), Person.phone (5 values), message charge (4 values); up to 4 message(s) in flight at once. No one field grows much: it is the orders of the steps in flight. Smaller budgets (--set faults=0, --set repeats=1), fewer instances, or fewer requests at once in the scenarios, shrink it.
+  ~ chargedOnce  No order is charged twice.  held on every path of up to 11 event(s); the state limit stopped the search before longer ones
   ~ paymentsEnd  …  held in the 2,000 states explored before the state limit, not all of them
 ```
 
 Three things to read:
 
-- **How far safety got.** "Held on every path of up to 12 events" is a real, if bounded,
+- **How far safety got.** "Held on every path of up to 11 events" is a real, if bounded,
   guarantee. The search is breadth first, so every shorter path was covered.
 - **What the states differ in.** This is the diagnosis. Here no one field grows much: the
   states come from the orders of messages in flight. When one field has thousands of values,

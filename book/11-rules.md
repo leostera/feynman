@@ -90,7 +90,7 @@ Our first guess at the claims:
 ([`specs/11-rules/1-rules.ts`](specs/11-rules/1-rules.ts))
 
 ```text
-Box office: explored 3,674 states (…, depth 40, faults=1) in 164ms
+Box office: explored 4,474 states (…, depth 40, faults=1) in 164ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
@@ -156,7 +156,7 @@ const holdsAreRespected = defineProperty("holdsAreRespected", {
 ([`specs/11-rules/2-every-rule.ts`](specs/11-rules/2-every-rule.ts))
 
 ```text
-Box office: explored 8,661 states (…, depth 40, faults=2) in 274ms
+Box office: explored 13,061 states (…, depth 40, faults=2) in 274ms
   ✓ holdsAreRespected  A seat held for one person is never paid for by another.
   rules
     ✗ payOnlyTheHolder  not needed by holdsAreRespected: held without the rule, in every state. The rule does nothing here, or the property is too weak to see what it prevents.
@@ -191,7 +191,7 @@ A payment belongs to whoever pays:
 ([`specs/11-rules/3-the-payer.ts`](specs/11-rules/3-the-payer.ts))
 
 ```text
-Box office: explored 8,661 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
+Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ holdsAreRespected  A seat held for one person is never paid for by another.
@@ -245,7 +245,7 @@ feynman check specs/11-rules/3-the-payer.ts --depth 40 --without idempotencyKey 
 ```text
   ✗ scenario "The bank's answer is lost": chargedOnce
   ✗ scenario "A restart mid-payment": chargedOnce
-Box office without idempotencyKey: explored 10,761 states (…) in 329ms
+Box office without idempotencyKey: explored 15,961 states (…) in 329ms
   ✗ chargedOnce  No order is charged twice.
 ```
 

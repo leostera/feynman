@@ -139,7 +139,8 @@ export function lose<M extends AnyMessage>(message: M, options?: FaultOptions & 
       sends,
       description: options?.description ?? `${capital(message.name)} is lost on the way.`,
       run(_state: unknown, payload: PayloadOf<M>, ctx: ReplyCtx) {
-        if (failure) ctx.send(ctx.from, failure, { payload, to: { id: ctx.id } });
+        // An orphaned call fails into nobody: the process that made it is gone.
+        if (failure && !ctx.delivery.orphaned) ctx.send(ctx.from, failure, { payload, to: { id: ctx.id } });
         const answers = ctx.delivery.answers;
         const fails = answers && failing.get(answers.message);
         // The failure reaches the caller from the callee, as one from a lost call does.
@@ -168,7 +169,8 @@ export function duplicate<M extends AnyMessage>(message: M, options?: FaultOptio
 /**
  * The instance crashes and starts again: its state is its initial state but for the fields in
  * `keeps` (what it wrote to disk), its timers are gone, and so are the failures on their way
- * to it, which would have thrown in code that is no longer running.
+ * to it, which would have thrown in code that is no longer running. The calls it had made
+ * are orphaned (`ctx.reset`): one lost after the crash, or whose answer is, fails into nobody.
  */
 export function crash(options?: FaultOptions & { keeps?: readonly string[] }): FaultStep<undefined> {
   const keeps = options?.keeps ?? [];

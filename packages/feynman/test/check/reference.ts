@@ -45,7 +45,7 @@ export function worldKey(world: World): string {
   return sortedJson({
     instances: world.instances.map((i) => (i.variables ? [i.id, i.state, i.variables] : [i.id, i.state])),
     variables: world.variables ?? {},
-    messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload, p.answers ?? null])).sort(),
+    messages: world.pending.filter((p) => p.kind === "deliver").map((p) => sortedJson([p.to, p.from, p.message, p.payload, p.answers ?? null, p.orphaned ?? false])).sort(),
     timers: world.pending.filter((p) => p.kind === "timer").map((p) => `${p.to}|${p.timer}`).sort(),
     fresh: world.fresh,
     rng: world.rng,

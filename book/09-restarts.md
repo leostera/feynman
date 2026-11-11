@@ -77,7 +77,7 @@ database. Everything else is in memory.
 ([`specs/09-restarts/2-keeps.ts`](specs/09-restarts/2-keeps.ts))
 
 ```text
-Box office: explored 808 states (…, faults=1) in 132ms
+Box office: explored 849 states (…, faults=1) in 132ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
 ```
@@ -89,7 +89,7 @@ feynman check specs/09-restarts/2-keeps.ts --set faults=2
 ```
 
 ```text
-Box office: explored 1,446 states (…, faults=2) in 143ms
+Box office: explored 1,611 states (…, faults=2) in 143ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
@@ -199,10 +199,10 @@ ticket, two calls to the bank, and every one of them was necessary for some orde
 ([`specs/09-restarts/3-resume.ts`](specs/09-restarts/3-resume.ts))
 
 ```text
-Box office: explored 849 states (…, faults=1) in 122ms
+Box office: explored 943 states (…, faults=1) in 122ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
-Box office: explored 1,608 states (…, faults=2) in 137ms
+Box office: explored 2,003 states (…, faults=2) in 137ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
 ```

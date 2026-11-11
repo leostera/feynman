@@ -20,7 +20,7 @@
 // worlds, coverage and symmetry. The tests and the fuzzer hold it to the reference explorer
 // (test/check/reference.ts), and the TLA+ and P oracles to TLC and P.
 import { act, actorNamed, FAULT, fire, guard, holdsIn, isLiveness, observation, stepsTaking, traceView, whenHolds, worldView, type Delivery, type Event, type Fairness, type Observation, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
-import { deliveryIn } from "../spec/engine.ts";
+import { afterReset, deliveryIn } from "../spec/engine.ts";
 import { sortedJson } from "../spec/json.ts";
 import type { Bounds, Root, StopReason, Watch } from "./explore.ts";
 import { MEMORY_EVERY, overMemory } from "./memory.ts";
@@ -146,7 +146,12 @@ interface Effect {
   /** The world's variables after it, for a step that uses them. */
   variables?: number;
   /** A reset's choice of the messages on their way to the instance to drop, with its answer for each interned message, worked out once. */
-  drops?: { pick: (delivery: Delivery) => boolean; answers: number[] };
+  /**
+   * For a reset: what it does to the messages in flight, which differ from one vector to the next
+   * (withReset). `pick` says which of those on their way to the instance are dropped, `answers`
+   * keeps what it said of each, and `becomes` what each other message turns into (afterReset).
+   */
+  resets?: { pick?: (delivery: Delivery) => boolean; answers: number[]; becomes: number[] };
 }
 
 /** What `never` and step properties see of an event (traceView): its place goes in when a path is laid out. */
@@ -1153,29 +1158,51 @@ export class IntegerSearch {
       if (this.pendings.values[id].kind === "deliver") at = L.messages + choice.pending;
     } else slot = L.slots.get(choice.instance)!;
     const effect = this.effectOf(here, slot, choice);
-    return { layout: L, slot, at, effect: effect.drops ? this.withDrops(here, slot, at, effect) : effect, fault: effect.fault, memory: vector[L.memory] };
+    return { layout: L, slot, at, effect: effect.resets ? this.withReset(here, slot, at, effect) : effect, fault: effect.fault, memory: vector[L.memory] };
   }
 
-  /** A reset's effect in this vector: the messages in flight to the instance that its `drops` picks, removed as well. */
-  private withDrops(here: Here, slot: number, chosen: number, effect: Effect): Effect {
+  /**
+   * A reset's effect in this vector: of the messages in flight, those on their way to the
+   * instance that its `drops` picks are removed, and those the reset changes (a call the instance
+   * made, an answer on its way to it: afterReset) are replaced by what they become.
+   */
+  private withReset(here: Here, slot: number, chosen: number, effect: Effect): Effect {
     const { vector, layout: L } = here;
-    const { pick, answers } = effect.drops!;
-    let dropped: number[] | undefined;
+    const { pick, answers, becomes } = effect.resets!;
+    const self = L.instances[slot].id;
+    let removed: number[] | undefined;
+    let added: number[] | undefined;
     for (let i = L.messages + 1, end = L.messages + 1 + vector[L.messages]; i < end; i++) {
       const id = vector[i];
-      if (i === chosen || this.slotIn(L, id) !== slot) continue;
-      // By message: 0 not asked yet, 1 kept, 2 dropped.
-      let answer = answers[id];
-      if (!answer) {
-        // An answer that read the sender's state holds for this world only.
-        let readsSender = false;
-        const pending = { ...this.pendings.values[id], id: 0 } as Extract<Pending, { kind: "deliver" }>;
-        answer = pick(deliveryIn(this.spec, here.world(), pending, () => (readsSender = true))) === true ? 2 : 1;
-        if (!readsSender) answers[id] = answer;
+      if (i === chosen) continue;
+      if (pick && this.slotIn(L, id) === slot) {
+        // By message: 0 not asked yet, 1 kept, 2 dropped.
+        let answer = answers[id];
+        if (!answer) {
+          // An answer that read the sender's state holds for this world only.
+          let readsSender = false;
+          const pending = { ...this.pendings.values[id], id: 0 } as Extract<Pending, { kind: "deliver" }>;
+          answer = pick(deliveryIn(this.spec, here.world(), pending, () => (readsSender = true))) === true ? 2 : 1;
+          if (!readsSender) answers[id] = answer;
+        }
+        if (answer === 2) {
+          (removed ??= []).push(id);
+          continue;
+        }
       }
-      if (answer === 2) (dropped ??= []).push(id);
+      // By message: undefined not asked yet, -1 stays as it is, else the message it becomes.
+      let next = becomes[id];
+      if (next === undefined) {
+        const after = afterReset(this.spec, { ...this.pendings.values[id], id: 0 } as Pending, self);
+        becomes[id] = next = after ? this.pendingId(after) : -1;
+      }
+      if (next >= 0) {
+        (removed ??= []).push(id);
+        (added ??= []).push(next);
+      }
     }
-    return dropped ? { ...effect, removesMessages: Int32Array.from([...effect.removesMessages, ...dropped]) } : effect;
+    if (!removed) return effect;
+    return { ...effect, removesMessages: Int32Array.from([...effect.removesMessages, ...removed]), addsMessages: added ? Int32Array.from([...effect.addsMessages, ...added]) : effect.addsMessages };
   }
 
   /** A local step's effect: from the cache, or by running it through the engine once. */
@@ -1202,11 +1229,11 @@ export class IntegerSearch {
     const world = here.world();
     const step = run(this.spec, world, choice, observe);
     if (step.world.rng !== world.rng) this.drew.add(`${step.event.actor}.${step.event.key}`);
-    // A reset's drops are worked out for each vector (withDrops), so they are not in the effect.
-    const chosen = observe.drops && choice.kind === "fire" ? choice.pending : -1;
-    const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event, observe.drops ? chosen : undefined);
+    // What a reset does to the messages in flight is worked out for each vector (withReset), so it is not in the effect.
+    const chosen = observe.reset && choice.kind === "fire" ? choice.pending : -1;
+    const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event, observe.reset ? chosen : undefined);
     if (observe.others || observe.counters) return { ...effect, fresh: this.freshId(step.world.fresh), rng: step.world.rng | 0, variables: this.variablesId(step.world) };
-    if (observe.drops) effect.drops = { pick: observe.drops, answers: [] };
+    if (observe.reset) effect.resets = { pick: observe.drops, answers: [], becomes: [] };
     if (observe.variables) effect.variables = this.variablesId(step.world);
     // A step that did not touch its own instance runs the same way in any state of it: up to its
     // first use of its own instance, it ran without it, and it never got there.
@@ -1455,7 +1482,7 @@ export class IntegerSearch {
 
   /** As keys.ts pendingText writes it: symmetric fingerprints rename it. */
   private pendingId(p: Pending): number {
-    const key = p.kind === "deliver" ? (p.answers ? `r|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `d|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}`) : `t|${p.to}|${p.timer}`;
+    const key = p.kind === "deliver" ? (p.answers ? `r|${p.to}|${p.from}|${p.message}|${sortedJson([p.payload, p.answers.message, p.answers.payload])}` : `${p.orphaned ? "o" : "d"}|${p.to}|${p.from}|${p.message}|${sortedJson(p.payload)}`) : `t|${p.to}|${p.timer}`;
     const id = this.pendings.id(key, () => {
       const { id: _, ...template } = p;
       return template;

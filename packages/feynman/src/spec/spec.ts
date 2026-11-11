@@ -253,6 +253,8 @@ export type Pending =
       text?: string;
       /** The request it answers: a reply to a call, or a message sent as answering one (`ctx.send(…, { answers })`). */
       answers?: { message: string; payload: unknown };
+      /** A call whose caller has started again since making it (`ctx.reset`): nobody waits for its answer, or for its failure. */
+      orphaned?: true;
     }
   | {
       id: number;

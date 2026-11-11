@@ -293,6 +293,8 @@ export interface Delivery {
   readonly payload: unknown;
   /** For a reply, or a message sent as answering one: the request it answers. */
   readonly answers?: { message: string; payload: unknown };
+  /** A call whose caller has started again since making it: nobody waits for its answer, or for its failure. */
+  readonly orphaned?: boolean;
 }
 
 /** In a step `on` a message, `reply` answers the sender. */

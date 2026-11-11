@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { check, checkRules } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { verdictOf } from "../../src/check/verdict.ts";
-import { atMost, defineActor, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, failed, lose, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
@@ -169,4 +169,56 @@ test("a rule is needed when only a scenario shows it: one that breaks the proper
   expect(await checkRules(spec, { ...SEARCH, depth: 5 })).toEqual([
     { name: "cap", description: "Counting stops at thirty.", neededBy: [{ property: "atMostThirty", verdict: "breaks", events: 31, scenario: "Thirty-one ups" }] },
   ]);
+});
+
+test("a call made before a crash fails into nobody, whichever comes first: the loss or the crash", async () => {
+  const faults = budget("faults", 2);
+  const Work = defineCall("Work", {});
+  const Done = defineMessage("Done", {}, { tone: "reply" });
+  const Callee = defineActor({
+    name: "Callee",
+    zone,
+    singleton: true,
+    initialState: () => ({}),
+    transitions: {
+      work: { on: Work, description: "Works, and answers.", sends: [Done], run: (_s, _m, ctx) => ctx.reply(Done, {}) },
+      workLost: lose(Work, { spend: faults }),
+    },
+  });
+  const Caller = defineActor({
+    name: "Caller",
+    zone,
+    singleton: true,
+    // `calling` is in memory: a restart forgets the call, as the process that made it is gone.
+    initialState: () => ({ calling: false, strayFailure: false }),
+    actions: {
+      call: {
+        with: [atMost(1)],
+        label: "Call",
+        description: "Calls.",
+        sends: [Work],
+        run(s, _i, ctx) {
+          s.calling = true;
+          ctx.send(ctx.the(Callee), Work, {});
+        },
+      },
+    },
+    transitions: {
+      done: { on: Done, description: "Hears the answer.", run: (s) => void (s.calling = false) },
+      doneLost: lose(Done, { fails: Work, spend: faults }),
+      failed: {
+        on: failed(Work),
+        description: "The call failed.",
+        run(s) {
+          if (!s.calling) s.strayFailure = true;
+          s.calling = false;
+        },
+      },
+      crash: crash({ spend: faults }),
+    },
+  });
+  const noStray = defineProperty("failuresReachTheirCaller", { description: "A call's failure never reaches a process that is not making that call.", always: (w) => !w.the(Caller).state.strayFailure });
+  const spec = defineSpec({ name: "Late failure", actors: [Callee, Caller], properties: [noStray], finalState: ANY });
+  // Crash then lose the call, crash then lose the answer, lose then crash: none reaches the new process.
+  expect(await verdict(spec)).toEqual({ failuresReachTheirCaller: "holds" });
 });

@@ -41,7 +41,9 @@ export interface Observation {
   counters: boolean;
   /** It read or set one of the world's model variables. */
   variables: boolean;
-  /** It reset its instance, dropping the messages on their way to it that this picks. */
+  /** It reset its instance, which changes what is in flight to and from it (see `ctx.reset`). */
+  reset?: boolean;
+  /** With `reset`: the messages on their way to the instance that this picks are dropped. */
   drops?: (delivery: Delivery) => boolean;
   /** It read or changed its own instance: its state, its own variables or its timers. */
   own: boolean;
@@ -69,7 +71,21 @@ function watchedState(state: unknown, observe: Observation): unknown {
 /** A message in flight as a step sees it (`ctx.delivery`, a reset's `drops`); `onRead` hears whose state is read. */
 export function deliveryIn(spec: Spec, world: World, p: Extract<Pending, { kind: "deliver" }>, onRead?: (id: string) => void): Delivery {
   const sender = world.instances.find((i) => i.id === p.from);
-  return { message: p.message, from: sender ? worldView(spec, world, onRead).instance(sender) : undefined, payload: p.payload, ...(p.answers ? { answers: p.answers } : {}) } as Delivery;
+  return { message: p.message, from: sender ? worldView(spec, world, onRead).instance(sender) : undefined, payload: p.payload, ...(p.answers ? { answers: p.answers } : {}), ...(p.orphaned ? { orphaned: true } : {}) } as Delivery;
+}
+
+/**
+ * A message in flight as it is once `instance` has started again, when that changes it: a call
+ * the instance made is orphaned, and an answer on its way to it answers nothing. Undefined
+ * when it stays as it is.
+ */
+export function afterReset(spec: Spec, p: Pending, instance: string): Pending | undefined {
+  if (p.kind !== "deliver") return undefined;
+  const orphan = p.from === instance && !p.orphaned && spec.messages[p.message]?.correlate === true;
+  const unanswers = p.to === instance && p.answers !== undefined;
+  if (!orphan && !unanswers) return undefined;
+  const { answers: _answers, ...rest } = p;
+  return { ...(unanswers ? rest : p), ...(orphan ? { orphaned: true as const } : {}) };
 }
 
 const FULL: StepOptions = {};
@@ -421,7 +437,8 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     }
   };
   // A reply to a message that correlates records the request it answers.
-  const answering = delivery && spec.messages[delivery.message]?.correlate ? { message: delivery.message, payload: delivery.payload } : undefined;
+  // An orphaned call is answered to nobody: its caller has started again, and waits for nothing.
+  const answering = delivery && spec.messages[delivery.message]?.correlate && !received?.orphaned ? { message: delivery.message, payload: delivery.payload } : undefined;
   let replied = false;
   const onRead = observe ? (id: string) => void (id === self.id ? (observe.own = true) : (observe.others = true)) : undefined;
   const ownTouched = () => void (observe && (observe.own = true));
@@ -490,7 +507,9 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
     /**
      * Starts this instance again: its state becomes its initial state, with the fields in
      * `keeps` carried over; its timers are cancelled; the messages on their way to it that
-     * `drops` picks are dropped.
+     * `drops` picks are dropped. The process that made its calls is gone: those still in flight
+     * are orphaned, and the answers on their way to it answer nothing any more, so neither can
+     * fail into the process that replaced it.
      */
     reset(options?: { keeps?: readonly string[]; drops?: (delivery: Delivery) => boolean }) {
       ownTouched();
@@ -505,8 +524,11 @@ function makeCtx(spec: Spec, world: World, self: InstanceState, state: unknown, 
       const drops = options?.drops;
       // What it drops depends on what others sent it: the integer core applies `drops` itself,
       // to each message in flight to the instance (Observation).
-      if (drops && observe) observe.drops = drops;
-      world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !drops?.(deliveryOf(p))));
+      if (observe) {
+        observe.reset = true;
+        if (drops) observe.drops = drops;
+      }
+      world.pending = world.pending.filter((p) => p.to !== self.id || (p.kind === "deliver" && !drops?.(deliveryOf(p)))).map((p) => afterReset(spec, p, self.id) ?? p);
     },
     get(variable: { name: string }) {
       return variableValue(variable, false);

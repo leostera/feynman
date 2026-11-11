@@ -46,7 +46,7 @@ replicas converge, and stay converged").
 ([`specs/10-liveness/1-eventually.ts`](specs/10-liveness/1-eventually.ts))
 
 ```text
-Box office: explored 1,532 states (…, depth 14, faults=1) in 138ms
+Box office: explored 1,702 states (…, depth 14, faults=1) in 138ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✗ seatIsSold  The last seat is eventually sold.
@@ -146,13 +146,13 @@ feynman check specs/10-liveness/1-eventually.ts --only paymentsEnd --depth 40
 ```
 
 ```text
-Box office: explored 2,887 states (…, depth 20, faults=1)
+Box office: explored 3,367 states (…, depth 20, faults=1)
   ~ paymentsEnd  …  held to depth 20, but paths that had not got there yet were cut off at that depth: it may break further on
-Box office: explored 3,674 states (…, depth 40, faults=1)
+Box office: explored 4,474 states (…, depth 40, faults=1)
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
 ```
 
-At depth 40 the state graph is complete: 3,674 states, and no more at depth 60. `✓` now
+At depth 40 the state graph is complete: 4,474 states, and no more at depth 60. `✓` now
 means what it says. Every payment ends, in every fair behaviour, with up to one fault.
 
 To avoid typing `--depth`, set it for the repository in `feynman.config.ts`:
@@ -193,7 +193,7 @@ feynman check specs/10-liveness/2-rearm.ts --depth 40
 ```
 
 ```text
-Box office: explored 3,674 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=1) in 180ms
+Box office: explored 4,474 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=1) in 180ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.

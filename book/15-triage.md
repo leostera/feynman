@@ -14,7 +14,7 @@ The agent read `book/code/box-office` and wrote
 sources, the sources resolve, and the check says:
 
 ```text
-Box office: explored 39,824 states (1 of each actor, …, depth 40, faults=2) in 719ms
+Box office: explored 55,144 states (1 of each actor, …, depth 40, faults=2) in 719ms
   ✗ oneTicket  At most one person has a ticket for the last seat.
     shortest counterexample, 18 event(s), needs no faults, from the setup of scenario "Alice buys the last seat"
   ✗ holdsAreKept  A hold is never handed to someone else while it lasts.
@@ -109,7 +109,7 @@ Fix the spec. Holding is one step, as in chapter 5
 ```
 
 ```text
-Box office: explored 11,361 states (1 of each actor, …, depth 40, faults=2) in 355ms
+Box office: explored 13,661 states (1 of each actor, …, depth 40, faults=2) in 355ms
   ✗ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
     shortest counterexample, 8 event(s), needs 1 fault(s)
 ```
