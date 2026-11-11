@@ -90,7 +90,7 @@ Our first guess at the claims:
 ([`specs/11-rules/1-rules.ts`](specs/11-rules/1-rules.ts))
 
 ```text
-Box office: explored 4,474 states (…, depth 40, faults=1) in 164ms
+Box office: explored 4,474 states (…, faults=1) in 164ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
@@ -114,7 +114,7 @@ knowing:
 and a restart before the failure arrives. With a budget of one, the checker can't reach it:
 
 ```sh
-feynman check specs/11-rules/1-rules.ts --depth 40 --set faults=2
+feynman check specs/11-rules/1-rules.ts --set faults=2
 ```
 
 ```text
@@ -156,7 +156,7 @@ const holdsAreRespected = defineProperty("holdsAreRespected", {
 ([`specs/11-rules/2-every-rule.ts`](specs/11-rules/2-every-rule.ts))
 
 ```text
-Box office: explored 13,061 states (…, depth 40, faults=2) in 274ms
+Box office: explored 13,061 states (…, faults=2) in 274ms
   ✓ holdsAreRespected  A seat held for one person is never paid for by another.
   rules
     ✗ payOnlyTheHolder  not needed by holdsAreRespected: held without the rule, in every state. The rule does nothing here, or the property is too weak to see what it prevents.
@@ -191,7 +191,7 @@ A payment belongs to whoever pays:
 ([`specs/11-rules/3-the-payer.ts`](specs/11-rules/3-the-payer.ts))
 
 ```text
-Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
+Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, faults=2) in 272ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ holdsAreRespected  A seat held for one person is never paid for by another.
@@ -214,7 +214,7 @@ wrong without it.
 how you answer "why is this here?":
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --without payOnlyTheHolder --only holdsAreRespected
+feynman check specs/11-rules/3-the-payer.ts --without payOnlyTheHolder --only holdsAreRespected
 ```
 
 ```text
@@ -239,7 +239,7 @@ feynman check specs/11-rules/3-the-payer.ts --depth 40 --without payOnlyTheHolde
 Chapter 7's bug, word for word. And without the idempotency key:
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --without idempotencyKey --brief
+feynman check specs/11-rules/3-the-payer.ts --without idempotencyKey --brief
 ```
 
 ```text

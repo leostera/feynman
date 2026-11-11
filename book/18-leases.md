@@ -188,7 +188,7 @@ is yours for 30 seconds, then it's free again, whether you're done or not
           ✗ breaks noStaleWrites
 ```
 
-(`lockIsFreed` holds now, at `--depth 30`.)
+(`lockIsFreed` holds now.)
 
 Step 1's story is back, with an expiry where the early release was. *A's write is on its way
 when its lease runs out. B takes the lock and writes, and A's write lands after.*
@@ -225,7 +225,7 @@ The natural fix: before writing, ask whether the lease is still yours
 ```
 
 ```sh
-feynman check specs/18-leases/4-check-first.ts --depth 40 --only noStaleWrites
+feynman check specs/18-leases/4-check-first.ts --only noStaleWrites
 ```
 
 ```text
@@ -287,11 +287,11 @@ const fencing = defineRule("fencing", { description: "Storage refuses a write wh
 ```
 
 ```sh
-feynman check specs/18-leases/5-fencing.ts --depth 30
+feynman check specs/18-leases/5-fencing.ts
 ```
 
 ```text
-Report job: explored 20,193 states (…, depth 30, faults=1) in 477ms
+Report job: explored 20,193 states (…, faults=1) in 477ms
   ✓ noStaleWrites  Storage never accepts a write from an older lock holder after a newer one's.
   ✓ lockIsFreed  Whoever holds the lock, it is eventually free again.
   rules

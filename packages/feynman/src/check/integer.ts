@@ -251,7 +251,6 @@ export class IntegerSearch {
   /** Each root's vector, where random runs start. */
   private rootVectors: Int32Array[] = [];
   /** Whether a new world was found at the depth bound, and not expanded. */
-  private cut = false;
   /** Where `run` goes on from, if it stopped at a deadline. */
   private resume: { frontier: Entry[]; next: Entry[]; depth: number; at: number } | undefined;
   /** For liveness: the nodes at the depth bound, whose edges are added at the end if they can be. */
@@ -429,12 +428,39 @@ export class IntegerSearch {
       r.depth++;
       r.at = 0;
     }
-    // Nothing new at the depth bound: every world reachable has been explored.
-    this.complete = !this.cut;
+    // Every world reachable has been explored when nothing lies past the worlds at the depth
+    // bound: every step from each lands on a known world, and breaks nothing on the way.
+    this.complete = !this.open.some((entry) => this.goesFurther(entry));
     // Liveness needs the edges out of the worlds at the depth bound too. Where every step from
     // one lands on a known state, nothing lies past it, and its edges are added: in a space the
     // bound does not cut, liveness is then judged in full, as TLC would.
     if (this.keepsEdges) for (const entry of this.open) this.close(entry);
+  }
+
+  /**
+   * Whether a world at the depth bound leads somewhere the search has not been: a step to a new
+   * world, an error not met yet, or a step that would break a property. Any of them, and the
+   * bound has cut a path off, so what held is not proved.
+   */
+  private goesFurther(entry: Entry): boolean {
+    const { vector, layout: L } = entry;
+    const here = this.here(vector, L);
+    const symmetry = this.roots[this.root[entry.gid]].symmetry;
+    const trail = this.nevers.length ? this.lazyTrail(entry.gid) : undefined;
+    const options = this.choicesOf(here, entry.tuple);
+    for (let option = 0; option < options.length; option++) {
+      const step = this.step(here, options[option]);
+      if (step.effect.error) {
+        if (!this.errors.has(step.effect.error)) return true;
+        continue;
+      }
+      if (trail && this.remember(vector[L.memory], trail, step.effect.event, step).some((id) => !this.broken.has(id))) return true;
+      const child = this.applied(vector, step);
+      const print = symmetry.classes.length ? this.symmetricPrint(child, L, symmetry).print : childPrint(entry, step);
+      if (this.seen.get(print[0], print[1]) === undefined) return true;
+      if (this.everySteps.some((p) => !this.broken.has(p.id)) && this.stepBreaks(entry.tuple, this.childTuple(entry, step), vector, step, this.b.depth, () => child).length) return true;
+    }
+    return false;
   }
 
   /** One node per distinct root: judged, and the frontier to start from. */
@@ -559,11 +585,8 @@ export class IntegerSearch {
   /** A new state at a depth: expanded in the next round, or (for liveness) closed at the end. */
   private queue(entry: Entry, depth: number, next: Entry[], open: Entry[]): void {
     if (depth < this.b.depth) next.push(entry);
-    else {
-      // A new world at the bound: there may be more past it.
-      this.cut = true;
-      if (this.keepsEdges) open.push(entry);
-    }
+    // A new world at the bound: there may be more past it (goesFurther).
+    else open.push(entry);
   }
 
   /** Every step from a frontier entry, in the order `branches` gives them. False when the search must stop. */

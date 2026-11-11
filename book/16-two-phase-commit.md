@@ -135,7 +135,7 @@ const nobodyWaitsForever = defineProperty("nobodyWaitsForever", {
 ```
 
 ```text
-Checkout: explored 94 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, depth 14) in 75ms
+Checkout: explored 94 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2) in 75ms
 ! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().
   ✓ atomic  No service commits while another rolls back: the order happens everywhere, or nowhere.
   ✓ nobodyWaitsForever  A service that voted yes eventually commits or rolls back: it does not hold its locks forever.
@@ -299,17 +299,14 @@ sends. (The first version of this step broadcast to everyone, the asker included
 found the asker waiting forever on a lost "reply" that wasn't one.)
 
 ```sh
-feynman check specs/16-two-phase-commit/6-ask.ts --depth 30
+feynman check specs/16-two-phase-commit/6-ask.ts
 ```
 
 ```text
-Checkout: explored 4,057 states (…, depth 30, faults=1) in 187ms
+Checkout: explored 4,057 states (…, faults=1) in 187ms
   ✓ atomic  No service commits while another rolls back: the order happens everywhere, or nowhere.
   ✓ nobodyWaitsForever  A service that voted yes eventually commits or rolls back: it does not hold its locks forever.
 ```
-
-The asking loop needs a deeper search than the default to finish every path, hence
-`--depth 30` (chapter 12).
 
 ## Step 7: the coordinator restarts
 
@@ -376,7 +373,7 @@ function known(state: CoordinatorState): boolean | null {
 ```
 
 ```text
-Checkout: explored 10,468 states (…, depth 30, faults=2) in 230ms
+Checkout: explored 10,468 states (…, faults=2) in 230ms
   ✓ atomic  No service commits while another rolls back: the order happens everywhere, or nowhere.
   ✓ nobodyWaitsForever  A service that voted yes eventually commits or rolls back: it does not hold its locks forever.
   rules
@@ -386,7 +383,7 @@ Checkout: explored 10,468 states (…, depth 30, faults=2) in 230ms
 And without the rule:
 
 ```sh
-feynman check specs/16-two-phase-commit/7-a-restart.ts --depth 30 --without logDecision --only atomic
+feynman check specs/16-two-phase-commit/7-a-restart.ts --without logDecision --only atomic
 ```
 
 ```text

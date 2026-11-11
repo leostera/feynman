@@ -111,7 +111,9 @@ test("list, run, check, lock: a spec in specs/ next to package.json", async () =
   expect(run.status).toBe(0);
   expect(run.out).toContain("Ann (Client)  say");
   const check = await capture(["check", "--depth", "6"], root);
-  expect(check.out).toContain("✓ serverHearsEverything");
+  // Paths cut off at depth 6 may break it further on: held is not proved.
+  expect(check.out).toContain("~ serverHearsEverything");
+  expect(check.out).toContain("held to depth 6, but paths that had not got there yet were cut off");
   expect(check.out).toContain("3 source(s) not in feynman.lock yet");
   expect(check.status).toBe(0);
   // A source that does not resolve fails the check.
@@ -324,7 +326,7 @@ test("a loaded spec's steps are found by name: the spec and the engine share one
       .replace("properties: [serverHearsEverything]", "properties: [onlySayHears]"),
   );
   const { out } = await capture(["check", "--brief", "--depth", "4", "--walks", "0"], root);
-  expect(out).toContain("✓ onlySayHears");
+  expect(out).toContain("~ onlySayHears");
 }, 60_000);
 
 test("--help after a command prints the usage", async () => {

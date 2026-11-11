@@ -61,7 +61,7 @@ Do the exercises. Most take a few minutes, and the checker tells you whether you
 To run a step:
 
 ```sh
-bun packages/feynman/bin/feynman.ts check book/specs/16-two-phase-commit/7-a-restart.ts --depth 30
+bun packages/feynman/bin/feynman.ts check book/specs/16-two-phase-commit/7-a-restart.ts
 ```
 
 or, with Feynman installed in your own project, copy the file next to your `package.json` and

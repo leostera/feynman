@@ -25,7 +25,7 @@ flight. The network doesn't know it restarted.
 ([`specs/09-restarts/1-forgets.ts`](specs/09-restarts/1-forgets.ts))
 
 ```text
-Box office: explored 941 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, depth 14, faults=1) in 144ms
+Box office: explored 2,520 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, faults=1) in 144ms
   ✓ chargedOnce  No order is charged twice.
   ✗ oneTicket  At most one person has a ticket for the last seat.
     shortest counterexample, 9 event(s), needs 1 fault(s), from the end of scenario "Alice buys the last seat":
@@ -91,7 +91,7 @@ feynman check specs/09-restarts/2-keeps.ts --set faults=2
 ```
 
 ```text
-Box office: explored 1,611 states (…, faults=2) in 143ms
+Box office: explored 4,655 states (…, faults=2) in 120ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
@@ -102,14 +102,14 @@ Box office: explored 1,611 states (…, faults=2) in 143ms
        4  Person (Person)  pay
        5  Box office (Box office)  pay  {}  from Person
           seat.kind: "held" → "paying"
-       6  Bank (Bank)  charge → chargeLost  {"order":"order-1"}  from Box office
+       6  Box office (Box office)  crash
           @faults: 2 → 1
-       7  Box office (Box office)  crash
+       7  Bank (Bank)  charge → chargeLost  {"order":"order-1"}  from Box office
           @faults: 1 → 0
 ```
 
-*The charge is lost. Before the box office hears its call failed, it restarts.* The failure
-was going to a `catch` block that no longer exists. After the restart, the database says the
+*The box office restarts while its charge is on the way to the bank. Then the charge is
+lost.* The failure would have gone to a `catch` block that no longer exists. After the restart, the database says the
 seat is being paid for, and nothing in the process is paying for it. The retry lived in memory.
 
 This is the general shape of restart bugs. **A process that crashes between two steps must be

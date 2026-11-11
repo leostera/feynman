@@ -713,11 +713,8 @@ Members of an interface or a type are not definitions: point at their lines
   that keep being possible on and off, `fair: false` for none). Actions and faults are never
   fair: a person may stop, the network may stop failing. A counterexample is a path and then
   a loop it repeats forever (or a world where nothing fair can happen). Liveness turns off
-  symmetry, so it costs more states. If a loop could lie past the
-  depth bound (the worlds never run out, as when retries pile up copies), the verdict is
-  unfinished, not holds. When the paths that matter are simply longer than the depth (a push
-  through five services and back), raise `--depth`, or `check: { depth }` in
-  feynman.config.ts for every run, until the verdict is ✓ or ✗.
+  symmetry, so it costs more states. If a loop could lie past where the search stopped (the
+  worlds never run out, as when retries pile up copies), the verdict is unfinished, not holds.
 - **Stuck.** A world where nothing can happen (no message or timer pending, no action
   possible, no fair guard true; an exhausted `atMost` or budget does not count) is reported
   as stuck: a deadlock, or a wait nothing will end. A system that
@@ -795,7 +792,7 @@ read worse. To update one:
 ```
 feynman list                   the specs found
 feynman run [spec] [--scenario NAME | --all] [--without RULE]
-feynman check [spec] [--depth 14] [--set faults=1] [--instances Actor=N] [--max-states N] [--time-limit S]
+feynman check [spec] [--depth N] [--set faults=1] [--instances Actor=N] [--max-states N] [--time-limit S]
               [--memory-limit GB] [--walks 2000] [--walk-depth 120] [--no-symmetry] [--symmetry-checks 2000]
               [--only P,Q] [--without RULE,RULE] [--no-rules] [--brief | --json | --as-scenario]
 feynman lock                   record source hashes in feynman.lock
@@ -805,15 +802,18 @@ feynman build [--out .feynman/index.html | DIR/] [--base REF]   minified self-co
 feynman open
 ```
 
-`check` explores in two ways. A breadth-first search tries every order of events up to
-`--depth` and finds the shortest counterexample. Random runs (`--walks N`, up to
+`check` explores in two ways. A breadth-first search tries every order of events, until it
+has every world or meets a limit, and finds the shortest counterexample. `--depth N` stops it
+at N events: quicker in a space too big to finish, but what holds there reads `~`, since the
+paths it cut off may break it further on. Random runs (`--walks N`, up to
 `--walk-depth` steps, a quarter of the time) go far deeper and find bugs the search cannot
 reach. Their counterexamples are shrunk but may not be the shortest, and they prove nothing.
 The search runs on one thread, on worlds as integers (RFD0008).
 Read the verdicts as:
 
 - `✓` holds in every state within the bounds;
-- `~` held in the states explored, but the search stopped early: not a proof;
+- `~` held in the states explored, but the search stopped early, or `--depth` cut paths off:
+  not a proof;
 - `?` never tested: no explored world got to where it applies (add a scenario that does);
 - `✗` broken, by the search, a random run, or a scenario; in yellow with "known bug" when
   the property is marked `known`, which does not fail the check.
@@ -846,7 +846,7 @@ A `feynman.config.ts` at the repository root can name spec globs and checker def
 
 ```ts
 import { defineConfig } from "@leostera/feynman/config";
-export default defineConfig({ specs: ["docs/specs/*.ts"], check: { depth: 12, instances: { Mac: 2 } } });
+export default defineConfig({ specs: ["docs/specs/*.ts"], check: { maxStates: 500_000, instances: { Mac: 2 } } });
 ```
 
 ## What to report back

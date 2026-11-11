@@ -1,6 +1,6 @@
 // Chapter 16, step 7: the coordinator restarts, and has to remember what it decided.
 //
-// Expected, at `--depth 30`: every property holds, and `logDecision` is needed: without it,
+// Expected: every property holds, and `logDecision` is needed: without it,
 // `atomic` breaks with one restart.
 import { atMost, budget, crash, defineCall, failed, defineActor, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, lose, type Setup } from "@leostera/feynman";
 

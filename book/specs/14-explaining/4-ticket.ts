@@ -1,6 +1,6 @@
 // Chapter 14, step 4: the ticket as a token, drawn by 4-ticket.play.tsx.
 //
-// Expected, at `--depth 40`: the same verdicts; check loads the playground file.
+// Expected: the same verdicts; check loads the playground file.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /**

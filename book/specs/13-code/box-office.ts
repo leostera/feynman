@@ -1,6 +1,6 @@
 // Chapter 13: the box office, pointed at its code in book/code/box-office.
 //
-// Expected, at `--depth 40`: every property holds, every rule is needed, and every source
+// Expected: every property holds, every rule is needed, and every source
 // resolves.
 import { atMost, budget, defineActor, defineCall, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 

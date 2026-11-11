@@ -109,7 +109,7 @@ export function formatReport(spec: Spec, report: Report, options: ReportOptions 
   const verdict = options.verdict ?? ((p: PropertyResult) => verdictOf(p, { report, brokenBy }));
   const b = report.bounds;
   const instances = Object.entries(b.instances).map(([actor, n]) => `${n} ${actor}`).join(", ");
-  const scope = [instances || "1 of each actor", ...seedsText(report.seeds), `depth ${b.depth}`, ...variablesText(spec)].join(", ");
+  const scope = [instances || "1 of each actor", ...seedsText(report.seeds), ...depthText(b.depth), ...variablesText(spec)].join(", ");
   const lines = [
     `${bold(spec.name)}: explored ${thousands(report.states)} states (${scope}) in ${seconds(report.durationMs)}${report.exhaustive ? "" : yellow(` — stopped at the ${limitName(report.stoppedBy)} limit before exploring everything`)}`,
     ...varietyLines(report),
@@ -190,6 +190,11 @@ export function limitName(reason: Report["stoppedBy"]): string {
   return reason === "maxStates" ? "state" : reason === "timeLimit" ? "time" : "memory";
 }
 
+/** The depth bound, as the scope line says it: nothing when there is none. */
+function depthText(depth: number): string[] {
+  return Number.isFinite(depth) ? [`depth ${depth}`] : [];
+}
+
 /** Why a property that held is not proved: exploration stopped early, or paths were cut off at the depth bound. */
 function unfinishedWhy(report: Report, p: Report["properties"][number]): string {
   const limit = limitName(report.stoppedBy);
@@ -206,7 +211,7 @@ export function unfinishedHint(report: Report): string {
   if (report.stoppedBy === "timeLimit") return `"~" is not a proof: raise --time-limit (check.timeLimit in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "memoryLimit")
     return `"~" is not a proof: the search filled the memory it may use (--memory-limit GB, or check.memoryLimit in megabytes in feynman.config.ts). Lower --depth or a budget (--set repeats=1), or make the state smaller: see what varies most above.`;
-  return `"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is ${report.bounds.depth} now) until no path is cut off before it gets there or loops.`;
+  return `"~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is ${report.bounds.depth} now), or leave it out to search every depth, until no path is cut off before it gets there or loops.`;
 }
 
 /** How a broken property breaks: the counterexample, how it was found, and for liveness the loop. */

@@ -47,13 +47,16 @@ export function Checks({ onOpen, onScenario }: { onOpen: Open; onScenario: (name
             <div>
               <h1 className="text-lg font-semibold">{headline(report.properties.map((p) => verdictOf(p, { report, brokenBy: scenarios })), report.errors.length)}</h1>
               <p className="text-sm text-kumo-subtle">
-                Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events up to {report.bounds.depth} steps deep
+                Explored {report.states.toLocaleString()} states in {time(report.durationMs)}: every order of events{Number.isFinite(report.bounds.depth) ? ` up to ${report.bounds.depth} steps deep` : ""}
                 {Object.keys(report.bounds.instances).length ? `, and ${Object.entries(report.bounds.instances).map(([a, n]) => `${n} ${a}`).join(", ")}` : ""}.
                 {!report.exhaustive && (
                   <span className="text-kumo-warning">
                     {" "}
                     It stopped at its {report.stoppedBy === "timeLimit" ? "time" : report.stoppedBy === "memoryLimit" ? "memory" : "state"} limit, so some orders were not tried: a property that held there is not proven.
                   </span>
+                )}
+                {report.exhaustive && report.cutAtDepth && (
+                  <span className="text-kumo-warning"> Paths that had not ended were cut off at that depth, so a property that held there is not proven: it may break further on.</span>
                 )}
                 {report.walks?.runs ? ` Also ${report.walks.runs.toLocaleString()} random runs up to ${report.walks.deepest} steps deep, which find bugs past that depth but prove nothing.` : ""}
               </p>

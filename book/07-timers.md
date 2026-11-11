@@ -162,7 +162,7 @@ const aliceBuys = defineScenario("Alice buys the last seat", {
 ([`specs/07-timers/1-holds.ts`](specs/07-timers/1-holds.ts))
 
 ```text
-Box office: explored 45 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, depth 14) in 80ms
+Box office: explored 45 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1) in 80ms
   ✓ holdsAreRespected  A seat held for one person is never sold to another.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   never ran: Person.expired
@@ -358,7 +358,7 @@ Event 11 is `settle()` at work: once nothing was in flight, Bob's hold timer fir
 Bob never paid. Left alone, every timer eventually fires.
 
 ```text
-Box office: explored 266 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, depth 14) in 142ms
+Box office: explored 286 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2) in 142ms
   ✓ holdsAreRespected  A seat held for one person is never sold to another.
   ✓ oneTicket  At most one person has a ticket for the last seat.
 ```

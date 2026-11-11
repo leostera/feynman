@@ -201,13 +201,13 @@ write. This is the race, on an ordinary day, and the fix handles it.
 With three scenarios, the check covers far more ground:
 
 ```text
-Box office: explored 6,070 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 2, depth 14) in 289ms
+Box office: explored 18,009 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 2) in 289ms
   ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
   ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
   ✓ soldSeatsStaySold  Once a seat is sold, it stays sold to the same person.
 ```
 
-6,070 states, up from 216. Three people, and a world with one seat left, are now in every
+18,009 states, up from 216. Three people, and a world with one seat left, are now in every
 check. This is how a spec says "check it with three people" without a flag: a scenario that
 has three.
 

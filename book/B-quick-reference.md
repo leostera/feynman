@@ -22,7 +22,7 @@ A spec is found by its path, by its file name without `.ts`, or by `specs/*.ts` 
 
 | Flag | Default | Chapter |
 | --- | --- | --- |
-| `--depth N` | 14 | 10, 12 |
+| `--depth N` | none: every depth | 10, 12 |
 | `--instances Actor=N` | 1 of each, plus scenario setups | 1, 12 |
 | `--set name=value` (a budget or variable) | as declared | 8, 12 |
 | `--only P,Q` | every property | 5 |
@@ -38,7 +38,7 @@ Defaults for a whole repository go in `feynman.config.ts`:
 ```ts
 import { defineConfig } from "@leostera/feynman/config";
 
-export default defineConfig({ specs: ["specs/*.ts"], check: { depth: 40 } });
+export default defineConfig({ specs: ["specs/*.ts"], check: { maxStates: 500_000 } });
 ```
 
 ## Verdicts
@@ -46,7 +46,7 @@ export default defineConfig({ specs: ["specs/*.ts"], check: { depth: 40 } });
 | Mark | Means |
 | --- | --- |
 | `✓` | held in every world within the bounds, and every world within them was explored |
-| `~` | held as far as the search got; a limit, or the depth, stopped it first |
+| `~` | held as far as the search got: a limit stopped it, or a depth bound cut paths off |
 | `?` | never tested: no explored world was one it applies to |
 | `✗` | broken; the counterexample follows, with the faults it needs |
 | `✓ rule  needed` | without the rule, a property that needs it breaks |

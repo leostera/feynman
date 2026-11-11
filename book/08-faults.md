@@ -106,7 +106,7 @@ const chargedOnce = defineProperty("chargedOnce", {
 ([`specs/08-faults/1-a-bank.ts`](specs/08-faults/1-a-bank.ts))
 
 ```text
-Box office: explored 277 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, depth 14) in 130ms
+Box office: explored 554 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1) in 130ms
 ! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
@@ -159,7 +159,7 @@ that faults cause, and keeps the search small. `--set faults=0` checks without f
 ([`specs/08-faults/2-lost.ts`](specs/08-faults/2-lost.ts))
 
 ```text
-Box office: explored 314 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, depth 14, faults=1) in 133ms
+Box office: explored 654 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, faults=1) in 133ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
@@ -234,7 +234,7 @@ timeout or a reset connection. We say so with `fails`:
 ([`specs/08-faults/3-retry.ts`](specs/08-faults/3-retry.ts))
 
 ```text
-Box office: explored 399 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, depth 14, faults=1) in 140ms
+Box office: explored 1,054 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, faults=1) in 140ms
   ✗ chargedOnce  No order is charged twice.
     shortest counterexample, 9 event(s), needs 1 fault(s):
        1  Person (Person)  hold
@@ -341,10 +341,10 @@ feynman check specs/08-faults/4-idempotent.ts --brief --set faults=2
 ```
 
 ```text
-Box office: explored 411 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, depth 14, faults=1) in 116ms
+Box office: explored 945 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 2, faults=1) in 116ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
-Box office: explored 434 states (…, faults=2) in 152ms
+Box office: explored 1,309 states (…, faults=2) in 112ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
 ```

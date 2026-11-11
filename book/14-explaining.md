@@ -213,17 +213,16 @@ asks about.
 
 The checks page is `feynman check` for people who won't run it:
 
-![The checks page: three properties hold, two are unfinished, and every rule is needed](images/14/checks.png)
+![The checks page: every property holds, and every rule is needed](images/14/checks.png)
 
-The headline is as strong as the weakest verdict. Here two liveness properties are only "held
-in the states explored", because the explorer checks with the default depth of 14, and the
-payment flow needs 40. Put the bounds the spec needs in `feynman.config.ts`, so the explorer and
-the CLI agree without flags:
+The headline is as strong as the weakest verdict. Here every property holds; one that only
+"held in the states explored" would say so first. Put the bounds the spec needs in `feynman.config.ts`, so
+the explorer and the CLI agree without flags:
 
 ```ts
 import { defineConfig } from "@leostera/feynman/config";
 
-export default defineConfig({ specs: ["specs/*.ts"], check: { depth: 40 } });
+export default defineConfig({ specs: ["specs/*.ts"], check: { instances: { Person: 2 } } });
 ```
 
 ## A tour for a newcomer

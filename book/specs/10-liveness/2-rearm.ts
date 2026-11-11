@@ -1,7 +1,7 @@
 // Chapter 10, step 2: after a restart, the box office sets the expiry timer of a held seat
 // again.
 //
-// Expected, at `--depth 40`: every property holds.
+// Expected: every property holds.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /** At most one fault on any path. `--set faults=2` raises it. */

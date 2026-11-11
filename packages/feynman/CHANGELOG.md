@@ -11,6 +11,14 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
 
 ### A ✓ that was not one
 
+- **What held up to the depth bound** read `✓`, though the paths the bound cut off could break
+  it further on. It reads `~` now: "held to depth N, but paths that had not got there yet were
+  cut off". Worlds at the bound that lead nowhere new do not count as cut off.
+- **No depth bound by default.** The search goes on until it has every world, or meets its
+  state, time or memory limit, as TLC does; `--depth N` still sets one. Nearly every spec
+  finishes: of the book's specs and the examples, three never run out of worlds and stop at
+  the state limit, in about a second. The book's specs that the old default of 14 events cut
+  off read `✓` as before, now with every world behind them.
 - **`never` properties that ask a question only sometimes.** `t.some(a) && t.count(b) > 1`
   never counts b before an a, so paths that differed only in their b were merged, and a break
   down one of them missed. Such a property is now searched remembering whole paths (slower:

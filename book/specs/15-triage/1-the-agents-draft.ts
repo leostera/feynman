@@ -1,6 +1,6 @@
 // Chapter 15, step 1: a spec an agent wrote of book/code/box-office, and its findings.
 //
-// Expected, at `--depth 40`: `holdsAreKept` breaks in 6 events, with no faults (a false alarm:
+// Expected: `holdsAreKept` breaks in 6 events, with no faults (a false alarm:
 // the spec splits one SQL statement into two steps), and `paymentsEnd` breaks with one fault
 // (a real bug: the ticket is the answer to a request that a restart loses).
 import { atMost, budget, defineActor, defineCall, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";

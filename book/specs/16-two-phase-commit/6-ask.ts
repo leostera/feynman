@@ -1,6 +1,6 @@
 // Chapter 16, step 6: a service in doubt asks the coordinator, again and again.
 //
-// Expected, at `--depth 30`: `atomic` and `nobodyWaitsForever` hold, with one lost message.
+// Expected: `atomic` and `nobodyWaitsForever` hold, with one lost message.
 import { atMost, budget, defineCall, failed, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, lose, type Setup } from "@leostera/feynman";
 
 /** At most one fault on any path. */

@@ -228,11 +228,11 @@ const Synced = defineMessage("Synced", {}, { tone: "reply" });
 ```
 
 Why a call, answered before the next round? Our first version restarted the timer as soon as
-it fired. Syncs piled up in flight, every pile was a new state, and the check couldn't finish
-at depth 14 (chapter 12). Real gossip loops behave like this one anyway: one round at a time.
+it fired. Syncs piled up in flight, every pile was a new state, and the search could never
+finish (chapter 12). Real gossip loops behave like this one anyway: one round at a time.
 
 ```text
-Like counter: explored 1,075 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, depth 14, faults=1) in 611ms
+Like counter: explored 1,075 states (1 of each actor, and from the end of 1 scenario(s) and the setup of 1, faults=1) in 611ms
   ✓ neverOvercounts  No replica shows more likes than were made.
   ✓ everyLikeCounts  Every replica eventually shows every like.
 ```

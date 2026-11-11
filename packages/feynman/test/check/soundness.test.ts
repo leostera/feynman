@@ -10,8 +10,8 @@ import { atMost, budget, crash, defineActor, defineCall, defineMessage, definePr
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
-/** No random runs, and a time limit the search never meets: the verdicts are the search's own. */
-const SEARCH = { walks: 0, timeLimit: 600_000 };
+/** No random runs, a depth bound, and a time limit the search never meets: the verdicts are the search's own. */
+const SEARCH = { walks: 0, depth: 14, timeLimit: 600_000 };
 
 const verdict = async (spec: Spec, bounds = {}, seeds = scenarioSeeds(spec)) => {
   const report = await check(spec, { ...SEARCH, ...bounds }, seeds);
@@ -291,4 +291,29 @@ test("everyStep verdicts, kept by what a property reads, are those of judging ev
   // The same from random runs alone, which share what the search keeps.
   const walked = await check(spec, { ...bounds, depth: 0, walks: 3000, walkDepth: 9, timeLimit: 600_000 });
   for (const p of walked.properties) expect(p.holds).toBe(!fewest.has(p.id));
+});
+
+test("a property that held only to the depth bound is unfinished, not proved; with no bound, the search goes on until it has every world", async () => {
+  // Breaks on the twentieth up: past depth 14, and the counter stops at 25, so the world is finite.
+  const below20 = defineProperty("below20", { description: "Under 20.", always: (w) => w.the(C).state.n < 20 });
+  const C = defineActor({
+    name: "Capped",
+    zone,
+    singleton: true,
+    initialState: () => ({ n: 0 }),
+    actions: { up: { label: "Up", description: "Up.", when: (s) => s.n < 25, run: (s) => void (s.n += 1) } },
+  });
+  const spec = defineSpec({ name: "Capped", actors: [C], properties: [below20], finalState: ANY });
+  const read = (report: Awaited<ReturnType<typeof check>>) => verdictOf(report.properties[0]!, { report, brokenBy: new Map() });
+  const cut = await check(spec, { walks: 0, depth: 14 });
+  expect({ exhaustive: cut.exhaustive, cutAtDepth: cut.cutAtDepth, verdict: read(cut), upTo: cut.properties[0]!.holds && cut.properties[0]!.upTo }).toEqual({ exhaustive: true, cutAtDepth: true, verdict: "unfinished", upTo: 14 });
+  const all = await check(spec, { walks: 0 });
+  expect({ states: all.states, cutAtDepth: all.cutAtDepth, verdict: read(all), events: !all.properties[0]!.holds && all.properties[0]!.counterexample.events.length }).toEqual({ states: 26, cutAtDepth: undefined, verdict: "broken", events: 20 });
+  // A bound past the end of every path cuts nothing off: what held is proved.
+  const capped = defineSpec({ name: "Capped", actors: [C], properties: [defineProperty("atMost25", { description: "At most 25.", always: (w) => w.the(C).state.n <= 25 })], finalState: ANY });
+  const deep = await check(capped, { walks: 0, depth: 30 });
+  expect({ cutAtDepth: deep.cutAtDepth, verdict: read(deep) }).toEqual({ cutAtDepth: undefined, verdict: "holds" });
+  // At exactly the longest path, the last worlds are at the bound with nothing after them: still proved.
+  const exact = await check(capped, { walks: 0, depth: 25 });
+  expect({ cutAtDepth: exact.cutAtDepth, verdict: read(exact) }).toEqual({ cutAtDepth: undefined, verdict: "holds" });
 });

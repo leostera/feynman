@@ -1,6 +1,6 @@
 // Chapter 15, step 2: the false alarm fixed. Holding the seat is one SQL statement, so one step.
 //
-// Expected, at `--depth 40`: `holdsAreKept` and `oneTicket` hold; `paymentsEnd` still breaks,
+// Expected: `holdsAreKept` and `oneTicket` hold; `paymentsEnd` still breaks,
 // with one fault: a restart while the bank is charging.
 import { atMost, budget, defineActor, defineCall, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 

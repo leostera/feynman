@@ -45,7 +45,7 @@ such as people or workers, leave it out (chapter 4).
 Check it ([`specs/03-counter/1-an-actor.ts`](specs/03-counter/1-an-actor.ts)):
 
 ```text
-Box office: explored 1 states (1 of each actor, depth 14) in 6ms
+Box office: explored 1 states (1 of each actor) in 6ms
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
 ```
 
@@ -81,7 +81,7 @@ checker tries them in every order.
   `path: before → after`.
 
 ```text
-Box office: explored 3 states (1 of each actor, depth 14) in 20ms
+Box office: explored 3 states (1 of each actor) in 20ms
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
        1  Box office (Box office)  sell
           The clerk sells a seat, while there is one left.
@@ -170,7 +170,7 @@ Three choices here are worth a moment.
   and two copies can drift apart. Keep one, and compute the other.
 
 ```text
-Box office: explored 4 states (1 of each actor, depth 14) in 29ms
+Box office: explored 4 states (1 of each actor) in 29ms
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
        1  Box office (Box office)  sell  {"seat":"A1"}
           The clerk sells a seat that is still free.
@@ -242,7 +242,7 @@ const sellOut = defineScenario("Sell out", {
 ```
 
 ```text
-Box office: explored 4 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 20ms
+Box office: explored 4 states (1 of each actor, and from the end of 1 scenario(s)) in 20ms
   no step points at code yet; this spec is a design. Add sources as the code appears.
 ```
 

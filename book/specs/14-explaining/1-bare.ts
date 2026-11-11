@@ -1,6 +1,6 @@
 // Chapter 14, step 1: the final box office, with nothing about how it looks.
 //
-// Expected, at `--depth 40`: as chapter 11, every property holds and every rule is needed.
+// Expected: as chapter 11, every property holds and every rule is needed.
 // The playground draws every actor as a grey box with its name.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 

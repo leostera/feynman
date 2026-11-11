@@ -1,6 +1,6 @@
 // Chapter 11, step 1: the box office's safeguards, as rules of the design.
 //
-// Expected, at `--depth 40`: every property holds. `idempotencyKey` and `rearmHolds` are
+// Expected: every property holds. `idempotencyKey` and `rearmHolds` are
 // needed; `payOnlyTheHolder` is not needed by `oneTicket`, which is too weak to notice it,
 // and `resumePayments` is needed only with two faults (`--set faults=2`).
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";

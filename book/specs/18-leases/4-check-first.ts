@@ -1,6 +1,6 @@
 // Chapter 18, step 4: the worker asks whether it still holds the lease before it writes.
 //
-// Expected, at `--depth 40`: `lockIsFreed` holds, and `noStaleWrites` still breaks with no
+// Expected: `lockIsFreed` holds, and `noStaleWrites` still breaks with no
 // faults: the lease runs out after the answer, while the write is on its way.
 import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, type Setup } from "@leostera/feynman";
 

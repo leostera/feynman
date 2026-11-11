@@ -1,7 +1,7 @@
 // Chapter 15, step 4: the finding fixed. The ticket is emailed to the buyer the database
 // names, so a restart cannot lose it.
 //
-// Expected, at `--depth 40`: every property holds, and every rule is needed.
+// Expected: every property holds, and every rule is needed.
 import { atMost, budget, defineActor, defineCall, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /**

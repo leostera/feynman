@@ -2,8 +2,8 @@
 //
 // Expected: `seatIsSold` breaks with no events: nobody has to buy. `holdsEnd` breaks in 4
 // events with one fault: the box office restarts while the seat is held, the restart takes
-// the expiry timer with it, and the holder never pays. `paymentsEnd` is unfinished at depth
-// 14, and holds at `--depth 40`.
+// the expiry timer with it, and the holder never pays. `paymentsEnd` holds; with a depth
+// bound of 14, it is unfinished.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /** At most one fault on any path. `--set faults=2` raises it. */

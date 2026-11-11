@@ -51,7 +51,7 @@ A1 but the books say A1 is free), only the second would. Several precise propert
 more than one vague one, because the one that breaks names the problem.
 
 ```text
-Box office: explored 67 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 74ms
+Box office: explored 67 states (1 of each actor, and from the end of 1 scenario(s)) in 74ms
   ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
   ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
 ```
@@ -199,7 +199,7 @@ const bothWantA1 = defineScenario("Both want A1", {
 Check it ([`specs/05-properties/2-a-database.ts`](specs/05-properties/2-a-database.ts)):
 
 ```text
-Box office: explored 228 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 131ms
+Box office: explored 228 states (1 of each actor, and from the end of 1 scenario(s)) in 131ms
   ✗ oneOwnerPerSeat  No two people hold a ticket for the same seat.
     shortest counterexample, 14 event(s), needs no faults, from the end of scenario "Both want A1"
   ✗ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
@@ -378,7 +378,7 @@ We also drop `noMoreTicketsThanSeats`. It counts tickets where the other three s
 which seat, so it only adds noise.
 
 ```text
-Box office: explored 216 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 160ms
+Box office: explored 216 states (1 of each actor, and from the end of 1 scenario(s)) in 160ms
   ✓ oneOwnerPerSeat  No two people hold a ticket for the same seat.
   ✓ ticketsMatchTheBooks  Whoever holds a ticket is who the books say bought that seat.
   ✓ soldSeatsStaySold  Once a seat is sold, it stays sold to the same person.

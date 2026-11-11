@@ -1,6 +1,6 @@
 // Chapter 11, step 2: every rule, with a property that needs it.
 //
-// Expected, at `--depth 40`: every property holds. Every rule is needed, but
+// Expected: every property holds. Every rule is needed, but
 // `payOnlyTheHolder`: without it, a payment from Bob pays for Alice's order, which the new
 // property cannot see.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";

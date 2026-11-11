@@ -1,7 +1,7 @@
 // Chapter 15, step 3: testing a doubt about the trace. In step 2 the bank's answer reaches the
 // restarted server, which the code cannot do; here the server ignores answers nobody awaits.
 //
-// Expected, at `--depth 40`: `paymentsEnd` still breaks, with one fault, in a longer story.
+// Expected: `paymentsEnd` still breaks, with one fault, in a longer story.
 import { atMost, budget, defineActor, defineCall, defineLimit, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /**

@@ -147,7 +147,7 @@ in flight.
 ```
 
 ```text
-Box office: explored 16 states (1 of each actor, depth 14) in 76ms
+Box office: explored 16 states (1 of each actor) in 76ms
 ```
 
 Nothing to report. That should make us suspicious, because the box office ignores a `Buy` for
@@ -167,7 +167,7 @@ Say what finished means:
 ([`specs/04-online/2-tickets.ts`](specs/04-online/2-tickets.ts)):
 
 ```text
-Box office: explored 16 states (1 of each actor, depth 14) in 59ms
+Box office: explored 16 states (1 of each actor) in 59ms
   ✗ stuck: nothing can happen, and the spec does not call this world final (finalState in defineSpec)
        1  Person (Person)  buy  {"seat":"A1"}
           Asks the box office for a seat.
@@ -232,7 +232,7 @@ One message per meaning: `SoldOut` is its own message, not a `Ticket` with an `o
 field. Each gets its own step, its own description, and its own line on the timeline.
 
 ```text
-Box office: explored 18 states (1 of each actor, depth 14) in 64ms
+Box office: explored 18 states (1 of each actor) in 64ms
 ```
 
 ## Step 4: two people
@@ -243,7 +243,7 @@ There are two ways to get them.
 On the command line, `--instances Person=2` checks with two people from the start:
 
 ```text
-Box office: explored 259 states (2 Person, and from the end of 1 scenario(s), depth 14) in 93ms
+Box office: explored 259 states (2 Person, and from the end of 1 scenario(s)) in 93ms
 ```
 
 Or, better, write a **scenario** that sets up the moment we care about. The checker explores

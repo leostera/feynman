@@ -1,7 +1,7 @@
 // Chapter 18, step 5: fencing tokens. Each grant carries a bigger token, and storage refuses a
 // write with an older token than one it has accepted.
 //
-// Expected, at `--depth 30`: every property holds, and `fencing` is needed.
+// Expected: every property holds, and `fencing` is needed.
 import { atMost, budget, crash, defineActor, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, type Setup } from "@leostera/feynman";
 
 /** At most one fault on any path. */

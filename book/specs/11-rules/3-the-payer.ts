@@ -1,6 +1,6 @@
 // Chapter 11, step 3: a payment belongs to whoever pays.
 //
-// Expected, at `--depth 40`: every property holds, and every rule is needed.
+// Expected: every property holds, and every rule is needed.
 import { atMost, budget, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, crash, defineZone, duplicate, failed, lose } from "@leostera/feynman";
 
 /**

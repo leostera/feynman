@@ -46,18 +46,17 @@ replicas converge, and stay converged").
 ([`specs/10-liveness/1-eventually.ts`](specs/10-liveness/1-eventually.ts))
 
 ```text
-Box office: explored 1,702 states (…, depth 14, faults=1) in 138ms
+Box office: explored 4,474 states (…, faults=1) in 138ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✗ seatIsSold  The last seat is eventually sold.
-    shortest counterexample, 0 event(s), needs no faults
-  ~ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.  held to depth 14, but paths that had not got there yet were cut off at that depth: it may break further on
+    shortest counterexample, 0 event(s), needs no faults; see it with feynman check specs/10-liveness/1-eventually.ts --only seatIsSold
+  ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
   ✗ holdsEnd  A hold ends: the seat is eventually paid for or free again.
-    shortest counterexample, 4 event(s), needs 1 fault(s)
-  "~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is 14 now) until no path is cut off before it gets there or loops.
+    shortest counterexample, 4 event(s), needs 1 fault(s); see it with feynman check specs/10-liveness/1-eventually.ts --only holdsEnd
 ```
 
-Three properties, three different answers. Take them one at a time.
+Three properties, two different answers, and one of them has a twist. Take them one at a time.
 
 ### "The seat is eventually sold": no
 
@@ -130,33 +129,34 @@ When the forever is a loop rather than a standstill, the checker prints the path
 then the loop: the events that repeat forever, avoiding the goal. Retries that always fail, a
 leader election that always splits, a message bounced back and forth.
 
-### "Every payment ends": not sure yet
+### "Every payment ends": yes
 
 ```text
-  ~ paymentsEnd  …  held to depth 14, but paths that had not got there yet were cut off at that depth: it may break further on
-```
-
-`~` is the checker being honest. To judge liveness, it needs the whole graph of states, and
-some paths were still going when they reached the depth bound, 14 events. A loop that never
-pays could be hiding beyond it. It says what to do: raise the depth.
-
-```sh
-feynman check specs/10-liveness/1-eventually.ts --only paymentsEnd --depth 20
-feynman check specs/10-liveness/1-eventually.ts --only paymentsEnd --depth 40
-```
-
-```text
-Box office: explored 3,367 states (…, depth 20, faults=1)
-  ~ paymentsEnd  …  held to depth 20, but paths that had not got there yet were cut off at that depth: it may break further on
-Box office: explored 4,474 states (…, depth 40, faults=1)
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
 ```
 
-At depth 40 the state graph is complete: 4,474 states, and no more at depth 60. `✓` now
-means what it says. Every payment ends, in every fair behaviour, with up to one fault.
+To judge liveness, the checker needs the whole graph of states: a loop that never pays could
+be anywhere in it. It explored 4,474 states, every world the box office can reach with one
+fault, and found no such loop. So `✓` means what it says: every payment ends, in every fair
+behaviour, with up to one fault.
 
-To avoid typing `--depth`, set it for the repository in `feynman.config.ts`:
-`check: { depth: 40 }`.
+A search that stops early can't say that. Give it a depth bound, and it stops at 14 events:
+
+```sh
+feynman check specs/10-liveness/1-eventually.ts --only paymentsEnd --depth 14
+```
+
+```text
+Box office: explored 1,702 states (…, depth 14, faults=1) in 269ms
+  ~ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.  held to depth 14, but paths that had not got there yet were cut off at that depth: it may break further on
+  "~" is not a proof: raise --depth (check.depth in feynman.config.ts; it is 14 now), or leave it out to search every depth, until no path is cut off before it gets there or loops.
+```
+
+`~` is the checker being honest. Some paths were still going at 14 events, and a loop that
+never pays could be hiding past them. The same goes for safety: what held up to a depth bound
+held on the paths explored, not on all of them, and reads `~` too. Without `--depth`, the
+search goes on until it has every world, or meets its state, time or memory limit (chapter
+12). A system that never runs out of new worlds meets a limit, and that is a `~` as well.
 
 ## Step 2: re-arming timers after a restart
 
@@ -189,11 +189,11 @@ never a promise the box office could make.
 ([`specs/10-liveness/2-rearm.ts`](specs/10-liveness/2-rearm.ts))
 
 ```sh
-feynman check specs/10-liveness/2-rearm.ts --depth 40
+feynman check specs/10-liveness/2-rearm.ts
 ```
 
 ```text
-Box office: explored 4,474 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=1) in 180ms
+Box office: explored 4,474 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, faults=1) in 180ms
   ✓ chargedOnce  No order is charged twice.
   ✓ oneTicket  At most one person has a ticket for the last seat.
   ✓ paymentsEnd  Whoever pays eventually hears back: a ticket, or that their hold expired.
@@ -232,7 +232,8 @@ Feynman reports three related things. They are easy to mix up:
   finishes when the network behaves needs a property that says "when the network behaves".
   Or a budget: with `budget("faults", 1)`, every path has at most one fault, so retries
   eventually get through.
-- **Don't stop at `~`.** Raise the depth until the verdict is `✓` or `✗`.
+- **Don't stop at `~`.** Leave out `--depth`, raise the limit the search met, or make the model
+  smaller (chapter 12), until the verdict is `✓` or `✗`.
 
 ## Exercises
 

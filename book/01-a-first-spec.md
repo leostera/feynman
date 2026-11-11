@@ -264,7 +264,7 @@ feynman check specs/01-wire/1-overdraft.ts
 ```
 
 ```text
-Wire transfers: explored 26 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 43ms
+Wire transfers: explored 26 states (1 of each actor, and from the end of 1 scenario(s)) in 43ms
 ! no faults: every path has a perfect network and no crashes. Declare the ones the system meets, like lose(Debit) or crash().
   ✓ noOverdrafts  No account goes below zero.
   ✓ moneyIsKept  Once nothing is in flight, the accounts hold what they opened with.
@@ -287,7 +287,7 @@ feynman check specs/01-wire/1-overdraft.ts --instances Wire=2
 ```
 
 ```text
-Wire transfers: explored 369 states (2 Wire, and from the end of 1 scenario(s), depth 14) in 80ms
+Wire transfers: explored 369 states (2 Wire, and from the end of 1 scenario(s)) in 80ms
   treated as interchangeable: Wire A = Wire B
   ✗ noOverdrafts  No account goes below zero.
     shortest counterexample, 8 event(s), needs no faults:
@@ -428,7 +428,7 @@ const noOverdrafts = defineProperty("noOverdrafts", {
 ```
 
 ```text
-Wire transfers: explored 376 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 1, depth 14) in 67ms
+Wire transfers: explored 376 states (1 of each actor, and from the end of 2 scenario(s) and the setup of 1) in 67ms
   ✓ noOverdrafts  No account goes below zero.
   ✓ moneyIsKept  Once nothing is in flight, the accounts hold what they opened with.
   rules

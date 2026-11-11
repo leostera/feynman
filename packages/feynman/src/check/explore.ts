@@ -22,7 +22,10 @@ export { apply, branches, placeText, QUIET, replay, type Choice, type Counterexa
 export interface Bounds {
   /** Instances of each actor that is not a singleton (1 by default). */
   instances: Record<string, number>;
-  /** Longest path explored, in events. */
+  /**
+   * Longest path explored, in events: none by default, so a search goes on until it has every
+   * world or meets a limit. With a depth, paths cut off at it leave what held unproved.
+   */
   depth: number;
   /** Stop after this many distinct states. */
   maxStates: number;
@@ -49,7 +52,7 @@ export type StopReason = "maxStates" | "timeLimit" | "memoryLimit";
 
 export const DEFAULT_BOUNDS: Bounds = {
   instances: {},
-  depth: 14,
+  depth: Infinity,
   maxStates: 300_000,
   timeLimit: 20_000,
   memoryLimit: defaultMemoryLimit(),
@@ -297,7 +300,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: I
     if (found !== undefined) return { ...base, holds: false, counterexample: fromSearch(found), foundBy: "search" };
     const walkedTo = fromWalk(property.id);
     if (walkedTo) return { ...base, holds: false, counterexample: walkedTo, foundBy: "walk" };
-    return { ...base, holds: true, ...(search.stoppedBy ? { upTo: search.completeDepth } : {}) };
+    return { ...base, holds: true, ...(search.stoppedBy ? { upTo: search.completeDepth } : search.complete ? {} : { upTo: b.depth }) };
   });
   const stuckFound =
     search.stuckAt !== undefined ? { counterexample: fromSearch(search.stuckAt), foundBy: "search" as const } : walked.stuck ? { counterexample: fromRoot(walked.stuck.root, walked.stuck.choices), foundBy: "walk" as const } : undefined;

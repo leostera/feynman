@@ -60,7 +60,7 @@ import { defineConfig } from "@leostera/feynman/config";
 
 export default defineConfig({
   specs: ["docs/specs/*.ts"],
-  check: { depth: 16 },
+  check: { maxStates: 500_000 },
 });
 ```
 
@@ -127,7 +127,7 @@ bunx feynman check hello
 
 ```text
 specs/hello.ts
-Hello: explored 2 states (1 of each actor, depth 14) in 18ms
+Hello: explored 2 states (1 of each actor) in 18ms
   ✗ neverOn  The lamp is never on.
     shortest counterexample, 1 event(s), needs no faults:
        1  Lamp (Lamp)  switchOn

@@ -10,8 +10,8 @@ too big to check.
 ## Small worlds
 
 The checker can't try every number of people, every length of run, every combination of
-failures. Nobody can. It tries all of them up to a bound: one or two people, fourteen or forty
-events, one or two faults. This is less of a limit than it sounds. Most design bugs show up in
+failures. Nobody can. It tries all of them up to a bound: one or two people, one or two faults, an
+action taken once or twice. This is less of a limit than it sounds. Most design bugs show up in
 small worlds: two people, one lost message, one restart. Every counterexample in this book is
 under fifteen events. The bugs that need a hundred machines usually need two machines and the
 right order.
@@ -24,7 +24,7 @@ in the spec which ones matter.
 | Bound | Default | Set with | What it limits |
 | --- | --- | --- | --- |
 | instances | one of each actor, plus what scenarios bring | `--instances Person=3`, `check.instances`, a scenario's setup | how many of each non-singleton actor |
-| depth | 14 | `--depth 40`, `check.depth` | how many events on one path |
+| depth | none | `--depth 20`, `check.depth` | how many events on one path; with none, as many as it takes |
 | repeats | per action | `with: [atMost(2)]`, a shared `defineVariable` | how often each instance takes an action |
 | faults | per budget | `budget("faults", 1)`, `--set faults=2` | how many faults on one path |
 | states | 300,000 | `--max-states` | how many distinct worlds before stopping |
@@ -35,14 +35,14 @@ in the spec which ones matter.
 The first line of check's output always says which bounds it used:
 
 ```text
-Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, depth 40, faults=2) in 272ms
+Box office: explored 13,061 states (1 of each actor, and from the end of 3 scenario(s) and the setup of 3, faults=2) in 291ms
 ```
 
 ## The four verdicts, again
 
 - **`✓`** every world within the bounds was explored, and the property held in all of them.
-- **`~`** a limit stopped the search first. The output says how far it got: *"held on every
-  path of up to 12 event(s)"*. Not a proof.
+- **`~`** a limit stopped the search first, or a depth bound cut paths off before they ended.
+  The output says how far it got: *"held on every path of up to 12 event(s)"*. Not a proof.
 - **`?`** nothing the checker reached was a world the property is about. It tested nothing.
 - **`✗`** broken, with the trace. A `✗` is never in doubt, whatever the bounds.
 
@@ -54,33 +54,41 @@ The final box office ([`specs/11-rules/3-the-payer.ts`](specs/11-rules/3-the-pay
 with one person from the start, and the people its scenarios bring: two at most. Three?
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=2
+feynman check specs/11-rules/3-the-payer.ts --instances Person=2
+feynman check specs/11-rules/3-the-payer.ts --instances Person=3 --max-states 500000
+```
+
+```text
+Box office: explored 25,291 states (2 Person, …, faults=2) in 586ms
+Box office: explored 401,692 states (3 Person, …, faults=2) in 2.32s
+```
+
+A second person doubles the states, and a third multiplies them by sixteen. Three people need
+more than the 300,000 states the checker stops at by default, so the second command raises that
+limit. Every verdict is `✓`: 401,692 states, every world three people can reach, in a couple of
+seconds. A fourth person would take minutes. For this spec, that's where to stop: nothing about
+the box office treats a third person differently from a second, and the properties held for
+three.
+
+The search goes as deep as it takes, by default. A depth bound makes it smaller, and costs the
+proof:
+
+```sh
 feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --max-states 500000
 ```
 
 ```text
-Box office: explored 25,291 states (2 Person, …, depth 40, faults=2) in 557ms
-Box office: explored 397,713 states (3 Person, …, depth 40, faults=2) in 6.28s
+Box office: explored 397,713 states (3 Person, …, depth 40, faults=2) in 2.85s
+  ~ chargedOnce  No order is charged twice.  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
+  ~ oneTicket  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
+  ~ holdsAreRespected  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
   ~ paymentsEnd  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
   ~ holdsEnd  …  held to depth 40, but paths that had not got there yet were cut off at that depth: it may break further on
 ```
 
-A second person doubles the states, and a third multiplies them by fifteen. Three people need more than the
-300,000 states the checker stops at by default, so the second command raises that limit too.
-With three, forty events is no longer enough for every path to finish, and the liveness
-verdicts are unfinished. Raise the depth:
-
-```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 60 --instances Person=3 --max-states 500000
-```
-
-```text
-Box office: explored 401,692 states (3 Person, …, depth 60, faults=2) in 4.95s
-```
-
-Every verdict is `✓` now. 401,692 states, five seconds. A fourth person would take minutes.
-For this spec, that's where to stop: nothing about the box office treats a third person
-differently from a second, and the properties held for three.
+With three people, some paths are still going at forty events. The 3,979 worlds past them are
+few, but a bug could be in any of them, so nothing is proved. Set a depth to look for bugs
+quickly in a space too big to finish, not to make a `✓` cheaper.
 
 ## Symmetry
 
@@ -90,13 +98,13 @@ It applies only to safety, since liveness turns symmetry off. So compare the saf
 alone:
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000 --no-symmetry
+feynman check specs/11-rules/3-the-payer.ts --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000
+feynman check specs/11-rules/3-the-payer.ts --instances Person=3 --only chargedOnce,oneTicket,holdsAreRespected --max-states 500000 --no-symmetry
 ```
 
 ```text
-Box office: explored 75,260 states (3 Person, …) in 1.68s
-Box office: explored 397,713 states (3 Person, …) in 3.60s
+Box office: explored 76,074 states (3 Person, …) in 1.12s
+Box office: explored 401,692 states (3 Person, …) in 2.08s
 ```
 
 Five times fewer states, for the same verdicts. With three people there are six ways to name
@@ -146,7 +154,7 @@ feynman check specs/12-bounds/1-false-symmetry.ts --instances Person=2 --walks 0
 ```
 
 ```text
-Ballot: explored 8 states (2 Person, depth 14) in 7ms
+Ballot: explored 8 states (2 Person) in 7ms
   ✓ firstEntrantWins  Whoever entered first wins.
 ```
 
@@ -195,11 +203,11 @@ tested nothing. A tool that rounded up would print `✓` here. Feynman says `?`,
 it: bring three people in, with a scenario's setup or `--instances`:
 
 ```sh
-feynman check specs/12-bounds/2-untested.ts --depth 60 --instances Person=3 --only crowdsHearBack --max-states 500000
+feynman check specs/12-bounds/2-untested.ts --instances Person=3 --only crowdsHearBack --max-states 500000
 ```
 
 ```text
-Box office: explored 401,692 states (3 Person, …, depth 60, faults=2) in 2.20s
+Box office: explored 401,692 states (3 Person, …, faults=2) in 2.20s
   ✓ crowdsHearBack  When three people are waiting on the box office at once, they all hear back.
 ```
 
@@ -212,7 +220,7 @@ hold.
 Set the state limit low, to see what the checker says when it runs out:
 
 ```sh
-feynman check specs/11-rules/3-the-payer.ts --depth 40 --max-states 2000
+feynman check specs/11-rules/3-the-payer.ts --max-states 2000
 ```
 
 ```text
@@ -252,7 +260,7 @@ too much. In rough order of payoff:
 
 And put the bounds that matter in the spec, where a reader sees them: a budget of two because
 the resume rule needs two faults, a scenario with three people because crowds matter, a
-`check: { depth: 40 }` in `feynman.config.ts` because the payment flow is long.
+`check: { maxStates: 500_000 }` in `feynman.config.ts` because three people need it.
 
 ## Exercises
 
