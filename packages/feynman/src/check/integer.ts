@@ -336,6 +336,8 @@ export class IntegerSearch {
   private layouts = new Map<string, Layout>();
   private always: { id: string; holds: (w: World) => boolean }[];
 
+  /** Steps that drew a random number (`ctx.random()`): each got the one value its seed gives, not every value. */
+  readonly drew = new Set<string>();
   /** `never` properties that remember the whole path (nevers.ts): those found to vary, in an earlier search. */
   wholePath: ReadonlySet<string> = new Set();
   /** `never` properties whose shape varied in this search: it stopped, to be run again with them in `wholePath`. */
@@ -1199,6 +1201,7 @@ export class IntegerSearch {
     const observe = observation();
     const world = here.world();
     const step = run(this.spec, world, choice, observe);
+    if (step.world.rng !== world.rng) this.drew.add(`${step.event.actor}.${step.event.key}`);
     // A reset's drops are worked out for each vector (withDrops), so they are not in the effect.
     const chosen = observe.drops && choice.kind === "fire" ? choice.pending : -1;
     const effect = this.effectFrom(world, (k) => vector[L.messages + k], slot, step.world, step.event, observe.drops ? chosen : undefined);

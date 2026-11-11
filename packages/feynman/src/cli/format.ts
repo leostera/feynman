@@ -195,11 +195,13 @@ function unfinishedWhy(report: Report, p: Report["properties"][number]): string 
   const limit = limitName(report.stoppedBy);
   if (report.stoppedBy && p.holds && p.upTo !== undefined) return `held on every path of up to ${p.upTo} event(s); the ${limit} limit stopped the search before longer ones`;
   if (report.stoppedBy) return `held in the ${thousands(report.states)} states explored before the ${limit} limit, not all of them`;
+  if (report.chance?.length && !(p.holds && p.unfinished)) return `held with the random numbers ${report.chance.join(", ")} drew, which are seeded: other values were not tried`;
   return `held to depth ${report.bounds.depth}, but paths that had not got there yet were cut off at that depth: it may break further on`;
 }
 
 /** What to do about the unfinished verdicts in a report, for the line under them. */
 export function unfinishedHint(report: Report): string {
+  if (report.chance?.length && !report.stoppedBy) return `"~" is not a proof: ctx.random() gives each draw one value. Make what it decides an input (oneOf) or two steps, so the checker tries each.`;
   if (report.stoppedBy === "maxStates") return `"~" is not a proof: raise --max-states (check.maxStates in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "timeLimit") return `"~" is not a proof: raise --time-limit (check.timeLimit in feynman.config.ts), or lower --depth, until exploration finishes.`;
   if (report.stoppedBy === "memoryLimit")

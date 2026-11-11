@@ -3,7 +3,8 @@
 import { expect, test } from "bun:test";
 import { check } from "../../src/check/index.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
-import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
+import { verdictOf } from "../../src/check/verdict.ts";
+import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
@@ -115,4 +116,38 @@ test("symmetry is refuted by a property that tells interchangeable instances apa
     expect(report.properties[0]!.holds).toBe(false);
     expect(!report.properties[0]!.holds && report.properties[0]!.counterexample.events.length).toBe(2);
   }
+});
+
+test("every value of an input is tried, however many there are", async () => {
+  const seats = Array.from({ length: 13 }, (_, i) => `s${i + 1}`);
+  const A = defineActor({
+    name: "A",
+    zone,
+    singleton: true,
+    initialState: () => ({ picked: null as string | null }),
+    actions: { pick: { with: [atMost(1)], label: "Pick", description: "Picks a seat.", inputs: { seat: oneOf(...seats) }, run: (s, i) => void (s.picked = i.seat) } },
+  });
+  const last = defineProperty("notTheLast", { description: "The last seat is never picked.", always: (w) => w.the(A).state.picked !== "s13" });
+  expect(await verdict(defineSpec({ name: "Seats", actors: [A], properties: [last], finalState: ANY }))).toEqual({ notTheLast: "breaks in 1" });
+});
+
+test("a property that held where a step drew a random number is not proved", async () => {
+  // One flip of a seeded coin: the checker sees the side its seed gives, and never the other.
+  const coin = (bug: (x: number) => boolean) => {
+    const A = defineActor({
+      name: "A",
+      zone,
+      singleton: true,
+      initialState: () => ({ bug: false }),
+      actions: { flip: { with: [atMost(1)], label: "Flip", description: "Flips once.", run: (s, _i, ctx) => void (s.bug = bug(ctx.random())) } },
+    });
+    const noBug = defineProperty("noBug", { description: "No bug.", always: (w) => !w.the(A).state.bug });
+    return defineSpec({ name: "Coin", actors: [A], properties: [noBug], finalState: ANY });
+  };
+  const reports = [await check(coin((x) => x < 0.5), SEARCH), await check(coin((x) => x >= 0.5), SEARCH)];
+  // One side is the bug in each: the search finds it in one, and says what it did not try in the other.
+  expect(reports.map((r) => r.properties[0]!.holds).sort()).toEqual([false, true]);
+  const held = reports.find((r) => r.properties[0]!.holds)!;
+  expect(held.chance).toEqual(["A.flip"]);
+  expect(verdictOf(held.properties[0]!, { report: held, brokenBy: new Map() })).toBe("unfinished");
 });

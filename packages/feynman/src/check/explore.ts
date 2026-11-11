@@ -133,6 +133,11 @@ export interface Report {
   errors: { message: string; counterexample: Counterexample }[];
   /** A world where nothing can happen and the spec does not call it final (the first found). */
   stuck?: { counterexample: Counterexample; foundBy: "search" | "walk" };
+  /**
+   * Steps that drew `ctx.random()`. The numbers are seeded: each draw got one value, and the
+   * paths where it would have got another were not explored. A property that held is not proved.
+   */
+  chance?: string[];
   /** Steps that ran somewhere, in the search or a random run. */
   coverage: { reached: string[]; missed: string[] };
   /** The random runs: how many, how many steps in all, and the longest. */
@@ -205,6 +210,7 @@ async function checkApart(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[], op
     properties: spec.properties.map((p) => (isLiveness(p) ? b : a).properties.find((q) => q.id === p.id)!),
     states: a.states + b.states,
     exhaustive: a.exhaustive && b.exhaustive,
+    ...(a.chance || b.chance ? { chance: [...new Set([...(a.chance ?? []), ...(b.chance ?? [])])].sort() } : {}),
     stoppedBy: a.stoppedBy ?? b.stoppedBy,
     ...(a.variety || b.variety ? { variety: a.variety ?? b.variety, mostInFlight: a.mostInFlight ?? b.mostInFlight } : {}),
     depthReached: Math.max(a.depthReached, b.depthReached),
@@ -305,6 +311,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: I
     properties,
     errors: [...[...search.errors].map(([message, gid]) => ({ message, counterexample: fromSearch(gid) })), ...walkErrors],
     ...(stuckFound ? { stuck: stuckFound } : {}),
+    ...(search.drew.size ? { chance: [...search.drew].sort() } : {}),
     coverage: { reached: all.filter((k) => reached.has(k)), missed: all.filter((k) => !reached.has(k)) },
     walks: { runs: walked.runs, steps: walked.steps, deepest: walked.deepest },
     reductions: { symmetric: roots[0].symmetry.classes.map((c) => c.labels) },

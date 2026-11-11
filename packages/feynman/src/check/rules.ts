@@ -38,7 +38,7 @@ export async function checkRules(spec: Spec, bounds: Partial<Bounds>, options: C
       description: rule.description,
       neededBy: report.properties.map((p): NeededBy => {
         if (!p.holds) return { property: p.id, verdict: "breaks", events: p.counterexample.events.length + (p.loop?.events.length ?? 0) };
-        return { property: p.id, verdict: report.exhaustive && !p.unfinished ? "holds" : "unfinished" };
+        return { property: p.id, verdict: report.exhaustive && !p.unfinished && !report.chance?.length ? "holds" : "unfinished" };
       }),
     });
   }
