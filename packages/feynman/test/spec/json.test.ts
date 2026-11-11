@@ -162,3 +162,11 @@ test("two worlds that are renamings of each other have the same key under symmet
   }
   expect(twins).toBe(5_000);
 });
+
+test("an object with a key named like a marker, among others, keeps its arrays in their order", () => {
+  expect(sortedJson({ $set: [3, 1], x: 1 })).not.toBe(sortedJson({ $set: [1, 3], x: 1 }));
+  expect(sortedJson({ $map: [[2, "b"], [1, "a"]], x: 1 })).not.toBe(sortedJson({ $map: [[1, "a"], [2, "b"]], x: 1 }));
+  // A set is still the same set in any order, also when read back from its text.
+  expect(sortedJson(new Set([3, 1]))).toBe(sortedJson(new Set([1, 3])));
+  expect(sortedJson(JSON.parse('{"$set":[3,1]}'))).toBe(sortedJson(new Set([1, 3])));
+});

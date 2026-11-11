@@ -42,8 +42,12 @@ function write(v: unknown, key: string): string | undefined {
       if (v instanceof Map) return `{"$map":${members([...v])}}`;
       if (Array.isArray(v)) return key === "$set" || key === "$map" ? members(v) : `[${v.map((x) => write(x, "") ?? "null").join(",")}]`;
       const parts: string[] = [];
-      for (const k of keyOrder(v)) {
-        const text = write((v as Record<string, unknown>)[k], k);
+      const keys = keyOrder(v);
+      // Only an object that is one marker key is how a set or a map is written: a state's own
+      // object with a key named `$set` among others holds an array, whose order is its own.
+      const marker = keys.length === 1;
+      for (const k of keys) {
+        const text = write((v as Record<string, unknown>)[k], marker ? k : "");
         if (text !== undefined) parts.push(`${JSON.stringify(k)}:${text}`);
       }
       return `{${parts.join(",")}}`;

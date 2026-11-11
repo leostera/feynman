@@ -23,7 +23,8 @@ function replacer(this: unknown, key: string, v: unknown): unknown {
       if (v === null) return v;
       if (v instanceof Set) return { $set: [...v] };
       if (v instanceof Map) return { $map: [...v] };
-      if (Array.isArray(v)) return key === "$set" || key === "$map" ? byText(v) : v;
+      // A set or a map is written as an object of one marker key; only its members are sorted.
+      if (Array.isArray(v)) return (key === "$set" || key === "$map") && Object.keys(this as object).length === 1 ? byText(v) : v;
       return Object.fromEntries(Object.keys(v).sort().map((k) => [k, (v as Record<string, unknown>)[k]]));
     default:
       return v;
