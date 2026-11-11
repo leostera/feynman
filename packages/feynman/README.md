@@ -150,18 +150,8 @@ the P checker (`bun run oracles`).
 
 ## This repository
 
-- `src/`: the DSL and engine (`spec`), the checker (`check`), sources and call trees
-  (`code`), the CLI (`cli`), the playground kit (`play`), and the browser view (`view`).
-- `examples/`: the example specs, and TLA+ and P models of them in `examples/oracles/`.
-- `skills/feynman/`: the skill. `docs/rfds/`: the design, one decision at a time.
-- `sites/feynman.leostera.dev/`: the website, and the simulators it publishes.
-
-```sh
-bun install
-bun run test         # everything but the oracles
-bun run typecheck
-bun run feynman dev  # the examples in the simulator
-npm publish          # builds the view, type-checks and tests first
-```
+Feynman is developed in [github.com/leostera/feynman](https://github.com/leostera/feynman):
+its README says where everything is, and how to build and test it. `npm publish` from this
+directory builds the view, type-checks and tests first.
 
 Status: early. The DSL may still change between minor versions.

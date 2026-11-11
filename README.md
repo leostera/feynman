@@ -2,15 +2,159 @@
 
 **Understand how a system behaves, and what each change does to it.**
 
-A Feynman spec is one TypeScript file that writes a system's behaviour down as a program
-that runs. From it you get a simulator, a model checker, flows, and their diffs.
-See [feynman.leostera.dev](https://feynman.leostera.dev).
+Code tells you what each part does. It rarely tells you what happens when the parts meet:
+when a reply is lost, a lease runs out mid-write, or two people press the same button. Those
+are the bugs that reach production, and the questions a newcomer cannot answer by reading.
+
+A Feynman spec is one TypeScript file that writes the behaviour down as a program that runs:
+the actors and their state, the messages between them, the actions people take, and the
+rules that must always hold, each step anchored to the code it stands for. From that one
+file you get:
+
+- **A simulator.** Add people and machines, press the buttons they would, watch every message
+  travel, lose one, and go back to any moment to try something else.
+- **A model checker that says how sure it is.** It tries every order of events within bounds,
+  with the faults the spec declares (lost messages, duplicates, crashes), then takes long
+  random runs. Rules are safety ("never two
+  holders") or liveness ("every request is answered"), judged under fairness as in TLA+, and
+  a world where the system is stuck is reported too. A broken rule comes with the shortest
+  trace that breaks it, and for liveness the loop it repeats forever; a rule that held says
+  whether every state was explored.
+- **The flows of every scenario**, step by step, and how they change between commits.
+- **The code behind each step**, with its call tree, and a warning when that code changes
+  under the spec.
+
+See it on a real system: [axo's remote access](https://feynman.leostera.dev/s/github.com/leostera/axo/),
+where people pair Macs with a one-time code and open terminals on them through a relay.
+
+## Start
+
+Feynman runs on [Bun](https://bun.sh) 1.3 or later.
+
+```sh
+bun add -d @leostera/feynman
+bunx feynman check    # type-check, run the scenarios, explore, and judge every rule
+bunx feynman dev      # the simulator, reloading as the spec changes
+bunx feynman build    # minified standalone .feynman/index.html, plus .gz/.br for static hosting
+```
+
+To learn to write specs, read *[Writing specs with Feynman](book/README.md)*,
+a book that builds every spec step by step, from a first race condition to two-phase commit.
+
+`feynman check --brief` gives one line per property; `--only P` shows one property's
+counterexample, `--json` the whole result, and `--only P --as-scenario` the counterexample
+as a scenario you can paste into the spec.
+
+Specs live in `specs/*.ts` and import `@leostera/feynman`:
+
+```ts
+import { atMost, budget, defineActor, defineMessage, defineProperty, defineSpec, defineZone, lose } from "@leostera/feynman";
+
+// Faults are steps the spec declares: at most one on any path (`--set faults=2` for two).
+const faults = budget("faults", 1);
+
+const Acquire = defineMessage("Acquire");
+const Granted = defineMessage("Granted", { token: Number }, { tone: "reply" });
+
+const zone = defineZone({ name: "Cluster" });
+
+const Server = defineActor({
+  name: "Lock server",
+  zone,
+  singleton: true,
+  initialState: () => ({ token: 0 }),
+  transitions: {
+    acquire: {
+      on: Acquire,
+      description: "Grants the lock with a larger token each time.",
+      sends: [Granted],
+      run(state, _msg, ctx) {
+        state.token += 1;
+        ctx.reply(Granted, { token: state.token });
+      },
+    },
+  },
+});
+
+const Client = defineActor({
+  name: "Client",
+  zone,
+  symmetric: true,
+  initialState: () => ({ token: null as number | null }),
+  actions: {
+    acquire: {
+      with: [atMost(2)], // at most twice per client on any path
+      label: "Take the lock",
+      description: "Asks the server for the lock.",
+      sends: [Acquire],
+      run(_state, _inputs, ctx) {
+        ctx.send(ctx.the(Server), Acquire, {});
+      },
+    },
+  },
+  transitions: {
+    granted: { on: Granted, description: "Holds the lock.", run: (state, msg) => void (state.token = msg.token) },
+    // The network may lose the grant on its way.
+    grantedLost: lose(Granted, { spend: faults }),
+  },
+});
+
+const oneHolder = defineProperty("oneHolder", {
+  description: "Two clients never hold the same token.",
+  always: (w) => {
+    const tokens = w.all(Client).map((c) => c.state.token).filter((t) => t !== null);
+    return new Set(tokens).size === tokens.length;
+  },
+});
+
+export default defineSpec({
+  name: "Lease lock",
+  actors: [Server, Client],
+  properties: [oneHolder],
+});
+```
+
+Every part is a value: messages with the schema of their payload, checked when sent; actors
+whose steps say what they are `on`; properties and scenarios. `defineSpec` puts them
+together, and says when they do not fit: a message no one receives, an undeclared send, two
+fair steps on one message. Faults come from the faults library (`lose`, `duplicate`,
+`crash`, calls whose failure reaches the caller), built on the same steps as everything else.
+
+[`examples/`](packages/feynman/examples/) has 28 well-known systems (two-phase commit, Raft's vote, chain
+replication, CRDTs, dining philosophers and more), each with a real bug for the checker to
+find, the fix beside it, and most with TLA+ and P models that check the checker.
+
+## Let your agent write it
+
+Specs are meant to be written by coding agents and read by people. The package ships a skill,
+[`skills/feynman/SKILL.md`](packages/feynman/skills/feynman/SKILL.md), that teaches an agent to read a codebase,
+model one behaviour, check it, and report what it found. Pi loads it from the package; other
+agents can read it at https://feynman.leostera.dev/SKILL.md. A prompt to start from:
+
+> Read https://feynman.leostera.dev/SKILL.md, then write a Feynman spec for how <the behaviour>
+> works in this repository. Put it in specs/, and run `bunx feynman check` until every rule
+> holds or you can show a real bug. Report what the spec covers and every verdict.
+
+## Verdicts you can trust
+
+Every rule gets one of four verdicts, and Feynman never rounds up:
+
+- `✗` broken, with the trace, found by the search, a random run, or a scenario;
+- `✓` holds in every state within the bounds, all of them explored;
+- `~` held in the states explored, but a limit stopped the search first;
+- `?` never tested: nothing reached the situation the rule is about.
+
+The checker is tested against others. On the examples, it finds the same distinct states, the
+same verdicts and counterexamples of the same length as TLA+'s TLC, and the same verdicts as
+the P checker (`bun run oracles`).
 
 ## This repository
 
 - [`packages/feynman`](packages/feynman): `@leostera/feynman` on npm, the library and CLI.
   It holds its [README](packages/feynman/README.md), [CHANGELOG](packages/feynman/CHANGELOG.md),
-  examples, tests, and the agent skill.
+  examples, tests, and the agent skill. In `src/`: the DSL and engine (`spec`), the checker
+  (`check`), sources and call trees (`code`), the CLI (`cli`), the playground kit (`play`),
+  and the browser view (`view`); in `examples/oracles/`, TLA+ and P models of the examples.
 - [`packages/share`](packages/share): the explorer of any public git repository, built on
   demand, that the site serves under `/s/`.
 - [`sites/feynman.leostera.dev`](sites/feynman.leostera.dev): the website.
@@ -21,3 +165,12 @@ See [feynman.leostera.dev](https://feynman.leostera.dev).
 
 From the root, `bun run test` tests both packages, and `bun run feynman check` checks the
 examples (`feynman.config.ts`).
+
+```sh
+bun install
+bun run test         # both packages, but not the oracles
+bun run typecheck
+bun run feynman dev  # the examples in the simulator
+```
+
+Status: early. The DSL may still change between minor versions.
