@@ -1,10 +1,12 @@
 // Ways the checker once said more than it knew, each found by review and kept from coming back:
 // a wrong ✓ (a break it could not see), or a wrong ✗ (a break that is not one).
 import { expect, test } from "bun:test";
-import { check, checkRules } from "../../src/check/index.ts";
+import { apply, branches, check, checkRules, initialWorld } from "../../src/check/index.ts";
+import { stepBreaks } from "../../src/check/judge.ts";
+import { canonical } from "../../src/check/keys.ts";
 import { scenarioSeeds } from "../../src/check/seeds.ts";
 import { verdictOf } from "../../src/check/verdict.ts";
-import { atMost, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, failed, lose, oneOf, runScenario, type Property, type Spec, type WorldView } from "../../src/spec/index.ts";
+import { atMost, budget, crash, defineActor, defineCall, defineMessage, defineProperty, defineRule, defineScenario, defineSpec, defineZone, failed, lose, oneOf, runScenario, type Property, type Spec, type World, type WorldView } from "../../src/spec/index.ts";
 
 const zone = defineZone({ name: "z" });
 const ANY = { description: "Anything.", when: () => true };
@@ -221,4 +223,72 @@ test("a call made before a crash fails into nobody, whichever comes first: the l
   const spec = defineSpec({ name: "Late failure", actors: [Callee, Caller], properties: [noStray], finalState: ANY });
   // Crash then lose the call, crash then lose the answer, lose then crash: none reaches the new process.
   expect(await verdict(spec)).toEqual({ failuresReachTheirCaller: "holds" });
+});
+
+test("everyStep verdicts, kept by what a property reads, are those of judging every step afresh", async () => {
+  const faults = budget("faults", 2);
+  const Work = defineCall("Work", {});
+  const Done = defineMessage("Done", {}, { tone: "reply" });
+  const Callee = defineActor({
+    name: "Callee",
+    zone,
+    singleton: true,
+    initialState: () => ({ served: 0 }),
+    transitions: {
+      work: { on: Work, description: "Works, and answers.", sends: [Done], run: (s, _m, ctx) => (s.served++, ctx.reply(Done, {})) },
+      workLost: lose(Work, { spend: faults }),
+    },
+  });
+  const Caller = defineActor({
+    name: "Caller",
+    zone,
+    initialState: () => ({ calling: false, done: 0 }),
+    actions: { call: { with: [atMost(2)], label: "Call", description: "Calls.", when: (s) => !s.calling, sends: [Work], run: (s, _i, ctx) => (void (s.calling = true), ctx.send(ctx.the(Callee), Work, {})) } },
+    transitions: {
+      done: { on: Done, description: "Hears the answer.", run: (s) => (void (s.calling = false), void s.done++) },
+      failed: { on: failed(Work), description: "The call failed.", run: (s) => void (s.calling = false) },
+      crash: crash({ spend: faults }),
+    },
+  });
+  const callers = (w: WorldView) => w.all(Caller);
+  // Properties that read different things, and different things on different steps: one
+  // instance, all of them, whether anything is pending, a variable, the event.
+  const properties = [
+    defineProperty("servedOnlyGrows", { description: "x", everyStep: (b, a) => a.the(Callee).state.served >= b.the(Callee).state.served }),
+    defineProperty("neverTwoCalling", { description: "x", everyStep: (_b, a) => callers(a).filter((c) => c.state.calling).length < 2 }),
+    // These read one thing first and stop there on most steps: whether anything is pending, a variable.
+    defineProperty("neverQuietOnceServed", { description: "x", everyStep: (_b, a) => !(a.quiet && a.the(Callee).state.served >= 1) }),
+    defineProperty("neverOutOfFaultsMidCall", { description: "x", everyStep: (_b, a) => !(a.get(faults) === 0 && callers(a).some((c) => c.state.calling)) }),
+    // This one reads it last: two steps that agree on everything else differ only in it.
+    defineProperty("answersLeaveNothingPending", { description: "x", everyStep: (_b, a, e) => !e.is(Caller, "done") || !(a.the(Callee).state.served >= 1 && !a.quiet) }),
+    defineProperty("crashesWhenIdle", { description: "x", everyStep: (b, _a, e) => !e.is(Caller, "crash") || callers(b).some((c) => c.state.calling) || b.quiet }),
+    defineProperty("thirdAnswerNeverServed", { description: "x", everyStep: (b, a) => (b.the(Callee).state.served < 2 ? true : callers(a).every((c) => c.state.done < 2)) }),
+  ];
+  const spec = defineSpec({ name: "Calls", actors: [Callee, Caller], properties, finalState: ANY });
+  const bounds = { instances: { Caller: 2 }, depth: 9, symmetry: false };
+  // Every step within the bounds, judged afresh by judge.ts: the fewest events to each break.
+  const fewest = new Map<string, number>();
+  const seen = new Set<string>();
+  let frontier = [initialWorld(spec, bounds)];
+  seen.add(canonical(frontier[0]!));
+  for (let depth = 1; depth <= bounds.depth; depth++) {
+    const next: World[] = [];
+    for (const world of frontier) {
+      for (const choice of branches(spec, world)) {
+        const step = apply(spec, world, choice);
+        if (step.event.error) continue;
+        for (const id of stepBreaks(spec, world, step.world, step.event, new Set())) if (!fewest.has(id)) fewest.set(id, depth);
+        const key = canonical(step.world);
+        if (!seen.has(key)) (seen.add(key), next.push(step.world));
+      }
+    }
+    frontier = next;
+  }
+  const expected = Object.fromEntries(properties.map((p) => [p.id, fewest.has(p.id) ? `breaks in ${fewest.get(p.id)}` : "holds"]));
+  // Some break and some hold, or the comparison says little.
+  expect(new Set(Object.values(expected)).size).toBeGreaterThan(2);
+  expect(await verdict(spec, bounds, [])).toEqual(expected);
+  // The same from random runs alone, which share what the search keeps.
+  const walked = await check(spec, { ...bounds, depth: 0, walks: 3000, walkDepth: 9, timeLimit: 600_000 });
+  for (const p of walked.properties) expect(p.holds).toBe(!fewest.has(p.id));
 });

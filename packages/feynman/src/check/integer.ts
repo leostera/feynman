@@ -345,6 +345,8 @@ export class IntegerSearch {
   private tupleOfNode: number[] = [];
   /** By (tuple before, tuple after, trace step): each step property's answer, HOLDS or BREAKS, if known. */
   private stepAnswers: Map<number, Uint8Array>[] = [];
+  /** For each `everyStep` property, what it read and what it answered (`stepAnswer`); undefined for one that is not a function of what it reads. */
+  private stepMemos: (Map<number, StepMemo | number> | undefined)[] = [];
   private expanded: boolean[] = [];
   private shadow: boolean[] = [];
   private option: number[] = [];
@@ -377,6 +379,7 @@ export class IntegerSearch {
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
     this.everySteps = spec.properties.flatMap((p) => (p.kind === "everyStep" ? [{ id: p.id, everyStep: p.everyStep }] : []));
+    this.stepMemos = this.everySteps.map(() => new Map());
     this.always = spec.properties.flatMap((p) => (p.kind === "always" ? [{ id: p.id, holds: (w: World) => holdsSafely(() => p.always(worldView(spec, w))) }] : []));
   }
 
@@ -508,7 +511,7 @@ export class IntegerSearch {
         const findings = [...this.failingAt(childTuple, child, L), ...nevers].filter((id) => !v.broken.has(id));
         if (this.everySteps.length && this.everySteps.some((p) => !v.broken.has(p.id))) {
           const before = vector;
-          for (const id of this.stepBreaks(tuple, childTuple, effect.event, depth, () => this.instancesOf(before, L), () => this.instancesOf(child, L), v.broken)) if (!findings.includes(id)) findings.push(id);
+          for (const id of this.stepBreaks(tuple, childTuple, before, step, depth, () => child, v.broken)) if (!findings.includes(id)) findings.push(id);
         }
         for (const id of new Set(findings)) {
           v.broken.add(id);
@@ -635,7 +638,7 @@ export class IntegerSearch {
     if (this.everySteps.length && this.everySteps.some((p) => !this.broken.has(p.id))) {
       // The child is made only if a property has yet to judge this step: most land on a known state.
       tuple = this.childTuple(parent, step);
-      breaks = this.stepBreaks(parent.tuple, tuple, effect.event, depth, () => this.instancesOf(parent.vector, L), () => this.instancesOf((child ??= this.applied(parent.vector, step)), L));
+      breaks = this.stepBreaks(parent.tuple, tuple, parent.vector, step, depth, () => (child ??= this.applied(parent.vector, step)));
     }
     if (existing !== undefined) {
       if (!breaks.length) return !folded || this.sameAsTwin(existing, child!, L, folded.plain, symmetry) || this.refutes();
@@ -760,12 +763,12 @@ export class IntegerSearch {
    * evaluated holds. One that reads the event's place in the path is not kept: the place is
    * not in the key.
    */
-  private stepBreaks(before: number, after: number, event: number, index: number, beforeWorld: () => World, afterWorld: () => World, broken: Set<string> = this.broken): string[] {
+  private stepBreaks(before: number, after: number, v: Int32Array, step: Step, index: number, child: () => Int32Array, broken: Set<string> = this.broken): string[] {
+    const event = step.effect.event;
     const byAfter = (this.stepAnswers[before] ??= new Map());
     const key = after * STEP_EVENTS + event;
     let known = byAfter.get(key);
     if (!known) byAfter.set(key, (known = new Uint8Array(this.everySteps.length)));
-    let views: { before: ReturnType<typeof worldView>; after: ReturnType<typeof worldView> } | undefined;
     let out = NO_IDS;
     for (let i = 0; i < known.length; i++) {
       // Nearly every step is one already judged, on which every property holds.
@@ -776,20 +779,89 @@ export class IntegerSearch {
         (out === NO_IDS ? (out = []) : out).push(p.id);
         continue;
       }
-      views ??= { before: worldView(this.spec, beforeWorld()), after: worldView(this.spec, afterWorld()) };
-      let readsIndex = false;
-      const view = traceView([this.eventAt(event, index)]).events[0];
-      const watched = Object.defineProperty({ ...view }, "index", {
-        get: () => {
-          readsIndex = true;
-          return index;
-        },
-      });
-      const answer = holdsSafely(() => p.everyStep(views!.before, views!.after, watched)) ? HOLDS : BREAKS;
-      if (answer === BREAKS) (out === NO_IDS ? (out = []) : out).push(p.id);
-      if (!readsIndex) known[i] = answer;
+      const answer = this.stepAnswer(i, v, step, index, child);
+      if (answer.breaks) (out === NO_IDS ? (out = []) : out).push(p.id);
+      if (answer.keep) known[i] = answer.breaks ? BREAKS : HOLDS;
     }
     return out;
+  }
+
+  /**
+   * One `everyStep` property's answer for a step, by what the property reads. Most read a few
+   * instances' states before and after, not the whole world: two steps that agree on those have
+   * one answer. So each property keeps a tree of what it read, in the order it read it, with
+   * the answer at the end of each path: a step is looked up by reading the same things from its
+   * vectors, and the property runs only for a path not walked before. `keep` is false for an
+   * answer that depends on where in its path the step is (`event.index`), which no step shares.
+   */
+  private stepAnswer(i: number, v: Int32Array, step: Step, index: number, child: () => Int32Array): { breaks: boolean; keep: boolean } {
+    const { layout: L, slot, effect } = step;
+    const n = L.instances.length;
+    const M = L.messages;
+    // What a read sees, by its code: an instance's state before (slot * 2) or after (slot * 2 + 1),
+    // then whether nothing is pending before and after, then the world's variables before and after.
+    const read = (code: number): number => {
+      const side = code & 1;
+      const what = code >> 1;
+      if (what < n) return side === 0 || what !== slot || effect.apart ? v[what] : effect.state;
+      if (what === n) return side === 0 ? (v.length === M + 1 ? 1 : 0) : v.length - M - 1 - effect.removesMessages.length - effect.removesTimers.length + effect.addsMessages.length + effect.addsTimers.length > 0 ? 0 : 1;
+      return side === 0 ? v[L.variables] : (effect.variables ?? v[L.variables]);
+    };
+    const memo = this.stepMemos[i];
+    const rootKey = L.index * STEP_EVENTS + effect.event;
+    let node = memo?.get(rootKey);
+    while (node !== undefined && typeof node !== "number") node = node.next.get(read(node.read));
+    if (node !== undefined) return { breaks: node === BREAKS, keep: true };
+    // A path not walked before: run the property, hearing what it reads.
+    const reads: number[] = [];
+    const hear = (code: number) => void (reads.includes(code) || reads.push(code));
+    const view = (world: World, side: number) => {
+      const plain = worldView(this.spec, world, (id) => hear(L.slots.get(id)! * 2 + side));
+      return {
+        get quiet() {
+          hear(n * 2 + side);
+          return plain.quiet;
+        },
+        all: plain.all,
+        the: plain.the,
+        instance: plain.instance,
+        get: (variable: Parameters<typeof plain.get>[0], of?: Parameters<typeof plain.get>[1]) => {
+          hear((n + 1) * 2 + side);
+          if (of && L.slots.has(of.id)) hear(L.slots.get(of.id)! * 2 + side);
+          return plain.get(variable, of);
+        },
+      } as ReturnType<typeof worldView>;
+    };
+    let readsIndex = false;
+    const seen = traceView([this.eventAt(effect.event, index)]).events[0];
+    const watched = Object.defineProperty({ ...seen }, "index", {
+      get: () => {
+        readsIndex = true;
+        return index;
+      },
+    });
+    const before = view(this.instancesOf(v, L), 0);
+    const after = view(this.instancesOf(child(), L), 1);
+    const breaks = !holdsSafely(() => this.everySteps[i].everyStep(before, after, watched));
+    if (readsIndex || !memo) return { breaks, keep: !readsIndex };
+    // Remember the path. A property that reads something else after the same reads is not a
+    // function of what it reads (it keeps something of its own): its tree is dropped, for good.
+    let at: Map<number, StepMemo | number> = memo;
+    let under = rootKey;
+    for (const code of reads) {
+      let next = at.get(under);
+      if (next === undefined) at.set(under, (next = { read: code, next: new Map() }));
+      if (typeof next === "number" || next.read !== code) {
+        this.stepMemos[i] = undefined;
+        return { breaks, keep: true };
+      }
+      at = next.next;
+      under = read(code);
+    }
+    const there = at.get(under);
+    if (there !== undefined && there !== (breaks ? BREAKS : HOLDS)) this.stepMemos[i] = undefined;
+    else at.set(under, breaks ? BREAKS : HOLDS);
+    return { breaks, keep: true };
   }
 
   /** The search as a graph, for liveness (liveness.ts). */
@@ -895,7 +967,7 @@ export class IntegerSearch {
       const child = this.applied(vector, step);
       const childTuple = this.tupleOf(child, L);
       const breaks = unbroken(this.failingAt(childTuple, child, L));
-      if (this.everySteps.length) breaks.push(...this.stepBreaks(tuple, childTuple, step.effect.event, 0, () => this.instancesOf(vector, L), () => this.instancesOf(child, L)));
+      if (this.everySteps.length) breaks.push(...this.stepBreaks(tuple, childTuple, vector, step, 0, () => child));
       out.add(`${this.symmetricPrint(child, L, symmetry).world.join(",")} breaks ${breaks.sort().join(",")}`);
     }
     return [...out].sort().join("\n");
@@ -1625,6 +1697,12 @@ function edgeOf(to: number, option: number, fault: boolean, fair: FairId | undef
   return { to, option, fault, fair };
 }
 const NO_IDS: string[] = [];
+
+/** A node of an `everyStep` property's tree of reads: what it read next, and by what that was, the next read or the answer (HOLDS, BREAKS). */
+interface StepMemo {
+  read: number;
+  next: Map<number, StepMemo | number>;
+}
 
 /** A node of the tuple trie: by the next part, the node below it, or at the last level the tuple's id. */
 type TupleNode = Map<number, unknown>;

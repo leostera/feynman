@@ -60,6 +60,13 @@ it knew. Some verdicts change: each change below is a wrong answer put right.
 
 ### Faster
 
+- **`feynman check` on a spec with a playground file** loads it in 20 ms, not 1.2 s: the kit
+  imported every Phosphor icon and all of Kumo to use a few.
+- **Big searches.** The box office with three people: 2.6 s to 1.7 s with liveness on 389k
+  states, 0.88 s to 0.56 s with symmetry on 69k. A step's `everyStep` answer is kept by what the
+  property reads, so it runs once for each combination it can tell apart; tuples and
+  fingerprints under symmetry are worked out from the parent's.
+
 - **Faster checks.** `feynman check` over the 28 examples takes 1.3 s, from 4 s in 0.15.0; a
   single spec about half as long (payments 628 → 259 ms), and the search 30–75% less on the
   examples, most on liveness. What each step adds to `never` memory and fairness is cached;
