@@ -28,7 +28,7 @@ import { startBreaks, stuck, type Verdicts } from "./judge.ts";
 import { instanceLine, renamedLine, type Symmetry } from "./keys.ts";
 import { predicatesOf, type Edge, type FairId, type Graph, type LassoStep, type Predicate } from "./liveness.ts";
 import { fairness } from "./fairness.ts";
-import { memoryOf, rootMemory } from "./nevers.ts";
+import { memoryOf, traceStep, type Remembered, type TraceStep } from "./nevers.ts";
 import { PrintMap } from "./prints.ts";
 import { apply, branches, inputCombinations, QUIET, type Choice } from "./steps.ts";
 import { seeded, WEIGHTS, type WalkResult } from "./walk.ts";
@@ -150,7 +150,6 @@ interface Effect {
 }
 
 /** What `never` and step properties see of an event (traceView): its place goes in when a path is laid out. */
-type TraceStep = Pick<Event, "actor" | "key" | "error" | "sent">;
 
 /** A choice, as it can be found again in any world: messages and timers by what they are, not by their ids there. */
 interface ChoiceName {
@@ -337,6 +336,15 @@ export class IntegerSearch {
   private layouts = new Map<string, Layout>();
   private always: { id: string; holds: (w: World) => boolean }[];
 
+  /** `never` properties that remember the whole path (nevers.ts): those found to vary, in an earlier search. */
+  wholePath: ReadonlySet<string> = new Set();
+  /** `never` properties whose shape varied in this search: it stopped, to be run again with them in `wholePath`. */
+  readonly varied = new Set<string>();
+  /** How each `never` property read the first path it was judged on. */
+  private shapes = new Map<string, string>();
+  /** Each root's steps before it, as traces see them: a scenario's, none for the initial world. */
+  private rootTrails: TraceStep[][] = [];
+
   constructor(
     private readonly spec: Spec,
     private readonly b: Bounds,
@@ -344,6 +352,7 @@ export class IntegerSearch {
     private readonly watch: Watch,
     private readonly started: number,
   ) {
+    this.rootTrails = roots.map((r) => (r.events ?? []).filter((e) => e.kind !== "spawn" && !e.error).map(traceStep));
     this.nevers = spec.properties.filter((p) => p.kind === "never");
     this.keepsEdges = spec.properties.some(isLiveness);
     this.predicates = predicatesOf(spec.properties.filter(isLiveness));
@@ -408,8 +417,10 @@ export class IntegerSearch {
   /** One node per distinct root: judged, and the frontier to start from. */
   private start(open: Entry[]): Entry[] {
     const frontier: Entry[] = [];
-    const memory = this.memories.id(rootMemory(this.spec), () => rootMemory(this.spec));
     for (const [r, { world, symmetry }] of this.roots.entries()) {
+      // What `never` properties remember of the steps that led to the root.
+      const remembered = this.shaped(memoryOf(this.nevers, this.rootTrails[r], this.wholePath));
+      const memory = this.memories.id(remembered.memory, () => remembered.memory);
       const L = this.layoutOf(world);
       const vector = this.vectorOf(world, memory, L);
       this.rootVectors[r] = vector;
@@ -421,7 +432,7 @@ export class IntegerSearch {
       this.seen.set(h1, h2, gid);
       this.states++;
       this.watch.state?.(world, this.memoryText(vector, L));
-      for (const id of startBreaks(this.spec, world)) if (!this.broken.has(id)) this.breaks(id, gid);
+      for (const id of startBreaks(this.spec, world, this.rootTrails[r] as Event[])) if (!this.broken.has(id)) this.breaks(id, gid);
       this.judgeStuck(vector, gid, L);
       const tuple = this.tupleOf(vector, L);
       if (this.keepsEdges) this.judgeTruths(tuple, () => world, gid);
@@ -440,7 +451,7 @@ export class IntegerSearch {
     const out: WalkResult = { runs: 0, steps: 0, deepest: 0, findings: [], errors: [] };
     if (this.b.walks <= 0) return out;
     for (const [root, { world }] of this.roots.entries()) {
-      for (const id of startBreaks(this.spec, world).filter((id) => !v.broken.has(id))) {
+      for (const id of startBreaks(this.spec, world, this.rootTrails[root] as Event[]).filter((id) => !v.broken.has(id))) {
         v.broken.add(id);
         out.findings.push({ id, root, choices: [] });
       }
@@ -452,7 +463,7 @@ export class IntegerSearch {
       const L = this.layoutOf(this.roots[root].world);
       let tuple = this.tupleOf(vector, L);
       const named: number[] = [];
-      const trail: TraceStep[] = [];
+      const trail: TraceStep[] = [...this.rootTrails[root]];
       for (let depth = 0; depth < this.b.walkDepth; depth++) {
         const here = this.here(vector, L);
         const choice = this.pick(here, this.choicesOf(here, tuple), random);
@@ -471,6 +482,7 @@ export class IntegerSearch {
           break;
         }
         const nevers = this.nevers.length ? this.remember(vector[L.memory], () => trail, effect.event, step) : NO_IDS;
+        if (this.varied.size) return out;
         const child = this.applied(vector, step);
         const childTuple = this.childTuple({ vector, tuple }, step, child);
         const findings = [...this.failingAt(childTuple, child, L), ...nevers].filter((id) => !v.broken.has(id));
@@ -581,6 +593,8 @@ export class IntegerSearch {
     const L = parent.layout;
     const { effect } = step;
     const nevers = from.trail ? this.remember(parent.vector[L.memory], from.trail, effect.event, step) : NO_IDS;
+    // A property asked something of this path it did not ask of others: what was merged so far cannot be trusted.
+    if (this.varied.size) return false;
     let child: Int32Array | undefined;
     let folded: ReturnType<IntegerSearch["symmetricPrint"]> | undefined;
     if (symmetry.classes.length) {
@@ -910,7 +924,17 @@ export class IntegerSearch {
   private trailOf(gid: number): TraceStep[] {
     const out: TraceStep[] = [];
     for (let at = gid; this.parent[at] >= 0; at = this.parent[at]) out.push(this.traceSteps.values[this.eventOf[at]]);
-    return out.reverse();
+    return [...this.rootTrails[this.root[gid]], ...out.reverse()];
+  }
+
+  /** Notes how each `never` property read a path: one that reads this path another way than the first has varied. */
+  private shaped(remembered: Remembered): Remembered {
+    for (const [id, shape] of remembered.shapes) {
+      const first = this.shapes.get(id);
+      if (first === undefined) this.shapes.set(id, shape);
+      else if (first !== shape) this.varied.add(id);
+    }
+    return remembered;
   }
 
   private lazyTrail(gid: number): () => TraceStep[] {
@@ -927,8 +951,7 @@ export class IntegerSearch {
     const byEvent = (this.memorySteps[before] ??= []);
     let known = byEvent[event];
     if (!known) {
-      const events = [...trail(), this.traceSteps.values[event]].map((e, index) => ({ ...e, index }) as Event);
-      const { memory, nevers } = memoryOf(this.nevers, events);
+      const { memory, nevers } = this.shaped(memoryOf(this.nevers, [...trail(), this.traceSteps.values[event]], this.wholePath));
       byEvent[event] = known = { memory: this.memories.id(memory, () => memory), nevers };
     }
     step.memory = known.memory;

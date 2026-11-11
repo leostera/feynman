@@ -10,7 +10,7 @@ export function scenarioSeeds(spec: Spec, runs = spec.scenarios.map((scenario) =
   return runs.flatMap(({ scenario, run }): Seed[] => {
     const start = scenario.setup ? setUp(spec, scenario) : undefined;
     const clean = !run.error && run.worlds.length > 0 && !run.events.some((e) => e.error || e.violations.length);
-    return [...(start ? [{ scenario: scenario.name, at: "start" as const, world: start }] : []), ...(clean ? [{ scenario: scenario.name, at: "end" as const, world: run.worlds.at(-1)! }] : [])];
+    return [...(start ? [{ scenario: scenario.name, at: "start" as const, world: start }] : []), ...(clean ? [{ scenario: scenario.name, at: "end" as const, world: run.worlds.at(-1)!, events: run.events.filter((e) => e.kind !== "spawn") }] : [])];
   });
 }
 

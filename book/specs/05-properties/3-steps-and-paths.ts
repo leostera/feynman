@@ -1,8 +1,8 @@
 // Chapter 5, step 3: properties of steps and of paths.
 //
 // Expected, from the end of "Both want A1": `soldSeatsStaySold` breaks in 10 events,
-// `ticketsMatchTheBooks` in 12 and `oneOwnerPerSeat` in 14, none with a fault.
-// `noMoreTicketsThanSeats` holds: it is too weak to see the bug.
+// `ticketsMatchTheBooks` in 12, `oneOwnerPerSeat` in 14 and `noMoreTicketsThanSeats` in 12
+// (the scenario's ticket for A1, then two for A2), none with a fault.
 import { atMost, defineActor, defineMessage, defineProperty, defineScenario, defineSpec, defineZone, oneOf } from "@leostera/feynman";
 
 const SEATS = ["A1", "A2"] as const;

@@ -8,7 +8,7 @@
 // RFD0008), deduplicated by fingerprint, so breadth-first order finds the shortest
 // counterexample. Symmetry (keys.ts) renames interchangeable instances to one order.
 import { defaultMemoryLimit } from "./memory.ts";
-import { isLiveness, spawn, startWorld, type LivenessProperty, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
+import { isLiveness, spawn, startWorld, type Event, type LivenessProperty, type PropertyInfo, type Spec, type World } from "../spec/index.ts";
 import { verdicts, type Verdicts } from "./judge.ts";
 import { NO_SYMMETRY, symmetryOf, type Symmetry } from "./keys.ts";
 import { judgeLiveness, type Lasso } from "./liveness.ts";
@@ -148,6 +148,8 @@ export interface Report {
 /** A world to explore from besides the initial one: where a scenario's setup leaves it, or where it ends. */
 export interface Seed extends ScenarioPlace {
   world: World;
+  /** The scenario's events on the way there, which `never` properties judge paths from it with. */
+  events?: readonly Event[];
 }
 
 /** Callbacks for tools that compare the checker with another: every distinct state, as the search first meets it. */
@@ -162,11 +164,15 @@ export interface CheckOptions {
   watch?: Watch;
   /** Stop once every property has broken: for searches that only look for breaks. */
   untilBroken?: boolean;
+  /** `never` properties to remember the whole path for: those an earlier search found to vary (nevers.ts). */
+  wholePath?: readonly string[];
 }
 
 /** Where paths start: the initial world, then each seed, with the symmetry of each. */
 export interface Root {
   from?: ScenarioPlace;
+  /** The steps that led to it: a scenario's, none for the initial world. */
+  events?: readonly Event[];
   world: World;
   symmetry: Symmetry;
 }
@@ -213,18 +219,25 @@ async function checkTogether(spec: Spec, bounds: Partial<Bounds>, seeds: Seed[],
   const walkVerdicts = verdicts();
   const search = new IntegerSearch(spec, b, roots, options.watch ?? {}, started);
   search.untilBroken = options.untilBroken === true && spec.properties.length > 0;
+  search.wholePath = new Set(options.wholePath ?? []);
+  // A `never` property that reads paths in more than one way has no memory two paths can share:
+  // the search starts over, remembering the whole path for it.
+  const again = () => checkTogether(spec, bounds, seeds, { ...options, wholePath: [...search.wholePath, ...search.varied] });
   // The search goes first, leaving random runs their share of the time. When it explores every
   // world there is, they would find nothing it did not, and are skipped; else they run, and a
   // search stopped at its share goes on, up to the time limit. A search that merged renamed
   // worlds by symmetry has seen one of each, not every world: the random runs, which merge
   // nothing, are what catch a symmetry claim it could not refute, so they always run then.
   search.run(b.walks > 0 ? started + b.timeLimit * (1 - WALK_SHARE) : undefined);
+  if (search.varied.size) return again();
   if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
   const merged = roots.some((r) => r.symmetry.classes.length > 0);
   let walked = NO_WALKS;
   if (b.walks > 0 && (merged || !search.complete) && !search.allBroken) {
     walked = search.walk(walkVerdicts, Math.min(Date.now() + b.timeLimit * WALK_SHARE, started + b.timeLimit));
+    if (search.varied.size) return again();
     if (search.stoppedBy === "timeLimit") search.run();
+    if (search.varied.size) return again();
     if (search.refuted) return await withoutSymmetry(spec, bounds, seeds, options, roots, started);
   }
   return await reportOf(spec, b, seeds.map(({ scenario, at }) => ({ scenario, at })), search, walked, walkVerdicts, started);
@@ -240,7 +253,7 @@ function boundsFor(spec: Spec, bounds: Partial<Bounds>): Bounds {
 }
 
 function rootsOf(spec: Spec, b: Bounds, seeds: Seed[]): Root[] {
-  const scenarios = seeds.map(({ world, ...from }): Omit<Root, "symmetry"> => ({ world, from }));
+  const scenarios = seeds.map(({ world, events, ...from }): Omit<Root, "symmetry"> => ({ world, from, ...(events ? { events } : {}) }));
   return [{ world: initialWorld(spec, b) }, ...scenarios].map((r) => ({ ...r, symmetry: b.symmetry ? symmetryOf(spec, r.world) : NO_SYMMETRY }));
 }
 
@@ -259,7 +272,7 @@ async function reportOf(spec: Spec, b: Bounds, seeds: ScenarioPlace[], search: I
   const fromRoot = (root: number, choices: Choice[]) => named(root, replay(spec, roots[root].world, choices));
   const fromWalk = (id: string): Counterexample | undefined => {
     const found = walked.findings.find((f) => f.id === id);
-    return found && named(found.root, shrink(spec, roots[found.root].world, found, fromRoot(found.root, found.choices)));
+    return found && named(found.root, shrink(spec, roots[found.root].world, found, fromRoot(found.root, found.choices), roots[found.root].events));
   };
   const liveness = await livenessVerdicts(spec, spec.properties.filter(isLiveness), search);
   const paths = await search.paths([...search.failures.values(), ...search.errors.values(), ...(search.stuckAt === undefined ? [] : [search.stuckAt])]);

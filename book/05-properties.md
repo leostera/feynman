@@ -316,19 +316,19 @@ const noMoreTicketsThanSeats = defineProperty("noMoreTicketsThanSeats", {
 breaks when a trace has this shape.
 
 ```text
-  ✓ noMoreTicketsThanSeats  The website never sends more tickets than there are seats.
+  ✗ noMoreTicketsThanSeats  The website never sends more tickets than there are seats.
+    shortest counterexample, 12 event(s), needs no faults, from the end of scenario "Both want A1":
 ```
 
-It holds, in the buggy design. Why?
+It breaks too, but look at where. The checker explores from the end of each scenario, and a
+`never` property counts the scenario's steps as part of the path. Alice's ticket for A1, which
+the scenario got her, is the first. Then Alice and Bob both get A2: three tickets, two seats.
 
-Because the property is too weak. In the counterexample above, two tickets go out for A2 and
-none for A1, and two is not more than two. A property that holds isn't the same as a property
-that is strong enough to notice the bug. This is why we write several, and why chapter 11
-gives a way to check that a property can actually fail.
-
-(Something else matters for `never`. The checker explores from the end of each scenario, and
-from there the trace starts afresh. Alice's ticket for A1, which the scenario got her, isn't
-counted. `never` sees the path since exploration began.)
+It needed that third ticket. Two tickets for A2 alone are not more than two, so on a path
+where nobody has bought A1 this property sees nothing wrong, while `oneOwnerPerSeat` does. A
+property that breaks isn't the same as a property that says what went wrong, and one that
+holds isn't the same as one strong enough to notice. This is why we write several, and why
+chapter 11 gives a way to check that a property can actually fail.
 
 Which kind to use:
 
@@ -374,8 +374,8 @@ const Taken = defineMessage("Taken", { seat, buyer: String }, { tone: "refused" 
     },
 ```
 
-We also drop `noMoreTicketsThanSeats`. It can't see the bug it was written for, so it only
-adds noise.
+We also drop `noMoreTicketsThanSeats`. It counts tickets where the other three say who holds
+which seat, so it only adds noise.
 
 ```text
 Box office: explored 216 states (1 of each actor, and from the end of 1 scenario(s), depth 14) in 160ms
@@ -410,5 +410,5 @@ no. The guarantee comes from the database's conditional write. The full spec is
 2. Replace the database's conditional write with a check on the website: the website
    remembers which seats it has reserved, and refuses to reserve one twice. Does that fix it?
    What if there are two web servers?
-3. Make `noMoreTicketsThanSeats` strong enough to catch the bug, using `t.count` and
-   `e.sent`. Is there a threshold that works?
+3. `noMoreTicketsThanSeats` needed a third ticket to notice. Using `t.count` and `e.sent`,
+   can you write a `never` property that notices at the second ticket for one seat?

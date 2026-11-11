@@ -81,17 +81,17 @@ export function rebind(spec: Spec, was: World, world: World, choice: Choice): Ch
 }
 
 /** Whether a replayed path still breaks the property. */
-function stillBreaks(spec: Spec, id: string, path: Counterexample): boolean {
+function stillBreaks(spec: Spec, id: string, path: Counterexample, before: readonly Event[]): boolean {
   const property = spec.properties.find((p) => p.id === id)!;
   // A failed step breaks no property (see judge).
   if (property.kind === "always") return path.events.some((e) => !e.error && e.violations.includes(id));
-  if (property.kind === "never") return !!safely(() => property.never(traceView(path.events)));
+  if (property.kind === "never") return !!safely(() => property.never(traceView([...before, ...path.events])));
   if (property.kind === "everyStep") return path.events.some((e, i) => !e.error && stepBreaks(spec, path.worlds[i - 1] ?? path.initial, path.worlds[i], e, new Set()).includes(id));
   return false;
 }
 
-/** Drop steps one at a time while the property still breaks; at most `budget` replays. */
-export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, budget = 400): Counterexample {
+/** Drop steps one at a time while the property still breaks; at most `budget` replays. `before`: the steps that led to `initial`, which `never` properties count. */
+export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed: Counterexample, before: readonly Event[] = [], budget = 400): Counterexample {
   let best = replayed;
   let tries = 0;
   let changed = true;
@@ -102,7 +102,7 @@ export function shrink(spec: Spec, initial: World, found: WalkFinding, replayed:
       const keep = best.choices.map((_, n) => n !== i);
       const candidate = replayLoosely(spec, initial, best, keep);
       if (candidate.choices.length >= best.choices.length) continue;
-      if (!stillBreaks(spec, found.id, candidate)) continue;
+      if (!stillBreaks(spec, found.id, candidate, before)) continue;
       best = candidate;
       changed = true;
     }

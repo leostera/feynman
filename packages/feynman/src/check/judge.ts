@@ -35,10 +35,11 @@ export function judge(spec: Spec, event: Event | null, path: () => Event[], v: V
 
 /**
  * The properties a world breaks before anything happens: where a path starts (the initial
- * world, or where a scenario ends). Its `always` properties, and `never` ones over no events.
+ * world, or where a scenario ends). Its `always` properties, and `never` ones over the steps
+ * that led there (`before`: a scenario's, none for the initial world).
  */
-export function startBreaks(spec: Spec, world: World): string[] {
-  const nevers = spec.properties.filter((p) => p.kind === "never" && safely(() => p.never(traceView([])))).map((p) => p.id);
+export function startBreaks(spec: Spec, world: World, before: readonly Event[] = []): string[] {
+  const nevers = spec.properties.filter((p) => p.kind === "never" && safely(() => p.never(traceView(before)))).map((p) => p.id);
   return [...violatedAlways(spec, world), ...nevers];
 }
 
